@@ -1,0 +1,32 @@
+app/
+  ModeSelectionPage.tsx     // Страница выбора режима (PvE, 1v1, 3v3, 5v5)
+  GamePage.tsx              // Страница игры, монтирует GameManager с контекстом
+  layout.tsx                // Общий Layout приложения
+  globals.css               // Глобальные стили
+
+components/
+  GameContext.tsx           // Контекст игры и провайдер
+  GameManager.tsx           // Основной менеджер игры
+  Map.tsx                   // Отрисовка карты
+  Tile.tsx                  // Компонент одной клетки карты
+  Players.tsx               // Компонент, отрисовывающий всех игроков
+  Player.tsx                // Отдельный компонент игрока (UI)
+  Inventory.tsx             // Отображение инвентаря
+  resources/
+    ResourceData.ts         // Данные о ресурсах
+
+logic/
+  matchmaking.ts            // Логика матчмейкинга (имитация или реальный запрос)
+  generateMap.ts            // Генерация карты с порталами, бочками, монстрами
+  inputHandler.ts           // Обработка нажатий клавиш
+  battleSystem.ts           // Логика боя, атаки, открытия бочек
+  artifactLogic.ts          // Логика артефакта
+  progressionSystem.ts      // Система прогрессии, начисление опыта и валюты
+
+styles/
+  globals.css               // Глобальные стили
+  map.css                   // Стили для карты
+  tile.css                  // Стили для клетки
+  inventory.css             // Стили для инвентаря
+  tooltip.css               // Стили для тултипов
+  ...                       // При необходимости другие стили
