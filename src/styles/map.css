@@ -1,7 +1,5 @@
 .map {
   display: grid;
-  grid-template-columns: repeat(10, 80px); /* Размер клетки */
-  grid-template-rows: repeat(10, 80px);
   gap: 2px;
   width: max-content; /* Ensure the grid fits the cells exactly */
   height: max-content;

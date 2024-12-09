@@ -1,128 +1,150 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Tile from "./Tile";
-import Inventory from "./Inventory";
 import { resources, ResourceType } from "./resources/ResourceData";
-import { usePlayerMovement } from "./Player";
+import { usePlayer } from "./Player";
 import "../styles/map.css";
 
-type Position = { x: number; y: number };
-type Cell = { id: number; x: number; y: number; terrain: string; resource: ResourceType | null };
+type Cell = {
+  id: number;
+  x: number;
+  y: number;
+  terrain: string;
+  resource: ResourceType | null;
+};
 
-export default function Map() {
-  const gridSize = 10;
-  const initialPosition: Position = { x: 0, y: 0 };
+type MapProps = {
+  updateInventory: React.Dispatch<
+    React.SetStateAction<
+      Record<string, { count: number; image: string; description: string }>
+    >
+  >;
+};
 
-  const [grid, setGrid] = useState<Cell[]>([]);
-  const [playerPosition, setPlayerPosition] = useState<Position>(initialPosition);
-  const [inventory, setInventory] = useState<Record<string, { count: number; image: string; description: string }>>({});
-  const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+const mapWidth = 20;
+const mapHeight = 20;
+const terrains = ["water", "ground", "mountain", "forest", "ice"];
 
-  const movePlayer = usePlayerMovement(gridSize, setPlayerPosition);
-
-  useEffect(() => {
-    setGrid(generateGrid(gridSize));
-  }, []);
-
-  const generateGrid = (gridSize: number): Cell[] => {
-    const terrains = ["water", "ground", "mountain", "forest", "ice"];
-    return Array.from({ length: gridSize * gridSize }, (_, id) => {
-      const x = id % gridSize;
-      const y = Math.floor(id / gridSize);
-      const terrain = terrains[Math.floor(Math.random() * terrains.length)];
-      const resource = generateResource(terrain);
-      return { id, x, y, terrain, resource };
-    });
-  };
+export default function Map({ updateInventory }: MapProps) {
+  const { state: playerState, move } = usePlayer({
+    position: { x: 0, y: 0 },
+    energy: 100,
+    level: 1,
+    visionRange: 5,
+    health: 100,
+    attack: 10,
+    defense: 5,
+  });
 
   const generateResource = (terrain: string): ResourceType | null => {
-    if (Math.random() > 0.15) return null;
-
     const availableResources = Object.values(resources).filter((res) =>
       res.terrains.includes(terrain)
     );
     if (availableResources.length === 0) return null;
-
-    const totalRarity = availableResources.reduce((sum, res) => sum + res.rarity, 0);
-    const rand = Math.random() * totalRarity;
-    let cumulativeRarity = 0;
-
-    for (const resource of availableResources) {
-      cumulativeRarity += resource.rarity;
-      if (rand < cumulativeRarity) return resource;
-    }
-    return null;
+    return availableResources[Math.floor(Math.random() * availableResources.length)];
   };
 
-  const collectResource = () => {
-    const cellIndex = grid.findIndex(
-      (cell) => cell.x === playerPosition.x && cell.y === playerPosition.y
-    );
-    if (cellIndex !== -1 && grid[cellIndex].resource) {
-      const resource = grid[cellIndex].resource;
+  const generateGrid = (width: number, height: number): Cell[] => {
+    const total = width * height;
+    return Array.from({ length: total }, (_, id) => {
+      const x = id % width;
+      const y = Math.floor(id / width);
+      const terrain = terrains[Math.floor(Math.random() * terrains.length)];
+      const resource = Math.random() < 0.15 ? generateResource(terrain) : null;
+      return { id, x, y, terrain, resource };
+    });
+  };
+
+  const [grid, setGrid] = useState<Cell[] | null>(null);
+
+  // Генерация карты только на клиенте после монтирования
+  useEffect(() => {
+    const generated = generateGrid(mapWidth, mapHeight);
+    setGrid(generated);
+  }, []);
+
+  const collectResource = useCallback(() => {
+    if (!grid) return;
+    const playerX = playerState.position.x;
+    const playerY = playerState.position.y;
+
+    const cellIndex = grid.findIndex((c) => c.x === playerX && c.y === playerY);
+    if (cellIndex === -1) return;
+
+    const cell = grid[cellIndex];
+
+    if (cell.resource) {
+      const { type, image, description } = cell.resource;
+      updateInventory((prev) => {
+        const newInventory = { ...prev };
+        newInventory[type] = newInventory[type]
+          ? { ...newInventory[type], count: newInventory[type].count + 1 }
+          : { count: 1, image, description };
+        return newInventory;
+      });
+
       setGrid((prev) =>
-        prev.map((cell, index) =>
-          index === cellIndex ? { ...cell, resource: null } : cell
-        )
+        prev ? prev.map((c) => (c.id === cell.id ? { ...c, resource: null } : c)) : prev
       );
-      setInventory((prev) => ({
-        ...prev,
-        [resource.type]: {
-          count: (prev[resource.type]?.count || 0) + 1,
-          image: resource.image,
-          description: resource.description,
-        },
-      }));
     }
-  };
+  }, [grid, playerState.position, updateInventory]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowUp":
-          movePlayer(0, -1);
-          break;
-        case "ArrowDown":
-          movePlayer(0, 1);
-          break;
-        case "ArrowLeft":
-          movePlayer(-1, 0);
-          break;
-        case "ArrowRight":
-          movePlayer(1, 0);
-          break;
-        case " ":
-          e.preventDefault(); // Предотвращает скроллинг страницы
-          collectResource();
-          break;
+      if (!grid) return; // Не двигаемся пока карта не загружена
+      if (e.key === "ArrowUp") {
+        move(0, -1, mapWidth, mapHeight);
+      } else if (e.key === "ArrowDown") {
+        move(0, 1, mapWidth, mapHeight);
+      } else if (e.key === "ArrowLeft") {
+        move(-1, 0, mapWidth, mapHeight);
+      } else if (e.key === "ArrowRight") {
+        move(1, 0, mapWidth, mapHeight);
+      } else if (e.key === " ") {
+        collectResource();
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [movePlayer, playerPosition, grid]);
+  }, [move, collectResource, grid]);
 
-  const toggleInventory = () => setIsInventoryOpen((prev) => !prev);
+  if (!grid) {
+    return <div>Loading...</div>;
+  }
+
+  const { position, visionRange } = playerState;
+  const startX = Math.max(position.x - visionRange, 0);
+  const endX = Math.min(position.x + visionRange, mapWidth - 1);
+  const startY = Math.max(position.y - visionRange, 0);
+  const endY = Math.min(position.y + visionRange, mapHeight - 1);
+
+  const visibleTiles = grid.filter((cell) =>
+    cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
+  );
+
+  const rowsCount = endY - startY + 1;
+  const colsCount = endX - startX + 1;
+  const tileSize = 80;
 
   return (
-    <div className="map-container">
-      <button className="inventory-toggle" onClick={toggleInventory}>
-        {isInventoryOpen ? "Закрыть инвентарь" : "Открыть инвентарь"}
-      </button>
-      {isInventoryOpen && <Inventory items={inventory} onClose={toggleInventory} />}
-      <div className="map">
-        {grid.map((cell) => (
-          <Tile
-            key={cell.id}
-            x={cell.x}
-            y={cell.y}
-            terrain={cell.terrain}
-            resource={cell.resource}
-            onCollectResource={collectResource} 
-            isPlayerHere={cell.x === playerPosition.x && cell.y === playerPosition.y}
-          />
-        ))}
-      </div>
+    <div
+      className="map"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${colsCount}, ${tileSize}px)`,
+        gridTemplateRows: `repeat(${rowsCount}, ${tileSize}px)`,
+        marginLeft: "100px",
+      }}
+    >
+      {visibleTiles.map((cell) => (
+        <Tile
+          key={cell.id}
+          cell={cell}
+          isPlayer={cell.x === position.x && cell.y === position.y}
+        />
+      ))}
     </div>
   );
 }

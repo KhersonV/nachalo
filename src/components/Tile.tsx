@@ -1,40 +1,36 @@
-import React, { useState } from "react";
-import { ResourceType } from "./resources/ResourceData";
+"use client";
+
+import React from "react";
 import "../styles/tile.css";
 
-type TileProps = {
-  x: number;
-  y: number;
-  terrain: string;
-  resource: ResourceType | null;
-  isPlayerHere: boolean;
-  onCollectResource: () => void;
+type Resource = {
+  type: string;
+  image: string;
+  description: string;
 };
 
-export default function Tile({
-  terrain,
-  resource,
-  isPlayerHere,
-  onCollectResource,
-}: TileProps) {
-  const [showTooltip, setShowTooltip] = useState(false);
+type TileProps = {
+  cell: {
+    id: number;
+    x: number;
+    y: number;
+    terrain: string;
+    resource: Resource | null;
+  };
+  isPlayer: boolean;
+};
 
+export default function Tile({ cell, isPlayer }: TileProps) {
   return (
-    <div
-      className={`tile ${terrain}`}
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
-      {isPlayerHere && <div className="player" />}
-      {resource && (
-        <div className="resource" onClick={onCollectResource}>
-          <img src={resource.image} alt={resource.type} className="resource-image" />
-          {showTooltip && (
-            <div className="tooltip">
-              <strong>{resource.type}</strong>
-              <p>{resource.description}</p>
-            </div>
-          )}
+    <div className={`tile ${cell.terrain}`}>
+      {isPlayer && <div className="player" />}
+      {cell.resource && (
+        <div className="resource">
+          <img src={cell.resource.image} alt={cell.resource.type} className="resource-image" />
+          <div className="tooltip">
+            <p>{cell.resource.type}</p>
+            <p>{cell.resource.description}</p>
+          </div>
         </div>
       )}
     </div>
