@@ -1,47 +1,22 @@
-// Player.tsx
 "use client";
 
-import { useEffect, useCallback } from "react";
+import React from "react";
+import { PlayerState } from "./GameContext";
 
-type Position = {
-  x: number;
-  y: number;
+type PlayerProps = {
+  player: PlayerState;
+  isActive: boolean;
 };
 
-export function usePlayerMovement(
-  gridSize: number,
-  setPlayerPosition: React.Dispatch<React.SetStateAction<Position>>
-) {
-  const movePlayer = useCallback(
-    (dx: number, dy: number) => {
-      setPlayerPosition((prev) => ({
-        x: Math.max(0, Math.min(gridSize - 1, prev.x + dx)),
-        y: Math.max(0, Math.min(gridSize - 1, prev.y + dy)),
-      }));
-    },
-    [gridSize, setPlayerPosition]
+export default function Player({ player, isActive }: PlayerProps) {
+  // Пока просто выводим информацию или можно ничего не делать,
+  // т.к. сам игрок отображается на карте (Map+Tile)
+  // Этот компонент может быть использован для отображения отдельного UI игрока,
+  // его статов, индикаторов.
+  
+  return (
+    <div style={{ color: isActive ? "yellow" : "white" }}>
+      Игрок {player.id}: HP={player.health} / Energy={player.energy}
+    </div>
   );
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case "ArrowUp":
-          movePlayer(0, -1);
-          break;
-        case "ArrowDown":
-          movePlayer(0, 1);
-          break;
-        case "ArrowLeft":
-          movePlayer(-1, 0);
-          break;
-        case "ArrowRight":
-          movePlayer(1, 0);
-          break;
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [movePlayer]);
-
-  return movePlayer;
 }

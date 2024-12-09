@@ -3,12 +3,18 @@
 import React, { useState } from "react";
 import "../styles/inventory.css";
 
-type InventoryProps = {
-  items: Record<string, { count: number; image: string; description: string }>;
-  onClose: () => void;
+type InventoryItem = {
+  count: number;
+  image: string;
+  description: string;
 };
 
-export default function Inventory({ items, onClose }: InventoryProps) {
+export type InventoryProps = {
+  items: Record<string, InventoryItem>;
+  onUseItem: (type: string) => void; // Добавляем onUseItem в типы
+};
+
+export default function Inventory({ items, onUseItem }: InventoryProps) {
   const [filter, setFilter] = useState("");
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -21,9 +27,6 @@ export default function Inventory({ items, onClose }: InventoryProps) {
 
   return (
     <div className="inventory">
-      <button className="inventory-close-button" onClick={onClose}>
-        Закрыть
-      </button>
       <input
         className="inventory-search"
         type="text"
@@ -33,11 +36,12 @@ export default function Inventory({ items, onClose }: InventoryProps) {
       />
       <div className="inventory-grid">
         {filteredItems.map(([key, { count, image, description }]) => (
-          <div className="inventory-item" key={key}>
+          <div className="inventory-item" key={key} onClick={() => onUseItem(key)}>
             <img src={image} alt={key} className="inventory-image" />
             <p>{key}</p>
             <p>Количество: {count}</p>
             <p className="inventory-description">{description}</p>
+            <p className="inventory-action-hint">Нажмите для использования</p>
           </div>
         ))}
       </div>
