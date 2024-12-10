@@ -1,13 +1,18 @@
-.player {
-  width: 40px;
-  height: 40px;
-  background-color: red;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.player-info {
+  margin:5px;
+  padding:5px;
+  border:1px solid #444;
+  border-radius:4px;
 }
 
-.player:active {
-  transform: scale(0.9); /* Уменьшение размера при движении */
+.red-player {
+  color:red;
+}
+
+.blue-player {
+  color:blue;
+}
+
+.active {
+  border-color: yellow;
 }

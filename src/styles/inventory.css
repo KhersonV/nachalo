@@ -1,50 +1,48 @@
 .inventory {
-    position: absolute;
-    top: 10%;
-    left: 10%;
-    width: 80%;
-    height: 80%;
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 20px;
-    border-radius: 10px;
-    overflow-y: auto;
-    z-index: 100;
-  }
-  
-  .inventory-close-button {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background-color: red;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  
-  .inventory-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 10px;
-  }
-  
-  .inventory-item {
-    border: 1px solid white;
-    padding: 10px;
-    border-radius: 5px;
-    text-align: center;
-  }
-  
-  .inventory-image {
-    width: 60px;
-    height: 60px;
-    margin-bottom: 10px;
-  }
-  
-  .inventory-description {
-    font-size: 12px;
-    color: lightgray;
-  }
-  
+  position: absolute;
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 20px;
+  border-radius: 10px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.inventory-search {
+  margin-bottom: 10px;
+  width: 200px;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.inventory-item {
+  border: 1px solid white;
+  padding: 10px;
+  border-radius: 5px;
+  text-align: center;
+  cursor:pointer;
+}
+
+.inventory-image {
+  width: 60px;
+  height: 60px;
+  margin-bottom: 10px;
+}
+
+.inventory-description {
+  font-size: 12px;
+  color: lightgray;
+}
+
+.inventory-action-hint {
+  font-size:12px;
+  color:yellow;
+}

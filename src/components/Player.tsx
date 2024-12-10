@@ -2,6 +2,7 @@
 
 import React from "react";
 import { PlayerState } from "./GameContext";
+import "../styles/player.css";
 
 type PlayerProps = {
   player: PlayerState;
@@ -9,14 +10,12 @@ type PlayerProps = {
 };
 
 export default function Player({ player, isActive }: PlayerProps) {
-  // Пока просто выводим информацию или можно ничего не делать,
-  // т.к. сам игрок отображается на карте (Map+Tile)
-  // Этот компонент может быть использован для отображения отдельного UI игрока,
-  // его статов, индикаторов.
-  
+  // Первый игрок - красный, второй - синий
+  const colorClass = player.id === 0 ? "red-player" : "blue-player";
+
   return (
-    <div style={{ color: isActive ? "yellow" : "white" }}>
-      Игрок {player.id}: HP={player.health} / Energy={player.energy}
+    <div className={`player-info ${colorClass} ${isActive ? "active" : ""}`}>
+      {player.name} (HP:{player.health}, Energy:{player.energy})
     </div>
   );
 }

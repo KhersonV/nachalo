@@ -9,9 +9,9 @@ type InventoryItem = {
   description: string;
 };
 
-export type InventoryProps = {
+type InventoryProps = {
   items: Record<string, InventoryItem>;
-  onUseItem: (type: string) => void; // Добавляем onUseItem в типы
+  onUseItem: (type: string) => void;
 };
 
 export default function Inventory({ items, onUseItem }: InventoryProps) {

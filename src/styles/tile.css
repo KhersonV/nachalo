@@ -1,20 +1,67 @@
 .tile {
-  position: relative;
-  width: 80px; /* Размер клетки */
+  width: 80px;
   height: 80px;
-  background-color: #d3d3d3; /* Светло-серый цвет */
-  border: 1px solid #333; /* Темная рамка для четкости */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transition: background-color 0.3s ease, transform 0.2s ease; /* Плавные изменения */
-  overflow: visible; /* Позволяет показывать всплывающие окна */
+  background-color: #d3d3d3;
+  border: 1px solid #333;
+  position: relative;
 }
 
-.tile:hover {
-  background-color: #b0b0b0; /* Цвет при наведении */
-  transform: scale(1.05); /* Легкое увеличение */
-  z-index: 10; /* Поднимает тайл над другими */
+.tile.portal {
+  background-color: purple;
+}
+
+.tile.barrel {
+  background-color: #8B4513;
+}
+
+.tile.monster {
+  background-color: darkred;
+}
+
+.resource {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+}
+
+.tooltip {
+  position: absolute;
+  top: -70px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150px;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.85);
+  color: white;
+  font-size: 12px;
+  text-align: center;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.resource:hover .tooltip {
+  opacity: 1;
+}
+
+.players-on-tile {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  display: flex;
+  gap: 3px;
+}
+
+/* Каждый игрок - кружок своего цвета */
+/* Player 0 - красный */
+.player-circle {
+  position: absolute;
+  top: -60px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
 }
 
 .tile .player {
@@ -47,25 +94,18 @@
   box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3); /* Легкая тень для эффекта */
 }
 
-.tile .tooltip {
-  position: absolute;
-  top: -70px; /* Расположение над ресурсом */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 150px;
-  padding: 10px;
-  background-color: rgba(0, 0, 0, 0.85); /* Полупрозрачный черный */
-  color: white;
-  font-size: 12px;
-  text-align: center;
-  border-radius: 5px;
-  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3); /* Легкая тень */
-  z-index: 100; /* Выше всех элементов */
-  opacity: 0;
-  transition: opacity 0.3s ease; /* Плавное появление */
-  pointer-events: none; /* Исключаем из потока событий */
+/* Если у вас больше игроков, можно добавить больше классов: player-circle-2, player-circle-3 и т.д. */
+.player-circle-0 {
+  background-color: red;
 }
-
-.tile:hover .tooltip {
-  opacity: 1; /* Показываем tooltip при наведении */
+.player-circle-1 {
+  background-color: blue;
+  left: 40px
+}
+.player-circle-2 {
+  background-color: green;
+  
+}
+.player-circle-3 {
+  background-color: yellow;
 }

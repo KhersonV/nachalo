@@ -1,16 +1,8 @@
 "use client";
 
 import React from "react";
-import Tile from "./Tile";
+import Tile, { Cell } from "./Tile";
 import "../styles/map.css";
-
-type Cell = {
-  id: number;
-  x: number;
-  y: number;
-  terrain: string;
-  resource: { type: string; image: string; description: string } | null;
-};
 
 type MapProps = {
   grid: Cell[];
@@ -21,7 +13,7 @@ type MapProps = {
 };
 
 export default function Map({ grid, playerPositions, visionRange, mapWidth, mapHeight }: MapProps) {
-  const activePlayerPos = playerPositions[0]; // пока что считаем первый игрок активный
+  const activePlayerPos = playerPositions[0];
   const { x, y } = activePlayerPos;
 
   const startX = Math.max(x - visionRange, 0);
@@ -37,10 +29,6 @@ export default function Map({ grid, playerPositions, visionRange, mapWidth, mapH
   const colsCount = endX - startX + 1;
   const tileSize = 80;
 
-  // проверяем, есть ли на тайле игрок
-  const isPlayerOnCell = (cx: number, cy: number) =>
-    playerPositions.some((p) => p.x === cx && p.y === cy);
-
   return (
     <div
       className="map"
@@ -51,13 +39,20 @@ export default function Map({ grid, playerPositions, visionRange, mapWidth, mapH
         marginLeft: "100px",
       }}
     >
-      {visibleTiles.map((cell) => (
-        <Tile
-          key={cell.id}
-          cell={cell}
-          isPlayer={isPlayerOnCell(cell.x, cell.y)}
-        />
-      ))}
+      {visibleTiles.map((cell) => {
+        // Находим всех игроков на этой клетке
+        const playersOnThisCell = playerPositions
+          .map((pos, index) => (pos.x === cell.x && pos.y === cell.y ? index : -1))
+          .filter((idx) => idx !== -1);
+
+        return (
+          <Tile
+            key={cell.id}
+            cell={cell}
+            playersOnTile={playersOnThisCell}
+          />
+        );
+      })}
     </div>
   );
 }

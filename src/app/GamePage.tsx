@@ -7,7 +7,7 @@ import GameManager from "../components/GameManager";
 
 export default function Page() {
   const searchParams = useSearchParams();
-  const instanceId = searchParams.get("instanceId") || "test_instance";
+  const instanceId = searchParams.get("instanceId") || "test_instance"; // Если нет, используем тестовый ID
 
   const [inventoryOpen, setInventoryOpen] = useState(false);
 
