@@ -10,10 +10,11 @@ type MapProps = {
   visionRange: number;
   mapWidth: number;
   mapHeight: number;
+  activePlayerIndex: number;
 };
 
-export default function Map({ grid, playerPositions, visionRange, mapWidth, mapHeight }: MapProps) {
-  const activePlayerPos = playerPositions[0];
+export default function Map({ grid, playerPositions, visionRange, mapWidth, mapHeight, activePlayerIndex }: MapProps) {
+  const activePlayerPos = playerPositions[activePlayerIndex];
   const { x, y } = activePlayerPos;
 
   const startX = Math.max(x - visionRange, 0);
@@ -40,7 +41,6 @@ export default function Map({ grid, playerPositions, visionRange, mapWidth, mapH
       }}
     >
       {visibleTiles.map((cell) => {
-        // Находим всех игроков на этой клетке
         const playersOnThisCell = playerPositions
           .map((pos, index) => (pos.x === cell.x && pos.y === cell.y ? index : -1))
           .filter((idx) => idx !== -1);

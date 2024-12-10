@@ -1,6 +1,7 @@
-import { PlayerState, Cell, ResourceType } from "../components/GameContext";
+import { PlayerState, Cell } from "../components/GameContext";
 import { resources } from "../components/resources/ResourceData";
 import { GameMode } from "./matchmaking";
+import { createRandomMonster } from "./monsterData";
 
 const terrains = ["water", "ground", "mountain", "forest", "ice"];
 
@@ -11,13 +12,16 @@ export function generateMap(mode: GameMode, players: PlayerState[], width: numbe
     const y = Math.floor(id / width);
     const terrain = terrains[Math.floor(Math.random() * terrains.length)];
     const isBarrel = Math.random() < 0.05;
-    const isMonster = Math.random() < 0.02;
-    let resource: ResourceType | null = null;
+    const spawnMonster = Math.random() < 0.02;
+    let resource = null;
     if (!isBarrel && Math.random() < 0.1) {
       const resArray = Object.values(resources);
       resource = resArray[Math.floor(Math.random() * resArray.length)];
     }
-    return { id, x, y, terrain, resource, isBarrel, isMonster };
+
+    let monster = spawnMonster ? createRandomMonster() : undefined;
+
+    return { id, x, y, terrain, resource, isBarrel, monster };
   });
 
   // Добавим портал

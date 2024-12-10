@@ -4,26 +4,46 @@
   background-color: #d3d3d3;
   border: 1px solid #333;
   position: relative;
+  background-size: cover;
+  background-position: center;
 }
 
-.tile.portal {
+.portal-indicator {
+  position:absolute;
+  top:5px;
+  right:5px;
   background-color: purple;
+  padding:2px 4px;
+  color:white;
+  font-size:10px;
+  border-radius:3px;
 }
 
-.tile.barrel {
-  background-color: #8B4513;
+.barrel-indicator {
+  position:absolute;
+  top:5px;
+  left:5px;
+  background-color: brown;
+  padding:2px 4px;
+  color:white;
+  font-size:10px;
+  border-radius:3px;
 }
 
-.tile.monster {
-  background-color: darkred;
+.monster-indicator {
+  position:absolute;
+  bottom:5px;
+  right:5px;
+  
 }
 
-.resource {
+.players-on-tile {
   position: absolute;
-  top: 5px;
+  bottom: 5px;
   left: 5px;
+  display: flex;
+  gap: 3px;
 }
-
 .tooltip {
   position: absolute;
   top: -70px;
@@ -104,7 +124,7 @@
 }
 .player-circle-2 {
   background-color: green;
-  
+
 }
 .player-circle-3 {
   background-color: yellow;

@@ -1,4 +1,4 @@
-import { GameContextValue } from "../components/GameContext";
+import { useGameContext } from "../components/GameContext";
 
 type Handlers = {
   attackPlayerOrMonster: (playerId: number, direction:{dx:number;dy:number}) => void;
@@ -21,8 +21,8 @@ export function handleKeyDown(
   const player = state.players.find((p:any)=> p.id===playerId);
   if (!player) return;
 
-  // Открытие/закрытие инвентаря на клавишу "i"
-  if (e.key === "i" || e.key === "ш" || e.key === "I" || e.key === "Ш" ) {
+  // Инвентарь на "i"
+  if (e.key === "i") {
     setInventoryOpen(!inventoryOpen);
     return;
   }
@@ -35,16 +35,21 @@ export function handleKeyDown(
   if (e.key === "ArrowLeft") dx = -1;
   if (e.key === "ArrowRight") dx = 1;
 
-  if (dx !== 0 || dy !== 0) {
+  if ((dx !== 0 || dy !== 0) && state.grid) {
+    // Проверяем, можно ли двигаться в эту клетку
+    const newX = Math.max(0, Math.min(state.mapWidth-1, player.position.x+dx));
+    const newY = Math.max(0, Math.min(state.mapHeight-1, player.position.y+dy));
+    if (newX === player.position.x && newY === player.position.y) {
+      // Игрок уперся в край, не двигается и не теряет энергию
+      return;
+    }
+
     // Движение
     setState((prev:any) => {
-      const {players, mapWidth, mapHeight} = prev;
+      const {players} = prev;
       const pIndex = players.findIndex((p:any)=>p.id===playerId);
       if (pIndex===-1) return prev;
 
-      const newX = Math.max(0, Math.min(mapWidth-1, player.position.x+dx));
-      const newY = Math.max(0, Math.min(mapHeight-1, player.position.y+dy));
-      // Тратим 1 энергию
       const updated = {...player, position:{x:newX,y:newY}, energy: Math.max(0, player.energy-1)};
       const newPlayers = [...players];
       newPlayers[pIndex]=updated;
@@ -53,11 +58,8 @@ export function handleKeyDown(
   }
 
   if (e.key === " ") {
-    // Пробел: взаимодействие с текущим тайлом
-    // Сбор ресурса, открытие бочки, попытка выхода через портал
+    // Пробел: взаимодействие с тайлом под игроком
     collectResourceIfOnTile(playerId);
     tryExitThroughPortal(playerId);
-    // Если на тайле бочка - открыть бочку (упрощаем, бочка открывается автоматически)
-    // Если хотим направление атаки или открытия бочки - можно дополнить логику.
   }
 }

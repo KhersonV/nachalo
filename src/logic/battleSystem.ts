@@ -4,23 +4,22 @@ export function useBattleSystem() {
   const { state, setState } = useGameContext();
 
   function attackPlayerOrMonster(playerId: number, direction:{dx:number;dy:number}) {
-    console.log("Attack logic here");
+    // Логика атаки
   }
 
   function openBarrel(playerId: number, direction:{dx:number;dy:number}) {
-    console.log("Open barrel logic");
+    // Логика открытия бочки
   }
 
   function tryExitThroughPortal(playerId: number) {
     setState(prev => {
+      if(!prev.grid) return prev;
       const player = prev.players.find(p=>p.id===playerId);
-      if (!player || !prev.grid) return prev;
+      if(!player) return prev;
       const cell = prev.grid.find(c=>c.x===player.position.x && c.y===player.position.y);
-      if (!cell || !cell.isPortal) return prev;
-      // Проверяем артефакт
+      if(!cell || !cell.isPortal) return prev;
       if (prev.artifactOwner === playerId) {
-        console.log("Игрок вышел через портал с артефактом! Инстанс завершен.");
-        // Здесь логика завершения инстанса, начисление наград
+        console.log("Игрок вышел через портал с артефактом! Финализируем инстанс.");
       }
       return prev;
     });
@@ -35,7 +34,7 @@ export function useBattleSystem() {
       const cell = prev.grid.find(c=>c.x===player.position.x && c.y===player.position.y);
       if (!cell) return prev;
 
-      // Если есть ресурс - добавить в инвентарь и убрать ресурс
+      // Ресурс
       if (cell.resource) {
         const newPlayers = [...prev.players];
         const inventory = {...player.inventory};
@@ -50,10 +49,9 @@ export function useBattleSystem() {
         return {...prev, players:newPlayers, grid:newGrid};
       }
 
-      // Если есть бочка - открыть бочку
+      // Бочка
       if (cell.isBarrel) {
-        console.log("Открываем бочку - может выпасть ресурс, монстр или артефакт");
-        // Упростим: бочка даёт food
+        console.log("Открываем бочку");
         const newPlayers = [...prev.players];
         const inventory = {...player.inventory};
         if(inventory['food']) {

@@ -4,9 +4,7 @@ export function useArtifactLogic() {
   const { state, setState } = useGameContext();
 
   function pickArtifact(playerId:number) {
-    setState(prev=>{
-      return {...prev, artifactOwner: playerId};
-    });
+    setState(prev=>({...prev, artifactOwner: playerId}));
     notifyArtifactOwner(playerId);
   }
 

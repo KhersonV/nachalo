@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { MonsterState } from "../logic/monsterData";
 
 export type GameMode = "PVE"|"1v1"|"3v3"|"5v5";
 
@@ -16,6 +17,7 @@ export type PlayerState = {
   maxHealth: number;
   attack: number;
   defense: number;
+  image: string;
   inventory: Record<string, { count: number; image: string; description: string }>;
 };
 
@@ -34,7 +36,7 @@ export type Cell = {
   resource: ResourceType | null;
   isBarrel?: boolean;
   isPortal?: boolean;
-  isMonster?: boolean;
+  monster?: MonsterState; 
 };
 
 type GameState = {
@@ -46,7 +48,7 @@ type GameState = {
   artifactOwner: number | null;
   portalPosition: {x: number; y: number} | null;
   instanceId: string;
-  currentPlayerIndex: number; // индекс активного игрока
+  currentPlayerIndex: number;
 };
 
 type GameContextValue = {
@@ -75,7 +77,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   });
 
   useEffect(() => {
-    // Имитируем получение данных о режиме и игроках из бэкенда
+    // Имитация загрузки данных
     setState(prev => ({
       ...prev,
       mode: "1v1",
@@ -92,6 +94,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           maxHealth: 100,
           attack: 10,
           defense: 5,
+          image: "player-1.webp",
           inventory: {}
         },
         {
@@ -106,6 +109,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           maxHealth: 100,
           attack: 10,
           defense: 5,
+          image: "player-2.webp",
           inventory: {}
         }
       ]
