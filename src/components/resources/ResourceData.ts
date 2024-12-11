@@ -4,6 +4,7 @@ export type ResourceType = {
   image: string;
   description: string;
   rarity: number;
+  effect: number;
   terrains: string[];
 };
 
@@ -14,6 +15,7 @@ export const resources: { [key: string]: ResourceType } = {
     image: "/food.webp",
     description: "Еда для выживания.",
     rarity: 0.1,
+    effect: 20,
     terrains: ["ground"],
   },
   wood: {
@@ -22,6 +24,7 @@ export const resources: { [key: string]: ResourceType } = {
     image: "/wood.webp",
     description: "Древесина для строительства.",
     rarity: 0.1,
+    effect: 1,
     terrains: ["forest", "ice"],
   },
   water: {
@@ -30,6 +33,7 @@ export const resources: { [key: string]: ResourceType } = {
     image: "/water.webp",
     description: "Вода для питья.",
     rarity: 0.1,
+    effect: 5,
     terrains: ["water", "ice"],
   },
   stone: {
@@ -38,6 +42,7 @@ export const resources: { [key: string]: ResourceType } = {
     image: "/stone.webp",
     description: "Камень для строительства.",
     rarity: 0.01,
+    effect: 1,
     terrains: ["mountain", "ice"],
   },
   iron: {
@@ -46,6 +51,7 @@ export const resources: { [key: string]: ResourceType } = {
     image: "/iron.webp",
     description: "Железо для инструментов.",
     rarity: 0.01,
+    effect: 1,
     terrains: ["mountain", "ice"],
   },
 };

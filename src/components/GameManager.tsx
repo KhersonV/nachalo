@@ -18,7 +18,7 @@ type GameManagerProps = {
 };
 
 export default function GameManager({ inventoryOpen, setInventoryOpen }: GameManagerProps) {
-  const { state, setState } = useGameContext();
+  const { state, setState, applyResourceEffect } = useGameContext();
   const { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useBattleSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
@@ -96,6 +96,7 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
         <Inventory
           items={activePlayer.inventory}
           onUseItem={(type: string) => {
+            applyResourceEffect(activePlayer.id, type);
             console.log(`Используем предмет ${type}`);
           }}
         />

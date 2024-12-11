@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { MonsterState } from "../logic/monsterData";
+import { resources } from "./resources/ResourceData";
 
 export type GameMode = "PVE"|"1v1"|"3v3"|"5v5";
 
@@ -12,6 +13,8 @@ export type PlayerState = {
   energy: number;
   maxEnergy: number;
   level: number;
+  expirience: number;
+  max_expirience:number;
   visionRange: number;
   health: number;
   maxHealth: number;
@@ -26,6 +29,7 @@ export type ResourceType = {
   image: string;
   description: string;
   terrains: string[];
+  effect: number;
 };
 
 export type Cell = {
@@ -54,6 +58,7 @@ type GameState = {
 type GameContextValue = {
   state: GameState;
   setState: React.Dispatch<React.SetStateAction<GameState>>;
+  applyResourceEffect: (playerId: number, resourceType: string) => void;
 };
 
 type GameProviderProps = {
@@ -88,8 +93,10 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           position: { x: 0, y: 0 },
           energy: 100,
           maxEnergy: 100,
-          level: 10,
-          visionRange: 5,
+          level: 1,
+          expirience: 0,
+          max_expirience: 500,
+          visionRange: 3,
           health: 100,
           maxHealth: 100,
           attack: 10,
@@ -103,8 +110,10 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           position: { x: 19, y: 19 },
           energy: 100,
           maxEnergy: 100,
-          level: 10,
-          visionRange: 5,
+          level: 1,
+          expirience: 0,
+          max_expirience: 500,
+          visionRange: 3,
           health: 100,
           maxHealth: 100,
           attack: 10,
@@ -116,8 +125,64 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }));
   }, [instanceId]);
 
-  return <GameContext.Provider value={{ state, setState }}>{children}</GameContext.Provider>;
+
+  
+   function applyResourceEffect(playerId: number, resourceType: string) {
+      setState((prev) => {
+        const playerIndex = prev.players.findIndex((p) => p.id === playerId);
+        if (playerIndex === -1) return prev;
+    
+        const player = prev.players[playerIndex];
+        const resource = resources[resourceType];
+        if (!resource || !player.inventory[resourceType]?.count) return prev;
+    
+        let updatedPlayer = { ...player };
+    
+        // Применяем эффект ресурса
+        switch (resourceType) {
+          case "food":
+            updatedPlayer.health = Math.min(updatedPlayer.maxHealth, player.health + resource.effect);
+            break;
+          case "water":
+            updatedPlayer.energy = Math.min(updatedPlayer.maxEnergy, player.energy + resource.effect);
+            break;
+          case "stone":
+            updatedPlayer.defense += resource.effect;
+            break;
+          case "iron":
+            updatedPlayer.attack += resource.effect;
+            break;
+          case "wood":
+            updatedPlayer.expirience = Math.min(
+              updatedPlayer.max_expirience,
+              player.expirience + resource.effect
+            );
+            break;
+          default:
+            break;
+        }
+    
+        // Уменьшаем количество ресурса в инвентаре
+        const updatedInventory = { ...player.inventory };
+        updatedInventory[resourceType].count -= 1;
+        if (updatedInventory[resourceType].count <= 0) {
+          delete updatedInventory[resourceType];
+        }
+    
+        updatedPlayer.inventory = updatedInventory;
+    
+        // Обновляем состояние
+        const updatedPlayers = [...prev.players];
+        updatedPlayers[playerIndex] = updatedPlayer;
+    
+        return { ...prev, players: updatedPlayers };
+      });
+    }
+    
+
+  return <GameContext.Provider value={{ state, setState, applyResourceEffect}}>{children}</GameContext.Provider>;
 }
+
 
 export function useGameContext() {
   const context = useContext(GameContext);
