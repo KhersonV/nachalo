@@ -1,71 +1,104 @@
+// battleSystem.ts
 import { useGameContext } from "../components/GameContext";
+import { GameState, PlayerState, Cell } from "../logic/types"; // Импортируем нужные типы
 
 export function useBattleSystem() {
   const { state, setState } = useGameContext();
 
-  function attackPlayerOrMonster(playerId: number, direction:{dx:number;dy:number}) {
+  function attackPlayerOrMonster(playerId: number, direction: { dx: number; dy: number }) {
     // Логика атаки
   }
 
-  function openBarrel(playerId: number, direction:{dx:number;dy:number}) {
+  function openBarrel(playerId: number, direction: { dx: number; dy: number }) {
     // Логика открытия бочки
   }
 
   function tryExitThroughPortal(playerId: number) {
-    setState(prev => {
-      if(!prev.grid) return prev;
-      const player = prev.players.find(p=>p.id===playerId);
-      if(!player) return prev;
-      const cell = prev.grid.find(c=>c.x===player.position.x && c.y===player.position.y);
-      if(!cell || !cell.isPortal) return prev;
+    setState((prev) => {
+      if (!prev.grid) return prev;
+      const player = prev.players.find((p) => p.id === playerId);
+      if (!player) return prev;
+      const cell = prev.grid.find((c) => c.x === player.position.x && c.y === player.position.y);
+      if (!cell || !cell.isPortal) return prev;
+
       if (prev.artifactOwner === playerId) {
         console.log("Игрок вышел через портал с артефактом! Финализируем инстанс.");
       }
+
       return prev;
     });
   }
 
   function collectResourceIfOnTile(playerId: number) {
-    setState(prev => {
-      if(!prev.grid) return prev;
-      const pIndex = prev.players.findIndex(p=>p.id===playerId);
-      if(pIndex===-1) return prev;
-      const player = prev.players[pIndex];
-      const cell = prev.grid.find(c=>c.x===player.position.x && c.y===player.position.y);
+    setState((prev) => {
+      if (!prev.grid) return prev;
+
+      const playerIndex = prev.players.findIndex((p) => p.id === playerId);
+      if (playerIndex === -1) return prev;
+
+      const player = prev.players[playerIndex];
+      const cell = prev.grid.find((c) => c.x === player.position.x && c.y === player.position.y);
       if (!cell) return prev;
 
-      // Ресурс
-      if (cell.resource) {
-        const newPlayers = [...prev.players];
-        const inventory = {...player.inventory};
-        const r = cell.resource;
-        if(inventory[r.type]) {
-          inventory[r.type].count += 1;
-        } else {
-          inventory[r.type] = { count:1, image:r.image, description:r.description };
-        }
-        newPlayers[pIndex] = {...player, inventory, energy: Math.max(0, player.energy-1)};
-        const newGrid = prev.grid.map(c=> c.id===cell.id ? {...c, resource:null}: c);
-        return {...prev, players:newPlayers, grid:newGrid};
+      const newPlayers = [...prev.players];
+      const inventory = { ...player.inventory };
+
+      // Проверка, является ли ресурс бочкой
+      if (cell.resource?.type === "barrbel") {
+        console.log("Открываем бочку");
+
+        // Пример добавления содержимого бочки в инвентарь
+        addItemToInventory(inventory, "food", "/food-ground.webp", "Еда для выживания");
+
+        // Убираем бочку с карты
+        const newGrid = removeResourceFromGrid(prev.grid, cell.id);
+        return { ...prev, players: updatePlayer(newPlayers, playerIndex, inventory, player), grid: newGrid };
       }
 
-      // Бочка
-      if (cell.isBarrel) {
-        console.log("Открываем бочку");
-        const newPlayers = [...prev.players];
-        const inventory = {...player.inventory};
-        if(inventory['food']) {
-          inventory['food'].count += 1;
-        } else {
-          inventory['food'] = { count:1, image:"/food.webp", description:"Еда для выживания."};
-        }
-        newPlayers[pIndex]={...player, inventory, energy: Math.max(0, player.energy-1)};
-        const newGrid = prev.grid.map(c=> c.id===cell.id ? {...c, isBarrel:false}: c);
-        return {...prev, players:newPlayers, grid:newGrid};
+      // Если ресурс обычный
+      if (cell.resource) {
+        const resource = cell.resource;
+        addItemToInventory(inventory, resource.type, resource.image["ground"], resource.description);
+
+        const newGrid = removeResourceFromGrid(prev.grid, cell.id);
+        return { ...prev, players: updatePlayer(newPlayers, playerIndex, inventory, player), grid: newGrid };
       }
 
       return prev;
     });
+  }
+
+  // Вспомогательные функции
+  function addItemToInventory(
+    inventory: Record<string, { count: number; image: string; description: string }>,
+    type: string,
+    image: string,
+    description: string
+  ) {
+    if (inventory[type]) {
+      inventory[type].count += 1;
+    } else {
+      inventory[type] = { count: 1, image: image || "/default-resource.webp", description };
+    }
+  }
+
+  function removeResourceFromGrid(grid: Cell[], cellId: number): Cell[] {
+    return grid.map((c) => (c.id === cellId ? { ...c, resource: null } : c));
+  }
+
+  function updatePlayer(
+    players: PlayerState[],
+    playerIndex: number,
+    inventory: Record<string, { count: number; image: string; description: string }>,
+    player: PlayerState
+  ): PlayerState[] {
+    const updatedPlayer = {
+      ...player,
+      inventory,
+      energy: Math.max(0, player.energy - 1),
+    };
+    players[playerIndex] = updatedPlayer;
+    return players;
   }
 
   return { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile };

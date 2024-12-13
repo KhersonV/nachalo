@@ -1,3 +1,5 @@
+// inputHandler.ts
+
 import { useGameContext } from "../components/GameContext";
 
 type Handlers = {
@@ -27,7 +29,7 @@ export function handleKeyDown(
     return;
   }
 
-  if (player.energy <= 0) return; // нет энергии
+  if (player.energy <= 0) return; // нет энергии - не двигаемся
 
   let dx = 0, dy = 0;
   if (e.key === "ArrowUp") dy = -1;
@@ -36,15 +38,22 @@ export function handleKeyDown(
   if (e.key === "ArrowRight") dx = 1;
 
   if ((dx !== 0 || dy !== 0) && state.grid) {
-    // Проверяем, можно ли двигаться в эту клетку
+    // Проверяем, можно ли двигаться
     const newX = Math.max(0, Math.min(state.mapWidth-1, player.position.x+dx));
     const newY = Math.max(0, Math.min(state.mapHeight-1, player.position.y+dy));
     if (newX === player.position.x && newY === player.position.y) {
-      // Игрок уперся в край, не двигается и не теряет энергию
+      // Игрок упёрся в край карты
       return;
     }
 
-    // Движение
+    // Проверяем тайл, можно ли идти по нему
+    const cell = state.grid.find((c:any) => c.x === newX && c.y === newY);
+    if (!cell || cell.terrain.includes("river")) {
+      // Не можем идти по реке
+      return;
+    }
+
+    // Двигаемся
     setState((prev:any) => {
       const {players} = prev;
       const pIndex = players.findIndex((p:any)=>p.id===playerId);

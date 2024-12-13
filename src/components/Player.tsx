@@ -1,7 +1,9 @@
+//Player.tsx
+
 "use client";
 
 import React from "react";
-import { PlayerState } from "./GameContext";
+import { PlayerState } from "../logic/types";
 import "../styles/player.css";
 
 type PlayerProps = {

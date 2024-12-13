@@ -1,19 +1,28 @@
+// Map.tsx
 "use client";
 
 import React from "react";
-import Tile, { Cell } from "./Tile";
+import Tile from "./Tile";
+import { Cell } from "../logic/types"; // импортируем Cell из types.ts
 import "../styles/map.css";
 
 type MapProps = {
-  grid: Cell[];
-  playerPositions: { x: number; y: number }[];
-  visionRange: number;
-  mapWidth: number;
-  mapHeight: number;
-  activePlayerIndex: number;
+  grid: Cell[]; 
+  playerPositions: { x: number; y: number }[]; 
+  visionRange: number; 
+  mapWidth: number; 
+  mapHeight: number; 
+  activePlayerIndex: number; 
 };
 
-export default function Map({ grid, playerPositions, visionRange, mapWidth, mapHeight, activePlayerIndex }: MapProps) {
+export default function Map({
+  grid,
+  playerPositions,
+  visionRange,
+  mapWidth,
+  mapHeight,
+  activePlayerIndex,
+}: MapProps) {
   const activePlayerPos = playerPositions[activePlayerIndex];
   const { x, y } = activePlayerPos;
 
@@ -22,13 +31,14 @@ export default function Map({ grid, playerPositions, visionRange, mapWidth, mapH
   const startY = Math.max(y - visionRange, 0);
   const endY = Math.min(y + visionRange, mapHeight - 1);
 
-  const visibleTiles = grid.filter((cell) =>
-    cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
+  const visibleTiles = grid.filter(
+    (cell) => cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
   );
 
   const rowsCount = endY - startY + 1;
   const colsCount = endX - startX + 1;
-  const tileSize = 80;
+
+  const tileSize = 80; 
 
   return (
     <div

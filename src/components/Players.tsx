@@ -1,8 +1,10 @@
+//Players.tsx
+
 "use client";
 
 import React from "react";
 import Player from "./Player";
-import { PlayerState } from "./GameContext";
+import { PlayerState } from "../logic/types";
 
 type PlayersProps = {
   players: PlayerState[];

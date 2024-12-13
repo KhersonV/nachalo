@@ -1,3 +1,5 @@
+//Resource.tsx
+
 "use client";
 
 import React, { useState } from "react";
@@ -19,10 +21,10 @@ export default function Resource({ type, difficulty, description, onCollect }: R
       className="resource"
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
-      onClick={onCollect}
+      // onClick={onCollect}
     >
-      <div className="resource-icon" />
-      {showTooltip && <Tooltip title={type} difficulty={difficulty} description={description} />}
+      {/* <div className="resource-icon" />
+      {showTooltip && <Tooltip title={type} difficulty={difficulty} description={description} />} */}
     </div>
   );
 }

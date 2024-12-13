@@ -1,4 +1,6 @@
-import { Cell, PlayerState } from "../components/GameContext";
+//monsters.ts
+
+import { Cell, PlayerState } from "../logic/types";
   
 // Функция агрессивных монстров: по окончании хода атакуют игрока, если видят
 export function aggressiveMonstersAttack(state: {players: PlayerState[], grid: Cell[]|null, artifactOwner:number|null, mode:string}): {newState: typeof state, instanceFinished:boolean} {

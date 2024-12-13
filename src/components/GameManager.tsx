@@ -1,16 +1,15 @@
+// GameManager.tsx
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import { useGameContext } from "./GameContext";
 import Map from "./Map";
 import Players from "./Players";
 import Inventory from "./Inventory";
 import { generateMap } from "../logic/generateMap";
-import { handleKeyDown } from "../logic/inputHandler";
 import { useBattleSystem } from "../logic/battleSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
-import { aggressiveMonstersAttack } from "../logic/monsters";
-import { finalizeInstance } from "../logic/progressionSystem";
+import { handleKeyDown } from "../logic/inputHandler";
 
 type GameManagerProps = {
   inventoryOpen: boolean;
@@ -18,86 +17,94 @@ type GameManagerProps = {
 };
 
 export default function GameManager({ inventoryOpen, setInventoryOpen }: GameManagerProps) {
-  const { state, setState, applyResourceEffect } = useGameContext();
+  const { state, setState } = useGameContext();
   const { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useBattleSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
-  const activePlayer = state.players[state.currentPlayerIndex];
+  const players = state.players;
+  const currentPlayerIndex = state.currentPlayerIndex;
 
+  // Все хуки (useEffect, useCallback) вызываем до любых условных return
   useEffect(() => {
-    if (state.grid === null && state.players.length > 0) {
-      const newGrid = generateMap(state.mode, state.players, state.mapWidth, state.mapHeight);
-      setState(prev => ({ ...prev, grid: newGrid }));
+    if (state.grid === null && players.length > 0) {
+      const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
+      setState((prev) => ({ ...prev, grid: newGrid }));
     }
-  }, [state.grid, state.players, state.mode, state.mapWidth, state.mapHeight, setState]);
+  }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, setState]);
+
+  const onKeyDown = useCallback((e: KeyboardEvent) => {
+    handleKeyDown(e, {
+      state,
+      setState,
+      attackPlayerOrMonster,
+      openBarrel,
+      pickArtifact,
+      loseArtifact,
+      notifyArtifactOwner,
+      tryExitThroughPortal,
+      collectResourceIfOnTile,
+      inventoryOpen,
+      setInventoryOpen
+    });
+  }, [
+    state,
+    setState,
+    attackPlayerOrMonster,
+    openBarrel,
+    pickArtifact,
+    loseArtifact,
+    notifyArtifactOwner,
+    tryExitThroughPortal,
+    collectResourceIfOnTile,
+    inventoryOpen,
+    setInventoryOpen
+  ]);
 
   useEffect(() => {
-    const keyHandler = (e: KeyboardEvent) => {
-      handleKeyDown(e, {
-        state,
-        setState,
-        attackPlayerOrMonster,
-        openBarrel,
-        pickArtifact,
-        loseArtifact,
-        notifyArtifactOwner,
-        tryExitThroughPortal,
-        collectResourceIfOnTile,
-        inventoryOpen,
-        setInventoryOpen
-      });
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
     };
-    window.addEventListener("keydown", keyHandler);
-    return () => window.removeEventListener("keydown", keyHandler);
-  }, [state, setState, attackPlayerOrMonster, openBarrel, pickArtifact, loseArtifact, notifyArtifactOwner, tryExitThroughPortal, collectResourceIfOnTile, inventoryOpen, setInventoryOpen]);
+  }, [onKeyDown]);
 
-  if (state.grid === null) {
-    return <div>Loading...</div>;
+  // Теперь после вызова всех хуков делаем условный рендер
+  if (players.length === 0 || currentPlayerIndex < 0 || currentPlayerIndex >= players.length) {
+    return <div>Загрузка...</div>;
   }
 
-  const endTurn = () => {
-    // Передача хода следующему игроку
+  const activePlayer = players[currentPlayerIndex];
+
+  const passTurn = () => {
+    if (!activePlayer.abilities.canPassTurn) return;
     setState((prev) => {
       const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
       return { ...prev, currentPlayerIndex: nextIndex };
     });
-
-    // Агрессивные монстры атакуют после смены хода
-    setTimeout(() => {
-      setState(prev => {
-        const result = aggressiveMonstersAttack(prev);
-        // Если инстанс должен закончиться - вызываем finalizeInstance
-        // Пока просто логируем
-        if (result.instanceFinished) {
-          finalizeInstance(prev.instanceId, prev.players);
-        }
-        return {
-            ...prev, // Сохраняем остальные свойства состояния
-            ...result.newState, // Обновляем свойства из результата атаки монстров
-          } as typeof prev;;
-      });
-    }, 100);
   };
 
   return (
     <div>
-      <p>{activePlayer.name}: X={activePlayer.position.x}, Y={activePlayer.position.y}, HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy}, Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}</p>
-      <button onClick={endTurn}>Сменить ход</button>
-      <Map
-        grid={state.grid}
-        playerPositions={state.players.map((p) => p.position)}
-        visionRange={activePlayer.visionRange}
-        mapWidth={state.mapWidth}
-        mapHeight={state.mapHeight}
-        activePlayerIndex={state.currentPlayerIndex}
-      />
-      <Players players={state.players} activePlayerId={activePlayer.id} />
+      <p>
+        {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy}, Attack=
+        {activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+      </p>
+      <button onClick={passTurn}>Передать ход</button>
+      {state.grid && (
+        <Map
+          grid={state.grid}
+          playerPositions={players.map((p) => p.position)}
+          visionRange={activePlayer.visionRange}
+          mapWidth={state.mapWidth}
+          mapHeight={state.mapHeight}
+          activePlayerIndex={currentPlayerIndex}
+        />
+      )}
+      <Players players={players} activePlayerId={activePlayer.id} />
       {inventoryOpen && (
         <Inventory
           items={activePlayer.inventory}
           onUseItem={(type: string) => {
-            applyResourceEffect(activePlayer.id, type);
-            console.log(`Используем предмет ${type}`);
+            console.log(`Using item ${type}`);
           }}
         />
       )}

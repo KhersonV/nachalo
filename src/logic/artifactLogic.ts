@@ -1,3 +1,5 @@
+//artifactLogic.ts
+
 import { useGameContext } from "../components/GameContext";
 
 export function useArtifactLogic() {
