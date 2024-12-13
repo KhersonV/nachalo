@@ -7,7 +7,6 @@ import "../styles/inventory.css";
 
 type InventoryItem = {
   count: number;
-  image: string;
   description: string;
 };
 
@@ -23,9 +22,14 @@ export default function Inventory({ items, onUseItem }: InventoryProps) {
     setFilter(e.target.value.toLowerCase());
   };
 
-  const filteredItems = Object.entries(items).filter(([key]) =>
-    key.toLowerCase().includes(filter)
-  );
+  const filteredItems = Object.entries(items)
+    .filter(([key]) => key.toLowerCase() !== "barrbel") // Исключаем "бочку"
+    .filter(([key]) => key.toLowerCase().includes(filter)); // Применяем поиск
+
+  // Функция для получения пути к изображению ресурса
+  const getResourceImagePath = (resourceType: string): string => {
+    return `/main_resources/${resourceType}.webp`; // Формируем путь
+  };
 
   return (
     <div className="inventory">
@@ -37,9 +41,13 @@ export default function Inventory({ items, onUseItem }: InventoryProps) {
         onChange={handleFilterChange}
       />
       <div className="inventory-grid">
-        {filteredItems.map(([key, { count, image, description }]) => (
+        {filteredItems.map(([key, { count, description }]) => (
           <div className="inventory-item" key={key} onClick={() => onUseItem(key)}>
-            <img src={image} alt={key} className="inventory-image" />
+            <img
+              src={getResourceImagePath(key)} // Динамически формируем путь к картинке
+              alt={key}
+              className="inventory-image"
+            />
             <p>{key}</p>
             <p>Количество: {count}</p>
             <p className="inventory-description">{description}</p>

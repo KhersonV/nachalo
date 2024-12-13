@@ -51,7 +51,7 @@ export function generateMap(
     const isWalkable = terrain !== "river";
 
     const isBarrel = isWalkable && Math.random() < 0.05;
-    const spawnMonster = isWalkable && Math.random() < 0.02;
+    const spawnMonster = isWalkable && Math.random() < 0.1;
 
     let resource = null;
     if (isWalkable && !isBarrel && Math.random() < 0.1) {
