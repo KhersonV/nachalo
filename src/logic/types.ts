@@ -50,6 +50,26 @@ export type TransitionTile = {
   image: string;
 };
 
+type BonusAttributes = {
+  energy?: number;
+  maxEnergy?: number;
+  visionRange?: number;
+  health?: number;
+  maxHealth?: number;
+  attack?: number;
+  defense?: number;
+};
+
+type InventoryItem = {
+  count: number;
+  image: string;
+  description: string;
+  bonus?: BonusAttributes;
+};
+
+type Inventory = Record<string, InventoryItem>;
+
+
 export type PlayerState = {
   id: number;
   name: string;
@@ -65,7 +85,7 @@ export type PlayerState = {
   attack: number;
   defense: number;
   image: string;
-  inventory: Record<string, { count: number; image: string; description: string }>;
+  inventory: Inventory;
   abilities: PlayerAbilities; // Добавили способности
 };
 

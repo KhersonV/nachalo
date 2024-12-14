@@ -7,6 +7,7 @@ import Players from "./Players";
 import Inventory from "./Inventory";
 import { generateMap } from "../logic/generateMap";
 import { useBattleSystem } from "../logic/battleSystem";
+import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
 
@@ -17,9 +18,9 @@ type GameManagerProps = {
 
 export default function GameManager({ inventoryOpen, setInventoryOpen }: GameManagerProps) {
   const { state, setState } = useGameContext();
-  const { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile, monstersAttackPlayers } =
-    useBattleSystem();
-  const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
+  const { attackPlayerOrMonster, monstersAttackPlayers } = useBattleSystem();
+  const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
+  const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic()
 
   const players = state.players;
   const currentPlayerIndex = state.currentPlayerIndex;
@@ -90,7 +91,9 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
         console.log("Круг завершен, монстры атакуют игроков.");
         monstersAttackPlayers(); // Вызываем атаку монстров после круга
       }
-      console.log(`прошел${prev.turnCycle} круг с начала игры`);
+      
+      console.log(`прошел ${prev.turnCycle + (isEndOfTurn ? 1 : 0)} круг с начала игры`);
+
       return { ...prev, currentPlayerIndex: nextIndex, turnCycle: isEndOfTurn ? prev.turnCycle + 1 : prev.turnCycle };
     });
   };
