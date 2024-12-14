@@ -29,6 +29,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     portalPosition: null,
     instanceId,
     currentPlayerIndex: 0,
+    turnCycle: 1,
   });
 
   useEffect(() => {

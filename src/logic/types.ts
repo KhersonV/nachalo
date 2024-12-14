@@ -92,4 +92,5 @@ export type GameState = {
   portalPosition: { x: number; y: number } | null;
   instanceId: string;
   currentPlayerIndex: number;
+  turnCycle: number;
 };

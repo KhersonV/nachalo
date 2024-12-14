@@ -85,11 +85,13 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
       const isEndOfTurn = nextIndex === 0;
 
       if (isEndOfTurn) {
+        // Здесь можно добавить логику завершения круга
+        
         console.log("Круг завершен, монстры атакуют игроков.");
         monstersAttackPlayers(); // Вызываем атаку монстров после круга
       }
-
-      return { ...prev, currentPlayerIndex: nextIndex };
+      console.log(`прошел${prev.turnCycle} круг с начала игры`);
+      return { ...prev, currentPlayerIndex: nextIndex, turnCycle: isEndOfTurn ? prev.turnCycle + 1 : prev.turnCycle };
     });
   };
 
