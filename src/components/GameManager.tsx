@@ -1,5 +1,4 @@
-// GameManager.tsx
-"use client";
+//GameManager.tsx
 
 import React, { useEffect, useCallback } from "react";
 import { useGameContext } from "./GameContext";
@@ -18,13 +17,13 @@ type GameManagerProps = {
 
 export default function GameManager({ inventoryOpen, setInventoryOpen }: GameManagerProps) {
   const { state, setState } = useGameContext();
-  const { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useBattleSystem();
+  const { attackPlayerOrMonster, openBarrel, tryExitThroughPortal, collectResourceIfOnTile, monstersAttackPlayers } =
+    useBattleSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
   const players = state.players;
   const currentPlayerIndex = state.currentPlayerIndex;
 
-  // Все хуки (useEffect, useCallback) вызываем до любых условных return
   useEffect(() => {
     if (state.grid === null && players.length > 0) {
       const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
@@ -32,8 +31,23 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     }
   }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, setState]);
 
-  const onKeyDown = useCallback((e: KeyboardEvent) => {
-    handleKeyDown(e, {
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      handleKeyDown(e, {
+        state,
+        setState,
+        attackPlayerOrMonster,
+        openBarrel,
+        pickArtifact,
+        loseArtifact,
+        notifyArtifactOwner,
+        tryExitThroughPortal,
+        collectResourceIfOnTile,
+        inventoryOpen,
+        setInventoryOpen,
+      });
+    },
+    [
       state,
       setState,
       attackPlayerOrMonster,
@@ -44,21 +58,9 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
       tryExitThroughPortal,
       collectResourceIfOnTile,
       inventoryOpen,
-      setInventoryOpen
-    });
-  }, [
-    state,
-    setState,
-    attackPlayerOrMonster,
-    openBarrel,
-    pickArtifact,
-    loseArtifact,
-    notifyArtifactOwner,
-    tryExitThroughPortal,
-    collectResourceIfOnTile,
-    inventoryOpen,
-    setInventoryOpen
-  ]);
+      setInventoryOpen,
+    ]
+  );
 
   useEffect(() => {
     window.addEventListener("keydown", onKeyDown);
@@ -67,7 +69,6 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     };
   }, [onKeyDown]);
 
-  // Теперь после вызова всех хуков делаем условный рендер
   if (players.length === 0 || currentPlayerIndex < 0 || currentPlayerIndex >= players.length) {
     return <div>Загрузка...</div>;
   }
@@ -76,8 +77,18 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
 
   const passTurn = () => {
     if (!activePlayer.abilities.canPassTurn) return;
+
     setState((prev) => {
       const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
+
+      // Проверяем, завершился ли круг всех игроков
+      const isEndOfTurn = nextIndex === 0;
+
+      if (isEndOfTurn) {
+        console.log("Круг завершен, монстры атакуют игроков.");
+        monstersAttackPlayers(); // Вызываем атаку монстров после круга
+      }
+
       return { ...prev, currentPlayerIndex: nextIndex };
     });
   };
