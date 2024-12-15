@@ -29,56 +29,72 @@ export function useBattleSystem() {
   /**
    * Обрабатывает атаку монстра на игрока.
    */
+  /**
+ * Выполняет атаку монстров на игроков после завершения хода всех игроков.
+ * 
+ * 
+ */
+
   const handleMonsterAttack = (
     player: PlayerState,
     monster: MonsterState
   ): PlayerState => {
     const damage = calculateDamage(monster.attack, player.defense);
     const newHealth = Math.max(0, player.health - damage);
-
+  
+    console.log(`до атаки hp = ${player.health}`);
     console.log(
-      `Монстр ${monster.name} атакует игрока ${player.name}: урон=${damage}, здоровье=${newHealth}`
+      `Монстр ${monster.name} (ID=${monster.id}) атакует игрока ${player.name}: урон=${damage}, здоровье=${newHealth}`
     );
-
+  
     if (newHealth === 0) {
       console.log(`Игрок ${player.name} погиб от атаки монстра ${monster.name}`);
-      // Здесь можно добавить дополнительные события, например, удаление игрока
     }
-
+  
+    // Возвращаем обновлённое состояние игрока
     return { ...player, health: newHealth };
   };
+
+
 
   /**
    * Выполняет атаку монстров на игроков после завершения хода всех игроков.
    */
-  const monstersAttackPlayers = () => {
-    setState((prev) => {
-      if (!prev.grid || !prev.players) {
-        return prev;
-      }
-  
-      const updatedPlayers = [...prev.players];
-      const attackedPlayers = new Set<number>();
-  
-      prev.grid.forEach((cell) => {
-        const { monster, x, y } = cell;
-        if (!monster) return;
-  
-        updatedPlayers.forEach((player, index) => {
-          if (
-            player.health > 0 &&
-            !attackedPlayers.has(player.id) &&
-            isPlayerInMonsterVision(player, monster, { x, y })
-          ) {
-            updatedPlayers[index] = handleMonsterAttack(player, monster);
-            attackedPlayers.add(player.id);
-          }
-        });
+ 
+
+const monstersAttackPlayers = () => {
+  setState((prev) => {
+    if (!prev.grid || !prev.players) return prev;
+
+    // Копируем массив игроков
+    const updatedPlayers = prev.players.map((player) => ({ ...player }));
+
+    // Проходим по всем клеткам с монстрами
+    prev.grid.forEach((cell) => {
+      const { monster, x, y } = cell;
+      if (!monster) return;
+
+      updatedPlayers.forEach((player, index) => {
+        if (
+          player.health > 0 && // Игрок должен быть жив
+          isPlayerInMonsterVision(player, monster, { x, y })
+        ) {
+          console.log(`до атаки hp = ${updatedPlayers[index].health}`);
+          updatedPlayers[index] = handleMonsterAttack(updatedPlayers[index], monster); // Обновляем игрока
+          console.log(`после атаки hp = ${updatedPlayers[index].health}`);
+        }
       });
-  
-      return { ...prev, players: updatedPlayers };
     });
-  };
+
+    console.log("Обновленные игроки:", updatedPlayers);
+
+    return {
+      ...prev,
+      players: updatedPlayers, // Возвращаем обновлённый массив игроков
+    };
+  });
+};
+
   
 
   /**

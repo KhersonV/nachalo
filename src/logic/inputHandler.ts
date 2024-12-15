@@ -62,6 +62,7 @@ export function handleKeyDown(
       const updated = {...player, position:{x:newX,y:newY}, energy: Math.max(0, player.energy-1)};
       const newPlayers = [...players];
       newPlayers[pIndex]=updated;
+      console.log("Игрок переместился:", updated);
       return {...prev, players:newPlayers};
     });
   }

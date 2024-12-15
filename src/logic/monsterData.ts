@@ -1,9 +1,16 @@
 //monsterData.ts
 
+import { get } from "http";
 import { MonsterState } from "../logic/types";
+
+let uniqueId = 0;
+function getUniqueId(): number {
+  return uniqueId++;
+}
 
 export const allMonsters: MonsterState[] = [
   {
+    id: getUniqueId(),
     name: "Goblin",
     type: "aggressive",
     hp: 20,
@@ -20,6 +27,7 @@ export const allMonsters: MonsterState[] = [
     },
   },
   {
+    id: getUniqueId(),
     name: "Goblins",
     type: "neutral",
     hp: 40,
@@ -36,6 +44,7 @@ export const allMonsters: MonsterState[] = [
     },
   },
   {
+    id: getUniqueId(),
     name: "Orc",
     type: "aggressive",
     hp: 50,
@@ -52,6 +61,7 @@ export const allMonsters: MonsterState[] = [
     },
   },
   {
+    id: getUniqueId(),
     name: "Troll",
     type: "neutral",
     hp: 80,
@@ -69,7 +79,13 @@ export const allMonsters: MonsterState[] = [
   },
 ];
 
+
+
 export function createRandomMonster(): MonsterState {
   const randomIndex = Math.floor(Math.random() * allMonsters.length);
-  return allMonsters[randomIndex];
+  const basemonster = allMonsters[randomIndex];
+  return {
+    ...basemonster,
+    id: getUniqueId(),
+  };
 }
