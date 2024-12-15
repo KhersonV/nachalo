@@ -64,8 +64,10 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
   );
 
   useEffect(() => {
+    console.log("useEffect вызывается");
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      console.log("Чистим эффект");
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [onKeyDown]);
