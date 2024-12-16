@@ -1,108 +1,73 @@
-//battleSystem.ts
+// src/logic/battleSystem.ts
 
 import { useGameContext } from "../components/GameContext";
-import { MonsterState, PlayerState } from "../logic/types"; // Импортируем нужные типы
+import { MonsterState, PlayerState } from "./types";
+import { Action } from "./actions";
 
 export function useBattleSystem() {
-  const { state, setState } = useGameContext();
+  const { state, dispatch } = useGameContext();
 
-  /**
-   * Рассчитывает урон с учётом защиты.
-   */
   const calculateDamage = (attack: number, defense: number): number =>
     Math.max(0, attack - defense);
 
-  /**
-   * Проверяет, находится ли игрок в зоне видимости монстра.
-   */
-  const isPlayerInMonsterVision = (
-    player: PlayerState,
-    monster: MonsterState,
-    monsterPosition: { x: number; y: number }
-  ): boolean => {
-    const distance =
-      Math.abs(player.position.x - monsterPosition.x) +
-      Math.abs(player.position.y - monsterPosition.y);
-    return distance <= monster.vision;
-  };
-
-  /**
-   * Обрабатывает атаку монстра на игрока.
-   */
-  /**
- * Выполняет атаку монстров на игроков после завершения хода всех игроков.
- * 
- * 
- */
-
-  const handleMonsterAttack = (
-    player: PlayerState,
-    monster: MonsterState
-  ): PlayerState => {
+  const handleMonsterAttack = (player: PlayerState, monster: MonsterState): Action[] => {
     const damage = calculateDamage(monster.attack, player.defense);
     const newHealth = Math.max(0, player.health - damage);
-  
-    console.log(`до атаки hp = ${player.health}`);
-    console.log(
-      `Монстр ${monster.name} (ID=${monster.id}) атакует игрока ${player.name}: урон=${damage}, здоровье=${newHealth}`
-    );
-  
+
+    const actions: Action[] = [
+      {
+        type: 'ATTACK',
+        payload: { attackerId: monster.id, targetId: player.id, damage },
+      },
+    ];
+
     if (newHealth === 0) {
-      console.log(`Игрок ${player.name} погиб от атаки монстра ${monster.name}`);
+      // Добавьте действие для обработки смерти игрока
+      actions.push({ type: 'PLAYER_DIED', payload: { playerId: player.id } });
     }
-  
-    // Возвращаем обновлённое состояние игрока
-    return { ...player, health: newHealth };
+
+    return actions;
   };
 
+  const monstersAttackPlayers = () => {
+    if (!state.grid) return;
 
+    const actions: Action[] = [];
 
-  /**
-   * Выполняет атаку монстров на игроков после завершения хода всех игроков.
-   */
- 
-
-const monstersAttackPlayers = () => {
-  setState((prev) => {
-    if (!prev.grid || !prev.players) return prev;
-
-    // Копируем массив игроков
-    const updatedPlayers = prev.players.map((player) => ({ ...player }));
-
-    // Проходим по всем клеткам с монстрами
-    prev.grid.forEach((cell) => {
-      const { monster, x, y } = cell;
-      if (!monster) return;
-
-      updatedPlayers.forEach((player, index) => {
-        if (
-          player.health > 0 && // Игрок должен быть жив
-          isPlayerInMonsterVision(player, monster, { x, y })
-        ) {
-          console.log(`до атаки hp = ${updatedPlayers[index].health}`);
-          updatedPlayers[index] = handleMonsterAttack(updatedPlayers[index], monster); // Обновляем игрока
-          console.log(`после атаки hp = ${updatedPlayers[index].health}`);
-        }
-      });
+    state.grid.forEach((cell) => {
+      if (cell.monster && cell.monster.type === 'aggressive') {
+        state.players.forEach((player) => {
+          const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
+          if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
+            actions.push(...handleMonsterAttack(player, cell.monster));
+          }
+        });
+      }
     });
 
-    console.log("Обновленные игроки:", updatedPlayers);
+    actions.forEach(action => dispatch(action));
+  };
 
-    return {
-      ...prev,
-      players: updatedPlayers, // Возвращаем обновлённый массив игроков
-    };
-  });
-};
-
-  
-
-  /**
-   * Обрабатывает атаку игрока на монстра или другого игрока.
-   */
   const attackPlayerOrMonster = (playerId: number, direction: { dx: number; dy: number }) => {
-    console.log(`Игрок ${playerId} атакует в направлении (${direction.dx}, ${direction.dy})`);
-    // Здесь будет ваша логика атаки
+    const attacker = state.players.find(p => p.id === playerId);
+    if (!attacker) return;
+
+    const targetX = attacker.position.x + direction.dx;
+    const targetY = attacker.position.y + direction.dy;
+
+    const targetPlayer = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
+    const targetCell = state.grid?.find(c => c.x === targetX && c.y === targetY);
+
+    if (targetPlayer) {
+      // Атака игрока
+      const damage = calculateDamage(attacker.attack, targetPlayer.defense);
+      dispatch({ type: 'ATTACK', payload: { attackerId: playerId, targetId: targetPlayer.id, damage } });
+    } else if (targetCell?.monster) {
+      // Атака монстра
+      const damage = calculateDamage(attacker.attack, targetCell.monster.defense);
+      dispatch({ type: 'ATTACK', payload: { attackerId: playerId, targetId: targetCell.monster.id, damage } });
+      // Дополнительно: обработка состояния монстра, если требуется
+    }
   };
 
   return {

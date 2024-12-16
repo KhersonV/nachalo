@@ -2,7 +2,7 @@
 
 // Импортируем необходимые типы и данные.
 import { PlayerState, Cell, GameMode } from "../logic/types";
-import { resources } from "../components/resources/ResourceData"; // Данные о ресурсах.
+import { resources } from "./ResourceData"; // Данные о ресурсах.
 import { createRandomMonster } from "./monsterData"; // Функция для создания случайного монстра.
 
 // Определяем возможные типы местности на карте.

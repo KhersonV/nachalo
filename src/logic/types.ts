@@ -68,6 +68,11 @@ type BonusAttributes = {
   defense?: number; // Бонус к защите.
 };
 
+// src/logic/types.ts
+
+// Добавьте новые типы, если необходимо
+
+
 // Тип для описания предметов в инвентаре.
 type InventoryItem = {
   count: number; // Количество данного типа предметов.
@@ -77,7 +82,7 @@ type InventoryItem = {
 };
 
 // Тип для инвентаря игрока (ключ — тип ресурса, значение — данные об этом ресурсе).
-type Inventory = Record<string, InventoryItem>;
+export type Inventory = Record<string, InventoryItem>;
 
 // Тип для описания состояния игрока.
 export type PlayerState = {
@@ -112,6 +117,8 @@ export type Cell = {
   transition?: TransitionTile; // Данные о переходе (если клетка переходная).
 };
 
+
+
 // Тип для глобального состояния игры.
 export type GameState = {
   mode: GameMode; // Текущий игровой режим.
@@ -124,4 +131,5 @@ export type GameState = {
   instanceId: string; // Уникальный идентификатор текущей игровой сессии.
   currentPlayerIndex: number; // Индекс текущего игрока (для очередности ходов).
   turnCycle: number; // Номер текущего круга игры.
+  inventoryOpen: boolean; // Флаг, указывающий, открыт ли инвентарь.
 };

@@ -1,12 +1,14 @@
-// Tile.tsx
+// src/components/Tile.tsx
+
 "use client";
 
 import React, { useState, useEffect } from "react";
 import "../styles/tile.css";
 import { terrainData } from "../logic/terrainData";
 import { useGameContext } from "./GameContext";
-import { getResourceImage } from "./resources/ResourceData";
+import { getResourceImage } from "../logic/ResourceData";
 import { Cell } from "../logic/types";
+import { Action } from "../logic/actions";
 
 type TileProps = {
   cell: Cell;
@@ -14,20 +16,31 @@ type TileProps = {
 };
 
 export default function Tile({ cell, playersOnTile }: TileProps) {
-  const { state, setState } = useGameContext();
+  const { state, dispatch } = useGameContext();
   const [tileBackground, setTileBackground] = useState<string>(terrainData[cell.terrain].image);
 
   useEffect(() => {
-    // Если на клетке есть монстр, устанавливаем фон с изображением монстра
     if (cell.monster) {
       setTileBackground(cell.monster.image[cell.terrain]);
     } else {
-      // Если монстр убит или отсутствует, возвращаем фон террейна
       setTileBackground(terrainData[cell.terrain].image);
     }
   }, [cell.monster, cell.terrain]);
 
-  
+  const handleTileClick = () => {
+    const playerId = state.players[state.currentPlayerIndex]?.id;
+    if (!playerId) return;
+
+    // Взаимодействие с ресурсом
+    if (cell.resource) {
+      dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: cell.resource.type } });
+    }
+
+    // Взаимодействие с порталом
+    if (cell.isPortal) {
+      dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
+    }
+  };
 
   return (
     <div
@@ -36,6 +49,7 @@ export default function Tile({ cell, playersOnTile }: TileProps) {
         backgroundImage: `url(${tileBackground})`,
         backgroundSize: "cover",
       }}
+      onClick={handleTileClick}
     >
       {cell.isPortal && (
         <div className="portal-indicator">
@@ -44,8 +58,8 @@ export default function Tile({ cell, playersOnTile }: TileProps) {
       )}
       {playersOnTile.length > 0 && (
         <div className="players-on-tile">
-          {playersOnTile.map((playerIndex) => {
-            const player = state.players.find((p) => p.id === playerIndex);
+          {playersOnTile.map((playerId) => {
+            const player = state.players.find((p) => p.id === playerId);
             return player ? (
               <img
                 key={player.id}

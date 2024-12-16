@@ -1,10 +1,14 @@
-//progressionSystem.ts
-import { PlayerState } from "./types";
+// src/logic/progressionSystem.ts
 
-export function finalizeInstance(instanceId: string, players: PlayerState[]) {
+import { PlayerState } from "./types";
+import { Action } from "./actions";
+
+export function finalizeInstance(instanceId: string, players: PlayerState[], dispatch: React.Dispatch<Action>) {
   console.log(`Инстанс ${instanceId} завершён. Начисляем награды игрокам.`);
   players.forEach(player => {
     console.log(`Игрок ${player.name} получает опыт и валюту.`);
+    // Отправьте действия для начисления наград, например:
+    // dispatch({ type: 'AWARD_REWARD', payload: { playerId: player.id, reward: { experience: 100, currency: 50 } } });
   });
-  // Будущая логика: обновление БД, уровней, валюты
+  // Добавьте логику обновления БД или других систем через действия
 }

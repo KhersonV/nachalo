@@ -1,45 +1,22 @@
 // src/logic/artifactLogic.ts
+
 import { useGameContext } from "../components/GameContext";
+import { Action } from "./actions";
 
 export function useArtifactLogic() {
-  const { state, setState } = useGameContext();
+  const { state, dispatch } = useGameContext();
 
-  /**
-   * Обрабатывает взятие артефакта игроком.
-   */
   const pickArtifact = (playerId: number) => {
-    setState((prev) => {
-      if (!prev.grid) return prev;
-
-      const player = prev.players.find((p) => p.id === playerId);
-      if (!player) return prev;
-
-      const cell = prev.grid.find(
-        (c) => c.x === player.position.x && c.y === player.position.y
-      );
-
-      console.log(`Игрок ${player.name} взял артефакт!`);
-
-      return { ...prev, artifactOwner: playerId };
-    });
+    console.log(`Игрок ${playerId} взял артефакт!`);
+    dispatch({ type: 'PICK_ARTIFACT', payload: { playerId } });
   };
 
-  /**
-   * Обрабатывает потерю артефакта игроком.
-   */
   const loseArtifact = (playerId: number) => {
-    setState((prev) => {
-      if (prev.artifactOwner !== playerId) return prev;
-
-      console.log(`Игрок с ID ${playerId} потерял артефакт.`);
-
-      return { ...prev, artifactOwner: null };
-    });
+    if (state.artifactOwner !== playerId) return;
+    console.log(`Игрок с ID ${playerId} потерял артефакт.`);
+    dispatch({ type: 'LOSE_ARTIFACT', payload: { playerId } });
   };
 
-  /**
-   * Уведомляет владельца артефакта.
-   */
   const notifyArtifactOwner = () => {
     if (state.artifactOwner === null) {
       console.log("Артефакт не взят.");

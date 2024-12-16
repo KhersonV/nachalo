@@ -1,26 +1,19 @@
-//page.tsx
+// src/components/Page.tsx
 
 "use client";
 
-import React, { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { GameProvider } from "../components/GameContext";
+import React from "react";
+import { GameProvider, useGameContext } from "../components/GameContext";
 import GameManager from "../components/GameManager";
+import { useSearchParams } from "next/navigation";
 
 export default function Page() {
   const searchParams = useSearchParams();
   const instanceId = searchParams.get("instanceId") || "test_instance";
 
-  const [inventoryOpen, setInventoryOpen] = useState(false);
-
   return (
     <GameProvider instanceId={instanceId}>
-      <div style={{ padding: '10px' }}>
-        <button onClick={() => setInventoryOpen(!inventoryOpen)}>
-          {inventoryOpen ? "Закрыть инвентарь" : "Открыть инвентарь"}
-        </button>
-        <GameManager inventoryOpen={inventoryOpen} setInventoryOpen={setInventoryOpen} />
-      </div>
+      <GameManager />
     </GameProvider>
   );
 }

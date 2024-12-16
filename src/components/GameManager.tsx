@@ -1,4 +1,6 @@
-//GameManager.tsx
+// src/components/GameManager.tsx
+
+"use client";
 
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useGameContext } from "./GameContext";
@@ -10,27 +12,18 @@ import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
+import { Action } from "../logic/actions";
 
-// Определение типа для пропсов компонента GameManager
-type GameManagerProps = {
-  inventoryOpen: boolean; // Отвечает за состояние инвентаря (открыт/закрыт)
-  setInventoryOpen: (open: boolean) => void; // Функция для изменения состояния инвентаря
-};
+export default function GameManager() {
+  const { state, dispatch } = useGameContext();
 
-export default function GameManager({ inventoryOpen, setInventoryOpen }: GameManagerProps) {
-  // Используем контекст игры для получения текущего состояния и функции обновления состояния
-  const { state, setState } = useGameContext();
-
-  // Получение логики атаки, системы ресурсов и артефактов
   const { attackPlayerOrMonster, monstersAttackPlayers } = useBattleSystem();
   const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
-  // Извлекаем игроков и индекс текущего игрока из состояния
   const players = state.players;
   const currentPlayerIndex = state.currentPlayerIndex;
 
-  // Храним обработчики действий в рефе, чтобы избежать лишних зависимостей в useCallback
   const handlersRef = useRef({
     attackPlayerOrMonster,
     openBarrel,
@@ -39,11 +32,10 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     pickArtifact,
     loseArtifact,
     notifyArtifactOwner,
-    inventoryOpen,
-    setInventoryOpen,
+    inventoryOpen: state.inventoryOpen,
+    setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
   });
 
-  // Обновляем handlersRef, если обработчики или состояние инвентаря изменились
   useEffect(() => {
     handlersRef.current = {
       attackPlayerOrMonster,
@@ -53,8 +45,8 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
       pickArtifact,
       loseArtifact,
       notifyArtifactOwner,
-      inventoryOpen,
-      setInventoryOpen,
+      inventoryOpen: state.inventoryOpen,
+      setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
     };
   }, [
     attackPlayerOrMonster,
@@ -64,32 +56,24 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     pickArtifact,
     loseArtifact,
     notifyArtifactOwner,
-    inventoryOpen,
-    setInventoryOpen,
+    state.inventoryOpen,
+    dispatch,
   ]);
 
-  // Генерация карты, если grid ещё не существует
   useEffect(() => {
     if (state.grid === null && players.length > 0) {
       const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
-      setState((prev) => ({ ...prev, grid: newGrid }));
+      dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
     }
-  }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, setState]);
+  }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, dispatch]);
 
-  // Лог текущего состояния игроков при их изменении
-  useEffect(() => {
-    console.log("Текущее состояние игроков:", state.players);
-  }, [state.players]);
-
-  // Обработчик событий клавиатуры
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      handleKeyDown(e, { ...handlersRef.current, state, setState });
+      handleKeyDown(e, { state, dispatch, ...handlersRef.current });
     },
-    [state, setState]
+    [state, dispatch]
   );
 
-  // Добавление и удаление обработчиков клавиатуры
   useEffect(() => {
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -97,7 +81,6 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     };
   }, [onKeyDown]);
 
-  // Определение текущего активного игрока
   const activePlayer = useMemo(
     () =>
       players.length > 0 && currentPlayerIndex >= 0 && currentPlayerIndex < players.length
@@ -106,28 +89,13 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     [players, currentPlayerIndex]
   );
 
-  // Функция передачи хода
   const passTurn = useCallback(() => {
     if (!activePlayer?.abilities?.canPassTurn) return;
 
-    setState((prev) => {
-      const nextIndex = (prev.currentPlayerIndex + 1) % prev.players.length;
-      const isEndOfTurn = nextIndex === 0;
+    dispatch({ type: 'PASS_TURN' });
+    monstersAttackPlayers();
+  }, [activePlayer, monstersAttackPlayers, dispatch]);
 
-      if (isEndOfTurn) {
-        console.log(`Круг ${prev.turnCycle} завершен, монстры атакуют игроков.`);
-        monstersAttackPlayers();
-      }
-
-      return {
-        ...prev,
-        currentPlayerIndex: nextIndex,
-        turnCycle: isEndOfTurn ? prev.turnCycle + 1 : prev.turnCycle,
-      };
-    });
-  }, [activePlayer, monstersAttackPlayers, setState]);
-
-  // Мемоизация карты
   const memoizedMap = useMemo(
     () =>
       state.grid && activePlayer ? (
@@ -143,7 +111,6 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     [state.grid, players, activePlayer, state.mapWidth, state.mapHeight, currentPlayerIndex]
   );
 
-  // Мемоизация компонента игроков
   const memoizedPlayers = useMemo(
     () =>
       activePlayer ? (
@@ -152,21 +119,17 @@ export default function GameManager({ inventoryOpen, setInventoryOpen }: GameMan
     [players, activePlayer]
   );
 
-  // Мемоизация инвентаря
   const memoizedInventory = useMemo(
     () =>
-      inventoryOpen && activePlayer?.inventory ? (
+      state.inventoryOpen && activePlayer?.inventory ? (
         <Inventory
           items={activePlayer.inventory}
-          onUseItem={(type: string) => {
-            console.log(`Using item ${type}`);
-          }}
+          // onUseItem проп убран, так как Inventory теперь обрабатывает dispatch самостоятельно
         />
       ) : null,
-    [inventoryOpen, activePlayer?.inventory]
+    [state.inventoryOpen, activePlayer]
   );
 
-  // Рендер компонента
   return (
     <div>
       {activePlayer && (
