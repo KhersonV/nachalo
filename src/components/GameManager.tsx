@@ -93,7 +93,6 @@ export default function GameManager() {
     if (!activePlayer?.abilities?.canPassTurn) return;
 
     dispatch({ type: 'PASS_TURN' });
-    monstersAttackPlayers();
   }, [activePlayer, monstersAttackPlayers, dispatch]);
 
   const memoizedMap = useMemo(

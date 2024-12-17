@@ -5,22 +5,17 @@
 import React, { useState } from "react";
 import "../styles/inventory.css";
 import { useGameContext } from "./GameContext";
-import { Action } from "../logic/actions";
 
-// Тип для элемента инвентаря
 type InventoryItem = {
-  count: number; // Количество предметов
-  description: string; // Описание предмета
-  image: string; // Путь к изображению
+  count: number;
+  description: string;
+  image: string;
 };
 
-// Тип для свойств компонента инвентаря
 type InventoryProps = {
-  items: Record<string, InventoryItem>; // Список предметов инвентаря
-  // onUseItem: (type: string) => void; // Удалено, теперь используется dispatch
+  items: Record<string, InventoryItem>;
 };
 
-// Компонент для отображения и управления инвентарем
 export default function Inventory({ items }: InventoryProps) {
   const [filter, setFilter] = useState("");
   const { dispatch, state } = useGameContext();
@@ -38,7 +33,19 @@ export default function Inventory({ items }: InventoryProps) {
   };
 
   const handleUseItem = (type: string) => {
-    dispatch({ type: 'USE_ITEM', payload: { playerId: state.players[state.currentPlayerIndex].id, itemType: type } });
+    const currentPlayer = state.players[state.currentPlayerIndex];
+    if (!currentPlayer) return;
+  
+    const item = currentPlayer.inventory[type];
+    if (!item || item.count <= 0) {
+      console.error("Ресурс отсутствует или закончился.");
+      return;
+    }
+  
+    dispatch({
+      type: "USE_ITEM",
+      payload: { playerId: currentPlayer.id, itemType: type },
+    });
   };
 
   return (

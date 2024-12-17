@@ -10,19 +10,19 @@ export function useBattleSystem() {
   const calculateDamage = (attack: number, defense: number): number =>
     Math.max(0, attack - defense);
 
-  const handleMonsterAttack = (player: PlayerState, monster: MonsterState): Action[] => {
+  const handleMonsterAttack = (player: PlayerState, monster: MonsterState, cellId: number): Action[] => {
     const damage = calculateDamage(monster.attack, player.defense);
-    const newHealth = Math.max(0, player.health - damage);
+    const newHealth = Math.max(player.health - damage, 0);
 
     const actions: Action[] = [
       {
         type: 'ATTACK',
-        payload: { attackerId: monster.id, targetId: player.id, damage },
+        payload: { attackerId: monster.id, targetId: player.id, damage, targetType: 'player' },
       },
     ];
 
     if (newHealth === 0) {
-      // Добавьте действие для обработки смерти игрока
+      // Добавляем действие для обработки смерти игрока
       actions.push({ type: 'PLAYER_DIED', payload: { playerId: player.id } });
     }
 
@@ -39,7 +39,7 @@ export function useBattleSystem() {
         state.players.forEach((player) => {
           const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
           if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
-            actions.push(...handleMonsterAttack(player, cell.monster));
+            actions.push(...handleMonsterAttack(player, cell.monster, cell.id));
           }
         });
       }
@@ -61,11 +61,28 @@ export function useBattleSystem() {
     if (targetPlayer) {
       // Атака игрока
       const damage = calculateDamage(attacker.attack, targetPlayer.defense);
-      dispatch({ type: 'ATTACK', payload: { attackerId: playerId, targetId: targetPlayer.id, damage } });
+      dispatch({ 
+        type: 'ATTACK', 
+        payload: { 
+          attackerId: playerId, 
+          targetId: targetPlayer.id, 
+          damage, 
+          targetType: 'player' 
+        } 
+      });
     } else if (targetCell?.monster) {
       // Атака монстра
       const damage = calculateDamage(attacker.attack, targetCell.monster.defense);
-      dispatch({ type: 'ATTACK', payload: { attackerId: playerId, targetId: targetCell.monster.id, damage } });
+      dispatch({ 
+        type: 'ATTACK', 
+        payload: { 
+          attackerId: playerId, 
+          targetId: targetCell.monster.id, 
+          damage, 
+          targetType: 'monster', 
+          cellId: targetCell.id 
+        } 
+      });
       // Дополнительно: обработка состояния монстра, если требуется
     }
   };

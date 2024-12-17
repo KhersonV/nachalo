@@ -37,7 +37,7 @@ export function handleKeyDown(
   if (!player) return;
 
   // Инвентарь на "i"
-  if (e.key === "i") {
+  if (e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
     dispatch({ type: 'TOGGLE_INVENTORY' });
     return;
   }
@@ -61,7 +61,7 @@ export function handleKeyDown(
     }
 
     // Проверяем тайл, можно ли идти по нему
-    const cell = state.grid.find(c => c.x === newX && c.y === newY); // Убрано : any
+    const cell = state.grid.find(c => c.x === newX && c.y === newY);
     if (!cell || cell.terrain.includes("river")) {
       // Не можем идти по реке
       return;
@@ -74,7 +74,14 @@ export function handleKeyDown(
     // Пробел: взаимодействие с тайлом под игроком
     const currentCell = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
     if (currentCell?.resource) {
-      dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: currentCell.resource.type } });
+      dispatch({ 
+        type: 'COLLECT_RESOURCE', 
+        payload: { 
+          playerId, 
+          resourceType: currentCell.resource.type, 
+          cellId: currentCell.id 
+        } 
+      });
     }
     if (currentCell?.isPortal) {
       dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });

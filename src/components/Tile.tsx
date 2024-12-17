@@ -4,9 +4,9 @@
 
 import React, { useState, useEffect } from "react";
 import "../styles/tile.css";
-import { terrainData } from "../logic/terrainData";
+import { terrainData } from "../logic/allData";
 import { useGameContext } from "./GameContext";
-import { getResourceImage } from "../logic/ResourceData";
+import { getResourceImage } from "../logic/allData";
 import { Cell } from "../logic/types";
 import { Action } from "../logic/actions";
 
@@ -33,7 +33,14 @@ export default function Tile({ cell, playersOnTile }: TileProps) {
 
     // Взаимодействие с ресурсом
     if (cell.resource) {
-      dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: cell.resource.type } });
+      dispatch({
+        type: 'COLLECT_RESOURCE',
+        payload: {
+          playerId,
+          resourceType: cell.resource.type,
+          cellId: cell.id
+        },
+      });
     }
 
     // Взаимодействие с порталом

@@ -1,11 +1,12 @@
-// src/components/GameContext.tsx
-
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import { gameReducer } from "../logic/reducer";
 import { GameState, PlayerState } from "../logic/types";
 import { Action } from "../logic/actions";
+import { generateMap } from "../logic/generateMap";
+import { aggressiveMonstersAttack } from "../logic/monsters";
+import { checkForDuplicateMonsters } from "../logic/utils";
 
 type GameContextValue = {
   state: GameState;
@@ -20,7 +21,7 @@ type GameProviderProps = {
 const initialState: GameState = {
   mode: "1v1",
   players: [],
-  grid: null,
+  grid: [],
   mapWidth: 20,
   mapHeight: 20,
   artifactOwner: null,
@@ -28,7 +29,8 @@ const initialState: GameState = {
   instanceId: "",
   currentPlayerIndex: 0,
   turnCycle: 1,
-  inventoryOpen: false, // Инициализируем инвентарь как закрытый
+  inventoryOpen: false,
+  monstersHaveAttacked: false,
 };
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
@@ -88,8 +90,29 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       },
     ];
 
-    dispatch({ type: 'INITIALIZE_GAME', payload: { mode: "1v1", instanceId, players: initialPlayers } });
+    const generatedGrid = generateMap(state.mode, initialPlayers, state.mapWidth, state.mapHeight);
+    checkForDuplicateMonsters(generatedGrid);
+
+    dispatch({
+      type: "INITIALIZE_GAME",
+      payload: { mode: state.mode, instanceId, players: initialPlayers },
+    });
+    dispatch({ type: "SET_GRID", payload: { grid: generatedGrid } });
   }, [instanceId]);
+
+  useEffect(() => {
+    // Сбрасываем флаг атаки монстров в начале нового хода
+    if (!state.monstersHaveAttacked) {
+      console.log("Сбрасываем флаг атаки монстров.");
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
+    }
+
+    // Вызываем атаку монстров, если это конец хода
+    if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
+      aggressiveMonstersAttack(state, dispatch);
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
+    }
+  }, [state.turnCycle, state.monstersHaveAttacked, dispatch]);
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>

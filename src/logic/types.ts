@@ -14,6 +14,7 @@ export type MonsterState = {
   defense: number; // Значение защиты монстра.
   vision: number; // Дальность обзора монстра (количество клеток).
   image: Record<string, string>; // Изображения монстра в разных состояниях (например, иконка или полный арт).
+  lastTurnAttacked?: number; //
 };
 
 // Тип для описания ресурса на клетке.
@@ -123,7 +124,7 @@ export type Cell = {
 export type GameState = {
   mode: GameMode; // Текущий игровой режим.
   players: PlayerState[]; // Массив игроков.
-  grid: Cell[] | null; // Сетка клеток карты (или null, если карта ещё не сгенерирована).
+  grid: Cell[]; // Сетка клеток карты (или null, если карта ещё не сгенерирована).
   mapWidth: number; // Ширина карты (в клетках).
   mapHeight: number; // Высота карты (в клетках).
   artifactOwner: number | null; // ID игрока, владеющего артефактом (или null, если артефакт не поднят).
@@ -132,4 +133,5 @@ export type GameState = {
   currentPlayerIndex: number; // Индекс текущего игрока (для очередности ходов).
   turnCycle: number; // Номер текущего круга игры.
   inventoryOpen: boolean; // Флаг, указывающий, открыт ли инвентарь.
+  monstersHaveAttacked: boolean; // Флаг, указывающий, атаковали ли монстры в текущем ходе.
 };

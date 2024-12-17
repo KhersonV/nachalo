@@ -1,10 +1,10 @@
 // src/logic/resourceSystem.ts
 
 import { useGameContext } from "../components/GameContext";
-import { createRandomMonster } from "./monsterData";
-import { resources, getResource } from "./ResourceData"; // Предполагается, что ResourceData находится в той же папке
+import { createRandomMonster } from "./allData";
+import { resources, getResource } from "./allData";
 import { Action } from "./actions";
-import { GameState, PlayerState, Cell, MonsterState } from "./types"; // Убедитесь, что пути корректны
+import { GameState, PlayerState, Cell, MonsterState } from "./types";
 
 export function useResourceSystem() {
   const { state, dispatch } = useGameContext();
@@ -15,18 +15,15 @@ export function useResourceSystem() {
       return;
     }
 
-    // Найдите игрока и проверьте его наличие
     const player: PlayerState | undefined = state.players.find(p => p.id === playerId);
     if (!player) {
       console.error(`Player with id ${playerId} not found.`);
       return;
     }
 
-    // Вычислите целевые координаты
     const targetX = player.position.x + direction.dx;
     const targetY = player.position.y + direction.dy;
 
-    // Найдите клетку по целевым координатам и проверьте её наличие
     const targetCell: Cell | undefined = state.grid.find(c => c.x === targetX && c.y === targetY);
     if (!targetCell || !targetCell.resource || targetCell.resource.type !== "barrbel") {
       console.log("Бочка отсутствует на указанной клетке.");
@@ -114,20 +111,20 @@ export function useResourceSystem() {
       console.error("Grid is not initialized.");
       return;
     }
-
+  
     const player: PlayerState | undefined = state.players.find(p => p.id === playerId);
     if (!player) {
       console.error(`Player with id ${playerId} not found.`);
       return;
     }
-
+  
     const cell: Cell | undefined = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
     if (!cell || !cell.resource) {
       console.log("На клетке нет ресурса для сбора.");
       return;
     }
-
-    dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: cell.resource.type } });
+  
+    dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: cell.resource.type, cellId: cell.id } });
   };
 
   return {
