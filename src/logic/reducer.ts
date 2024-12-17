@@ -1,6 +1,11 @@
-import { GameState, PlayerState, Cell } from "./types";
-import { Action, Reward } from "./actions";
+//reduser.ts
+
+import { GameState   } from "./types";
+import { Action } from "./actions";
 import { resources } from "./allData";
+
+import { generateBattlefield } from './generateBattlefield';
+
 
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -143,6 +148,41 @@ export function gameReducer(state: GameState, action: Action): GameState {
       return { ...state, grid: updatedGrid };
     }
 
+    case "UPDATE_PLAYER_STATS": {
+      const { playerId, stats } = action.payload;
+      return {
+        ...state,
+        players: state.players.map((player) =>
+          player.id === playerId ? { ...player, ...stats } : player
+        ),
+      };
+    }
+    
+    case "REMOVE_PLAYER": {
+      const { playerId } = action.payload;
+      return {
+        ...state,
+        players: state.players.filter((player) => player.id !== playerId),
+      };
+    }
+
+    case 'START_BATTLE': {
+      const { attacker, defender } = action.payload; 
+      // attacker и defender - это PlayerState | MonsterState
+
+      const battlefield = generateBattlefield(11, 15, attacker, defender);
+
+      // Можно установить флаг inBattle
+      return {
+        ...state,
+        inBattle: true,
+        // Если вы хотите где-то хранить поле боя, можно добавить его в состояние:
+        // battlefield: battlefield
+      };
+    }
+    
+    
+    
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };
 

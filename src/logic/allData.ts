@@ -1,5 +1,6 @@
-//ResourceData.ts
+//allData.ts
 
+//resourceData
 import { ResourceType } from "@/logic/types";
 
 
@@ -112,7 +113,7 @@ export const getResource = (type: string): ResourceType | null => {
 };
 
 
-//terrainData.ts
+//terrainData
 
 export const terrainData: Record<
   string,
@@ -187,7 +188,7 @@ export const terrainData: Record<
 };
 
 
-//monsterData.ts
+//monsterData
 
 import { get } from "http";
 import { MonsterState } from "./types";

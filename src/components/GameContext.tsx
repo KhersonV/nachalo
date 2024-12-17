@@ -31,6 +31,7 @@ const initialState: GameState = {
   turnCycle: 1,
   inventoryOpen: false,
   monstersHaveAttacked: false,
+  
 };
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
@@ -39,7 +40,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
 
   useEffect(() => {
-    // Инициализация начальных игроков и других параметров
     const defaultAbilities = {
       canMove: true,
       canAttack: true,
@@ -66,6 +66,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         maxHealth: 100,
         attack: 10,
         defense: 5,
+        speed: 3,           
+        maneuverability: 2, 
         image: "player-1.webp",
         inventory: {},
         abilities: { ...defaultAbilities },
@@ -84,6 +86,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         maxHealth: 100,
         attack: 10,
         defense: 5,
+        speed: 3,            
+        maneuverability: 2, 
         image: "player-2.webp",
         inventory: {},
         abilities: { ...defaultAbilities },
@@ -101,13 +105,10 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   }, [instanceId]);
 
   useEffect(() => {
-    // Сбрасываем флаг атаки монстров в начале нового хода
     if (!state.monstersHaveAttacked) {
-      console.log("Сбрасываем флаг атаки монстров.");
       dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
     }
 
-    // Вызываем атаку монстров, если это конец хода
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       aggressiveMonstersAttack(state, dispatch);
       dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
