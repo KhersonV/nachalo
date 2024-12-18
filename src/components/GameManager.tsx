@@ -141,8 +141,9 @@ export default function GameManager() {
   );
   
   const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
+    console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker);
     dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker } });
-  };
+  };  
   
   
 

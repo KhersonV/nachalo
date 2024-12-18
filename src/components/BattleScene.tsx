@@ -30,7 +30,10 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
     }
     throw new Error("Entity does not have health properties.");
   };
+
+  // Логирование для отладки
   console.log("BattleScene initialized with:", { attacker, defender });
+
   const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: Math.floor(gridSize / 2) });
   const [defenderPos] = useState<Position>({ x: gridSize - 1, y: Math.floor(gridSize / 2) });
   const [attackerHealth, setAttackerHealth] = useState(getHealth(attacker).current);
@@ -41,8 +44,11 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
   const handleMove = (direction: "left" | "right") => {
     if (turn !== "attacker") return;
 
+    console.log(`${attacker.name} пытается переместиться ${direction}`);
+
     setAttackerPos((prev) => {
       const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, gridSize - 1);
+      console.log(`${attacker.name} переместился на позицию: x=${newX}, y=${prev.y}`);
       return { ...prev, x: newX };
     });
     endTurn();
@@ -52,9 +58,18 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
     if (turn !== "attacker") return;
 
     const distance = Math.abs(attackerPos.x - defenderPos.x);
+    console.log(`Атака: расстояние между ${attacker.name} и ${defender.name} = ${distance}`);
+
     if (distance <= 1) {
       const damage = Math.max(0, attacker.attack - defender.defense);
-      setDefenderHealth((prev) => prev - damage);
+      console.log(`${attacker.name} наносит ${damage} урона ${defender.name}`);
+      setDefenderHealth((prev) => {
+        const newHealth = prev - damage;
+        console.log(`${defender.name} теперь имеет HP = ${newHealth}`);
+        return newHealth;
+      });
+    } else {
+      console.log(`${attacker.name} не может атаковать ${defender.name}, слишком далеко.`);
     }
     endTurn();
   };
@@ -62,34 +77,61 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
   const handleDefend = () => {
     if (turn !== "attacker") return;
 
+    console.log(`${attacker.name} выбирает защиту.`);
     setIsDefending(true);
+    endTurn();
+  };
+
+  const handlePassTurn = () => {
+    if (turn !== "attacker") return;
+
+    console.log(`${attacker.name} передает ход.`);
     endTurn();
   };
 
   const defenderTurn = () => {
     const distance = Math.abs(attackerPos.x - defenderPos.x);
+    console.log(`Ход защитника ${defender.name}: расстояние = ${distance}`);
+
     if (distance <= 1) {
       const damage = Math.max(0, defender.attack - attacker.defense);
-      setAttackerHealth((prev) => prev - (isDefending ? Math.floor(damage / 2) : damage));
+      const actualDamage = isDefending ? Math.floor(damage / 2) : damage;
+      console.log(`${defender.name} наносит ${actualDamage} урона ${attacker.name} (${isDefending ? "с защитой" : ""})`);
+      setAttackerHealth((prev) => {
+        const newHealth = prev - actualDamage;
+        console.log(`${attacker.name} теперь имеет HP = ${newHealth}`);
+        return newHealth;
+      });
+    } else {
+      console.log(`${defender.name} не может атаковать ${attacker.name}, слишком далеко.`);
     }
     setTurn("attacker");
   };
 
   const endTurn = () => {
-    setTurn("defender");
+    console.log(`Ход передан от ${turn} к ${turn === "attacker" ? "defender" : "attacker"}`);
+    setTurn(turn === "attacker" ? "defender" : "attacker");
     setIsDefending(false);
   };
 
   useEffect(() => {
     if (turn === "defender" && defenderHealth > 0) {
-      defenderTurn();
+      // Делаем задержку для имитации хода защитника
+      const timer = setTimeout(() => {
+        defenderTurn();
+      }, 1000); // Задержка 1 секунда
+      return () => clearTimeout(timer);
     }
   }, [turn, defenderHealth]);
 
   useEffect(() => {
+    console.log(`Текущее состояние: ${attacker.name} HP=${attackerHealth}, ${defender.name} HP=${defenderHealth}`);
+
     if (attackerHealth <= 0) {
+      console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
       onBattleEnd("defender-win", attacker);
     } else if (defenderHealth <= 0) {
+      console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
       let updatedAttacker: Entity;
       if (isPlayer(attacker)) {
         updatedAttacker = {
@@ -142,6 +184,7 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
           <button onClick={() => handleMove("right")}>➡️ Вправо</button>
           <button onClick={handleAttack}>🗡️ Атаковать</button>
           <button onClick={handleDefend}>🛡️ Защититься</button>
+          <button onClick={handlePassTurn}>⏭️ Передать ход</button> {/* Новая кнопка для передачи хода */}
         </div>
       )}
     </div>
