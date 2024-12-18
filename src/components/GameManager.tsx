@@ -63,16 +63,14 @@ export default function GameManager() {
   ]);
 
   useEffect(() => {
-
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       monstersAttackPlayers();
       dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
     }
   }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
 
-
   useEffect(() => {
-    if (state.grid === null && players.length > 0) {
+    if (state.grid.length === 0 && players.length > 0) {
       const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
       dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
     }
@@ -139,13 +137,11 @@ export default function GameManager() {
       ) : null,
     [state.inventoryOpen, activePlayer]
   );
-  
+
   const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
     console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker);
     dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker } });
-  };  
-  
-  
+  };
 
   return (
     <div>
@@ -154,7 +150,7 @@ export default function GameManager() {
           attacker={state.battleParticipants.attacker}
           defender={state.battleParticipants.defender}
           onBattleEnd={onBattleEnd}
-          gridSize={7} // Задаем желаемый размер поля боя, например, 7x7
+          gridSize={7} // Задаем желаемый размер поля боя
         />
       ) : (
         <>

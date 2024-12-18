@@ -17,13 +17,13 @@ type BattleSceneProps = {
   gridSize?: number; // Добавляем пропс для размера поля
 };
 
-const BATTLE_GRID_DEFAULT = 5;
+const BATTLE_GRID_DEFAULT = 7; // Установите желаемый размер по умолчанию
 
 function isPlayer(entity: Entity): entity is PlayerState {
-  return "experience" in entity; // Признак, что это игрок
+  return "level" in entity; // Признак, что это игрок
 }
 
-export default function BattleScene({ attacker, defender, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
+export default React.memo(function BattleScene({ attacker, defender, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
   const getHealth = (entity: Entity) => {
     if ("health" in entity) {
       return { current: entity.health, max: entity.maxHealth };
@@ -40,6 +40,7 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
   const [defenderHealth, setDefenderHealth] = useState(getHealth(defender).current);
   const [turn, setTurn] = useState<"attacker" | "defender">("attacker");
   const [isDefending, setIsDefending] = useState(false);
+  const [hasBattleEnded, setHasBattleEnded] = useState(false);
 
   const handleMove = (direction: "left" | "right") => {
     if (turn !== "attacker") return;
@@ -125,26 +126,30 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
   }, [turn, defenderHealth]);
 
   useEffect(() => {
+
     console.log(`Текущее состояние: ${attacker.name} HP=${attackerHealth}, ${defender.name} HP=${defenderHealth}`);
 
-    if (attackerHealth <= 0) {
-      console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
-      onBattleEnd("defender-win", attacker);
-    } else if (defenderHealth <= 0) {
-      console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
-      let updatedAttacker: Entity;
-      if (isPlayer(attacker)) {
-        updatedAttacker = {
-          ...attacker,
-          experience: (attacker.experience || 0) + 100,
-          health: attackerHealth,
-        };
+    if (!hasBattleEnded && (attackerHealth <= 0 || defenderHealth <= 0)) {
+      if (attackerHealth <= 0) {
+        console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
+        onBattleEnd("defender-win", attacker);
       } else {
-        updatedAttacker = { ...attacker, health: attackerHealth };
+        console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
+        let updatedAttacker: Entity;
+        if (isPlayer(attacker)) {
+          updatedAttacker = {
+            ...attacker,
+            experience: (attacker.experience || 0) + 100,
+            health: attackerHealth,
+          };
+        } else {
+          updatedAttacker = { ...attacker, health: attackerHealth };
+        }
+        onBattleEnd("attacker-win", updatedAttacker);
       }
-      onBattleEnd("attacker-win", updatedAttacker);
+      setHasBattleEnded(true);
     }
-  }, [attackerHealth, defenderHealth, onBattleEnd, attacker]);
+  }, [attackerHealth, defenderHealth, onBattleEnd, attacker, hasBattleEnded]);
 
   return (
     <div className="battle-scene">
@@ -189,4 +194,4 @@ export default function BattleScene({ attacker, defender, onBattleEnd, gridSize 
       )}
     </div>
   );
-}
+});
