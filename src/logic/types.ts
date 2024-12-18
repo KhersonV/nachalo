@@ -8,8 +8,8 @@ export type MonsterState = {
   id: number;
   name: string;
   type: "aggressive" | "neutral";
-  hp: number;
-  maxHp: number;
+  health: number;
+  maxHealth: number;
   attack: number;
   defense: number;
   vision: number;

@@ -33,7 +33,7 @@ export type Action =
   | { type: "UPDATE_PLAYER_STATS"; payload: { playerId: number; stats: Partial<PlayerState> } }
   
   | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState } }
-  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; winner: PlayerState | MonsterState; updatedAttacker?: PlayerState | MonsterState } }
+  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; updatedAttacker?: PlayerState | MonsterState } }
   | { type: "REMOVE_PLAYER"; payload: { playerId: number } };
 
  

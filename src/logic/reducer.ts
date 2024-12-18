@@ -46,7 +46,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
       } else if (targetType === "monster" && cellId !== undefined) {
         const updatedGrid = state.grid.map((cell) => {
           if (cell.id === cellId && cell.monster) {
-            const newHp = Math.max(cell.monster.hp - damage, 0);
+            const newHp = Math.max(cell.monster.health - damage, 0);
             return newHp > 0
               ? { ...cell, monster: { ...cell.monster, hp: newHp } }
               : { ...cell, monster: undefined };
@@ -176,60 +176,60 @@ export function gameReducer(state: GameState, action: Action): GameState {
         },
       };
 
-    case "END_BATTLE": {
-      const { result, updatedAttacker } = action.payload;
-      let updatedState = { ...state, inBattle: false, battleParticipants: null };
-
-      if (!updatedAttacker) {
-        console.error("updatedAttacker is undefined in END_BATTLE action.");
-        return state;
-      }
-
-      if (result === "attacker-win") {
-        if ("level" in updatedAttacker) { // Проверяем, что атакующий - игрок
-          // Обновляем состояние игрока
-          updatedState = {
-            ...updatedState,
-            players: state.players.map(player =>
-              player.id === updatedAttacker.id ? updatedAttacker : player
-            ),
-          };
-        } else { // Если атакующий - монстр
-          // Обновляем состояние монстра на карте
-          updatedState = {
-            ...updatedState,
-            grid: state.grid.map(cell =>
-              cell.monster && cell.monster.id === updatedAttacker.id
-                ? { ...cell, monster: updatedAttacker.hp > 0 ? updatedAttacker : undefined }
-                : cell
-            ),
-          };
+      case "END_BATTLE": {
+        const { result, updatedAttacker } = action.payload;
+        let updatedState = { ...state, inBattle: false, battleParticipants: null };
+  
+        if (!updatedAttacker) {
+          console.error("updatedAttacker is undefined in END_BATTLE action.");
+          return state;
         }
-      } else if (result === "defender-win") {
-        const { defender } = state.battleParticipants!;
-        if ("level" in defender) { // Проверяем, что защищающийся - игрок
-          // Обновляем состояние игрока
-          updatedState = {
-            ...updatedState,
-            players: state.players.map(player =>
-              player.id === defender.id ? { ...player, health: Math.max(player.health - 0, 0) } : player
-            ),
-          };
-        } else { // Если защищающийся - монстр
-          // Удаляем монстра с карты
-          updatedState = {
-            ...updatedState,
-            grid: state.grid.map(cell =>
-              cell.monster && cell.monster.id === defender.id
-                ? { ...cell, monster: undefined }
-                : cell
-            ),
-          };
+  
+        if (result === "attacker-win") {
+          if ("level" in updatedAttacker) { // Проверяем, что атакующий - игрок
+            // Обновляем состояние игрока
+            updatedState = {
+              ...updatedState,
+              players: state.players.map(player =>
+                player.id === updatedAttacker.id ? updatedAttacker : player
+              ),
+            };
+          } else { // Если атакующий - монстр
+            // Обновляем состояние монстра на карте
+            updatedState = {
+              ...updatedState,
+              grid: state.grid.map(cell =>
+                cell.monster && cell.monster.id === updatedAttacker.id
+                  ? { ...cell, monster: updatedAttacker.health > 0 ? updatedAttacker : undefined }
+                  : cell
+              ),
+            };
+          }
+        } else if (result === "defender-win") {
+          const { defender } = state.battleParticipants!;
+          if ("level" in defender) { // Проверяем, что защищающийся - игрок
+            // Обновляем состояние игрока
+            updatedState = {
+              ...updatedState,
+              players: state.players.map(player =>
+                player.id === defender.id ? { ...player, health: Math.max(player.health - 0, 0) } : player
+              ),
+            };
+          } else { // Если защищающийся - монстр
+            // Удаляем монстра с карты
+            updatedState = {
+              ...updatedState,
+              grid: state.grid.map(cell =>
+                cell.monster && cell.monster.id === defender.id
+                  ? { ...cell, monster: undefined }
+                  : cell
+              ),
+            };
+          }
         }
+  
+        return updatedState;
       }
-
-      return updatedState;
-    }
     
     
     

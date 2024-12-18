@@ -1,4 +1,4 @@
-//battleSystem.ts
+// src/logic/battleSystem.ts
 
 import { useGameContext } from "../components/GameContext";
 import { Entity } from "./types";
@@ -13,10 +13,16 @@ export function useBattleSystem() {
       if (cell.monster && cell.monster.type === 'aggressive') {
         state.players.forEach((player) => {
           const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
-          if (distance <= cell.monster!.vision && player.health > 0) {
+          if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
             // Инициируем бой
             const attacker: Entity = cell.monster!;
             const defender: Entity = player;
+
+            if (attacker.id === defender.id) {
+              console.warn(`Игрок ${attacker.name} атакует сам себя!`);
+              return;
+            }
+            console.log(`Бой инициирован: ${attacker.name} атакует ${defender.name}`);
             dispatch({ type: 'START_BATTLE', payload: { attacker, defender } });
           }
         });
@@ -34,7 +40,7 @@ export function useBattleSystem() {
     const targetPlayer = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
     const targetCell = state.grid?.find(c => c.x === targetX && c.y === targetY);
 
-    if (targetPlayer) {
+    if (targetPlayer && targetPlayer.id !== attacker.id) { // Убедимся, что атакуем другого игрока
       // Инициируем бой с другим игроком
       const defender: Entity = targetPlayer;
       dispatch({ type: 'START_BATTLE', payload: { attacker, defender } });

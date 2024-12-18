@@ -63,9 +63,6 @@ export default function GameManager() {
   ]);
 
   useEffect(() => {
-    if (!state.monstersHaveAttacked) {
-      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
-    }
 
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       monstersAttackPlayers();
@@ -144,9 +141,9 @@ export default function GameManager() {
   );
   
   const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
-    const winner = result === "attacker-win" ? updatedAttacker : state.battleParticipants!.defender;
-    dispatch({ type: 'END_BATTLE', payload: { result, winner, updatedAttacker } });
+    dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker } });
   };
+  
   
 
   return (
@@ -156,6 +153,7 @@ export default function GameManager() {
           attacker={state.battleParticipants.attacker}
           defender={state.battleParticipants.defender}
           onBattleEnd={onBattleEnd}
+          gridSize={7} // Задаем желаемый размер поля боя, например, 7x7
         />
       ) : (
         <>

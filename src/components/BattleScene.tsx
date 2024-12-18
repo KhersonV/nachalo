@@ -1,4 +1,4 @@
-//BattleScene.tsx
+// src/components/BattleScene.tsx
 
 "use client";
 
@@ -14,24 +14,25 @@ type BattleSceneProps = {
   attacker: Entity;
   defender: Entity;
   onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => void;
+  gridSize?: number; // Добавляем пропс для размера поля
 };
 
-const BATTLE_GRID = 5;
+const BATTLE_GRID_DEFAULT = 5;
 
 function isPlayer(entity: Entity): entity is PlayerState {
   return "experience" in entity; // Признак, что это игрок
 }
 
-export default function BattleScene({ attacker, defender, onBattleEnd }: BattleSceneProps) {
+export default function BattleScene({ attacker, defender, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
   const getHealth = (entity: Entity) => {
     if ("health" in entity) {
       return { current: entity.health, max: entity.maxHealth };
     }
     throw new Error("Entity does not have health properties.");
   };
-
-  const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: 2 });
-  const [defenderPos] = useState<Position>({ x: 4, y: 2 });
+  console.log("BattleScene initialized with:", { attacker, defender });
+  const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: Math.floor(gridSize / 2) });
+  const [defenderPos] = useState<Position>({ x: gridSize - 1, y: Math.floor(gridSize / 2) });
   const [attackerHealth, setAttackerHealth] = useState(getHealth(attacker).current);
   const [defenderHealth, setDefenderHealth] = useState(getHealth(defender).current);
   const [turn, setTurn] = useState<"attacker" | "defender">("attacker");
@@ -41,7 +42,7 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
     if (turn !== "attacker") return;
 
     setAttackerPos((prev) => {
-      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, BATTLE_GRID - 1);
+      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, gridSize - 1);
       return { ...prev, x: newX };
     });
     endTurn();
@@ -83,7 +84,7 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
     if (turn === "defender" && defenderHealth > 0) {
       defenderTurn();
     }
-  }, [turn]);
+  }, [turn, defenderHealth]);
 
   useEffect(() => {
     if (attackerHealth <= 0) {
@@ -105,16 +106,22 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
 
   return (
     <div className="battle-scene">
-      <div className="battle-grid">
-        {[...Array(BATTLE_GRID)].map((_, x) => (
+      <div className="battle-grid" style={{ display: "flex" }}>
+        {[...Array(gridSize)].map((_, x) => (
           <div
             key={x}
-            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${
-              x === defenderPos.x ? "defender" : ""
-            }`}
+            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${x === defenderPos.x ? "defender" : ""}`}
+            style={{
+              width: "50px",
+              height: "50px",
+              border: "1px solid black",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
           >
-            {x === attackerPos.x && isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>}
-            {x === defenderPos.x && isPlayer(defender) ? <span>🧍</span> : <span>👹</span>}
+            {x === attackerPos.x && (isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>)}
+            {x === defenderPos.x && (isPlayer(defender) ? <span>🧍</span> : <span>👹</span>)}
           </div>
         ))}
       </div>

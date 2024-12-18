@@ -1,8 +1,7 @@
 // src/logic/monsters.test.ts
 
 import { aggressiveMonstersAttack } from "./monsters";
-import { GameState, PlayerState, Cell, MonsterState } from "./types";
-import { Action } from "./actions";
+import { GameState } from "./types";
 
 describe("aggressiveMonstersAttack", () => {
   it("should attack each monster once per turnCycle", () => {
@@ -16,13 +15,15 @@ describe("aggressiveMonstersAttack", () => {
           energy: 100,
           maxEnergy: 100,
           level: 1,
-          expirience: 0,
-          max_expirience: 500,
+          experience: 0,
+          max_experience: 500,
           visionRange: 5,
           health: 100,
           maxHealth: 100,
           attack: 10,
           defense: 5,
+          maneuverability: 2,
+          speed: 3,
           image: "player-1.webp",
           inventory: {},
           abilities: {
@@ -49,11 +50,13 @@ describe("aggressiveMonstersAttack", () => {
             id: 1,
             name: "Orc",
             type: "aggressive",
-            hp: 100,
-            maxHp: 100,
+            health: 100,
+            maxHealth: 100,
             attack: 20,
             defense: 5,
             vision: 5,
+            maneuverability: 1,
+            speed: 1,
             image: {
               ground: "/orc-ground.webp",
               forest: "/orc-forest.webp",
@@ -71,6 +74,7 @@ describe("aggressiveMonstersAttack", () => {
       turnCycle: 2,
       inventoryOpen: false,
         monstersHaveAttacked: false,
+        battleParticipants: null,
     };
 
     const mockDispatch = jest.fn();
