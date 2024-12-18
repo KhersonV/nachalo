@@ -7,12 +7,14 @@ import { useGameContext } from "./GameContext";
 import Map from "./Map";
 import Players from "./Players";
 import Inventory from "./Inventory";
+import BattleScene from "./BattleScene";
 import { generateMap } from "../logic/generateMap";
 import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
 import { Action } from "../logic/actions";
+import { Entity } from "../logic/types";
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
@@ -61,6 +63,18 @@ export default function GameManager() {
   ]);
 
   useEffect(() => {
+    if (!state.monstersHaveAttacked) {
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
+    }
+
+    if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
+      monstersAttackPlayers();
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
+    }
+  }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
+
+
+  useEffect(() => {
     if (state.grid === null && players.length > 0) {
       const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
       dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
@@ -93,7 +107,7 @@ export default function GameManager() {
     if (!activePlayer?.abilities?.canPassTurn) return;
 
     dispatch({ type: 'PASS_TURN' });
-  }, [activePlayer, monstersAttackPlayers, dispatch]);
+  }, [activePlayer, dispatch]);
 
   const memoizedMap = useMemo(
     () =>
@@ -128,21 +142,37 @@ export default function GameManager() {
       ) : null,
     [state.inventoryOpen, activePlayer]
   );
+  
+  const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
+    const winner = result === "attacker-win" ? updatedAttacker : state.battleParticipants!.defender;
+    dispatch({ type: 'END_BATTLE', payload: { result, winner, updatedAttacker } });
+  };
+  
 
   return (
     <div>
-      {activePlayer && (
+      {state.inBattle && state.battleParticipants ? (
+        <BattleScene
+          attacker={state.battleParticipants.attacker}
+          defender={state.battleParticipants.defender}
+          onBattleEnd={onBattleEnd}
+        />
+      ) : (
         <>
-          <p>
-            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
-            Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
-          </p>
-          <button onClick={passTurn}>Передать ход</button>
+          {activePlayer && (
+            <>
+              <p>
+                {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
+                Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+              </p>
+              <button onClick={passTurn}>Передать ход</button>
+            </>
+          )}
+          {memoizedMap}
+          {memoizedPlayers}
+          {memoizedInventory}
         </>
       )}
-      {memoizedMap}
-      {memoizedPlayers}
-      {memoizedInventory}
     </div>
   );
 }

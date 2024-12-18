@@ -1,7 +1,7 @@
 // src/logic/inputHandler.ts
 
 import { Action } from "./actions";
-import { PlayerState, GameState } from "./types";
+import { PlayerState, GameState, Entity} from "./types";
 
 type Handlers = {
   attackPlayerOrMonster: (playerId: number, direction: { dx: number; dy: number }) => void;
@@ -86,5 +86,8 @@ export function handleKeyDown(
     if (currentCell?.isPortal) {
       dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
     }
+  }
+  if (e.key === "A" || e.key === "a" || e.key === "Ф" || e.key === "ф") { // 'A' клавиша в разных раскладках
+    attackPlayerOrMonster(playerId, { dx, dy });
   }
 }
