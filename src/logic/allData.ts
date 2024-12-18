@@ -190,7 +190,6 @@ export const terrainData: Record<
 
 //monsterData
 
-import { get } from "http";
 import { MonsterState } from "./types";
 
 let uniqueId = 0;
@@ -208,6 +207,8 @@ export const allMonsters: MonsterState[] = [
     attack: 25,
     defense: 1,
     vision: 1,
+    speed: 1,
+    maneuverability: 1,
     image: {
       ground: "/monsters/ground/goblin_ground.webp",
       forest: "/monsters/forest/goblin_forest.webp",
@@ -225,6 +226,8 @@ export const allMonsters: MonsterState[] = [
     attack: 50,
     defense: 2,
     vision: 1,
+    speed: 1,
+    maneuverability: 1,
     image: {
       ground: "/monsters/ground/goblins_ground.webp",
       forest: "/monsters/forest/goblins_forest.webp",
@@ -242,6 +245,8 @@ export const allMonsters: MonsterState[] = [
     attack: 30,
     defense: 5,
     vision: 1,
+    speed: 1,
+    maneuverability: 1,
     image: {
       ground: "/monsters/ground/orc_ground.webp",
       forest: "/monsters/forest/orc_forest.webp",
@@ -259,6 +264,8 @@ export const allMonsters: MonsterState[] = [
     attack: 40,
     defense: 10,
     vision: 1,
+    speed: 1,
+    maneuverability: 1,
     image: {
       ground: "/monsters/ground/troll_ground.webp",
       forest: "/monsters/forest/troll_forest.webp",

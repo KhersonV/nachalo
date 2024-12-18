@@ -65,8 +65,8 @@ export type PlayerState = {
   energy: number;
   maxEnergy: number;
   level: number;
-  expirience: number;
-  max_expirience: number;
+  experience: number;
+  max_experience: number;
   visionRange: number;
   health: number;
   maxHealth: number;
@@ -136,6 +136,15 @@ export type HexCell = {
   reachable: boolean;
 };
 
+// Тип для сущности (игрок или монстр).
+export type Entity = PlayerState | MonsterState;
+
+// Тип для участников боя.
+export type BattleParticipants = {
+  attacker: Entity;
+  defender: Entity;
+};
+
 // Тип для глобального состояния игры.
 export type GameState = {
   mode: GameMode;
@@ -153,4 +162,5 @@ export type GameState = {
 
   // Флаг, указывающий, что мы находимся в бою (при необходимости)
   inBattle?: boolean;
+  battleParticipants: BattleParticipants | null;
 };

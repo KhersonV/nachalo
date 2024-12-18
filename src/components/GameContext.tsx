@@ -1,3 +1,7 @@
+
+//GameContext.tsx
+
+
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect } from "react";
@@ -31,6 +35,7 @@ const initialState: GameState = {
   turnCycle: 1,
   inventoryOpen: false,
   monstersHaveAttacked: false,
+  battleParticipants: null,
   
 };
 
@@ -59,8 +64,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         energy: 100,
         maxEnergy: 100,
         level: 1,
-        expirience: 0,
-        max_expirience: 500,
+        experience: 0,
+        max_experience: 500,
         visionRange: 5,
         health: 100,
         maxHealth: 100,
@@ -79,8 +84,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         energy: 100,
         maxEnergy: 100,
         level: 1,
-        expirience: 0,
-        max_expirience: 500,
+        experience: 0,
+        max_experience: 500,
         visionRange: 3,
         health: 100,
         maxHealth: 100,

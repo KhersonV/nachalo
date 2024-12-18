@@ -1,3 +1,5 @@
+//generateBattlefield.ts
+
 import { HexCell, PlayerState, MonsterState } from './types';
 
 export function generateBattlefield(

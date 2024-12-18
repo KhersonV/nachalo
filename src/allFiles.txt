@@ -1,0 +1,2172 @@
+//GamePage.tsx
+
+"use client";
+
+import React from "react";
+import { GameProvider } from "../components/GameContext";
+import GameManager from "../components/GameManager";
+
+/**
+ * Главная страница игры. Здесь инициализируется контекст игры через GameProvider
+ * и подключается компонент GameManager, который управляет всем игровым процессом.
+ */
+export default function GamePage({ params }: { params: { instanceId: string } }) {
+  console.log(`[Шаг 1] [Файл: GamePage.tsx] - Загружаем страницу игры с instanceId=${params.instanceId}.`);
+
+  return (
+    <GameProvider instanceId={params.instanceId}>
+      <GameManager  />
+    </GameProvider>
+  );
+}
+
+//layout.tsx
+
+import "../styles/globals.css";
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <title>Игра "Начало"</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </head>
+      <body>
+        <header className="header">
+          <h1>Игра "Начало"</h1>
+        </header>
+        <main>{children}</main>
+        <footer className="footer">
+          <p>Все права защищены © 2024</p>
+        </footer>
+      </body>
+    </html>
+  );
+}
+//ModeSelectionPage.tsx
+
+"use client";
+
+import React, { useState } from "react";
+import { startMatchmaking } from "../logic/matchmaking";
+import { useRouter } from "next/navigation";
+
+export default function ModeSelectionPage() {
+  const [mode, setMode] = useState<"PVE"|"1v1"|"3v3"|"5v5">("PVE");
+  const router = useRouter();
+
+  async function handleStart() {
+    // Имитируем вызов матчмейкинга
+    const instanceId = await startMatchmaking(mode, { playerId: 123, level: 10 }); 
+    // instanceId - это результат работы матчмейкинга (идентификатор инстанса)
+    router.push(`/game?instanceId=${instanceId}`);
+  }
+
+  return (
+    <div>
+      <h2>Выберите режим:</h2>
+      <select value={mode} onChange={(e) => setMode(e.target.value as any)}>
+        <option value="PVE">PvE (Solo)</option>
+        <option value="1v1">PvP 1vs1</option>
+        <option value="3v3">PvP 3vs3</option>
+        <option value="5v5">PvP 5vs5</option>
+      </select>
+      <button onClick={handleStart}>Начать подбор игроков</button>
+    </div>
+  );
+}
+
+// src/components/Page.tsx
+
+"use client";
+
+import React from "react";
+import { GameProvider } from "../components/GameContext";
+import GameManager from "../components/GameManager";
+import { useSearchParams } from "next/navigation";
+
+export default function Page() {
+  const searchParams = useSearchParams();
+  const instanceId = searchParams.get("instanceId") || "test_instance";
+
+  return (
+    <GameProvider instanceId={instanceId}>
+      <GameManager />
+    </GameProvider>
+  );
+}
+
+************************************************ components ********************************************
+
+
+//battleScene.tsx
+
+
+"use client";
+
+import React, { useState, useEffect } from "react";
+
+type Entity = {
+  id: number;
+  name: string;
+  health: number;
+  maxHealth: number;
+  attack: number;
+  defense: number;
+  experience?: number;
+  type: "player" | "monster"; // Тип сущности
+};
+
+type Position = {
+  x: number;
+  y: number;
+};
+
+type BattleSceneProps = {
+  attacker: Entity; // Атакующий
+  defender: Entity; // Защищающийся
+  onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => void;
+};
+
+const BATTLE_GRID = 5; // Размер карты 5x5
+
+export default function BattleScene({ attacker, defender, onBattleEnd }: BattleSceneProps) {
+  const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: 2 });
+  const [defenderPos] = useState<Position>({ x: 4, y: 2 });
+  const [attackerHealth, setAttackerHealth] = useState(attacker.health);
+  const [defenderHealth, setDefenderHealth] = useState(defender.health);
+  const [turn, setTurn] = useState<"attacker" | "defender">("attacker"); // Ход атакующего
+  const [isDefending, setIsDefending] = useState(false);
+
+  const handleMove = (direction: "left" | "right") => {
+    if (turn !== "attacker") return;
+
+    setAttackerPos((prev) => {
+      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, BATTLE_GRID - 1);
+      return { ...prev, x: newX };
+    });
+    endTurn();
+  };
+
+  const handleAttack = () => {
+    if (turn !== "attacker") return;
+
+    const distance = Math.abs(attackerPos.x - defenderPos.x);
+    if (distance <= 1) {
+      const damage = Math.max(0, attacker.attack - defender.defense);
+      setDefenderHealth((prev) => prev - damage);
+    }
+    endTurn();
+  };
+
+  const handleDefend = () => {
+    if (turn !== "attacker") return;
+
+    setIsDefending(true);
+    endTurn();
+  };
+
+  const defenderTurn = () => {
+    const distance = Math.abs(attackerPos.x - defenderPos.x);
+    if (distance <= 1) {
+      const damage = Math.max(0, defender.attack - attacker.defense);
+      setAttackerHealth((prev) => prev - (isDefending ? Math.floor(damage / 2) : damage));
+    }
+    setTurn("attacker");
+  };
+
+  const endTurn = () => {
+    setTurn("defender");
+    setIsDefending(false);
+  };
+
+  useEffect(() => {
+    if (turn === "defender" && defenderHealth > 0) {
+      defenderTurn();
+    }
+  }, [turn]);
+
+  useEffect(() => {
+    if (attackerHealth <= 0) {
+      onBattleEnd("defender-win", attacker);
+    } else if (defenderHealth <= 0) {
+      const updatedAttacker = {
+        ...attacker,
+        experience: (attacker.experience || 0) + 100, // Добавляем опыт атакующему
+        health: attackerHealth,
+      };
+      onBattleEnd("attacker-win", updatedAttacker);
+    }
+  }, [attackerHealth, defenderHealth]);
+
+  return (
+    <div className="battle-scene">
+      <div className="battle-grid">
+        {[...Array(BATTLE_GRID)].map((_, x) => (
+          <div
+            key={x}
+            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${
+              x === defenderPos.x ? "defender" : ""
+            }`}
+          >
+            {x === attackerPos.x && (attacker.type === "player" ? <span>🧍</span> : <span>👹</span>)}
+            {x === defenderPos.x && (defender.type === "player" ? <span>🧍</span> : <span>👹</span>)}
+          </div>
+        ))}
+      </div>
+      <div className="battle-info">
+        <p>
+          {attacker.name}: HP {attackerHealth} / {attacker.maxHealth}, ATK: {attacker.attack}, DEF:{" "}
+          {attacker.defense}
+        </p>
+        <p>
+          {defender.name}: HP {defenderHealth} / {defender.maxHealth}, ATK: {defender.attack}, DEF:{" "}
+          {defender.defense}
+        </p>
+        <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>
+      </div>
+      {turn === "attacker" && (
+        <div className="battle-actions">
+          <button onClick={() => handleMove("left")}>⬅️ Влево</button>
+          <button onClick={() => handleMove("right")}>➡️ Вправо</button>
+          <button onClick={handleAttack}>🗡️ Атаковать</button>
+          <button onClick={handleDefend}>🛡️ Защититься</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+//GameContext.tsx
+
+
+"use client";
+
+import React, { createContext, useContext, useReducer, useEffect } from "react";
+import { gameReducer } from "../logic/reducer";
+import { GameState, PlayerState } from "../logic/types";
+import { Action } from "../logic/actions";
+import { generateMap } from "../logic/generateMap";
+import { aggressiveMonstersAttack } from "../logic/monsters";
+import { checkForDuplicateMonsters } from "../logic/utils";
+
+type GameContextValue = {
+  state: GameState;
+  dispatch: React.Dispatch<Action>;
+};
+
+type GameProviderProps = {
+  instanceId: string;
+  children: React.ReactNode;
+};
+
+const initialState: GameState = {
+  mode: "1v1",
+  players: [],
+  grid: [],
+  mapWidth: 20,
+  mapHeight: 20,
+  artifactOwner: null,
+  portalPosition: null,
+  instanceId: "",
+  currentPlayerIndex: 0,
+  turnCycle: 1,
+  inventoryOpen: false,
+  monstersHaveAttacked: false,
+  
+};
+
+const GameContext = createContext<GameContextValue | undefined>(undefined);
+
+export function GameProvider({ instanceId, children }: GameProviderProps) {
+  const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
+
+  useEffect(() => {
+    const defaultAbilities = {
+      canMove: true,
+      canAttack: true,
+      canCollectResources: true,
+      canUseItems: true,
+      canInteractWithObjects: true,
+      canPassTurn: true,
+      canPickArtifact: true,
+      canLoseArtifact: true,
+    };
+
+    const initialPlayers: PlayerState[] = [
+      {
+        id: 0,
+        name: "Player1",
+        position: { x: 0, y: 0 },
+        energy: 100,
+        maxEnergy: 100,
+        level: 1,
+        expirience: 0,
+        max_expirience: 500,
+        visionRange: 5,
+        health: 100,
+        maxHealth: 100,
+        attack: 10,
+        defense: 5,
+        speed: 3,           
+        maneuverability: 2, 
+        image: "player-1.webp",
+        inventory: {},
+        abilities: { ...defaultAbilities },
+      },
+      {
+        id: 1,
+        name: "Player2",
+        position: { x: 19, y: 19 },
+        energy: 100,
+        maxEnergy: 100,
+        level: 1,
+        expirience: 0,
+        max_expirience: 500,
+        visionRange: 3,
+        health: 100,
+        maxHealth: 100,
+        attack: 10,
+        defense: 5,
+        speed: 3,            
+        maneuverability: 2, 
+        image: "player-2.webp",
+        inventory: {},
+        abilities: { ...defaultAbilities },
+      },
+    ];
+
+    const generatedGrid = generateMap(state.mode, initialPlayers, state.mapWidth, state.mapHeight);
+    checkForDuplicateMonsters(generatedGrid);
+
+    dispatch({
+      type: "INITIALIZE_GAME",
+      payload: { mode: state.mode, instanceId, players: initialPlayers },
+    });
+    dispatch({ type: "SET_GRID", payload: { grid: generatedGrid } });
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (!state.monstersHaveAttacked) {
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
+    }
+
+    if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
+      aggressiveMonstersAttack(state, dispatch);
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
+    }
+  }, [state.turnCycle, state.monstersHaveAttacked, dispatch]);
+
+  return (
+    <GameContext.Provider value={{ state, dispatch }}>
+      {children}
+    </GameContext.Provider>
+  );
+}
+
+export function useGameContext() {
+  const context = useContext(GameContext);
+  if (!context) {
+    throw new Error("useGameContext must be used within a GameProvider");
+  }
+  return context;
+}
+
+// src/components/GameManager.tsx
+
+"use client";
+
+import React, { useEffect, useRef, useMemo, useCallback } from "react";
+import { useGameContext } from "./GameContext";
+import Map from "./Map";
+import Players from "./Players";
+import Inventory from "./Inventory";
+import { generateMap } from "../logic/generateMap";
+import { useBattleSystem } from "../logic/battleSystem";
+import { useResourceSystem } from "../logic/resourceSystem";
+import { useArtifactLogic } from "../logic/artifactLogic";
+import { handleKeyDown } from "../logic/inputHandler";
+import { Action } from "../logic/actions";
+
+export default function GameManager() {
+  const { state, dispatch } = useGameContext();
+
+  const { attackPlayerOrMonster, monstersAttackPlayers } = useBattleSystem();
+  const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
+  const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
+
+  const players = state.players;
+  const currentPlayerIndex = state.currentPlayerIndex;
+
+  const handlersRef = useRef({
+    attackPlayerOrMonster,
+    openBarrel,
+    tryExitThroughPortal,
+    collectResourceIfOnTile,
+    pickArtifact,
+    loseArtifact,
+    notifyArtifactOwner,
+    inventoryOpen: state.inventoryOpen,
+    setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
+  });
+
+  useEffect(() => {
+    handlersRef.current = {
+      attackPlayerOrMonster,
+      openBarrel,
+      tryExitThroughPortal,
+      collectResourceIfOnTile,
+      pickArtifact,
+      loseArtifact,
+      notifyArtifactOwner,
+      inventoryOpen: state.inventoryOpen,
+      setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
+    };
+  }, [
+    attackPlayerOrMonster,
+    openBarrel,
+    tryExitThroughPortal,
+    collectResourceIfOnTile,
+    pickArtifact,
+    loseArtifact,
+    notifyArtifactOwner,
+    state.inventoryOpen,
+    dispatch,
+  ]);
+
+  useEffect(() => {
+    if (state.grid === null && players.length > 0) {
+      const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
+      dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
+    }
+  }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, dispatch]);
+
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      handleKeyDown(e, { state, dispatch, ...handlersRef.current });
+    },
+    [state, dispatch]
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onKeyDown]);
+
+  const activePlayer = useMemo(
+    () =>
+      players.length > 0 && currentPlayerIndex >= 0 && currentPlayerIndex < players.length
+        ? players[currentPlayerIndex]
+        : null,
+    [players, currentPlayerIndex]
+  );
+
+  const passTurn = useCallback(() => {
+    if (!activePlayer?.abilities?.canPassTurn) return;
+
+    dispatch({ type: 'PASS_TURN' });
+  }, [activePlayer, monstersAttackPlayers, dispatch]);
+
+  const memoizedMap = useMemo(
+    () =>
+      state.grid && activePlayer ? (
+        <Map
+          grid={state.grid}
+          playerPositions={players.map((p) => p.position)}
+          visionRange={activePlayer.visionRange}
+          mapWidth={state.mapWidth}
+          mapHeight={state.mapHeight}
+          activePlayerIndex={currentPlayerIndex}
+        />
+      ) : null,
+    [state.grid, players, activePlayer, state.mapWidth, state.mapHeight, currentPlayerIndex]
+  );
+
+  const memoizedPlayers = useMemo(
+    () =>
+      activePlayer ? (
+        <Players players={players} activePlayerId={activePlayer.id} />
+      ) : null,
+    [players, activePlayer]
+  );
+
+  const memoizedInventory = useMemo(
+    () =>
+      state.inventoryOpen && activePlayer?.inventory ? (
+        <Inventory
+          items={activePlayer.inventory}
+          // onUseItem проп убран, так как Inventory теперь обрабатывает dispatch самостоятельно
+        />
+      ) : null,
+    [state.inventoryOpen, activePlayer]
+  );
+
+  return (
+    <div>
+      {activePlayer && (
+        <>
+          <p>
+            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
+            Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+          </p>
+          <button onClick={passTurn}>Передать ход</button>
+        </>
+      )}
+      {memoizedMap}
+      {memoizedPlayers}
+      {memoizedInventory}
+    </div>
+  );
+}
+
+// src/components/Inventory.tsx
+
+"use client";
+
+import React, { useState } from "react";
+import "../styles/inventory.css";
+import { useGameContext } from "./GameContext";
+
+type InventoryItem = {
+  count: number;
+  description: string;
+  image: string;
+};
+
+type InventoryProps = {
+  items: Record<string, InventoryItem>;
+};
+
+export default function Inventory({ items }: InventoryProps) {
+  const [filter, setFilter] = useState("");
+  const { dispatch, state } = useGameContext();
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilter(e.target.value.toLowerCase());
+  };
+
+  const filteredItems = Object.entries(items)
+    .filter(([key]) => key.toLowerCase() !== "barrbel")
+    .filter(([key]) => key.toLowerCase().includes(filter));
+
+  const getResourceImagePath = (resourceType: string): string => {
+    return `/main_resources/${resourceType}.webp`;
+  };
+
+  const handleUseItem = (type: string) => {
+    const currentPlayer = state.players[state.currentPlayerIndex];
+    if (!currentPlayer) return;
+  
+    const item = currentPlayer.inventory[type];
+    if (!item || item.count <= 0) {
+      console.error("Ресурс отсутствует или закончился.");
+      return;
+    }
+  
+    dispatch({
+      type: "USE_ITEM",
+      payload: { playerId: currentPlayer.id, itemType: type },
+    });
+  };
+
+  return (
+    <div className="inventory">
+      <input
+        className="inventory-search"
+        type="text"
+        placeholder="Поиск предметов..."
+        value={filter}
+        onChange={handleFilterChange}
+      />
+
+      <div className="inventory-grid">
+        {filteredItems.map(([key, { count, description, image }]) => (
+          <div
+            className="inventory-item"
+            key={key}
+            onClick={() => handleUseItem(key)}
+          >
+            <img
+              src={getResourceImagePath(key)}
+              alt={key}
+              className="inventory-image"
+            />
+            <p>{key}</p>
+            <p>Количество: {count}</p>
+            <p className="inventory-description">{description}</p>
+            <p className="inventory-action-hint">Нажмите для использования</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Map.tsx
+
+
+"use client";
+
+import React from "react";
+import Tile from "./Tile"; // Импортируем компонент Tile для отображения отдельных клеток карты
+import { Cell } from "../logic/types"; // Импортируем тип Cell для описания клеток карты
+import "../styles/map.css"; // Подключаем стили для карты
+
+// Тип свойств, которые принимает компонент Map
+type MapProps = {
+  grid: Cell[]; // Сетка клеток карты
+  playerPositions: { x: number; y: number }[]; // Позиции всех игроков
+  visionRange: number; // Радиус видимости активного игрока
+  mapWidth: number; // Ширина карты
+  mapHeight: number; // Высота карты
+  activePlayerIndex: number; // Индекс активного игрока
+};
+
+// Компонент для отображения карты
+export default function Map({
+  grid,
+  playerPositions,
+  visionRange,
+  mapWidth,
+  mapHeight,
+  activePlayerIndex,
+}: MapProps) {
+  // Получаем позицию активного игрока
+  const activePlayerPos = playerPositions[activePlayerIndex];
+  const { x, y } = activePlayerPos;
+
+  // Рассчитываем границы видимой области карты для активного игрока
+  const startX = Math.max(x - visionRange, 0); // Левая граница видимости
+  const endX = Math.min(x + visionRange, mapWidth - 1); // Правая граница видимости
+  const startY = Math.max(y - visionRange, 0); // Верхняя граница видимости
+  const endY = Math.min(y + visionRange, mapHeight - 1); // Нижняя граница видимости
+
+  // Фильтруем клетки, которые находятся в пределах видимости активного игрока
+  const visibleTiles = grid.filter(
+    (cell) => cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
+  );
+
+  // Определяем количество строк и столбцов в видимой области карты
+  const rowsCount = endY - startY + 1; // Количество строк
+  const colsCount = endX - startX + 1; // Количество столбцов
+
+  // Размер одной клетки карты (в пикселях)
+  const tileSize = 80;
+
+  // Рендерим карту в виде сетки
+  return (
+    <div
+      className="map" // Класс для стилизации карты
+      style={{
+        display: "grid", // Используем CSS Grid для расположения клеток
+        gridTemplateColumns: `repeat(${colsCount}, ${tileSize}px)`, // Устанавливаем количество столбцов и размер клеток
+        gridTemplateRows: `repeat(${rowsCount}, ${tileSize}px)`, // Устанавливаем количество строк и размер клеток
+        marginLeft: "100px", // Отступ карты от левого края
+      }}
+    >
+      {visibleTiles.map((cell) => {
+        // Определяем, какие игроки находятся на текущей клетке
+        const playersOnThisCell = playerPositions
+          .map((pos, index) => (pos.x === cell.x && pos.y === cell.y ? index : -1)) // Сравниваем позиции игроков с текущей клеткой
+          .filter((idx) => idx !== -1); // Исключаем индексы для игроков, которые не находятся на клетке
+
+        // Рендерим клетку карты
+        return (
+          <Tile
+            key={cell.id} // Уникальный ключ для клетки
+            cell={cell} // Передаём данные о клетке
+            playersOnTile={playersOnThisCell} // Передаём индексы игроков, находящихся на этой клетке
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+//Players.tsx
+
+"use client";
+
+import React from "react";
+import Player from "./Player";
+import { PlayerState } from "../logic/types";
+
+type PlayersProps = {
+  players: PlayerState[];
+  activePlayerId: number;
+};
+
+export default function Players({ players, activePlayerId }: PlayersProps) {
+  return (
+    <>
+      {players.map((p) => (
+        <Player key={p.id} player={p} isActive={p.id === activePlayerId} />
+      ))}
+    </>
+  );
+}
+
+//Player.tsx
+
+"use client";
+
+import React from "react";
+import { PlayerState } from "../logic/types";
+import "../styles/player.css";
+
+type PlayerProps = {
+  player: PlayerState;
+  isActive: boolean;
+};
+
+export default function Player({ player, isActive }: PlayerProps) {
+  // Первый игрок - красный, второй - синий
+  const colorClass = player.id === 0 ? "red-player" : "blue-player";
+
+  return (
+    <div className={`player-info ${colorClass} ${isActive ? "active" : ""}`}>
+      {player.name} (HP:{player.health}, Energy:{player.energy})
+    </div>
+  );
+}
+
+//Resource.tsx
+
+"use client";
+
+import React, { useState } from "react";
+import Tooltip from "./Tooltip";
+import "./resource.css";
+
+type ResourceProps = {
+  type: string;
+  difficulty: number;
+  description: string;
+  onCollect: () => void;
+};
+
+export default function Resource({ type, difficulty, description, onCollect }: ResourceProps) {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div
+      className="resource"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+      // onClick={onCollect}
+    >
+      {/* <div className="resource-icon" />
+      {showTooltip && <Tooltip title={type} difficulty={difficulty} description={description} />} */}
+    </div>
+  );
+}
+
+// src/components/Tile.tsx
+
+"use client";
+
+import React, { useState, useEffect } from "react";
+import "../styles/tile.css";
+import { terrainData } from "../logic/allData";
+import { useGameContext } from "./GameContext";
+import { getResourceImage } from "../logic/allData";
+import { Cell } from "../logic/types";
+import { Action } from "../logic/actions";
+
+type TileProps = {
+  cell: Cell;
+  playersOnTile: number[];
+};
+
+export default function Tile({ cell, playersOnTile }: TileProps) {
+  const { state, dispatch } = useGameContext();
+  const [tileBackground, setTileBackground] = useState<string>(terrainData[cell.terrain].image);
+
+  useEffect(() => {
+    if (cell.monster) {
+      setTileBackground(cell.monster.image[cell.terrain]);
+    } else {
+      setTileBackground(terrainData[cell.terrain].image);
+    }
+  }, [cell.monster, cell.terrain]);
+
+  const handleTileClick = () => {
+    const playerId = state.players[state.currentPlayerIndex]?.id;
+    if (!playerId) return;
+
+    // Взаимодействие с ресурсом
+    if (cell.resource) {
+      dispatch({
+        type: 'COLLECT_RESOURCE',
+        payload: {
+          playerId,
+          resourceType: cell.resource.type,
+          cellId: cell.id
+        },
+      });
+    }
+
+    // Взаимодействие с порталом
+    if (cell.isPortal) {
+      dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
+    }
+  };
+
+  return (
+    <div
+      className="tile"
+      style={{
+        backgroundImage: `url(${tileBackground})`,
+        backgroundSize: "cover",
+      }}
+      onClick={handleTileClick}
+    >
+      {cell.isPortal && (
+        <div className="portal-indicator">
+          <img src="/portal.webp" alt="Portal" style={{ width: "50px", height: "50px" }} />
+        </div>
+      )}
+      {playersOnTile.length > 0 && (
+        <div className="players-on-tile">
+          {playersOnTile.map((playerId) => {
+            const player = state.players.find((p) => p.id === playerId);
+            return player ? (
+              <img
+                key={player.id}
+                src={player.image}
+                alt={player.name}
+                style={{ width: "50px", height: "50px" }}
+              />
+            ) : null;
+          })}
+        </div>
+      )}
+      {cell.resource && (
+        <div className="resource">
+          <img
+            src={getResourceImage(cell.resource, cell.terrain)}
+            alt={cell.resource.type}
+            className="resource-image"
+          />
+          <div className="tooltip">
+            <p>{cell.resource.type}</p>
+            <p>{cell.resource.description}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+//Tooltip.tsx
+
+"use client";
+
+import React from "react";
+import "./tooltip.css";
+
+type TooltipProps = {
+  title: string;
+  difficulty: number;
+  description: string;
+};
+
+export default function Tooltip({ title, difficulty, description }: TooltipProps) {
+  return (
+    <div className="tooltip">
+      <h4>{title}</h4>
+      <p>Сложность: {difficulty}</p>
+      <p>{description}</p>
+    </div>
+  );
+}
+
+************************************************ logic ********************************************
+
+// src/logic/actions.ts
+
+import { GameMode, PlayerState, MonsterState, Cell} from "./types";
+
+// Определение типа награды
+export type Reward = {
+  experience: number;
+  currency: number;
+};
+
+// Определяем типы действий
+export type Action =
+  | { type: 'INITIALIZE_GAME'; payload: { mode: GameMode; instanceId: string; players: PlayerState[] } }
+  | { type: 'SET_INSTANCE_ID'; payload: { instanceId: string } }
+  | { type: 'MOVE_PLAYER'; payload: { playerId: number; newPosition: { x: number; y: number } } }
+  | { type: 'ATTACK'; payload: { attackerId: number; targetId: number; damage: number; targetType: 'player' | 'monster'; cellId?: number } }
+  | { type: 'COLLECT_RESOURCE'; payload: { playerId: number; resourceType: string; cellId: number } }
+  | { type: 'USE_ITEM'; payload: { playerId: number; itemType: string } }
+  | { type: 'PASS_TURN' }
+  | { type: 'PICK_ARTIFACT'; payload: { playerId: number } }
+  | { type: 'LOSE_ARTIFACT'; payload: { playerId: number } }
+  | { type: 'ADD_ITEM'; payload: { playerId: number; itemType: string; description: string; image: string; bonus?: Record<string, number> } }
+  | { type: 'REMOVE_RESOURCE'; payload: { cellId: number } }
+  | { type: 'ADD_MONSTER'; payload: { cellId: number; monster: MonsterState } }
+  | { type: 'TRY_EXIT_PORTAL'; payload: { playerId: number } }
+  | { type: 'PLAYER_DIED'; payload: { playerId: number } }
+  | { type: 'FINALIZE_INSTANCE'; payload: { instanceId: string; players: PlayerState[] } }
+  | { type: 'AWARD_REWARD'; payload: { playerId: number; reward: Reward } }
+  | { type: 'SET_GRID'; payload: { grid: Cell[] } }
+  | { type: 'TOGGLE_INVENTORY' }
+  | { type: 'SET_MONSTERS_HAVE_ATTACKED'; payload: { monstersHaveAttacked: boolean } }
+  | { type: 'UPDATE_MONSTER_ATTACK_TURN'; payload: { monsterId: number; turnCycle: number } }
+  | { type: "UPDATE_PLAYER_STATS"; payload: { playerId: number; stats: Partial<PlayerState> } }
+  | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState } }
+  | { type: "REMOVE_PLAYER"; payload: { playerId: number } };
+
+
+//allData.ts
+
+//resourceData
+import { ResourceType } from "@/logic/types";
+
+
+export const resources: { [key: string]: ResourceType } = {
+  food: {
+    type: "food",
+    difficulty: 1,
+    image: {
+      ground: "/food-ground.webp",
+      forest: "/food-forest.webp",
+      grass: "/food-grass.webp",
+      ice: "/food-ice.webp",
+      mountain: "/food-mountain.webp",
+    },
+    description: "Еда для выживания.",
+    rarity: 0.1,
+    effect: 20, // Пополнение здоровья
+    terrains: ["ground", "forest", "grass", "ice", "mountain"],
+  },
+  wood: {
+    type: "wood",
+    difficulty: 1,
+    image: {
+      forest: "/wood-forest.webp",
+      ice: "/wood-ice.webp",
+      grass: "/wood-grass.webp",
+      ground: "/wood-ground.webp",
+      mountain: "/wood-mountain.webp",
+    },
+    description: "Древесина для строительства.",
+    rarity: 0.1,
+    effect: 1, // Используется для крафта
+    terrains: ["forest", "ice", "grass", "ground", "mountain"],
+  },
+  water: {
+    type: "water",
+    difficulty: 1,
+    image: {
+      ground: "/water-ground.webp",
+      ice: "/water-ice.webp",
+      grass: "/water-grass.webp",
+      forest: "/water-forest.webp",
+      mountain: "/water-mountain.webp",
+    },
+    description: "Вода для питья.",
+    rarity: 0.1,
+    effect: 5, // Пополнение энергии
+    terrains: ["ground", "ice", "grass", "forest", "mountain"],
+  },
+  stone: {
+    type: "stone",
+    difficulty: 2,
+    image: {
+      mountain: "/stone-mountain.webp",
+      ice: "/stone-ice.webp",
+      grass: "/stone-grass.webp",
+      ground: "/stone-ground.webp",
+      forest: "/stone-forest.webp",
+    },
+    description: "Камень для строительства.",
+    rarity: 0.01,
+    effect: 1, // Используется для крафта
+    terrains: ["mountain", "ice", "grass", "ground", "forest"],
+  },
+  iron: {
+    type: "iron",
+    difficulty: 2,
+    image: {
+      mountain: "/iron-mountain.webp",
+      ice: "/iron-ice.webp",
+      grass: "/iron-grass.webp",
+      ground: "/iron-ground.webp",
+      forest: "/iron-forest.webp",
+    },
+    description: "Железо для инструментов.",
+    rarity: 0.01,
+    effect: 1, // Используется для улучшений
+    terrains: ["mountain", "ice", "grass", "ground", "forest"],
+  },
+  barrbel: {
+    type: "barrbel",
+    difficulty: 1,
+    image: {
+      ground: "/barrbel-ground.webp",
+      ice: "/barrbel-ice.webp",
+      grass: "/barrbel-grass.webp",
+      forest: "/barrbel-forest.webp",
+      mountain: "/barrbel-mountain.webp",
+    },
+    description: "Бочка с ресурсом, артефактом или монстром.",
+    rarity: 0.01,
+    effect: 0, // Эффект зависит от содержимого
+    terrains: ["ground", "ice", "grass", "forest", "mountain"],
+  },
+};
+
+// Получение изображения ресурса в зависимости от местности
+export function getResourceImage(resource: ResourceType, terrain: string): string {
+  const basePath = "./resources_on_tile"; // Базовый путь к папке с ресурсами
+  const terrainPath = `${basePath}/${terrain}`; // Формируем путь на основе террейна
+  const imagePath = resource.image[terrain]; // Получаем имя изображения для текущего террейна
+
+  // Если путь существует, возвращаем полный путь
+  return imagePath ? `${terrainPath}${imagePath}` : "/default-resource.webp";
+}
+
+// Получение ресурса по типу
+export const getResource = (type: string): ResourceType | null => {
+  return resources[type] || null;
+};
+
+
+//terrainData
+
+export const terrainData: Record<
+  string,
+  { image: string; defenseModifier: number; transition_to?: Record<string, string> }
+> = {
+  ground: {
+    image: "./main_tails/ground.webp",
+    defenseModifier: 0,
+    transition_to: {
+      grass: "./mixed_tails/ground_to/ground_grass_transition.webp",
+      river: "./mixed_tails/ground_to/ground_river_transition.webp",
+      forest: "./mixed_tails/ground_to/ground_forest_transition.webp",
+      mountain: "./mixed_tails/ground_to/ground_mountain_transition.webp",
+      ice: "./mixed_tails/ground_to/ground_ice_transition.webp",
+    },
+  },
+  forest: {
+    image: "./main_tails/forest.webp",
+    defenseModifier: 1,
+    transition_to: {
+      grass: "./mixed_tails/forest_to/forest_grass_transition.webp",
+      ground: "./mixed_tails/forest_to/forest_ground_transition.webp",
+      mountain: "./mixed_tails/forest_to/forest_mountain_transition.webp",
+      river: "./mixed_tails/forest_to/forest_river_transition.webp",
+      ice: "./mixed_tails/forest_to/forest_ice_transition.webp",
+    },
+  },
+  mountain: {
+    image: "./main_tails/mountain.webp",
+    defenseModifier: 2,
+    transition_to: {
+      grass: "./mixed_tails/mountain_to/mountain_grass_transition.webp",
+      forest: "./mixed_tails/mountain_to/mountain_forest_transition.webp",
+      ground: "./mixed_tails/mountain_to/mountain_ground_transition.webp",
+      river: "./mixed_tails/mountain_to/mountain_river_transition.webp",
+      ice: "./mixed_tails/mountain_to/mountain_ice_transition.webp",
+    },
+  },
+  ice: {
+    image: "./main_tails/ice.webp",
+    defenseModifier: -1,
+    transition_to: {
+      river: "./mixed_tails/ice_to/ice_river_transition.webp",
+      grass: "./mixed_tails/ice_to/ice_grass_transition.webp",
+      mountain: "./mixed_tails/ice_to/ice_mountain_transition.webp",
+      ground: "./mixed_tails/ice_to/ice_ground_transition.webp",
+      forest: "./mixed_tails/ice_to/ice_forest_transition.webp",
+    },
+  },
+  river: {
+    image: "./main_tails/river.webp",
+    defenseModifier: -2,
+    transition_to: {
+      grass: "./mixed_tails/river_to/river_grass_transition.webp",
+      ground: "./mixed_tails/river_to/river_ground_transition.webp",
+      forest: "./mixed_tails/river_to/river_forest_transition.webp",
+      ice: "./mixed_tails/river_to/river_ice_transition.webp",
+      mountain: "./mixed_tails/river_to/river_mountain_transition.webp",
+    },
+  },
+  grass: {
+    image: "./main_tails/grass.webp",
+    defenseModifier: 0,
+    transition_to: {
+      river: "./mixed_tails/grass_to/grass_river_transition.webp",
+      ice: "./mixed_tails/grass_to/grass_ice_transition.webp",
+      ground: "./mixed_tails/grass_to/grass_ground_transition.webp",
+      forest: "./mixed_tails/grass_to/grass_forest_transition.webp",
+      mountain: "./mixed_tails/grass_to/grass_mountain_transition.webp",
+    },
+  },
+};
+
+
+//monsterData
+
+import { MonsterState } from "./types";
+
+let uniqueId = 0;
+function getUniqueId(): number {
+  return uniqueId++;
+}
+
+export const allMonsters: MonsterState[] = [
+  {
+    id: getUniqueId(),
+    name: "Goblin",
+    type: "aggressive",
+    hp: 20,
+    maxHp: 20,
+    attack: 25,
+    defense: 1,
+    vision: 1,
+    speed: 1,
+    maneuverability: 1,
+    image: {
+      ground: "/monsters/ground/goblin_ground.webp",
+      forest: "/monsters/forest/goblin_forest.webp",
+      grass: "/monsters/grass/goblin_grass.webp",
+      ice: "/monsters/ice/goblin_ice.webp",
+      mountain: "/monsters/mountain/goblin_mountain.webp",
+    },
+  },
+  {
+    id: getUniqueId(),
+    name: "Goblins",
+    type: "neutral",
+    hp: 40,
+    maxHp: 40,
+    attack: 50,
+    defense: 2,
+    vision: 1,
+    speed: 1,
+    maneuverability: 1,
+    image: {
+      ground: "/monsters/ground/goblins_ground.webp",
+      forest: "/monsters/forest/goblins_forest.webp",
+      grass: "/monsters/grass/goblins_grass.webp",
+      ice: "/monsters/ice/goblins_ice.webp",
+      mountain: "/monsters/mountain/goblins_mountain.webp",
+    },
+  },
+  {
+    id: getUniqueId(),
+    name: "Orc",
+    type: "aggressive",
+    hp: 50,
+    maxHp: 50,
+    attack: 30,
+    defense: 5,
+    vision: 1,
+    speed: 1,
+    maneuverability: 1,
+    image: {
+      ground: "/monsters/ground/orc_ground.webp",
+      forest: "/monsters/forest/orc_forest.webp",
+      grass: "/monsters/grass/orc_grass.webp",
+      ice: "/monsters/ice/orc_ice.webp",
+      mountain: "/monsters/mountain/orc_mountain.webp",
+    },
+  },
+  {
+    id: getUniqueId(),
+    name: "Troll",
+    type: "neutral",
+    hp: 80,
+    maxHp: 80,
+    attack: 40,
+    defense: 10,
+    vision: 1,
+    speed: 1,
+    maneuverability: 1,
+    image: {
+      ground: "/monsters/ground/troll_ground.webp",
+      forest: "/monsters/forest/troll_forest.webp",
+      grass: "/monsters/grass/troll_grass.webp",
+      ice: "/monsters/ice/troll_ice.webp",
+      mountain: "/monsters/mountain/troll_mountain.webp",
+    },
+  },
+];
+
+
+
+export function createRandomMonster(): MonsterState {
+  const randomIndex = Math.floor(Math.random() * allMonsters.length);
+  const basemonster = allMonsters[randomIndex];
+  return {
+    ...basemonster,
+    id: getUniqueId(),
+  };
+}
+
+// src/logic/artifactLogic.ts
+
+import { useGameContext } from "../components/GameContext";
+
+export function useArtifactLogic() {
+  const { state, dispatch } = useGameContext();
+
+  const pickArtifact = (playerId: number) => {
+    console.log(`Игрок ${playerId} взял артефакт!`);
+    dispatch({ type: 'PICK_ARTIFACT', payload: { playerId } });
+  };
+
+  const loseArtifact = (playerId: number) => {
+    if (state.artifactOwner !== playerId) return;
+    console.log(`Игрок с ID ${playerId} потерял артефакт.`);
+    dispatch({ type: 'LOSE_ARTIFACT', payload: { playerId } });
+  };
+
+  const notifyArtifactOwner = () => {
+    if (state.artifactOwner === null) {
+      console.log("Артефакт не взят.");
+      return;
+    }
+
+    const owner = state.players.find((p) => p.id === state.artifactOwner);
+    if (owner) {
+      console.log(`Владелец артефакта: ${owner.name}`);
+    }
+  };
+
+  return {
+    pickArtifact,
+    loseArtifact,
+    notifyArtifactOwner,
+  };
+}
+
+// src/logic/battleSystem.ts
+
+import { useGameContext } from "../components/GameContext";
+import { MonsterState, PlayerState } from "./types";
+import { Action } from "./actions";
+
+export function useBattleSystem() {
+  const { state, dispatch } = useGameContext();
+
+  const calculateDamage = (attack: number, defense: number): number =>
+    Math.max(0, attack - defense);
+
+  const handleMonsterAttack = (player: PlayerState, monster: MonsterState, cellId: number): Action[] => {
+    const damage = calculateDamage(monster.attack, player.defense);
+    const newHealth = Math.max(player.health - damage, 0);
+
+    const actions: Action[] = [
+      {
+        type: 'ATTACK',
+        payload: { attackerId: monster.id, targetId: player.id, damage, targetType: 'player' },
+      },
+    ];
+
+    if (newHealth === 0) {
+      // Добавляем действие для обработки смерти игрока
+      actions.push({ type: 'PLAYER_DIED', payload: { playerId: player.id } });
+    }
+
+    return actions;
+  };
+
+  const monstersAttackPlayers = () => {
+    if (!state.grid) return;
+
+    const actions: Action[] = [];
+
+    state.grid.forEach((cell) => {
+      if (cell.monster && cell.monster.type === 'aggressive') {
+        state.players.forEach((player) => {
+          const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
+          if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
+            actions.push(...handleMonsterAttack(player, cell.monster, cell.id));
+          }
+        });
+      }
+    });
+
+    actions.forEach(action => dispatch(action));
+  };
+
+  const attackPlayerOrMonster = (playerId: number, direction: { dx: number; dy: number }) => {
+    const attacker = state.players.find(p => p.id === playerId);
+    if (!attacker) return;
+
+    const targetX = attacker.position.x + direction.dx;
+    const targetY = attacker.position.y + direction.dy;
+
+    const targetPlayer = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
+    const targetCell = state.grid?.find(c => c.x === targetX && c.y === targetY);
+
+    if (targetPlayer) {
+      // Атака игрока
+      const damage = calculateDamage(attacker.attack, targetPlayer.defense);
+      dispatch({ 
+        type: 'ATTACK', 
+        payload: { 
+          attackerId: playerId, 
+          targetId: targetPlayer.id, 
+          damage, 
+          targetType: 'player' 
+        } 
+      });
+    } else if (targetCell?.monster) {
+      // Атака монстра
+      const damage = calculateDamage(attacker.attack, targetCell.monster.defense);
+      dispatch({ 
+        type: 'ATTACK', 
+        payload: { 
+          attackerId: playerId, 
+          targetId: targetCell.monster.id, 
+          damage, 
+          targetType: 'monster', 
+          cellId: targetCell.id 
+        } 
+      });
+      // Дополнительно: обработка состояния монстра, если требуется
+    }
+  };
+
+  return {
+    monstersAttackPlayers,
+    attackPlayerOrMonster,
+  };
+}
+
+//generateBattlefield.ts
+
+import { HexCell, PlayerState, MonsterState } from './types';
+
+export function generateBattlefield(
+  width: number,
+  height: number,
+  attacker: PlayerState | MonsterState,
+  defender: PlayerState | MonsterState
+): HexCell[] {
+  const battlefield: HexCell[] = [];
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const id = y * width + x;
+      const cell: HexCell = {
+        id,
+        x,
+        y,
+        terrain: 'grass',
+        unit: null,
+        walkable: true,
+        reachable: false
+      };
+      battlefield.push(cell);
+    }
+  }
+
+  // Размещаем атакующего слева, защитника справа
+  const attackerX = 1;
+  const attackerY = Math.floor(height / 2);
+  const attackerIndex = attackerY * width + attackerX;
+
+  const defenderX = width - 2;
+  const defenderY = Math.floor(height / 2);
+  const defenderIndex = defenderY * width + defenderX;
+
+  battlefield[attackerIndex].unit = attacker;
+  battlefield[defenderIndex].unit = defender;
+
+  return battlefield;
+}
+
+// src/logic/generateMap.ts
+
+import { PlayerState, Cell, GameMode } from "../logic/types";
+import { resources } from "./allData"; // Данные о ресурсах.
+import { createRandomMonster } from "./allData"; // Функция для создания случайного монстра.
+
+// Определяем возможные типы местности на карте.
+const terrains = ["ground", "forest", "mountain", "ice", "river"]; // Добавил "river" для примера
+
+export function generateMap(
+  mode: GameMode,
+  players: PlayerState[],
+  width: number,
+  height: number
+): Cell[] {
+  const total = width * height;
+  const grid: Cell[] = [];
+  const maxRepeats = 4;
+
+  const getNextTerrain = (x: number, y: number, prevTerrains: string[]): string => {
+    const possibleTerrains = [...terrains];
+
+    if (y > 0) {
+      const aboveTerrain = grid[(y - 1) * width + x]?.terrain;
+      if (aboveTerrain) possibleTerrains.push(...Array(maxRepeats).fill(aboveTerrain));
+    }
+
+    if (x > 0) {
+      const leftTerrain = grid[y * width + (x - 1)]?.terrain;
+      if (leftTerrain) possibleTerrains.push(...Array(maxRepeats).fill(leftTerrain));
+    }
+
+    if (
+      prevTerrains.length >= maxRepeats &&
+      prevTerrains.every((t) => t === prevTerrains[0])
+    ) {
+      return possibleTerrains.find((t) => t !== prevTerrains[0]) || "ground";
+    }
+
+    return possibleTerrains[Math.floor(Math.random() * possibleTerrains.length)];
+  };
+
+  for (let id = 0; id < total; id++) {
+    const x = id % width;
+    const y = Math.floor(id / width);
+    const prevTerrains: string[] = [];
+
+    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain);
+    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain);
+
+    const terrain = getNextTerrain(x, y, prevTerrains);
+    const isWalkable = terrain !== "river"; // Предположим, что "river" - непроходимая местность
+
+    const isBarrel = isWalkable && Math.random() < 0.05;
+    const spawnMonster = isWalkable && Math.random() < 0.1;
+
+    let resource: typeof resources[keyof typeof resources] | null = null;
+    if (isWalkable && !isBarrel && Math.random() < 0.1) {
+      const resArray = Object.values(resources);
+      resource = resArray[Math.floor(Math.random() * resArray.length)];
+    }
+
+    let monster = spawnMonster ? createRandomMonster() : undefined;
+
+    grid.push({
+      id,
+      x,
+      y,
+      terrain,
+      resource: isWalkable ? resource : null,
+      monster: isWalkable ? monster : undefined,
+      isPortal: false, // Инициализируем как false
+    });
+  }
+
+  // Добавляем портал на карту
+  const portalX = Math.floor(Math.random() * width);
+  const portalY = Math.floor(Math.random() * height);
+  const portalCellId = portalY * width + portalX;
+  grid[portalCellId].isPortal = true;
+
+  return grid;
+}
+
+// src/logic/inputHandler.ts
+
+import { Action } from "./actions";
+import { PlayerState, GameState } from "./types";
+
+type Handlers = {
+  attackPlayerOrMonster: (playerId: number, direction: { dx: number; dy: number }) => void;
+  openBarrel: (playerId: number, direction: { dx: number; dy: number }) => void;
+  pickArtifact: (playerId: number) => void;
+  loseArtifact: (playerId: number) => void;
+  notifyArtifactOwner: () => void;
+  tryExitThroughPortal: (playerId: number) => void;
+  collectResourceIfOnTile: (playerId: number) => void;
+  inventoryOpen: boolean;
+  setInventoryOpen: () => void;
+};
+
+export function handleKeyDown(
+  e: KeyboardEvent,
+  {
+    state,
+    dispatch,
+    attackPlayerOrMonster,
+    openBarrel,
+    pickArtifact,
+    loseArtifact,
+    notifyArtifactOwner,
+    tryExitThroughPortal,
+    collectResourceIfOnTile,
+    inventoryOpen,
+    setInventoryOpen,
+  }: { state: GameState; dispatch: React.Dispatch<Action> } & Handlers
+) {
+  if (!state.grid || state.players.length === 0) return;
+  const playerId = state.players[state.currentPlayerIndex].id;
+  const player = state.players.find((p: PlayerState) => p.id === playerId);
+  if (!player) return;
+
+  // Инвентарь на "i"
+  if (e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
+    dispatch({ type: 'TOGGLE_INVENTORY' });
+    return;
+  }
+
+  if (player.energy <= 0) return; // нет энергии - не двигаемся
+
+  let dx = 0,
+    dy = 0;
+  if (e.key === "ArrowUp") dy = -1;
+  if (e.key === "ArrowDown") dy = 1;
+  if (e.key === "ArrowLeft") dx = -1;
+  if (e.key === "ArrowRight") dx = 1;
+
+  if ((dx !== 0 || dy !== 0) && state.grid) {
+    // Проверяем, можно ли двигаться
+    const newX = Math.max(0, Math.min(state.mapWidth - 1, player.position.x + dx));
+    const newY = Math.max(0, Math.min(state.mapHeight - 1, player.position.y + dy));
+    if (newX === player.position.x && newY === player.position.y) {
+      // Игрок упёрся в край карты
+      return;
+    }
+
+    // Проверяем тайл, можно ли идти по нему
+    const cell = state.grid.find(c => c.x === newX && c.y === newY);
+    if (!cell || cell.terrain.includes("river")) {
+      // Не можем идти по реке
+      return;
+    }
+
+    dispatch({ type: 'MOVE_PLAYER', payload: { playerId, newPosition: { x: newX, y: newY } } });
+  }
+
+  if (e.key === " ") {
+    // Пробел: взаимодействие с тайлом под игроком
+    const currentCell = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
+    if (currentCell?.resource) {
+      dispatch({ 
+        type: 'COLLECT_RESOURCE', 
+        payload: { 
+          playerId, 
+          resourceType: currentCell.resource.type, 
+          cellId: currentCell.id 
+        } 
+      });
+    }
+    if (currentCell?.isPortal) {
+      dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
+    }
+  }
+}
+
+// logic/matchmaking.ts
+
+export type GameMode = "PVE"|"1v1"|"3v3"|"5v5";
+type PlayerInfo = { playerId: number; level: number; };
+
+// Имитация серверного вызова
+export async function startMatchmaking(mode: GameMode, player: PlayerInfo): Promise<string> {
+  // Здесь должна быть логика обращения к серверу,
+  // который подбирает игроков и возвращает instanceId.
+
+  // Для примера просто возвращаем некий случайный ID через 2 секунды.
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const instanceId = "instance_" + Math.floor(Math.random()*100000);
+      resolve(instanceId);
+    }, 2000);
+  });
+}
+
+// src/logic/monsters.ts
+
+import { Cell, PlayerState } from "./types";
+import { Action } from "./actions";
+
+export function aggressiveMonstersAttack(
+  state: {
+    players: PlayerState[];
+    grid: Cell[] | null;
+    artifactOwner: number | null;
+    mode: string;
+    turnCycle: number;
+    monstersHaveAttacked: boolean;
+  },
+  dispatch: React.Dispatch<Action>
+): { newState: typeof state; instanceFinished: boolean } {
+  console.log(`aggressiveMonstersAttack вызвана для turnCycle=${state.turnCycle}`);
+
+  if (!state.grid) return { newState: state, instanceFinished: false };
+  if (state.monstersHaveAttacked) {
+    console.log("Монстры уже атаковали в этом turnCycle.");
+    return { newState: state, instanceFinished: false };
+  }
+
+  let instanceFinished = false;
+
+  state.grid.forEach((cell) => {
+    if (cell.monster && cell.monster.type === "aggressive") {
+      state.players.forEach((player) => {
+        const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
+        if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
+          const damage = Math.max(0, cell.monster.attack - player.defense);
+
+          console.log(`Монстр ID=${cell.monster.id} атакует игрока ID=${player.id} с уроном ${damage}`);
+
+          dispatch({
+            type: "ATTACK",
+            payload: {
+              attackerId: cell.monster.id,
+              targetId: player.id,
+              damage,
+              targetType: "player",
+            },
+          });
+
+          if (player.health - damage <= 0) {
+            console.log(`Игрок ID=${player.id} был убит монстром ID=${cell.monster.id}`);
+            dispatch({
+              type: "PLAYER_DIED",
+              payload: { playerId: player.id },
+            });
+            instanceFinished = true; // Можно считать конец инстанса
+          }
+        }
+      });
+    }
+  });
+
+  // Устанавливаем флаг, что монстры уже атаковали в этом круге
+  dispatch({
+    type: "SET_MONSTERS_HAVE_ATTACKED",
+    payload: { monstersHaveAttacked: true },
+  });
+
+  return { newState: state, instanceFinished };
+}
+
+// src/logic/progressionSystem.ts
+
+import { PlayerState } from "./types";
+import { Action } from "./actions";
+
+export function finalizeInstance(instanceId: string, players: PlayerState[], dispatch: React.Dispatch<Action>) {
+  console.log(`Инстанс ${instanceId} завершён. Начисляем награды игрокам.`);
+  players.forEach(player => {
+    console.log(`Игрок ${player.name} получает опыт и валюту.`);
+    // Отправьте действия для начисления наград, например:
+    // dispatch({ type: 'AWARD_REWARD', payload: { playerId: player.id, reward: { experience: 100, currency: 50 } } });
+  });
+  // Добавьте логику обновления БД или других систем через действия
+}
+
+//reduser.ts
+
+import { GameState   } from "./types";
+import { Action } from "./actions";
+import { resources } from "./allData";
+
+import { generateBattlefield } from './generateBattlefield';
+
+
+export function gameReducer(state: GameState, action: Action): GameState {
+  switch (action.type) {
+    case "INITIALIZE_GAME":
+      return {
+        ...state,
+        mode: action.payload.mode,
+        instanceId: action.payload.instanceId,
+        players: action.payload.players,
+      };
+
+    case "SET_GRID":
+      return {
+        ...state,
+        grid: action.payload.grid,
+      };
+
+    case "MOVE_PLAYER": {
+      const { playerId, newPosition } = action.payload;
+      const updatedPlayers = state.players.map((player) =>
+        player.id === playerId
+          ? { ...player, position: newPosition, energy: player.energy - 1 }
+          : player
+      );
+      return { ...state, players: updatedPlayers };
+    }
+
+    case "ATTACK": {
+      const { attackerId, targetId, damage, targetType, cellId } = action.payload;
+
+      if (targetType === "player") {
+        const updatedPlayers = state.players.map((player) =>
+          player.id === targetId
+            ? { ...player, health: Math.max(player.health - damage, 0) }
+            : player
+        );
+        return { ...state, players: updatedPlayers };
+      } else if (targetType === "monster" && cellId !== undefined) {
+        const updatedGrid = state.grid.map((cell) => {
+          if (cell.id === cellId && cell.monster) {
+            const newHp = Math.max(cell.monster.hp - damage, 0);
+            return newHp > 0
+              ? { ...cell, monster: { ...cell.monster, hp: newHp } }
+              : { ...cell, monster: undefined };
+          }
+          return cell;
+        });
+        return { ...state, grid: updatedGrid };
+      }
+      return state;
+    }
+
+    case "COLLECT_RESOURCE": {
+      const { playerId, resourceType, cellId } = action.payload;
+      if (!resources[resourceType]) return state;
+
+      const updatedPlayers = state.players.map((player) =>
+        player.id === playerId
+          ? {
+              ...player,
+              inventory: {
+                ...player.inventory,
+                [resourceType]: {
+                  count: (player.inventory[resourceType]?.count || 0) + 1,
+                  description: resources[resourceType].description,
+                  image: `/main_resources/${resourceType}.webp`,
+                },
+              },
+            }
+          : player
+      );
+
+      const updatedGrid = state.grid.map((cell) =>
+        cell.id === cellId ? { ...cell, resource: null } : cell
+      );
+
+      return { ...state, players: updatedPlayers, grid: updatedGrid };
+    }
+
+    case "USE_ITEM": {
+      const { playerId, itemType } = action.payload;
+
+      const updatedPlayers = state.players.map((player) => {
+        if (player.id === playerId && player.inventory[itemType]?.count > 0) {
+          const resourceEffect = resources[itemType]?.effect || 0;
+
+          return {
+            ...player,
+            inventory: {
+              ...player.inventory,
+              [itemType]: {
+                ...player.inventory[itemType],
+                count: player.inventory[itemType].count - 1,
+              },
+            },
+            // Применяем эффект ресурса
+            ...(itemType === "food"
+              ? { health: Math.min(player.maxHealth, player.health + resourceEffect) }
+              : {}),
+            ...(itemType === "water"
+              ? { energy: Math.min(player.maxEnergy, player.energy + resourceEffect) }
+              : {}),
+          };
+        }
+        return player;
+      });
+
+      return { ...state, players: updatedPlayers };
+    }
+
+    case "PASS_TURN": {
+      const nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
+      const isEndOfTurn = nextIndex === 0;
+
+      let updatedState = {
+        ...state,
+        currentPlayerIndex: nextIndex,
+      };
+
+      if (isEndOfTurn) {
+        updatedState = {
+          ...updatedState,
+          turnCycle: state.turnCycle + 1,
+          monstersHaveAttacked: false, // Сброс флага атаки монстров
+        };
+      }
+
+      return updatedState;
+    }
+
+    case "UPDATE_MONSTER_ATTACK_TURN": {
+      const { monsterId, turnCycle } = action.payload;
+
+      const updatedGrid = state.grid.map((cell) =>
+        cell.monster?.id === monsterId
+          ? { ...cell, monster: { ...cell.monster, lastTurnAttacked: turnCycle } }
+          : cell
+      );
+
+      return { ...state, grid: updatedGrid };
+    }
+
+    case "UPDATE_PLAYER_STATS": {
+      const { playerId, stats } = action.payload;
+      return {
+        ...state,
+        players: state.players.map((player) =>
+          player.id === playerId ? { ...player, ...stats } : player
+        ),
+      };
+    }
+    
+    case "REMOVE_PLAYER": {
+      const { playerId } = action.payload;
+      return {
+        ...state,
+        players: state.players.filter((player) => player.id !== playerId),
+      };
+    }
+
+    case 'START_BATTLE': {
+      const { attacker, defender } = action.payload; 
+      // attacker и defender - это PlayerState | MonsterState
+
+      const battlefield = generateBattlefield(11, 15, attacker, defender);
+
+      // Можно установить флаг inBattle
+      return {
+        ...state,
+        inBattle: true,
+        // Если вы хотите где-то хранить поле боя, можно добавить его в состояние:
+        // battlefield: battlefield
+      };
+    }
+    
+    
+    
+    case "SET_MONSTERS_HAVE_ATTACKED":
+      return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };
+
+    case "TOGGLE_INVENTORY":
+      return { ...state, inventoryOpen: !state.inventoryOpen };
+
+    default:
+      return state;
+  }
+}
+
+// src/logic/resourceSystem.ts
+
+import { useGameContext } from "../components/GameContext";
+import { createRandomMonster } from "./allData";
+import { resources, getResource } from "./allData";
+import { Action } from "./actions";
+import { GameState, PlayerState, Cell, MonsterState } from "./types";
+
+export function useResourceSystem() {
+  const { state, dispatch } = useGameContext();
+
+  const openBarrel = (playerId: number, direction: { dx: number; dy: number }) => {
+    if (!state.grid) {
+      console.error("Grid is not initialized.");
+      return;
+    }
+
+    const player: PlayerState | undefined = state.players.find(p => p.id === playerId);
+    if (!player) {
+      console.error(`Player with id ${playerId} not found.`);
+      return;
+    }
+
+    const targetX = player.position.x + direction.dx;
+    const targetY = player.position.y + direction.dy;
+
+    const targetCell: Cell | undefined = state.grid.find(c => c.x === targetX && c.y === targetY);
+    if (!targetCell || !targetCell.resource || targetCell.resource.type !== "barrbel") {
+      console.log("Бочка отсутствует на указанной клетке.");
+      return;
+    }
+
+    console.log("Открываем бочку");
+    const random = Math.random();
+
+    if (random < 0.05) {
+      console.log("Из бочки выпал артефакт!");
+      dispatch({
+        type: 'ADD_ITEM',
+        payload: {
+          playerId,
+          itemType: 'artifact',
+          description: "Могущественный артефакт. Дает бонусы к атрибутам.",
+          image: "/resources/artifact.webp",
+          bonus: { attack: 5, defense: 5, energy: 10 },
+        },
+      });
+      dispatch({ type: 'REMOVE_RESOURCE', payload: { cellId: targetCell.id } });
+    } else if (random < 0.4) {
+      const randomMonster: MonsterState = createRandomMonster();
+      console.log(`Из бочки выпал монстр: ${randomMonster.name}`);
+      dispatch({
+        type: 'ADD_MONSTER',
+        payload: { cellId: targetCell.id, monster: randomMonster },
+      });
+      dispatch({ type: 'REMOVE_RESOURCE', payload: { cellId: targetCell.id } });
+    } else {
+      console.log("Из бочки выпал ресурс!");
+      const possibleResources: string[] = Object.keys(resources).filter((key) => key !== "barrbel");
+      const randomResourceKey: string = possibleResources[Math.floor(Math.random() * possibleResources.length)];
+      const selectedResource = getResource(randomResourceKey);
+
+      if (!selectedResource) {
+        console.error(`Не удалось найти ресурс для ключа: ${randomResourceKey}`);
+        return;
+      }
+
+      dispatch({
+        type: 'ADD_ITEM',
+        payload: {
+          playerId,
+          itemType: randomResourceKey,
+          description: selectedResource.description,
+          image: selectedResource.image["ground"],
+        },
+      });
+      dispatch({ type: 'REMOVE_RESOURCE', payload: { cellId: targetCell.id } });
+    }
+  };
+
+  const tryExitThroughPortal = (playerId: number) => {
+    if (!state.grid) {
+      console.error("Grid is not initialized.");
+      return;
+    }
+
+    const player: PlayerState | undefined = state.players.find(p => p.id === playerId);
+    if (!player) {
+      console.error(`Player with id ${playerId} not found.`);
+      return;
+    }
+
+    const cell: Cell | undefined = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
+    if (!cell || !cell.isPortal) {
+      console.log("Портал отсутствует на клетке.");
+      return;
+    }
+
+    if (state.artifactOwner === playerId) {
+      console.log(`Игрок ${player.name} успешно покидает портал с артефактом!`);
+      // Добавьте действие для завершения инстанса
+      // Например:
+      // dispatch({ type: 'FINALIZE_INSTANCE', payload: { instanceId: state.instanceId, players: state.players } });
+    } else {
+      console.log("Игрок не может выйти через портал без артефакта.");
+    }
+  };
+
+  const collectResourceIfOnTile = (playerId: number) => {
+    if (!state.grid) {
+      console.error("Grid is not initialized.");
+      return;
+    }
+  
+    const player: PlayerState | undefined = state.players.find(p => p.id === playerId);
+    if (!player) {
+      console.error(`Player with id ${playerId} not found.`);
+      return;
+    }
+  
+    const cell: Cell | undefined = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
+    if (!cell || !cell.resource) {
+      console.log("На клетке нет ресурса для сбора.");
+      return;
+    }
+  
+    dispatch({ type: 'COLLECT_RESOURCE', payload: { playerId, resourceType: cell.resource.type, cellId: cell.id } });
+  };
+
+  return {
+    openBarrel,
+    tryExitThroughPortal,
+    collectResourceIfOnTile,
+  };
+}
+
+// src/logic/types.ts
+
+// Определяем возможные игровые режимы.
+export type GameMode = "PVE" | "1v1" | "3v3" | "5v5";
+
+// Тип для описания состояния монстра.
+export type MonsterState = {
+  id: number;
+  name: string;
+  type: "aggressive" | "neutral";
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  vision: number;
+  image: Record<string, string>;
+  lastTurnAttacked?: number;
+
+  // Добавляем параметры, необходимые для боя:
+  speed: number;          // На сколько клеток ходит в бою
+  maneuverability: number;// Сколько клеток может поменять позицию перед боем
+  rangeAttack?: boolean;  
+  rangeDistance?: number; 
+};
+
+// Дополнительные бонусные атрибуты для предметов/артефактов.
+type BonusAttributes = {
+  energy?: number; 
+  maxEnergy?: number;
+  visionRange?: number;
+  health?: number;
+  maxHealth?: number;
+  attack?: number;
+  defense?: number;
+};
+
+// Тип для предметов в инвентаре.
+type InventoryItem = {
+  count: number;
+  image: string;
+  description: string;
+  bonus?: BonusAttributes;
+};
+
+// Инвентарь игрока.
+export type Inventory = Record<string, InventoryItem>;
+
+// Способности игрока.
+export type PlayerAbilities = {
+  canMove: boolean;
+  canAttack: boolean;
+  canCollectResources: boolean;
+  canUseItems: boolean;
+  canInteractWithObjects: boolean;
+  canPassTurn: boolean;
+  canPickArtifact: boolean;
+  canLoseArtifact: boolean;
+};
+
+// Тип для состояния игрока.
+export type PlayerState = {
+  id: number;
+  name: string;
+  position: { x: number; y: number };
+  energy: number;
+  maxEnergy: number;
+  level: number;
+  expirience: number;
+  max_expirience: number;
+  visionRange: number;
+  health: number;
+  maxHealth: number;
+  attack: number;
+  defense: number;
+  image: string;
+  inventory: Inventory;
+  abilities: PlayerAbilities;
+
+  // Параметры для тактического боя
+  speed: number;           // На сколько клеток ходит в бою
+  maneuverability: number; // Сколько клеток может менять позицию при расстановке
+  rangeAttack?: boolean;
+  rangeDistance?: number;
+};
+
+// Тип для ресурса.
+export type ResourceType = {
+  type: string;
+  difficulty: number;
+  image: Record<string, string>;
+  description: string;
+  rarity: number;
+  effect: number;
+  terrains: string[];
+};
+
+// Типы действий игрока.
+export type PlayerAction =
+  | "move"
+  | "attack"
+  | "collect"
+  | "useItem"
+  | "interact"
+  | "passTurn"
+  | "pickArtifact"
+  | "loseArtifact";
+
+// Переходная клетка (портал, лестница).
+export type TransitionTile = {
+  from: string;
+  to: string;
+  image: string;
+};
+
+// Тип для клетки карты.
+export type Cell = {
+  id: number;
+  x: number;
+  y: number;
+  terrain: string;
+  resource: ResourceType | null;
+  isPortal?: boolean;
+  monster?: MonsterState;
+  isTransition?: boolean;
+  transition?: TransitionTile;
+};
+
+// Тип для клетки поля боя.
+export type HexCell = {
+  id: number;
+  x: number;
+  y: number;
+  terrain: string;
+  unit: PlayerState | MonsterState | null;
+  walkable: boolean;
+  reachable: boolean;
+};
+
+// Тип для глобального состояния игры.
+export type GameState = {
+  mode: GameMode;
+  players: PlayerState[];
+  grid: Cell[];
+  mapWidth: number;
+  mapHeight: number;
+  artifactOwner: number | null;
+  portalPosition: { x: number; y: number } | null;
+  instanceId: string;
+  currentPlayerIndex: number;
+  turnCycle: number;
+  inventoryOpen: boolean;
+  monstersHaveAttacked: boolean;
+
+  // Флаг, указывающий, что мы находимся в бою (при необходимости)
+  inBattle?: boolean;
+};
+
+
+// src/logic/utils.ts
+
+import { Cell } from "./types";
+
+export function checkForDuplicateMonsters(grid: Cell[]): void {
+  const monsterIds = new Set<number>();
+  grid.forEach(cell => {
+    if (cell.monster) {
+      if (monsterIds.has(cell.monster.id)) {
+        console.error(`Дублирование монстра с ID=${cell.monster.id} в клетке (${cell.x}, ${cell.y})`);
+      } else {
+        monsterIds.add(cell.monster.id);
+      }
+    }
+  });
+}
+

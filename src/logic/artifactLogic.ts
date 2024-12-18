@@ -1,7 +1,6 @@
 // src/logic/artifactLogic.ts
 
 import { useGameContext } from "../components/GameContext";
-import { Action } from "./actions";
 
 export function useArtifactLogic() {
   const { state, dispatch } = useGameContext();

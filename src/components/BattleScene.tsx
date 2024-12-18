@@ -1,17 +1,9 @@
+//BattleScene.tsx
+
 "use client";
 
 import React, { useState, useEffect } from "react";
-
-type Entity = {
-  id: number;
-  name: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  experience?: number;
-  type: "player" | "monster"; // Тип сущности
-};
+import { Entity, PlayerState } from "../logic/types";
 
 type Position = {
   x: number;
@@ -19,19 +11,30 @@ type Position = {
 };
 
 type BattleSceneProps = {
-  attacker: Entity; // Атакующий
-  defender: Entity; // Защищающийся
+  attacker: Entity;
+  defender: Entity;
   onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => void;
 };
 
-const BATTLE_GRID = 5; // Размер карты 5x5
+const BATTLE_GRID = 5;
+
+function isPlayer(entity: Entity): entity is PlayerState {
+  return "experience" in entity; // Признак, что это игрок
+}
 
 export default function BattleScene({ attacker, defender, onBattleEnd }: BattleSceneProps) {
+  const getHealth = (entity: Entity) => {
+    if ("health" in entity) {
+      return { current: entity.health, max: entity.maxHealth };
+    }
+    throw new Error("Entity does not have health properties.");
+  };
+
   const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: 2 });
   const [defenderPos] = useState<Position>({ x: 4, y: 2 });
-  const [attackerHealth, setAttackerHealth] = useState(attacker.health);
-  const [defenderHealth, setDefenderHealth] = useState(defender.health);
-  const [turn, setTurn] = useState<"attacker" | "defender">("attacker"); // Ход атакующего
+  const [attackerHealth, setAttackerHealth] = useState(getHealth(attacker).current);
+  const [defenderHealth, setDefenderHealth] = useState(getHealth(defender).current);
+  const [turn, setTurn] = useState<"attacker" | "defender">("attacker");
   const [isDefending, setIsDefending] = useState(false);
 
   const handleMove = (direction: "left" | "right") => {
@@ -86,14 +89,19 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
     if (attackerHealth <= 0) {
       onBattleEnd("defender-win", attacker);
     } else if (defenderHealth <= 0) {
-      const updatedAttacker = {
-        ...attacker,
-        experience: (attacker.experience || 0) + 100, // Добавляем опыт атакующему
-        health: attackerHealth,
-      };
+      let updatedAttacker: Entity;
+      if (isPlayer(attacker)) {
+        updatedAttacker = {
+          ...attacker,
+          experience: (attacker.experience || 0) + 100,
+          health: attackerHealth,
+        };
+      } else {
+        updatedAttacker = { ...attacker, health: attackerHealth };
+      }
       onBattleEnd("attacker-win", updatedAttacker);
     }
-  }, [attackerHealth, defenderHealth]);
+  }, [attackerHealth, defenderHealth, onBattleEnd, attacker]);
 
   return (
     <div className="battle-scene">
@@ -105,18 +113,18 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
               x === defenderPos.x ? "defender" : ""
             }`}
           >
-            {x === attackerPos.x && (attacker.type === "player" ? <span>🧍</span> : <span>👹</span>)}
-            {x === defenderPos.x && (defender.type === "player" ? <span>🧍</span> : <span>👹</span>)}
+            {x === attackerPos.x && isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>}
+            {x === defenderPos.x && isPlayer(defender) ? <span>🧍</span> : <span>👹</span>}
           </div>
         ))}
       </div>
       <div className="battle-info">
         <p>
-          {attacker.name}: HP {attackerHealth} / {attacker.maxHealth}, ATK: {attacker.attack}, DEF:{" "}
+          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack}, DEF:{" "}
           {attacker.defense}
         </p>
         <p>
-          {defender.name}: HP {defenderHealth} / {defender.maxHealth}, ATK: {defender.attack}, DEF:{" "}
+          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack}, DEF:{" "}
           {defender.defense}
         </p>
         <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>

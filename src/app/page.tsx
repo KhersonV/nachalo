@@ -3,7 +3,7 @@
 "use client";
 
 import React from "react";
-import { GameProvider, useGameContext } from "../components/GameContext";
+import { GameProvider } from "../components/GameContext";
 import GameManager from "../components/GameManager";
 import { useSearchParams } from "next/navigation";
 
