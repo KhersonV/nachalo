@@ -8,7 +8,7 @@ import { terrainData } from "../logic/allData";
 import { useGameContext } from "./GameContext";
 import { getResourceImage } from "../logic/allData";
 import { Cell } from "../logic/types";
-import { Action } from "../logic/actions";
+
 
 type TileProps = {
   cell: Cell;

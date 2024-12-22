@@ -1,11 +1,10 @@
 // src/logic/generateMap.ts
 
-import { PlayerState, Cell, GameMode } from "../logic/types";
-import { resources } from "./allData"; // Данные о ресурсах.
-import { createRandomMonster } from "./allData"; // Функция для создания случайного монстра.
+import { PlayerState, Cell, GameMode, TerrainType } from "./types"; // Убедитесь, что путь корректен
+import { resources, createRandomMonster } from "./allData"; // Объедините импорты из одного места
 
 // Определяем возможные типы местности на карте.
-const terrains = ["ground", "forest", "mountain", "ice", "river"]; // Добавил "river" для примера
+const terrains: TerrainType[] = ["ground", "forest", "mountain", "ice", "river"]; // Указан тип TerrainType[]
 
 export function generateMap(
   mode: GameMode,
@@ -17,8 +16,8 @@ export function generateMap(
   const grid: Cell[] = [];
   const maxRepeats = 4;
 
-  const getNextTerrain = (x: number, y: number, prevTerrains: string[]): string => {
-    const possibleTerrains = [...terrains];
+  const getNextTerrain = (x: number, y: number, prevTerrains: TerrainType[]): TerrainType => {
+    const possibleTerrains: TerrainType[] = [...terrains];
 
     if (y > 0) {
       const aboveTerrain = grid[(y - 1) * width + x]?.terrain;
@@ -37,18 +36,19 @@ export function generateMap(
       return possibleTerrains.find((t) => t !== prevTerrains[0]) || "ground";
     }
 
+    // Выбор случайного TerrainType из possibleTerrains
     return possibleTerrains[Math.floor(Math.random() * possibleTerrains.length)];
   };
 
   for (let id = 0; id < total; id++) {
     const x = id % width;
     const y = Math.floor(id / width);
-    const prevTerrains: string[] = [];
+    const prevTerrains: TerrainType[] = [];
 
-    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain);
-    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain);
+    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain as TerrainType);
+    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain as TerrainType);
 
-    const terrain = getNextTerrain(x, y, prevTerrains);
+    const terrain: TerrainType = getNextTerrain(x, y, prevTerrains);
     const isWalkable = terrain !== "river"; // Предположим, что "river" - непроходимая местность
 
     const isBarrel = isWalkable && Math.random() < 0.05;
@@ -66,7 +66,7 @@ export function generateMap(
       id,
       x,
       y,
-      terrain,
+      terrain, // Теперь terrain строго типа TerrainType
       resource: isWalkable ? resource : null,
       monster: isWalkable ? monster : undefined,
       isPortal: false, // Инициализируем как false

@@ -78,6 +78,7 @@ export default function GameManager() {
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      e.preventDefault(); // Предотвращаем прокрутку страницы при нажатии стрелок
       handleKeyDown(e, { state, dispatch, ...handlersRef.current });
     },
     [state, dispatch]

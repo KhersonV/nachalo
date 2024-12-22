@@ -6,11 +6,12 @@
 
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import { gameReducer } from "../logic/reducer";
-import { GameState, PlayerState } from "../logic/types";
+import { GameMode, GameState, PlayerState } from "../logic/types";
 import { Action } from "../logic/actions";
 import { generateMap } from "../logic/generateMap";
 import { aggressiveMonstersAttack } from "../logic/monsters";
 import { checkForDuplicateMonsters } from "../logic/utils";
+import initialPlayers from "../logic/initialPlayers";
 
 type GameContextValue = {
   state: GameState;
@@ -23,7 +24,7 @@ type GameProviderProps = {
 };
 
 const initialState: GameState = {
-  mode: "1v1",
+  mode: GameMode.ONE_VS_ONE,
   players: [],
   grid: [],
   mapWidth: 20,
@@ -56,49 +57,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       canLoseArtifact: true,
     };
 
-    const initialPlayers: PlayerState[] = [
-      {
-        id: 0,
-        name: "Player1",
-        position: { x: 0, y: 0 },
-        energy: 100,
-        maxEnergy: 100,
-        level: 1,
-        experience: 0,
-        max_experience: 500,
-        visionRange: 5,
-        health: 100,
-        maxHealth: 100,
-        attack: 10,
-        defense: 5,
-        speed: 3,           
-        maneuverability: 2, 
-        image: "player-1.webp",
-        inventory: {},
-        abilities: { ...defaultAbilities },
-      },
-      {
-        id: 1,
-        name: "Player2",
-        position: { x: 19, y: 19 },
-        energy: 100,
-        maxEnergy: 100,
-        level: 1,
-        experience: 0,
-        max_experience: 500,
-        visionRange: 3,
-        health: 100,
-        maxHealth: 100,
-        attack: 10,
-        defense: 5,
-        speed: 3,            
-        maneuverability: 2, 
-        image: "player-2.webp",
-        inventory: {},
-        abilities: { ...defaultAbilities },
-      },
-    ];
-
+  
     const generatedGrid = generateMap(state.mode, initialPlayers, state.mapWidth, state.mapHeight);
     checkForDuplicateMonsters(generatedGrid);
 

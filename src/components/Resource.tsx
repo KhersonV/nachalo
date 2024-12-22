@@ -3,7 +3,7 @@
 "use client";
 
 import React, { useState } from "react";
-import Tooltip from "./Tooltip";
+// import Tooltip from "./Tooltip";
 import "./resource.css";
 
 type ResourceProps = {

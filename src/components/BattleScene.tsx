@@ -2,6 +2,7 @@
 
 "use client";
 
+import "../styles/battleScene.css";
 import React, { useState, useEffect } from "react";
 import { Entity, PlayerState } from "../logic/types";
 
