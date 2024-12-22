@@ -34,7 +34,6 @@ export type PlayerState = BasePlayerEntity & {
   maxExperience: number; // Изменено на camelCase
   visionRange: number;
   inventory: Inventory;
-  abilities: PlayerAbilities;
 
   // Параметры для тактического боя
   speed: number;           // На сколько клеток ходит в бою
@@ -86,18 +85,6 @@ export type InventoryItem = {
 
 // Инвентарь игрока.
 export type Inventory = Record<string, InventoryItem>;
-
-// Способности игрока.
-export type PlayerAbilities = {
-  canMove: boolean;
-  canAttack: boolean;
-  canCollectResources: boolean;
-  canUseItems: boolean;
-  canInteractWithObjects: boolean;
-  canPassTurn: boolean;
-  canPickArtifact: boolean;
-  canLoseArtifact: boolean;
-};
 
 // Тип для ресурса.
 export type ResourceType = {

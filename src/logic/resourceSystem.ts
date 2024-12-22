@@ -3,8 +3,7 @@
 import { useGameContext } from "../components/GameContext";
 import { createRandomMonster } from "./allData";
 import { resources, getResource } from "./allData";
-import { Action } from "./actions";
-import { GameState, PlayerState, Cell, MonsterState } from "./types";
+import { PlayerState, Cell, MonsterState } from "./types";
 
 export function useResourceSystem() {
   const { state, dispatch } = useGameContext();

@@ -1,11 +1,8 @@
 //reduser.ts
 
-import { GameState, Entity  } from "./types";
+import { GameState  } from "./types";
 import { Action } from "./actions";
 import { resources } from "./allData";
-
-import { generateBattlefield } from './generateBattlefield';
-
 
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {

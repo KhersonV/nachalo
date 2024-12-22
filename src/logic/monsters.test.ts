@@ -1,12 +1,12 @@
 // src/logic/monsters.test.ts
 
 import { aggressiveMonstersAttack } from "./monsters";
-import { GameState } from "./types";
+import { GameState, GameMode} from "./types";
 
 describe("aggressiveMonstersAttack", () => {
   it("should attack each monster once per turnCycle", () => {
     const initialState: GameState = {
-      mode: "1v1",
+      mode: GameMode.ONE_VS_ONE,
       players: [
         {
           id: 0,
@@ -16,8 +16,9 @@ describe("aggressiveMonstersAttack", () => {
           maxEnergy: 100,
           level: 1,
           experience: 0,
-          max_experience: 500,
+          maxExperience: 500,
           visionRange: 5,
+          vision: 5,
           health: 100,
           maxHealth: 100,
           attack: 10,
@@ -26,16 +27,6 @@ describe("aggressiveMonstersAttack", () => {
           speed: 3,
           image: "player-1.webp",
           inventory: {},
-          abilities: {
-            canMove: true,
-            canAttack: true,
-            canCollectResources: true,
-            canUseItems: true,
-            canInteractWithObjects: true,
-            canPassTurn: true,
-            canPickArtifact: true,
-            canLoseArtifact: true,
-          },
         },
       ],
       grid: [

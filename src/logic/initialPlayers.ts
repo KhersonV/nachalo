@@ -1,15 +1,8 @@
-import { PlayerState, PlayerAbilities} from "./types"; // Убедитесь, что путь корректен
+//initialPlayers.ts
 
-const defaultAbilities: PlayerAbilities = {
-  canMove: true,
-  canAttack: true,
-  canCollectResources: true,
-  canUseItems: true,
-  canInteractWithObjects: true,
-  canPassTurn: true,
-  canPickArtifact: true,
-  canLoseArtifact: true,
-};
+import { PlayerState} from "./types"; // Убедитесь, что путь корректен
+
+
 
 const initialPlayers: PlayerState[] = [
   {
@@ -31,7 +24,7 @@ const initialPlayers: PlayerState[] = [
     vision: 5, // Исправлено с visionRange: 5, на visionRange: 5,
     image: "player-1.webp", // Исправлено с объекта на строку
     inventory: {},
-    abilities: { ...defaultAbilities },
+    
   },
   {
     id: 1,
@@ -52,7 +45,6 @@ const initialPlayers: PlayerState[] = [
     maneuverability: 2, 
     image: "player-2.webp",
     inventory: {},
-    abilities: { ...defaultAbilities },
   },
 ];
 

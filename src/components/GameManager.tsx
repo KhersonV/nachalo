@@ -13,7 +13,6 @@ import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
-import { Action } from "../logic/actions";
 import { Entity } from "../logic/types";
 
 export default function GameManager() {
@@ -100,7 +99,7 @@ export default function GameManager() {
   );
 
   const passTurn = useCallback(() => {
-    if (!activePlayer?.abilities?.canPassTurn) return;
+    if (!activePlayer) return;
 
     dispatch({ type: 'PASS_TURN' });
   }, [activePlayer, dispatch]);
