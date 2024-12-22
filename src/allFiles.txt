@@ -100,24 +100,13 @@ export default function Page() {
 
 ************************************************ components ********************************************
 
-
-//battleScene.tsx
-
+// src/components/BattleScene.tsx
 
 "use client";
 
+import "../styles/battleScene.css";
 import React, { useState, useEffect } from "react";
-
-type Entity = {
-  id: number;
-  name: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  experience?: number;
-  type: "player" | "monster"; // Тип сущности
-};
+import { Entity, PlayerState } from "../logic/types";
 
 type Position = {
   x: number;
@@ -125,26 +114,45 @@ type Position = {
 };
 
 type BattleSceneProps = {
-  attacker: Entity; // Атакующий
-  defender: Entity; // Защищающийся
+  attacker: Entity;
+  defender: Entity;
   onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => void;
+  gridSize?: number; // Добавляем пропс для размера поля
 };
 
-const BATTLE_GRID = 5; // Размер карты 5x5
+const BATTLE_GRID_DEFAULT = 7; // Установите желаемый размер по умолчанию
 
-export default function BattleScene({ attacker, defender, onBattleEnd }: BattleSceneProps) {
-  const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: 2 });
-  const [defenderPos] = useState<Position>({ x: 4, y: 2 });
-  const [attackerHealth, setAttackerHealth] = useState(attacker.health);
-  const [defenderHealth, setDefenderHealth] = useState(defender.health);
-  const [turn, setTurn] = useState<"attacker" | "defender">("attacker"); // Ход атакующего
+function isPlayer(entity: Entity): entity is PlayerState {
+  return "level" in entity; // Признак, что это игрок
+}
+
+export default React.memo(function BattleScene({ attacker, defender, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
+  const getHealth = (entity: Entity) => {
+    if ("health" in entity) {
+      return { current: entity.health, max: entity.maxHealth };
+    }
+    throw new Error("Entity does not have health properties.");
+  };
+
+  // Логирование для отладки
+  console.log("BattleScene initialized with:", { attacker, defender });
+
+  const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: Math.floor(gridSize / 2) });
+  const [defenderPos] = useState<Position>({ x: gridSize - 1, y: Math.floor(gridSize / 2) });
+  const [attackerHealth, setAttackerHealth] = useState(getHealth(attacker).current);
+  const [defenderHealth, setDefenderHealth] = useState(getHealth(defender).current);
+  const [turn, setTurn] = useState<"attacker" | "defender">("attacker");
   const [isDefending, setIsDefending] = useState(false);
+  const [hasBattleEnded, setHasBattleEnded] = useState(false);
 
   const handleMove = (direction: "left" | "right") => {
     if (turn !== "attacker") return;
 
+    console.log(`${attacker.name} пытается переместиться ${direction}`);
+
     setAttackerPos((prev) => {
-      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, BATTLE_GRID - 1);
+      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, gridSize - 1);
+      console.log(`${attacker.name} переместился на позицию: x=${newX}, y=${prev.y}`);
       return { ...prev, x: newX };
     });
     endTurn();
@@ -154,9 +162,18 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
     if (turn !== "attacker") return;
 
     const distance = Math.abs(attackerPos.x - defenderPos.x);
+    console.log(`Атака: расстояние между ${attacker.name} и ${defender.name} = ${distance}`);
+
     if (distance <= 1) {
       const damage = Math.max(0, attacker.attack - defender.defense);
-      setDefenderHealth((prev) => prev - damage);
+      console.log(`${attacker.name} наносит ${damage} урона ${defender.name}`);
+      setDefenderHealth((prev) => {
+        const newHealth = prev - damage;
+        console.log(`${defender.name} теперь имеет HP = ${newHealth}`);
+        return newHealth;
+      });
+    } else {
+      console.log(`${attacker.name} не может атаковать ${defender.name}, слишком далеко.`);
     }
     endTurn();
   };
@@ -164,65 +181,107 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
   const handleDefend = () => {
     if (turn !== "attacker") return;
 
+    console.log(`${attacker.name} выбирает защиту.`);
     setIsDefending(true);
+    endTurn();
+  };
+
+  const handlePassTurn = () => {
+    if (turn !== "attacker") return;
+
+    console.log(`${attacker.name} передает ход.`);
     endTurn();
   };
 
   const defenderTurn = () => {
     const distance = Math.abs(attackerPos.x - defenderPos.x);
+    console.log(`Ход защитника ${defender.name}: расстояние = ${distance}`);
+
     if (distance <= 1) {
       const damage = Math.max(0, defender.attack - attacker.defense);
-      setAttackerHealth((prev) => prev - (isDefending ? Math.floor(damage / 2) : damage));
+      const actualDamage = isDefending ? Math.floor(damage / 2) : damage;
+      console.log(`${defender.name} наносит ${actualDamage} урона ${attacker.name} (${isDefending ? "с защитой" : ""})`);
+      setAttackerHealth((prev) => {
+        const newHealth = prev - actualDamage;
+        console.log(`${attacker.name} теперь имеет HP = ${newHealth}`);
+        return newHealth;
+      });
+    } else {
+      console.log(`${defender.name} не может атаковать ${attacker.name}, слишком далеко.`);
     }
     setTurn("attacker");
   };
 
   const endTurn = () => {
-    setTurn("defender");
+    console.log(`Ход передан от ${turn} к ${turn === "attacker" ? "defender" : "attacker"}`);
+    setTurn(turn === "attacker" ? "defender" : "attacker");
     setIsDefending(false);
   };
 
   useEffect(() => {
     if (turn === "defender" && defenderHealth > 0) {
-      defenderTurn();
+      // Делаем задержку для имитации хода защитника
+      const timer = setTimeout(() => {
+        defenderTurn();
+      }, 1000); // Задержка 1 секунда
+      return () => clearTimeout(timer);
     }
-  }, [turn]);
+  }, [turn, defenderHealth]);
 
   useEffect(() => {
-    if (attackerHealth <= 0) {
-      onBattleEnd("defender-win", attacker);
-    } else if (defenderHealth <= 0) {
-      const updatedAttacker = {
-        ...attacker,
-        experience: (attacker.experience || 0) + 100, // Добавляем опыт атакующему
-        health: attackerHealth,
-      };
-      onBattleEnd("attacker-win", updatedAttacker);
+
+    console.log(`Текущее состояние: ${attacker.name} HP=${attackerHealth}, ${defender.name} HP=${defenderHealth}`);
+
+    if (!hasBattleEnded && (attackerHealth <= 0 || defenderHealth <= 0)) {
+      if (attackerHealth <= 0) {
+        console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
+        onBattleEnd("defender-win", attacker);
+      } else {
+        console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
+        let updatedAttacker: Entity;
+        if (isPlayer(attacker)) {
+          updatedAttacker = {
+            ...attacker,
+            experience: (attacker.experience || 0) + 100,
+            health: attackerHealth,
+          };
+        } else {
+          updatedAttacker = { ...attacker, health: attackerHealth };
+        }
+        onBattleEnd("attacker-win", updatedAttacker);
+      }
+      setHasBattleEnded(true);
     }
-  }, [attackerHealth, defenderHealth]);
+  }, [attackerHealth, defenderHealth, onBattleEnd, attacker, hasBattleEnded]);
 
   return (
     <div className="battle-scene">
-      <div className="battle-grid">
-        {[...Array(BATTLE_GRID)].map((_, x) => (
+      <div className="battle-grid" style={{ display: "flex" }}>
+        {[...Array(gridSize)].map((_, x) => (
           <div
             key={x}
-            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${
-              x === defenderPos.x ? "defender" : ""
-            }`}
+            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${x === defenderPos.x ? "defender" : ""}`}
+            style={{
+              width: "50px",
+              height: "50px",
+              border: "1px solid black",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
           >
-            {x === attackerPos.x && (attacker.type === "player" ? <span>🧍</span> : <span>👹</span>)}
-            {x === defenderPos.x && (defender.type === "player" ? <span>🧍</span> : <span>👹</span>)}
+            {x === attackerPos.x && (isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>)}
+            {x === defenderPos.x && (isPlayer(defender) ? <span>🧍</span> : <span>👹</span>)}
           </div>
         ))}
       </div>
       <div className="battle-info">
         <p>
-          {attacker.name}: HP {attackerHealth} / {attacker.maxHealth}, ATK: {attacker.attack}, DEF:{" "}
+          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack}, DEF:{" "}
           {attacker.defense}
         </p>
         <p>
-          {defender.name}: HP {defenderHealth} / {defender.maxHealth}, ATK: {defender.attack}, DEF:{" "}
+          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack}, DEF:{" "}
           {defender.defense}
         </p>
         <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>
@@ -233,11 +292,12 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
           <button onClick={() => handleMove("right")}>➡️ Вправо</button>
           <button onClick={handleAttack}>🗡️ Атаковать</button>
           <button onClick={handleDefend}>🛡️ Защититься</button>
+          <button onClick={handlePassTurn}>⏭️ Передать ход</button> {/* Новая кнопка для передачи хода */}
         </div>
       )}
     </div>
   );
-}
+});
 
 
 //GameContext.tsx
@@ -247,11 +307,12 @@ export default function BattleScene({ attacker, defender, onBattleEnd }: BattleS
 
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import { gameReducer } from "../logic/reducer";
-import { GameState, PlayerState } from "../logic/types";
+import { GameMode, GameState, PlayerState } from "../logic/types";
 import { Action } from "../logic/actions";
 import { generateMap } from "../logic/generateMap";
 import { aggressiveMonstersAttack } from "../logic/monsters";
 import { checkForDuplicateMonsters } from "../logic/utils";
+import initialPlayers from "../logic/initialPlayers";
 
 type GameContextValue = {
   state: GameState;
@@ -264,7 +325,7 @@ type GameProviderProps = {
 };
 
 const initialState: GameState = {
-  mode: "1v1",
+  mode: GameMode.ONE_VS_ONE,
   players: [],
   grid: [],
   mapWidth: 20,
@@ -276,6 +337,7 @@ const initialState: GameState = {
   turnCycle: 1,
   inventoryOpen: false,
   monstersHaveAttacked: false,
+  battleParticipants: null,
   
 };
 
@@ -296,49 +358,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       canLoseArtifact: true,
     };
 
-    const initialPlayers: PlayerState[] = [
-      {
-        id: 0,
-        name: "Player1",
-        position: { x: 0, y: 0 },
-        energy: 100,
-        maxEnergy: 100,
-        level: 1,
-        expirience: 0,
-        max_expirience: 500,
-        visionRange: 5,
-        health: 100,
-        maxHealth: 100,
-        attack: 10,
-        defense: 5,
-        speed: 3,           
-        maneuverability: 2, 
-        image: "player-1.webp",
-        inventory: {},
-        abilities: { ...defaultAbilities },
-      },
-      {
-        id: 1,
-        name: "Player2",
-        position: { x: 19, y: 19 },
-        energy: 100,
-        maxEnergy: 100,
-        level: 1,
-        expirience: 0,
-        max_expirience: 500,
-        visionRange: 3,
-        health: 100,
-        maxHealth: 100,
-        attack: 10,
-        defense: 5,
-        speed: 3,            
-        maneuverability: 2, 
-        image: "player-2.webp",
-        inventory: {},
-        abilities: { ...defaultAbilities },
-      },
-    ];
-
+  
     const generatedGrid = generateMap(state.mode, initialPlayers, state.mapWidth, state.mapHeight);
     checkForDuplicateMonsters(generatedGrid);
 
@@ -384,12 +404,14 @@ import { useGameContext } from "./GameContext";
 import Map from "./Map";
 import Players from "./Players";
 import Inventory from "./Inventory";
+import BattleScene from "./BattleScene";
 import { generateMap } from "../logic/generateMap";
 import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
 import { Action } from "../logic/actions";
+import { Entity } from "../logic/types";
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
@@ -438,7 +460,14 @@ export default function GameManager() {
   ]);
 
   useEffect(() => {
-    if (state.grid === null && players.length > 0) {
+    if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
+      monstersAttackPlayers();
+      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
+    }
+  }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
+
+  useEffect(() => {
+    if (state.grid.length === 0 && players.length > 0) {
       const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
       dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
     }
@@ -446,6 +475,7 @@ export default function GameManager() {
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      e.preventDefault(); // Предотвращаем прокрутку страницы при нажатии стрелок
       handleKeyDown(e, { state, dispatch, ...handlersRef.current });
     },
     [state, dispatch]
@@ -470,7 +500,7 @@ export default function GameManager() {
     if (!activePlayer?.abilities?.canPassTurn) return;
 
     dispatch({ type: 'PASS_TURN' });
-  }, [activePlayer, monstersAttackPlayers, dispatch]);
+  }, [activePlayer, dispatch]);
 
   const memoizedMap = useMemo(
     () =>
@@ -506,20 +536,36 @@ export default function GameManager() {
     [state.inventoryOpen, activePlayer]
   );
 
+  const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
+    console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker);
+    dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker } });
+  };
+
   return (
     <div>
-      {activePlayer && (
+      {state.inBattle && state.battleParticipants ? (
+        <BattleScene
+          attacker={state.battleParticipants.attacker}
+          defender={state.battleParticipants.defender}
+          onBattleEnd={onBattleEnd}
+          gridSize={7} // Задаем желаемый размер поля боя
+        />
+      ) : (
         <>
-          <p>
-            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
-            Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
-          </p>
-          <button onClick={passTurn}>Передать ход</button>
+          {activePlayer && (
+            <>
+              <p>
+                {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
+                Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+              </p>
+              <button onClick={passTurn}>Передать ход</button>
+            </>
+          )}
+          {memoizedMap}
+          {memoizedPlayers}
+          {memoizedInventory}
         </>
       )}
-      {memoizedMap}
-      {memoizedPlayers}
-      {memoizedInventory}
     </div>
   );
 }
@@ -688,29 +734,6 @@ export default function Map({
   );
 }
 
-//Players.tsx
-
-"use client";
-
-import React from "react";
-import Player from "./Player";
-import { PlayerState } from "../logic/types";
-
-type PlayersProps = {
-  players: PlayerState[];
-  activePlayerId: number;
-};
-
-export default function Players({ players, activePlayerId }: PlayersProps) {
-  return (
-    <>
-      {players.map((p) => (
-        <Player key={p.id} player={p} isActive={p.id === activePlayerId} />
-      ))}
-    </>
-  );
-}
-
 //Player.tsx
 
 "use client";
@@ -735,12 +758,34 @@ export default function Player({ player, isActive }: PlayerProps) {
   );
 }
 
+//Players.tsx
+
+"use client";
+
+import React from "react";
+import Player from "./Player";
+import { PlayerState } from "../logic/types";
+
+type PlayersProps = {
+  players: PlayerState[];
+  activePlayerId: number;
+};
+
+export default function Players({ players, activePlayerId }: PlayersProps) {
+  return (
+    <>
+      {players.map((p) => (
+        <Player key={p.id} player={p} isActive={p.id === activePlayerId} />
+      ))}
+    </>
+  );
+}
 //Resource.tsx
 
 "use client";
 
 import React, { useState } from "react";
-import Tooltip from "./Tooltip";
+// import Tooltip from "./Tooltip";
 import "./resource.css";
 
 type ResourceProps = {
@@ -776,7 +821,7 @@ import { terrainData } from "../logic/allData";
 import { useGameContext } from "./GameContext";
 import { getResourceImage } from "../logic/allData";
 import { Cell } from "../logic/types";
-import { Action } from "../logic/actions";
+
 
 type TileProps = {
   cell: Cell;
@@ -862,7 +907,6 @@ export default function Tile({ cell, playersOnTile }: TileProps) {
     </div>
   );
 }
-
 //Tooltip.tsx
 
 "use client";
@@ -885,6 +929,7 @@ export default function Tooltip({ title, difficulty, description }: TooltipProps
     </div>
   );
 }
+
 
 ************************************************ logic ********************************************
 
@@ -921,11 +966,12 @@ export type Action =
   | { type: 'SET_MONSTERS_HAVE_ATTACKED'; payload: { monstersHaveAttacked: boolean } }
   | { type: 'UPDATE_MONSTER_ATTACK_TURN'; payload: { monsterId: number; turnCycle: number } }
   | { type: "UPDATE_PLAYER_STATS"; payload: { playerId: number; stats: Partial<PlayerState> } }
+  
   | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState } }
+  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; updatedAttacker?: PlayerState | MonsterState } }
   | { type: "REMOVE_PLAYER"; payload: { playerId: number } };
 
-
-//allData.ts
+ //allData.ts
 
 //resourceData
 import { ResourceType } from "@/logic/types";
@@ -1129,8 +1175,8 @@ export const allMonsters: MonsterState[] = [
     id: getUniqueId(),
     name: "Goblin",
     type: "aggressive",
-    hp: 20,
-    maxHp: 20,
+    health: 20,
+    maxHealth: 20,
     attack: 25,
     defense: 1,
     vision: 1,
@@ -1148,9 +1194,9 @@ export const allMonsters: MonsterState[] = [
     id: getUniqueId(),
     name: "Goblins",
     type: "neutral",
-    hp: 40,
-    maxHp: 40,
-    attack: 50,
+    health: 40,
+    maxHealth: 40,
+    attack: 10,
     defense: 2,
     vision: 1,
     speed: 1,
@@ -1167,9 +1213,9 @@ export const allMonsters: MonsterState[] = [
     id: getUniqueId(),
     name: "Orc",
     type: "aggressive",
-    hp: 50,
-    maxHp: 50,
-    attack: 30,
+    health: 50,
+    maxHealth: 50,
+    attack: 15,
     defense: 5,
     vision: 1,
     speed: 1,
@@ -1186,8 +1232,8 @@ export const allMonsters: MonsterState[] = [
     id: getUniqueId(),
     name: "Troll",
     type: "neutral",
-    hp: 80,
-    maxHp: 80,
+    health: 80,
+    maxHealth: 80,
     attack: 40,
     defense: 10,
     vision: 1,
@@ -1254,54 +1300,45 @@ export function useArtifactLogic() {
 // src/logic/battleSystem.ts
 
 import { useGameContext } from "../components/GameContext";
-import { MonsterState, PlayerState } from "./types";
-import { Action } from "./actions";
+import { Entity } from "./types";
 
 export function useBattleSystem() {
   const { state, dispatch } = useGameContext();
 
-  const calculateDamage = (attack: number, defense: number): number =>
-    Math.max(0, attack - defense);
-
-  const handleMonsterAttack = (player: PlayerState, monster: MonsterState, cellId: number): Action[] => {
-    const damage = calculateDamage(monster.attack, player.defense);
-    const newHealth = Math.max(player.health - damage, 0);
-
-    const actions: Action[] = [
-      {
-        type: 'ATTACK',
-        payload: { attackerId: monster.id, targetId: player.id, damage, targetType: 'player' },
-      },
-    ];
-
-    if (newHealth === 0) {
-      // Добавляем действие для обработки смерти игрока
-      actions.push({ type: 'PLAYER_DIED', payload: { playerId: player.id } });
-    }
-
-    return actions;
-  };
-
   const monstersAttackPlayers = () => {
-    if (!state.grid) return;
+    if (!state.grid || state.inBattle) return; // Проверка на уже идущий бой
 
-    const actions: Action[] = [];
-
-    state.grid.forEach((cell) => {
+    for (const cell of state.grid) {
       if (cell.monster && cell.monster.type === 'aggressive') {
-        state.players.forEach((player) => {
+        for (const player of state.players) {
           const distance = Math.abs(player.position.x - cell.x) + Math.abs(player.position.y - cell.y);
-          if (cell.monster && distance <= cell.monster.vision && player.health > 0) {
-            actions.push(...handleMonsterAttack(player, cell.monster, cell.id));
-          }
-        });
-      }
-    });
+          if (distance <= cell.monster.vision && player.health > 0) {
+            // Инициируем бой
+            const attacker: Entity = cell.monster!;
+            const defender: Entity = player;
 
-    actions.forEach(action => dispatch(action));
+            // Проверка, что атакующий не атакует себя
+            if (attacker.id === defender.id) {
+              console.warn(`Игрок ${attacker.name} атакует сам себя!`);
+              continue;
+            }
+
+            // Логирование для отладки
+            console.log(`Инициирован бой: ${attacker.name} атакует ${defender.name}`);
+
+            dispatch({ type: 'START_BATTLE', payload: { attacker, defender } });
+
+            // Прерываем цикл, чтобы не инициировать несколько боев одновременно
+            return;
+          }
+        }
+      }
+    }
   };
 
   const attackPlayerOrMonster = (playerId: number, direction: { dx: number; dy: number }) => {
+    if (state.inBattle) return; // Запрет на атаку, если уже идет бой
+
     const attacker = state.players.find(p => p.id === playerId);
     if (!attacker) return;
 
@@ -1311,32 +1348,16 @@ export function useBattleSystem() {
     const targetPlayer = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
     const targetCell = state.grid?.find(c => c.x === targetX && c.y === targetY);
 
-    if (targetPlayer) {
-      // Атака игрока
-      const damage = calculateDamage(attacker.attack, targetPlayer.defense);
-      dispatch({ 
-        type: 'ATTACK', 
-        payload: { 
-          attackerId: playerId, 
-          targetId: targetPlayer.id, 
-          damage, 
-          targetType: 'player' 
-        } 
-      });
+    if (targetPlayer && targetPlayer.id !== attacker.id) { // Убедимся, что атакуем другого игрока
+      // Инициируем бой с другим игроком
+      const defender: Entity = targetPlayer;
+      console.log(`Игрок ${attacker.name} атакует игрока ${defender.name}`);
+      dispatch({ type: 'START_BATTLE', payload: { attacker, defender } });
     } else if (targetCell?.monster) {
-      // Атака монстра
-      const damage = calculateDamage(attacker.attack, targetCell.monster.defense);
-      dispatch({ 
-        type: 'ATTACK', 
-        payload: { 
-          attackerId: playerId, 
-          targetId: targetCell.monster.id, 
-          damage, 
-          targetType: 'monster', 
-          cellId: targetCell.id 
-        } 
-      });
-      // Дополнительно: обработка состояния монстра, если требуется
+      // Инициируем бой с монстром (агрессивным или нейтральным)
+      const defender: Entity = targetCell.monster!;
+      console.log(`Игрок ${attacker.name} атакует монстра ${defender.name}`);
+      dispatch({ type: 'START_BATTLE', payload: { attacker, defender } });
     }
   };
 
@@ -1391,12 +1412,11 @@ export function generateBattlefield(
 
 // src/logic/generateMap.ts
 
-import { PlayerState, Cell, GameMode } from "../logic/types";
-import { resources } from "./allData"; // Данные о ресурсах.
-import { createRandomMonster } from "./allData"; // Функция для создания случайного монстра.
+import { PlayerState, Cell, GameMode, TerrainType } from "./types"; // Убедитесь, что путь корректен
+import { resources, createRandomMonster } from "./allData"; // Объедините импорты из одного места
 
 // Определяем возможные типы местности на карте.
-const terrains = ["ground", "forest", "mountain", "ice", "river"]; // Добавил "river" для примера
+const terrains: TerrainType[] = ["ground", "forest", "mountain", "ice", "river"]; // Указан тип TerrainType[]
 
 export function generateMap(
   mode: GameMode,
@@ -1408,8 +1428,8 @@ export function generateMap(
   const grid: Cell[] = [];
   const maxRepeats = 4;
 
-  const getNextTerrain = (x: number, y: number, prevTerrains: string[]): string => {
-    const possibleTerrains = [...terrains];
+  const getNextTerrain = (x: number, y: number, prevTerrains: TerrainType[]): TerrainType => {
+    const possibleTerrains: TerrainType[] = [...terrains];
 
     if (y > 0) {
       const aboveTerrain = grid[(y - 1) * width + x]?.terrain;
@@ -1428,18 +1448,19 @@ export function generateMap(
       return possibleTerrains.find((t) => t !== prevTerrains[0]) || "ground";
     }
 
+    // Выбор случайного TerrainType из possibleTerrains
     return possibleTerrains[Math.floor(Math.random() * possibleTerrains.length)];
   };
 
   for (let id = 0; id < total; id++) {
     const x = id % width;
     const y = Math.floor(id / width);
-    const prevTerrains: string[] = [];
+    const prevTerrains: TerrainType[] = [];
 
-    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain);
-    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain);
+    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain as TerrainType);
+    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain as TerrainType);
 
-    const terrain = getNextTerrain(x, y, prevTerrains);
+    const terrain: TerrainType = getNextTerrain(x, y, prevTerrains);
     const isWalkable = terrain !== "river"; // Предположим, что "river" - непроходимая местность
 
     const isBarrel = isWalkable && Math.random() < 0.05;
@@ -1457,7 +1478,7 @@ export function generateMap(
       id,
       x,
       y,
-      terrain,
+      terrain, // Теперь terrain строго типа TerrainType
       resource: isWalkable ? resource : null,
       monster: isWalkable ? monster : undefined,
       isPortal: false, // Инициализируем как false
@@ -1473,10 +1494,70 @@ export function generateMap(
   return grid;
 }
 
+import { PlayerState, PlayerAbilities} from "./types"; // Убедитесь, что путь корректен
+
+const defaultAbilities: PlayerAbilities = {
+  canMove: true,
+  canAttack: true,
+  canCollectResources: true,
+  canUseItems: true,
+  canInteractWithObjects: true,
+  canPassTurn: true,
+  canPickArtifact: true,
+  canLoseArtifact: true,
+};
+
+const initialPlayers: PlayerState[] = [
+  {
+    id: 0,
+    name: "Player1",
+    position: { x: 0, y: 0 },
+    energy: 100,
+    maxEnergy: 100,
+    level: 1,
+    experience: 0,
+    maxExperience: 500, // Исправлено с max_experience на maxExperience
+    visionRange: 5,
+    health: 100,
+    maxHealth: 100,
+    attack: 10,
+    defense: 5,
+    speed: 3,           
+    maneuverability: 2, 
+    vision: 5, // Исправлено с visionRange: 5, на visionRange: 5,
+    image: "player-1.webp", // Исправлено с объекта на строку
+    inventory: {},
+    abilities: { ...defaultAbilities },
+  },
+  {
+    id: 1,
+    name: "Player2",
+    position: { x: 19, y: 19 },
+    energy: 100,
+    maxEnergy: 100,
+    level: 1,
+    experience: 0,
+    maxExperience: 500, // Исправлено с max_experience на maxExperience
+    visionRange: 3,
+    vision: 5,
+    health: 100,
+    maxHealth: 100,
+    attack: 10,
+    defense: 5,
+    speed: 3,            
+    maneuverability: 2, 
+    image: "player-2.webp",
+    inventory: {},
+    abilities: { ...defaultAbilities },
+  },
+];
+
+export default initialPlayers;
+
 // src/logic/inputHandler.ts
 
 import { Action } from "./actions";
-import { PlayerState, GameState } from "./types";
+import { PlayerState, GameState, Entity} from "./types";
 
 type Handlers = {
   attackPlayerOrMonster: (playerId: number, direction: { dx: number; dy: number }) => void;
@@ -1562,8 +1643,10 @@ export function handleKeyDown(
       dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
     }
   }
+  if (e.key === "A" || e.key === "a" || e.key === "Ф" || e.key === "ф") { // 'A' клавиша в разных раскладках
+    attackPlayerOrMonster(playerId, { dx, dy });
+  }
 }
-
 // logic/matchmaking.ts
 
 export type GameMode = "PVE"|"1v1"|"3v3"|"5v5";
@@ -1649,7 +1732,6 @@ export function aggressiveMonstersAttack(
 
   return { newState: state, instanceFinished };
 }
-
 // src/logic/progressionSystem.ts
 
 import { PlayerState } from "./types";
@@ -1664,10 +1746,9 @@ export function finalizeInstance(instanceId: string, players: PlayerState[], dis
   });
   // Добавьте логику обновления БД или других систем через действия
 }
-
 //reduser.ts
 
-import { GameState   } from "./types";
+import { GameState, Entity  } from "./types";
 import { Action } from "./actions";
 import { resources } from "./allData";
 
@@ -1713,7 +1794,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
       } else if (targetType === "monster" && cellId !== undefined) {
         const updatedGrid = state.grid.map((cell) => {
           if (cell.id === cellId && cell.monster) {
-            const newHp = Math.max(cell.monster.hp - damage, 0);
+            const newHp = Math.max(cell.monster.health - damage, 0);
             return newHp > 0
               ? { ...cell, monster: { ...cell.monster, hp: newHp } }
               : { ...cell, monster: undefined };
@@ -1833,20 +1914,71 @@ export function gameReducer(state: GameState, action: Action): GameState {
       };
     }
 
-    case 'START_BATTLE': {
-      const { attacker, defender } = action.payload; 
-      // attacker и defender - это PlayerState | MonsterState
-
-      const battlefield = generateBattlefield(11, 15, attacker, defender);
-
-      // Можно установить флаг inBattle
+    case "START_BATTLE":
       return {
         ...state,
         inBattle: true,
-        // Если вы хотите где-то хранить поле боя, можно добавить его в состояние:
-        // battlefield: battlefield
+        battleParticipants: {
+          attacker: action.payload.attacker,
+          defender: action.payload.defender,
+        },
       };
-    }
+
+      case "END_BATTLE": {
+        const { result, updatedAttacker } = action.payload;
+        console.log(`END_BATTLE: result=${result}, updatedAttacker=`, updatedAttacker);
+        let updatedState = { ...state, inBattle: false, battleParticipants: null };
+  
+        if (!updatedAttacker) {
+          console.error("updatedAttacker is undefined in END_BATTLE action.");
+          return state;
+        }
+  
+        if (result === "attacker-win") {
+          if ("level" in updatedAttacker) { // Проверяем, что атакующий - игрок
+            console.log(`${updatedAttacker.name} победил в бою.`);
+            updatedState = {
+              ...updatedState,
+              players: state.players.map(player =>
+                player.id === updatedAttacker.id ? updatedAttacker : player
+              ),
+            };
+          } else { // Если атакующий - монстр
+            console.log(`Монстр ${updatedAttacker.name} победил в бою.`);
+            updatedState = {
+              ...updatedState,
+              grid: state.grid.map(cell =>
+                cell.monster && cell.monster.id === updatedAttacker.id
+                  ? { ...cell, monster: updatedAttacker.health > 0 ? updatedAttacker : undefined }
+                  : cell
+              ),
+            };
+          }
+        } else if (result === "defender-win") {
+          const { attacker, defender } = state.battleParticipants!;
+          if ("level" in attacker) { // Проверяем, что атакующий - игрок
+            console.log(`${attacker.name} погиб в бою.`);
+            updatedState = {
+              ...updatedState,
+              players: state.players.map(player =>
+                player.id === attacker.id ? { ...player, health: 0 } : player
+              ),
+            };
+          } else { // Если атакующий - монстр
+            console.log(`Монстр ${attacker.name} погиб в бою.`);
+            updatedState = {
+              ...updatedState,
+              grid: state.grid.map(cell =>
+                cell.monster && cell.monster.id === attacker.id
+                  ? { ...cell, monster: undefined }
+                  : cell
+              ),
+            };
+          }
+        }
+  
+        return updatedState;
+      }
     
     
     
@@ -1860,7 +1992,6 @@ export function gameReducer(state: GameState, action: Action): GameState {
       return state;
   }
 }
-
 // src/logic/resourceSystem.ts
 
 import { useGameContext } from "../components/GameContext";
@@ -1996,26 +2127,67 @@ export function useResourceSystem() {
     collectResourceIfOnTile,
   };
 }
-
 // src/logic/types.ts
 
 // Определяем возможные игровые режимы.
-export type GameMode = "PVE" | "1v1" | "3v3" | "5v5";
+export enum GameMode {
+  PVE = "PVE",
+  ONE_VS_ONE = "1v1",
+  THREE_VS_THREE = "3v3",
+  FIVE_VS_FIVE = "5v5",
+}
 
-// Тип для описания состояния монстра.
-export type MonsterState = {
+// Тип для типов террейнов.
+export type TerrainType = "ground" | "forest" | "mountain" | "ice" | "river" | "grass";
+
+// Базовый интерфейс для игроков.
+interface BasePlayerEntity {
   id: number;
   name: string;
-  type: "aggressive" | "neutral";
-  hp: number;
-  maxHp: number;
+  health: number;
+  maxHealth: number;
   attack: number;
   defense: number;
   vision: number;
-  image: Record<string, string>;
+  image: string; // Для PlayerState, image как строка
   lastTurnAttacked?: number;
+}
 
-  // Добавляем параметры, необходимые для боя:
+// Тип для состояния игрока.
+export type PlayerState = BasePlayerEntity & {
+  position: { x: number; y: number };
+  energy: number;
+  maxEnergy: number;
+  level: number;
+  experience: number;
+  maxExperience: number; // Изменено на camelCase
+  visionRange: number;
+  inventory: Inventory;
+  abilities: PlayerAbilities;
+
+  // Параметры для тактического боя
+  speed: number;           // На сколько клеток ходит в бою
+  maneuverability: number; // Сколько клеток может менять позицию при расстановке
+  rangeAttack?: boolean;
+  rangeDistance?: number;
+};
+
+// Базовый интерфейс для монстров.
+interface BaseMonsterEntity {
+  id: number;
+  name: string;
+  health: number;
+  maxHealth: number;
+  attack: number;
+  defense: number;
+  vision: number;
+  image: Record<string, string>; // Для MonsterState, image как Record<string, string>
+  lastTurnAttacked?: number;
+}
+
+// Тип для состояния монстра.
+export type MonsterState = BaseMonsterEntity & {
+  type: "aggressive" | "neutral";
   speed: number;          // На сколько клеток ходит в бою
   maneuverability: number;// Сколько клеток может поменять позицию перед боем
   rangeAttack?: boolean;  
@@ -2023,7 +2195,7 @@ export type MonsterState = {
 };
 
 // Дополнительные бонусные атрибуты для предметов/артефактов.
-type BonusAttributes = {
+export type BonusAttributes = {
   energy?: number; 
   maxEnergy?: number;
   visionRange?: number;
@@ -2034,7 +2206,7 @@ type BonusAttributes = {
 };
 
 // Тип для предметов в инвентаре.
-type InventoryItem = {
+export type InventoryItem = {
   count: number;
   image: string;
   description: string;
@@ -2056,32 +2228,6 @@ export type PlayerAbilities = {
   canLoseArtifact: boolean;
 };
 
-// Тип для состояния игрока.
-export type PlayerState = {
-  id: number;
-  name: string;
-  position: { x: number; y: number };
-  energy: number;
-  maxEnergy: number;
-  level: number;
-  expirience: number;
-  max_expirience: number;
-  visionRange: number;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  image: string;
-  inventory: Inventory;
-  abilities: PlayerAbilities;
-
-  // Параметры для тактического боя
-  speed: number;           // На сколько клеток ходит в бою
-  maneuverability: number; // Сколько клеток может менять позицию при расстановке
-  rangeAttack?: boolean;
-  rangeDistance?: number;
-};
-
 // Тип для ресурса.
 export type ResourceType = {
   type: string;
@@ -2090,24 +2236,25 @@ export type ResourceType = {
   description: string;
   rarity: number;
   effect: number;
-  terrains: string[];
+  terrains: TerrainType[];
 };
 
 // Типы действий игрока.
-export type PlayerAction =
-  | "move"
-  | "attack"
-  | "collect"
-  | "useItem"
-  | "interact"
-  | "passTurn"
-  | "pickArtifact"
-  | "loseArtifact";
+export enum PlayerActionEnum {
+  MOVE = "move",
+  ATTACK = "attack",
+  COLLECT = "collect",
+  USE_ITEM = "useItem",
+  INTERACT = "interact",
+  PASS_TURN = "passTurn",
+  PICK_ARTIFACT = "pickArtifact",
+  LOSE_ARTIFACT = "loseArtifact",
+}
 
 // Переходная клетка (портал, лестница).
 export type TransitionTile = {
-  from: string;
-  to: string;
+  from: TerrainType;
+  to: TerrainType;
   image: string;
 };
 
@@ -2116,7 +2263,7 @@ export type Cell = {
   id: number;
   x: number;
   y: number;
-  terrain: string;
+  terrain: TerrainType;
   resource: ResourceType | null;
   isPortal?: boolean;
   monster?: MonsterState;
@@ -2129,10 +2276,26 @@ export type HexCell = {
   id: number;
   x: number;
   y: number;
-  terrain: string;
+  terrain: TerrainType;
   unit: PlayerState | MonsterState | null;
   walkable: boolean;
   reachable: boolean;
+};
+
+// Тип для сущности (игрок или монстр).
+export type Entity = PlayerState | MonsterState;
+
+// Тип для участников боя.
+export type BattleParticipants = {
+  attacker: Entity;
+  defender: Entity;
+};
+
+// Тип для награды.
+export type Reward = {
+  experience: number;
+  currency: number;
+  artifact?: string;
 };
 
 // Тип для глобального состояния игры.
@@ -2152,9 +2315,8 @@ export type GameState = {
 
   // Флаг, указывающий, что мы находимся в бою (при необходимости)
   inBattle?: boolean;
+  battleParticipants: BattleParticipants | null;
 };
-
-
 // src/logic/utils.ts
 
 import { Cell } from "./types";
@@ -2171,4 +2333,3 @@ export function checkForDuplicateMonsters(grid: Cell[]): void {
     }
   });
 }
-
