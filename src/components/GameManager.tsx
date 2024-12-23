@@ -177,7 +177,8 @@ export default function GameManager() {
 
   return (
     <div>
-      {state.inBattle && state.battleParticipants && (
+      {/* Если идёт бой, показываем только BattleScene */}
+      {state.inBattle && state.battleParticipants ? (
         <BattleScene
           attacker={state.battleParticipants.attacker}
           defender={state.battleParticipants.defender}
@@ -185,20 +186,26 @@ export default function GameManager() {
           onBattleEnd={onBattleEnd}
           gridSize={7}
         />
-      )}
-      {activePlayer && (
+      ) : (
+        // ИНАЧЕ (если боя нет) - рендерим основную карту и т.д.
         <>
-          <p>
-            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/
-            {activePlayer.maxEnergy}, Attack={activePlayer.attack}, Defense=
-            {activePlayer.defense}, Level={activePlayer.level}
-          </p>
-          <button onClick={passTurn}>Передать ход</button>
+          {activePlayer && (
+            <>
+              <p>
+                {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/
+                {activePlayer.maxEnergy}, Attack={activePlayer.attack}, Defense={
+                  activePlayer.defense
+                }, Level={activePlayer.level}
+              </p>
+              <button onClick={passTurn}>Передать ход</button>
+            </>
+          )}
+
+          {memoizedMap}
+          {memoizedPlayers}
+          {memoizedInventory}
         </>
       )}
-      {memoizedMap}
-      {memoizedPlayers}
-      {memoizedInventory}
     </div>
   );
 }
