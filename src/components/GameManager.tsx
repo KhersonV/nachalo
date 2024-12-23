@@ -10,44 +10,53 @@ import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
-import { Entity, GameState, PlayerState } from "../logic/types"; // Убедитесь, что GameState импортирован
+import { Entity, GameState } from "../logic/types";
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
 
-  const { attackPlayerOrMonster, monstersAttackPlayers } = useBattleSystem();
+  // Получаем новую функцию:
+  const { attackPlayerOrMonsterSameCell, monstersAttackPlayers } = useBattleSystem();
   const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
   const players = state.players;
   const currentPlayerIndex = state.currentPlayerIndex;
 
+  // Обратите внимание: теперь мы передаём в handlersRef
+  // именно attackPlayerOrMonsterSameCell (без направления).
   const handlersRef = useRef({
-    attackPlayerOrMonster,
-    openBarrel,
+    attackPlayerOrMonsterSameCell,
+    openBarrel: (playerId: number) => {
+      // Реализуйте открытие бочки без направления, если нужно.
+      openBarrel(playerId, { dx: 0, dy: 0 }); 
+      // Или полностью перепишите openBarrel так, чтобы не принимала dx/dy.
+    },
     tryExitThroughPortal,
     collectResourceIfOnTile,
     pickArtifact,
     loseArtifact,
     notifyArtifactOwner,
     inventoryOpen: state.inventoryOpen,
-    setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
+    setInventoryOpen: () => dispatch({ type: "TOGGLE_INVENTORY" }),
   });
 
   useEffect(() => {
     handlersRef.current = {
-      attackPlayerOrMonster,
-      openBarrel,
+      attackPlayerOrMonsterSameCell,
+      openBarrel: (playerId: number) => {
+        openBarrel(playerId, { dx: 0, dy: 0 });
+      },
       tryExitThroughPortal,
       collectResourceIfOnTile,
       pickArtifact,
       loseArtifact,
       notifyArtifactOwner,
       inventoryOpen: state.inventoryOpen,
-      setInventoryOpen: () => dispatch({ type: 'TOGGLE_INVENTORY' }),
+      setInventoryOpen: () => dispatch({ type: "TOGGLE_INVENTORY" }),
     };
   }, [
-    attackPlayerOrMonster,
+    attackPlayerOrMonsterSameCell,
     openBarrel,
     tryExitThroughPortal,
     collectResourceIfOnTile,
@@ -59,16 +68,25 @@ export default function GameManager() {
   ]);
 
   useEffect(() => {
+    // Монстры ходят один раз за цикл
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       monstersAttackPlayers();
-      dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
+      dispatch({
+        type: "SET_MONSTERS_HAVE_ATTACKED",
+        payload: { monstersHaveAttacked: true },
+      });
     }
   }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      e.preventDefault(); // Предотвращаем прокрутку страницы при нажатии стрелок
-      handleKeyDown(e, { state, dispatch, ...handlersRef.current });
+      e.preventDefault();
+      handleKeyDown(e, {
+        state,
+        dispatch,
+        // Разворачиваем handlersRef.current,
+        ...handlersRef.current,
+      });
     },
     [state, dispatch]
   );
@@ -80,58 +98,82 @@ export default function GameManager() {
     };
   }, [onKeyDown]);
 
-  const activePlayer = useMemo(
-    () =>
-      players.length > 0 && currentPlayerIndex >= 0 && currentPlayerIndex < players.length
-        ? players[currentPlayerIndex]
-        : null,
-    [players, currentPlayerIndex]
-  );
+  // Текущий игрок
+  const activePlayer = useMemo(() => {
+    if (players.length > 0 && currentPlayerIndex >= 0 && currentPlayerIndex < players.length) {
+      return players[currentPlayerIndex];
+    }
+    return null;
+  }, [players, currentPlayerIndex]);
 
   const passTurn = useCallback(() => {
     if (!activePlayer) return;
-
-    dispatch({ type: 'PASS_TURN' });
+    dispatch({ type: "PASS_TURN" });
   }, [activePlayer, dispatch]);
 
-  const memoizedMap = useMemo(
-    () =>
-      state.grid && activePlayer ? (
-        <Map
-          grid={state.grid}
-          playerPositions={players.map((p) => p.position)}
-          visionRange={activePlayer.visionRange}
-          mapWidth={state.mapWidth}
-          mapHeight={state.mapHeight}
-          activePlayerIndex={currentPlayerIndex}
-        />
-      ) : null,
-    [state.grid, players, activePlayer, state.mapWidth, state.mapHeight, currentPlayerIndex]
+  // Карта
+  const memoizedMap = useMemo(() => {
+    if (!state.grid || !activePlayer) return null;
+    return (
+      <Map
+        grid={state.grid}
+        playerPositions={players.map((p) => p.position)}
+        visionRange={activePlayer.visionRange}
+        mapWidth={state.mapWidth}
+        mapHeight={state.mapHeight}
+        activePlayerIndex={currentPlayerIndex}
+      />
+    );
+  }, [state.grid, players, activePlayer, state.mapWidth, state.mapHeight, currentPlayerIndex]);
+
+  // Отображение игроков (списком)
+  const memoizedPlayers = useMemo(() => {
+    if (!activePlayer) return null;
+    return <Players players={players} activePlayerId={activePlayer.id} />;
+  }, [players, activePlayer]);
+
+  // Инвентарь
+  const memoizedInventory = useMemo(() => {
+    if (!state.inventoryOpen || !activePlayer?.inventory) return null;
+    return <Inventory items={activePlayer.inventory} />;
+  }, [state.inventoryOpen, activePlayer]);
+
+  // Колбэк конца боя
+  const onBattleEnd = useCallback(
+    (result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => {
+      console.log(
+        `Бой завершен: ${result}, обновленный атакующий:`,
+        updatedAttacker,
+        `cellId=${cellId}`
+      );
+      dispatch({ type: "END_BATTLE", payload: { result, updatedAttacker, cellId } });
+    },
+    [dispatch]
   );
 
-  const memoizedPlayers = useMemo(
-    () =>
-      activePlayer ? (
-        <Players players={players} activePlayerId={activePlayer.id} />
-      ) : null,
-    [players, activePlayer]
-  );
+  // Функция поиска cellId (если надо)
+  function findBattleCellId(
+    state: GameState,
+    battleParticipants: { attacker: Entity; defender: Entity }
+  ): number {
+    // Если атакующий - монстр
+    if (!("level" in battleParticipants.attacker)) {
+      const cell = state.grid.find(
+        (c) => c.monster && c.monster.id === battleParticipants.attacker.id
+      );
+      if (cell) return cell.id;
+    }
 
-  const memoizedInventory = useMemo(
-    () =>
-      state.inventoryOpen && activePlayer?.inventory ? (
-        <Inventory
-          items={activePlayer.inventory}
-          // onUseItem проп убран, так как Inventory теперь обрабатывает dispatch самостоятельно
-        />
-      ) : null,
-    [state.inventoryOpen, activePlayer]
-  );
+    // Если защитник - монстр
+    if (!("level" in battleParticipants.defender)) {
+      const cell = state.grid.find(
+        (c) => c.monster && c.monster.id === battleParticipants.defender.id
+      );
+      if (cell) return cell.id;
+    }
 
-  const onBattleEnd = useCallback((result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => {
-    console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker, `cellId=${cellId}`);
-    dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker, cellId } });
-  }, [dispatch]);
+    return -1; // не найден
+  }
 
   return (
     <div>
@@ -139,16 +181,17 @@ export default function GameManager() {
         <BattleScene
           attacker={state.battleParticipants.attacker}
           defender={state.battleParticipants.defender}
-          cellId={findBattleCellId(state, state.battleParticipants)} // Функция для поиска cellId
+          cellId={findBattleCellId(state, state.battleParticipants)}
           onBattleEnd={onBattleEnd}
-          gridSize={7} // Задаем желаемый размер поля боя
+          gridSize={7}
         />
       )}
       {activePlayer && (
         <>
           <p>
-            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
-            Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/
+            {activePlayer.maxEnergy}, Attack={activePlayer.attack}, Defense=
+            {activePlayer.defense}, Level={activePlayer.level}
           </p>
           <button onClick={passTurn}>Передать ход</button>
         </>
@@ -158,33 +201,4 @@ export default function GameManager() {
       {memoizedInventory}
     </div>
   );
-}
-
-// Добавляем функцию для поиска cellId, где происходит бой
-function findBattleCellId(
-  state: GameState, 
-  battleParticipants: { attacker: Entity; defender: Entity }
-): number {
-  // Если атакующий – монстр
-  if (!isPlayer(battleParticipants.attacker)) {
-    const cell = state.grid.find(cell => 
-      cell.monster && cell.monster.id === battleParticipants.attacker.id
-    );
-    if (cell) return cell.id;
-  }
-
-  // Если защитник – монстр
-  if (!isPlayer(battleParticipants.defender)) {
-    const cell = state.grid.find(cell =>
-      cell.monster && cell.monster.id === battleParticipants.defender.id
-    );
-    if (cell) return cell.id;
-  }
-  
-  // Если никто не монстр, либо не найден – возвращаем -1
-  return -1;
-}
-
-function isPlayer(entity: Entity): entity is PlayerState {
-  return "level" in entity;
 }

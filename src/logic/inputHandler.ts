@@ -1,11 +1,14 @@
 // src/logic/inputHandler.ts
 
 import { Action } from "./actions";
-import { PlayerState, GameState, Entity} from "./types";
+import { PlayerState, GameState } from "./types";
 
 type Handlers = {
-  attackPlayerOrMonster: (playerId: number, direction: { dx: number; dy: number }) => void;
-  openBarrel: (playerId: number, direction: { dx: number; dy: number }) => void;
+  // УДАЛЯЕМ:
+  // attackPlayerOrMonster: (playerId: number, direction: { dx: number; dy: number }) => void;
+  // openBarrel: (playerId: number, direction: { dx: number; dy: number }) => void;
+
+  // ОСТАЛЬНОЕ оставляем:
   pickArtifact: (playerId: number) => void;
   loseArtifact: (playerId: number) => void;
   notifyArtifactOwner: () => void;
@@ -13,6 +16,10 @@ type Handlers = {
   collectResourceIfOnTile: (playerId: number) => void;
   inventoryOpen: boolean;
   setInventoryOpen: () => void;
+
+  // НОВОЕ:
+  attackPlayerOrMonsterSameCell: (playerId: number) => void;
+  openBarrel: (playerId: number) => void; // Если нужно открывать бочку без направления
 };
 
 export function handleKeyDown(
@@ -20,8 +27,6 @@ export function handleKeyDown(
   {
     state,
     dispatch,
-    attackPlayerOrMonster,
-    openBarrel,
     pickArtifact,
     loseArtifact,
     notifyArtifactOwner,
@@ -29,6 +34,8 @@ export function handleKeyDown(
     collectResourceIfOnTile,
     inventoryOpen,
     setInventoryOpen,
+    attackPlayerOrMonsterSameCell,
+    openBarrel,
   }: { state: GameState; dispatch: React.Dispatch<Action> } & Handlers
 ) {
   if (!state.grid || state.players.length === 0) return;
@@ -37,12 +44,13 @@ export function handleKeyDown(
   if (!player) return;
 
   // Инвентарь на "i"
-  if (e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
-    dispatch({ type: 'TOGGLE_INVENTORY' });
+  if (["i", "I", "ш", "Ш"].includes(e.key)) {
+    dispatch({ type: "TOGGLE_INVENTORY" });
     return;
   }
 
-  if (player.energy <= 0) return; // нет энергии - не двигаемся
+  // Если у игрока нет энергии, то он не может двигаться.
+  if (player.energy <= 0) return;
 
   let dx = 0,
     dy = 0;
@@ -51,43 +59,52 @@ export function handleKeyDown(
   if (e.key === "ArrowLeft") dx = -1;
   if (e.key === "ArrowRight") dx = 1;
 
+  // Движение
   if ((dx !== 0 || dy !== 0) && state.grid) {
-    // Проверяем, можно ли двигаться
     const newX = Math.max(0, Math.min(state.mapWidth - 1, player.position.x + dx));
     const newY = Math.max(0, Math.min(state.mapHeight - 1, player.position.y + dy));
+
+    // Если упёрлись в край карты
     if (newX === player.position.x && newY === player.position.y) {
-      // Игрок упёрся в край карты
       return;
     }
 
-    // Проверяем тайл, можно ли идти по нему
-    const cell = state.grid.find(c => c.x === newX && c.y === newY);
+    // Проверяем, проходима ли клетка
+    const cell = state.grid.find((c) => c.x === newX && c.y === newY);
     if (!cell || cell.terrain.includes("river")) {
       // Не можем идти по реке
       return;
     }
 
-    dispatch({ type: 'MOVE_PLAYER', payload: { playerId, newPosition: { x: newX, y: newY } } });
+    // Двигаем игрока
+    dispatch({
+      type: "MOVE_PLAYER",
+      payload: { playerId, newPosition: { x: newX, y: newY } },
+    });
   }
 
+  // Пробел: взаимодействие (сбор ресурса, портал и т.п.)
   if (e.key === " ") {
-    // Пробел: взаимодействие с тайлом под игроком
-    const currentCell = state.grid.find(c => c.x === player.position.x && c.y === player.position.y);
+    const currentCell = state.grid.find(
+      (c) => c.x === player.position.x && c.y === player.position.y
+    );
     if (currentCell?.resource) {
-      dispatch({ 
-        type: 'COLLECT_RESOURCE', 
-        payload: { 
-          playerId, 
-          resourceType: currentCell.resource.type, 
-          cellId: currentCell.id 
-        } 
+      dispatch({
+        type: "COLLECT_RESOURCE",
+        payload: {
+          playerId,
+          resourceType: currentCell.resource.type,
+          cellId: currentCell.id,
+        },
       });
     }
     if (currentCell?.isPortal) {
-      dispatch({ type: 'TRY_EXIT_PORTAL', payload: { playerId } });
+      dispatch({ type: "TRY_EXIT_PORTAL", payload: { playerId } });
     }
   }
-  if (e.key === "A" || e.key === "a" || e.key === "Ф" || e.key === "ф") { // 'A' клавиша в разных раскладках
-    attackPlayerOrMonster(playerId, { dx, dy });
+
+  // Клавиша "A": атака, НО БЕЗ НАПРАВЛЕНИЯ
+  if (["A", "a", "Ф", "ф"].includes(e.key)) {
+    attackPlayerOrMonsterSameCell(playerId);
   }
 }
