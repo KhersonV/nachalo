@@ -172,6 +172,6 @@ export type GameState = {
   monstersHaveAttacked: boolean;
 
   // Флаг, указывающий, что мы находимся в бою (при необходимости)
-  inBattle?: boolean;
+  inBattle: boolean;
   battleParticipants: BattleParticipants | null;
 };

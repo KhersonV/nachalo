@@ -14,3 +14,15 @@ export function checkForDuplicateMonsters(grid: Cell[]): void {
     }
   });
 }
+
+
+import { GameState } from "./types";
+
+export function removeMonsterFromCell(state: GameState, cellId: number): GameState {
+  const updatedGrid = state.grid.map(cell =>
+    cell.id === cellId
+      ? { ...cell, monster: undefined }
+      : cell
+  );
+  return { ...state, grid: updatedGrid };
+}

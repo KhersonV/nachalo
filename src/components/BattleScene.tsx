@@ -1,7 +1,5 @@
 // src/components/BattleScene.tsx
 
-"use client";
-
 import "../styles/battleScene.css";
 import React, { useState, useEffect } from "react";
 import { Entity, PlayerState } from "../logic/types";
@@ -14,7 +12,8 @@ type Position = {
 type BattleSceneProps = {
   attacker: Entity;
   defender: Entity;
-  onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => void;
+  cellId: number; // Добавляем cellId как пропс
+  onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => void;
   gridSize?: number; // Добавляем пропс для размера поля
 };
 
@@ -24,7 +23,7 @@ function isPlayer(entity: Entity): entity is PlayerState {
   return "level" in entity; // Признак, что это игрок
 }
 
-export default React.memo(function BattleScene({ attacker, defender, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
+export default React.memo(function BattleScene({ attacker, defender, cellId, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
   const getHealth = (entity: Entity) => {
     if ("health" in entity) {
       return { current: entity.health, max: entity.maxHealth };
@@ -33,7 +32,7 @@ export default React.memo(function BattleScene({ attacker, defender, onBattleEnd
   };
 
   // Логирование для отладки
-  console.log("BattleScene initialized with:", { attacker, defender });
+  console.log("BattleScene initialized with:", { attacker, defender, cellId });
 
   const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: Math.floor(gridSize / 2) });
   const [defenderPos] = useState<Position>({ x: gridSize - 1, y: Math.floor(gridSize / 2) });
@@ -127,13 +126,12 @@ export default React.memo(function BattleScene({ attacker, defender, onBattleEnd
   }, [turn, defenderHealth]);
 
   useEffect(() => {
-
     console.log(`Текущее состояние: ${attacker.name} HP=${attackerHealth}, ${defender.name} HP=${defenderHealth}`);
 
     if (!hasBattleEnded && (attackerHealth <= 0 || defenderHealth <= 0)) {
       if (attackerHealth <= 0) {
         console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
-        onBattleEnd("defender-win", attacker);
+        onBattleEnd("defender-win", attacker, cellId); // Передаём cellId
       } else {
         console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
         let updatedAttacker: Entity;
@@ -146,11 +144,11 @@ export default React.memo(function BattleScene({ attacker, defender, onBattleEnd
         } else {
           updatedAttacker = { ...attacker, health: attackerHealth };
         }
-        onBattleEnd("attacker-win", updatedAttacker);
+        onBattleEnd("attacker-win", updatedAttacker, cellId); // Передаём cellId
       }
       setHasBattleEnded(true);
     }
-  }, [attackerHealth, defenderHealth, onBattleEnd, attacker, hasBattleEnded]);
+  }, [attackerHealth, defenderHealth, onBattleEnd, attacker, hasBattleEnded, cellId]);
 
   return (
     <div className="battle-scene">
@@ -175,12 +173,10 @@ export default React.memo(function BattleScene({ attacker, defender, onBattleEnd
       </div>
       <div className="battle-info">
         <p>
-          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack}, DEF:{" "}
-          {attacker.defense}
+          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack}, DEF: {attacker.defense}
         </p>
         <p>
-          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack}, DEF:{" "}
-          {defender.defense}
+          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack}, DEF: {defender.defense}
         </p>
         <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>
       </div>

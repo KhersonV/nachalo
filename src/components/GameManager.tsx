@@ -1,19 +1,16 @@
 // src/components/GameManager.tsx
 
-"use client";
-
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useGameContext } from "./GameContext";
 import Map from "./Map";
 import Players from "./Players";
 import Inventory from "./Inventory";
 import BattleScene from "./BattleScene";
-import { generateMap } from "../logic/generateMap";
 import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
-import { Entity } from "../logic/types";
+import { Entity, GameState, PlayerState } from "../logic/types"; // Убедитесь, что GameState импортирован
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
@@ -67,13 +64,6 @@ export default function GameManager() {
       dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
     }
   }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
-
-  useEffect(() => {
-    if (state.grid.length === 0 && players.length > 0) {
-      const newGrid = generateMap(state.mode, players, state.mapWidth, state.mapHeight);
-      dispatch({ type: 'SET_GRID', payload: { grid: newGrid } });
-    }
-  }, [state.grid, players, state.mode, state.mapWidth, state.mapHeight, dispatch]);
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -138,36 +128,48 @@ export default function GameManager() {
     [state.inventoryOpen, activePlayer]
   );
 
-  const onBattleEnd = (result: "attacker-win" | "defender-win", updatedAttacker: Entity) => {
-    console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker);
-    dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker } });
-  };
+  const onBattleEnd = useCallback((result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => {
+    console.log(`Бой завершен: ${result}, обновленный атакующий:`, updatedAttacker, `cellId=${cellId}`);
+    dispatch({ type: 'END_BATTLE', payload: { result, updatedAttacker, cellId } });
+  }, [dispatch]);
 
   return (
     <div>
-      {state.inBattle && state.battleParticipants ? (
+      {state.inBattle && state.battleParticipants && (
         <BattleScene
           attacker={state.battleParticipants.attacker}
           defender={state.battleParticipants.defender}
+          cellId={findBattleCellId(state, state.battleParticipants)} // Функция для поиска cellId
           onBattleEnd={onBattleEnd}
           gridSize={7} // Задаем желаемый размер поля боя
         />
-      ) : (
+      )}
+      {activePlayer && (
         <>
-          {activePlayer && (
-            <>
-              <p>
-                {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
-                Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
-              </p>
-              <button onClick={passTurn}>Передать ход</button>
-            </>
-          )}
-          {memoizedMap}
-          {memoizedPlayers}
-          {memoizedInventory}
+          <p>
+            {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/{activePlayer.maxEnergy},
+            Attack={activePlayer.attack}, Defense={activePlayer.defense}, Level={activePlayer.level}
+          </p>
+          <button onClick={passTurn}>Передать ход</button>
         </>
       )}
+      {memoizedMap}
+      {memoizedPlayers}
+      {memoizedInventory}
     </div>
   );
+}
+
+// Добавляем функцию для поиска cellId, где происходит бой
+function findBattleCellId(state: GameState, battleParticipants: { attacker: Entity; defender: Entity }): number {
+  // Предполагаем, что defender — монстр, ищем клетку с этим монстром
+  if (battleParticipants.defender && !isPlayer(battleParticipants.defender)) {
+    const cell = state.grid.find(cell => cell.monster && cell.monster.id === battleParticipants.defender.id);
+    return cell ? cell.id : -1;
+  }
+  return -1; // Если defender не монстр или клетка не найдена
+}
+
+function isPlayer(entity: Entity): entity is PlayerState {
+  return "level" in entity;
 }

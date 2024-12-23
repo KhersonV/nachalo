@@ -1,6 +1,6 @@
 // src/logic/actions.ts
 
-import { GameMode, PlayerState, MonsterState, Cell} from "./types";
+import { GameMode, PlayerState, MonsterState, Cell } from "./types";
 
 // Определение типа награды
 export type Reward = {
@@ -31,9 +31,6 @@ export type Action =
   | { type: 'SET_MONSTERS_HAVE_ATTACKED'; payload: { monstersHaveAttacked: boolean } }
   | { type: 'UPDATE_MONSTER_ATTACK_TURN'; payload: { monsterId: number; turnCycle: number } }
   | { type: "UPDATE_PLAYER_STATS"; payload: { playerId: number; stats: Partial<PlayerState> } }
-  
-  | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState } }
-  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; updatedAttacker?: PlayerState | MonsterState } }
+  | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState; cellId: number } } // Добавлено cellId
+  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; updatedAttacker?: PlayerState | MonsterState; cellId: number } } // Добавлено cellId
   | { type: "REMOVE_PLAYER"; payload: { playerId: number } };
-
- 

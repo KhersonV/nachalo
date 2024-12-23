@@ -1,8 +1,9 @@
-//reduser.ts
+// src/logic/reducer.ts
 
-import { GameState  } from "./types";
+import { GameState, Entity } from "./types";
 import { Action } from "./actions";
 import { resources } from "./allData";
+import { removeMonsterFromCell } from "./utils"; // Импортируем вспомогательную функцию
 
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -12,6 +13,8 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mode: action.payload.mode,
         instanceId: action.payload.instanceId,
         players: action.payload.players,
+        inBattle: false,
+        battleParticipants: null,
       };
 
     case "SET_GRID":
@@ -43,9 +46,9 @@ export function gameReducer(state: GameState, action: Action): GameState {
       } else if (targetType === "monster" && cellId !== undefined) {
         const updatedGrid = state.grid.map((cell) => {
           if (cell.id === cellId && cell.monster) {
-            const newHp = Math.max(cell.monster.health - damage, 0);
-            return newHp > 0
-              ? { ...cell, monster: { ...cell.monster, hp: newHp } }
+            const newHealth = Math.max(cell.monster.health - damage, 0);
+            return newHealth > 0
+              ? { ...cell, monster: { ...cell.monster, health: newHealth } }
               : { ...cell, monster: undefined };
           }
           return cell;
@@ -154,7 +157,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         ),
       };
     }
-    
+
     case "REMOVE_PLAYER": {
       const { playerId } = action.payload;
       return {
@@ -174,17 +177,18 @@ export function gameReducer(state: GameState, action: Action): GameState {
       };
 
       case "END_BATTLE": {
-        const { result, updatedAttacker } = action.payload;
-        console.log(`END_BATTLE: result=${result}, updatedAttacker=`, updatedAttacker);
-        let updatedState = { ...state, inBattle: false, battleParticipants: null };
-  
+        const { result, updatedAttacker, cellId } = action.payload; // Добавляем cellId
+        console.log(`END_BATTLE: result=${result}, updatedAttacker=`, updatedAttacker, `cellId=${cellId}`);
+        
+        let updatedState: GameState = { ...state, inBattle: false, battleParticipants: null };
+      
         if (!updatedAttacker) {
           console.error("updatedAttacker is undefined in END_BATTLE action.");
           return state;
         }
-  
+      
         if (result === "attacker-win") {
-          if ("level" in updatedAttacker) { // Проверяем, что атакующий - игрок
+          if ("level" in updatedAttacker) { // Если атакующий - игрок
             console.log(`${updatedAttacker.name} победил в бою.`);
             updatedState = {
               ...updatedState,
@@ -192,6 +196,13 @@ export function gameReducer(state: GameState, action: Action): GameState {
                 player.id === updatedAttacker.id ? updatedAttacker : player
               ),
             };
+            // Удаляем монстра из клетки
+            if (cellId !== -1) { // Проверяем валидность cellId
+              updatedState = removeMonsterFromCell(updatedState, cellId);
+              console.log(`Монстр удалён из клетки с id=${cellId}.`);
+            } else {
+              console.warn("cellId для удаления монстра недействителен.");
+            }
           } else { // Если атакующий - монстр
             console.log(`Монстр ${updatedAttacker.name} победил в бою.`);
             updatedState = {
@@ -205,7 +216,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
           }
         } else if (result === "defender-win") {
           const { attacker, defender } = state.battleParticipants!;
-          if ("level" in attacker) { // Проверяем, что атакующий - игрок
+          if ("level" in attacker) { // Если атакующий - игрок
             console.log(`${attacker.name} погиб в бою.`);
             updatedState = {
               ...updatedState,
@@ -225,12 +236,11 @@ export function gameReducer(state: GameState, action: Action): GameState {
             };
           }
         }
-  
+      
+        console.log("Updated State after END_BATTLE:", updatedState);
         return updatedState;
       }
-    
-    
-    
+
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };
 
