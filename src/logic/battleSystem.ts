@@ -2,7 +2,6 @@
 
 import { useGameContext } from "../components/GameContext";
 import { Entity, GameState} from "./types";
-import { Action } from "./actions";
 import { useCallback } from "react";
 
 export function useBattleSystem() {
