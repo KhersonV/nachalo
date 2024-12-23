@@ -181,63 +181,105 @@ export function gameReducer(state: GameState, action: Action): GameState {
         console.log(`END_BATTLE: result=${result}, updatedAttacker=`, updatedAttacker, `cellId=${cellId}`);
         
         const { attacker, defender } = state.battleParticipants!;
-        let updatedState: GameState = { ...state, inBattle: false, battleParticipants: null };
-  
+        let updatedState: GameState = { 
+          ...state, 
+          inBattle: false, 
+          battleParticipants: null 
+        };
+      
         if (!updatedAttacker) {
           console.error("updatedAttacker is undefined in END_BATTLE action.");
           return state;
         }
-  
+      
         if (result === "attacker-win") {
-          // Attacker победил, defender погиб
-          if ("level" in updatedAttacker) { // Если атакующий - игрок
-            console.log(`${updatedAttacker.name} победил в бою.`);
+          // Победил АТАКУЮЩИЙ (и это сущность, которую мы передали как updatedAttacker)
+      
+          if ("level" in updatedAttacker) {
+            // updatedAttacker – Игрок
+            console.log(`Победил игрок ${updatedAttacker.name}. Ему уже начислили XP в BattleScene.`);
+            
+            // Обновим игрока (победителя) в списке игроков
             updatedState = {
               ...updatedState,
               players: state.players.map(player =>
                 player.id === updatedAttacker.id ? updatedAttacker : player
               ),
             };
-            // Удаляем монстра из клетки
-            if (cellId !== -1) {
-              updatedState = removeMonsterFromCell(updatedState, cellId);
-              console.log(`Монстр удалён из клетки с id=${cellId}.`);
+      
+            // Проигравший – defender
+            if (!("level" in defender)) {
+              // Защитник – монстр ⇒ убираем монстра с карты (cellId)
+              if (cellId !== -1) {
+                updatedState = removeMonsterFromCell(updatedState, cellId);
+                console.log(`Монстр ${defender.name} удалён из клетки id=${cellId}.`);
+              }
             } else {
-              console.warn("cellId для удаления монстра недействителен.");
+              // Защитник – игрок ⇒ ставим ему HP=0 или убираем из players (ваша логика)
+              updatedState = {
+                ...updatedState,
+                players: updatedState.players.map(p =>
+                  p.id === defender.id ? { ...p, health: 0 } : p
+                ),
+              };
             }
-          } else { // Если атакующий - монстр
-            console.log(`Монстр ${updatedAttacker.name} победил в бою.`);
-            // Устанавливаем здоровье игрока (defender) на 0
+      
+          } else {
+            // updatedAttacker – монстр
+            console.log(`Победил монстр ${updatedAttacker.name}. Проигравший - игрок attacker.`);
+      
+            // Значит, надо обнулить здоровье игрока, который проиграл
             updatedState = {
               ...updatedState,
-              players: state.players.map(player =>
+              players: updatedState.players.map(player =>
                 player.id === defender.id ? { ...player, health: 0 } : player
               ),
             };
           }
-        } else if (result === "defender-win") {
-          // Defender победил, attacker погиб
-          if ("level" in defender) { // Если defender - игрок
-            console.log(`${defender.name} победил в бою.`);
-            // Удаляем монстра из клетки
-            if (cellId !== -1) {
-              updatedState = removeMonsterFromCell(updatedState, cellId);
-              console.log(`Монстр удалён из клетки с id=${cellId}.`);
-            } else {
-              console.warn("cellId для удаления монстра недействителен.");
-            }
-          } else { // Если defender - монстр
-            console.log(`Монстр ${defender.name} победил в бою.`);
-            // Устанавливаем здоровье игрока (attacker) на 0
+        }
+      
+        else if (result === "defender-win") {
+          // Победил ЗАЩИТНИК (и он передан в updatedAttacker)
+          if ("level" in updatedAttacker) {
+            // updatedAttacker – Игрок, значит он выиграл
+            console.log(`Победил игрок ${updatedAttacker.name}.`);
+      
+            // Обновим игрока (победителя)
             updatedState = {
               ...updatedState,
               players: state.players.map(player =>
-                player.id === attacker.id ? { ...player, health: 0 } : player
+                player.id === updatedAttacker.id ? updatedAttacker : player
+              ),
+            };
+      
+            // Проигравший – attacker
+            if (!("level" in attacker)) {
+              // attacker – монстр ⇒ убираем с карты
+              if (cellId !== -1) {
+                updatedState = removeMonsterFromCell(updatedState, cellId);
+                console.log(`Монстр ${attacker.name} удалён из клетки id=${cellId}.`);
+              }
+            } else {
+              // attacker – игрок ⇒ ставим ему HP=0 или убираем из массива
+              updatedState = {
+                ...updatedState,
+                players: updatedState.players.map(p =>
+                  p.id === attacker.id ? { ...p, health: 0 } : p
+                ),
+              };
+            }
+          } else {
+            // updatedAttacker – монстр, значит он выиграл
+            console.log(`Победил монстр ${updatedAttacker.name}. Проигравший - игрок attacker.`);
+            updatedState = {
+              ...updatedState,
+              players: state.players.map(p =>
+                p.id === attacker.id ? { ...p, health: 0 } : p
               ),
             };
           }
         }
-  
+      
         console.log("Updated State after END_BATTLE:", updatedState);
         return updatedState;
       }

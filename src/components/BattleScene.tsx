@@ -1,5 +1,3 @@
-// src/components/BattleScene.tsx
-
 import "../styles/battleScene.css";
 import React, { useState, useEffect } from "react";
 import { Entity, PlayerState } from "../logic/types";
@@ -12,18 +10,24 @@ type Position = {
 type BattleSceneProps = {
   attacker: Entity;
   defender: Entity;
-  cellId: number; // Добавляем cellId как пропс
+  cellId: number;
   onBattleEnd: (result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => void;
-  gridSize?: number; // Добавляем пропс для размера поля
+  gridSize?: number;
 };
 
-const BATTLE_GRID_DEFAULT = 7; // Установите желаемый размер по умолчанию
+const BATTLE_GRID_DEFAULT = 7;
 
 function isPlayer(entity: Entity): entity is PlayerState {
   return "level" in entity; // Признак, что это игрок
 }
 
-export default React.memo(function BattleScene({ attacker, defender, cellId, onBattleEnd, gridSize = BATTLE_GRID_DEFAULT }: BattleSceneProps) {
+export default React.memo(function BattleScene({
+  attacker,
+  defender,
+  cellId,
+  onBattleEnd,
+  gridSize = BATTLE_GRID_DEFAULT,
+}: BattleSceneProps) {
   const getHealth = (entity: Entity) => {
     if ("health" in entity) {
       return { current: entity.health, max: entity.maxHealth };
@@ -31,7 +35,6 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
     throw new Error("Entity does not have health properties.");
   };
 
-  // Логирование для отладки
   console.log("BattleScene initialized with:", { attacker, defender, cellId });
 
   const [attackerPos, setAttackerPos] = useState<Position>({ x: 0, y: Math.floor(gridSize / 2) });
@@ -44,12 +47,14 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
 
   const handleMove = (direction: "left" | "right") => {
     if (turn !== "attacker") return;
-
     console.log(`${attacker.name} пытается переместиться ${direction}`);
 
     setAttackerPos((prev) => {
-      const newX = direction === "left" ? Math.max(prev.x - 1, 0) : Math.min(prev.x + 1, gridSize - 1);
-      console.log(`${attacker.name} переместился на позицию: x=${newX}, y=${prev.y}`);
+      const newX =
+        direction === "left"
+          ? Math.max(prev.x - 1, 0)
+          : Math.min(prev.x + 1, gridSize - 1);
+      console.log(`${attacker.name} переместился: x=${newX}, y=${prev.y}`);
       return { ...prev, x: newX };
     });
     endTurn();
@@ -57,9 +62,8 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
 
   const handleAttack = () => {
     if (turn !== "attacker") return;
-
     const distance = Math.abs(attackerPos.x - defenderPos.x);
-    console.log(`Атака: расстояние между ${attacker.name} и ${defender.name} = ${distance}`);
+    console.log(`Атака: расстояние = ${distance}`);
 
     if (distance <= 1) {
       const damage = Math.max(0, attacker.attack - defender.defense);
@@ -70,14 +74,13 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
         return newHealth;
       });
     } else {
-      console.log(`${attacker.name} не может атаковать ${defender.name}, слишком далеко.`);
+      console.log(`${attacker.name} не может атаковать, слишком далеко.`);
     }
     endTurn();
   };
 
   const handleDefend = () => {
     if (turn !== "attacker") return;
-
     console.log(`${attacker.name} выбирает защиту.`);
     setIsDefending(true);
     endTurn();
@@ -85,7 +88,6 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
 
   const handlePassTurn = () => {
     if (turn !== "attacker") return;
-
     console.log(`${attacker.name} передает ход.`);
     endTurn();
   };
@@ -97,14 +99,16 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
     if (distance <= 1) {
       const damage = Math.max(0, defender.attack - attacker.defense);
       const actualDamage = isDefending ? Math.floor(damage / 2) : damage;
-      console.log(`${defender.name} наносит ${actualDamage} урона ${attacker.name} (${isDefending ? "с защитой" : ""})`);
+      console.log(
+        `${defender.name} наносит ${actualDamage} урона ${attacker.name} (${isDefending ? "с защитой" : ""})`
+      );
       setAttackerHealth((prev) => {
         const newHealth = prev - actualDamage;
         console.log(`${attacker.name} теперь имеет HP = ${newHealth}`);
         return newHealth;
       });
     } else {
-      console.log(`${defender.name} не может атаковать ${attacker.name}, слишком далеко.`);
+      console.log(`${defender.name} не может атаковать, слишком далеко.`);
     }
     setTurn("attacker");
   };
@@ -115,40 +119,61 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
     setIsDefending(false);
   };
 
+  // Защитник ходит через 1с автоматом
   useEffect(() => {
     if (turn === "defender" && defenderHealth > 0) {
-      // Делаем задержку для имитации хода защитника
       const timer = setTimeout(() => {
         defenderTurn();
-      }, 1000); // Задержка 1 секунда
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [turn, defenderHealth]);
 
+  // Проверка конца боя
   useEffect(() => {
     console.log(`Текущее состояние: ${attacker.name} HP=${attackerHealth}, ${defender.name} HP=${defenderHealth}`);
 
     if (!hasBattleEnded && (attackerHealth <= 0 || defenderHealth <= 0)) {
       if (attackerHealth <= 0) {
+        // Атакующий погиб ⇒ Победитель - защитник
         console.log(`${attacker.name} погиб! ${defender.name} побеждает.`);
-        onBattleEnd("defender-win", attacker, cellId); // Передаём cellId
+
+        let updatedDefender: Entity = defender;
+        if (isPlayer(defender)) {
+          updatedDefender = {
+            ...defender,
+            experience: (defender.experience ?? 0) + 100,
+            health: defenderHealth,
+          };
+        }
+        onBattleEnd("defender-win", updatedDefender, cellId);
+        setHasBattleEnded(true);
+
       } else {
+        // Защитник погиб ⇒ Победитель - атакующий
         console.log(`${defender.name} погиб! ${attacker.name} побеждает.`);
-        let updatedAttacker: Entity;
+
+        let updatedAttacker: Entity = attacker;
         if (isPlayer(attacker)) {
           updatedAttacker = {
             ...attacker,
-            experience: (attacker.experience || 0) + 100,
+            experience: (attacker.experience ?? 0) + 100,
             health: attackerHealth,
           };
-        } else {
-          updatedAttacker = { ...attacker, health: attackerHealth };
         }
-        onBattleEnd("attacker-win", updatedAttacker, cellId); // Передаём cellId
+        onBattleEnd("attacker-win", updatedAttacker, cellId);
+        setHasBattleEnded(true);
       }
-      setHasBattleEnded(true);
     }
-  }, [attackerHealth, defenderHealth, onBattleEnd, attacker, hasBattleEnded, cellId]);
+  }, [
+    attackerHealth,
+    defenderHealth,
+    onBattleEnd,
+    attacker,
+    defender,
+    hasBattleEnded,
+    cellId,
+  ]);
 
   return (
     <div className="battle-scene">
@@ -156,7 +181,9 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
         {[...Array(gridSize)].map((_, x) => (
           <div
             key={x}
-            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${x === defenderPos.x ? "defender" : ""}`}
+            className={`tile ${x === attackerPos.x ? "attacker" : ""} ${
+              x === defenderPos.x ? "defender" : ""
+            }`}
             style={{
               width: "50px",
               height: "50px",
@@ -166,27 +193,33 @@ export default React.memo(function BattleScene({ attacker, defender, cellId, onB
               alignItems: "center",
             }}
           >
-            {x === attackerPos.x && (isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>)}
-            {x === defenderPos.x && (isPlayer(defender) ? <span>🧍</span> : <span>👹</span>)}
+            {x === attackerPos.x &&
+              (isPlayer(attacker) ? <span>🧍</span> : <span>👹</span>)}
+            {x === defenderPos.x &&
+              (isPlayer(defender) ? <span>🧍</span> : <span>👹</span>)}
           </div>
         ))}
       </div>
+
       <div className="battle-info">
         <p>
-          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack}, DEF: {attacker.defense}
+          {attacker.name}: HP {attackerHealth} / {getHealth(attacker).max}, ATK: {attacker.attack},
+          DEF: {attacker.defense}
         </p>
         <p>
-          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack}, DEF: {defender.defense}
+          {defender.name}: HP {defenderHealth} / {getHealth(defender).max}, ATK: {defender.attack},
+          DEF: {defender.defense}
         </p>
         <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>
       </div>
+
       {turn === "attacker" && (
         <div className="battle-actions">
           <button onClick={() => handleMove("left")}>⬅️ Влево</button>
           <button onClick={() => handleMove("right")}>➡️ Вправо</button>
           <button onClick={handleAttack}>🗡️ Атаковать</button>
           <button onClick={handleDefend}>🛡️ Защититься</button>
-          <button onClick={handlePassTurn}>⏭️ Передать ход</button> {/* Новая кнопка для передачи хода */}
+          <button onClick={handlePassTurn}>⏭️ Передать ход</button>
         </div>
       )}
     </div>

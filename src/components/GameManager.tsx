@@ -161,13 +161,28 @@ export default function GameManager() {
 }
 
 // Добавляем функцию для поиска cellId, где происходит бой
-function findBattleCellId(state: GameState, battleParticipants: { attacker: Entity; defender: Entity }): number {
-  // Предполагаем, что defender — монстр, ищем клетку с этим монстром
-  if (battleParticipants.defender && !isPlayer(battleParticipants.defender)) {
-    const cell = state.grid.find(cell => cell.monster && cell.monster.id === battleParticipants.defender.id);
-    return cell ? cell.id : -1;
+function findBattleCellId(
+  state: GameState, 
+  battleParticipants: { attacker: Entity; defender: Entity }
+): number {
+  // Если атакующий – монстр
+  if (!isPlayer(battleParticipants.attacker)) {
+    const cell = state.grid.find(cell => 
+      cell.monster && cell.monster.id === battleParticipants.attacker.id
+    );
+    if (cell) return cell.id;
   }
-  return -1; // Если defender не монстр или клетка не найдена
+
+  // Если защитник – монстр
+  if (!isPlayer(battleParticipants.defender)) {
+    const cell = state.grid.find(cell =>
+      cell.monster && cell.monster.id === battleParticipants.defender.id
+    );
+    if (cell) return cell.id;
+  }
+  
+  // Если никто не монстр, либо не найден – возвращаем -1
+  return -1;
 }
 
 function isPlayer(entity: Entity): entity is PlayerState {
