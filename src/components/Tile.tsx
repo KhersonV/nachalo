@@ -56,7 +56,7 @@ export default function Tile({ cell, playersOnTile }: TileProps) {
         backgroundImage: `url(${tileBackground})`,
         backgroundSize: "cover",
       }}
-      onClick={handleTileClick}
+      
     >
       {cell.isPortal && (
         <div className="portal-indicator">
