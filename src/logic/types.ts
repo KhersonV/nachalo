@@ -175,3 +175,11 @@ export type GameState = {
   inBattle: boolean;
   battleParticipants: BattleParticipants | null;
 };
+
+export type Artifact = {
+  id: number;
+  name: string;
+  image: string;
+  description: string;
+  bonus: BonusAttributes;
+};

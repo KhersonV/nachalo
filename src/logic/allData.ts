@@ -1,7 +1,7 @@
 //allData.ts
 
 //resourceData
-import { ResourceType } from "@/logic/types";
+import { ResourceType, Artifact } from "@/logic/types";
 
 
 export const resources: { [key: string]: ResourceType } = {
@@ -286,3 +286,78 @@ export function createRandomMonster(): MonsterState {
     id: getUniqueId(),
   };
 }
+
+//artifactData
+
+export const artifacts: Artifact[] = [
+  {
+    id: 1,
+    name: "Sword of the King",
+    image: "/artifacts/knight-sword.webp",
+    description: "Меч рыцаря, выкованный в королевской кузне.",
+    bonus: { attack: 5 },
+  },
+  {
+    id: 2,
+    name: "Guardian Shield",
+    image: "/artifacts/guardian-shield.webp",
+    description: "Надежный щит стража, отражает удары мощью древних рун.",
+    bonus: { defense: 4, maxHealth: 10 },
+  },
+  {
+    id: 3,
+    name: "Ring of Wisdom",
+    image: "/artifacts/ring-of-wisdom.webp",
+    description: "Кольцо мудрости, усиливающее дальновидность и решимость.",
+    bonus: { visionRange: 2, energy: 5 },
+  },
+  {
+    id: 4,
+    name: "Boots of Stealth",
+    image: "/artifacts/boots-of-stealth.webp",
+    description: "Сапоги скрытности, позволяющие незаметно передвигаться.",
+    bonus: { defense: 2, energy: 10 },
+  },
+  {
+    id: 5,
+    name: "Dragon Eye",
+    image: "/artifacts/dragon-eye.webp",
+    description: "Глаз дракона, придаёт владельцу сокрушительную силу.",
+    bonus: { attack: 8, maxHealth: 5 },
+  },
+  {
+    id: 6,
+    name: "Fire Amulet",
+    image: "/artifacts/fire-amulet.webp",
+    description: "Амулет огня, наполненный магической энергией древних.",
+    bonus: { attack: 3, energy: 15 },
+  },
+  {
+    id: 7,
+    name: "Titan Breastplate",
+    image: "/artifacts/titan-breastplate.webp",
+    description: "Нагрудник титана, повышает защиту и выносливость.",
+    bonus: { defense: 6, maxHealth: 15 },
+  },
+  {
+    id: 8,
+    name: "Crown of Enlightenment",
+    image: "/artifacts/crown-of-enlightenment.webp",
+    description: "Корона просветления, помогает видеть слабости врага.",
+    bonus: { visionRange: 3, defense: 2 },
+  },
+  {
+    id: 9,
+    name: "Berserker Axe",
+    image: "/artifacts/berserker-axe.webp",
+    description: "Боевой топор берсерка, увеличивает физическую мощь.",
+    bonus: { attack: 7, health: 10 },
+  },
+  {
+    id: 10,
+    name: "Gloves of Precision",
+    image: "/artifacts/gloves-of-precision.webp",
+    description: "Перчатки меткости, усиливают точность ударов.",
+    bonus: { attack: 2, energy: 5, defense: 1 },
+  },
+];
