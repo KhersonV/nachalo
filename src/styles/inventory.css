@@ -46,3 +46,18 @@
   font-size:12px;
   color:yellow;
 }
+.inventory-bonus {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #84e40d;
+}
+
+.inventory-bonus ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inventory-bonus li {
+  margin: 4px 0;
+}

@@ -100,23 +100,36 @@ export default function Inventory({ resources, artifacts }: InventoryProps) {
         </div>
       )}
 
-      {activeTab === "artifacts" && (
-        <div className="inventory-grid">
-          {filteredArtifacts.map(([key, item]) => (
-            <div className="inventory-item" key={key}>
-              <img
-                src={item.image} 
-                alt={key}
-                className="inventory-image"
-              />
-              <p>{key}</p>
-              <p>Количество: {item.count}</p>
-              <p className="inventory-description">{item.description}</p>
-              <p className="inventory-action-hint">Артефакт не используется</p>
-            </div>
-          ))}
-        </div>
-      )}
+{activeTab === "artifacts" && (
+  <div className="inventory-grid">
+    {filteredArtifacts.map(([key, item]) => (
+      <div className="inventory-item" key={key}>
+        <img
+          src={item.image} 
+          alt={key}
+          className="inventory-image"
+        />
+        <p>{key}</p>
+        <p>Количество: {item.count}</p>
+        <p className="inventory-description">{item.description}</p>
+        
+        {/* Отображение бонусов */}
+        {item.bonus && (
+          <div className="inventory-bonus">
+            <p><strong>Бонусы:</strong></p>
+            <ul>
+              {Object.entries(item.bonus).map(([attribute, value]) => (
+                <li key={attribute}>
+                  {attribute}: +{value}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+)}
     </div>
   );
 }

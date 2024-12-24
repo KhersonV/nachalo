@@ -50,8 +50,8 @@ export function useResourceSystem() {
 
     const random = Math.random();
 
-    // ----- 5% шанс на артефакт -----
-    if (random < 0.05) {
+    // ----- 50% шанс на артефакт -----
+    if (random > 0.5) {
       // Случайно выбираем артефакт из массива artifacts
       const randomIndex = Math.floor(Math.random() * artifacts.length);
       const randomArtifact = artifacts[randomIndex];
@@ -69,8 +69,8 @@ export function useResourceSystem() {
         },
       });
     }
-    // ----- 30% шанс на монстра (0.05 - 0.35) -----
-    else if (random < 0.35) {
+    // ----- 10% шанс на монстра (0.40 - 0.50) -----
+    else if (random < 0.5 && random > 0.4) {
       const randomMonster: MonsterState = createRandomMonster();
       console.log(`Из бочки выпал монстр: ${randomMonster.name}`);
 
@@ -90,7 +90,7 @@ export function useResourceSystem() {
         },
       });
     }
-    // ----- 65% шанс на ресурс (0.35 - 1.0) -----
+    // ----- 40% шанс на ресурс (0.00 - 0.40) -----
     else {
       console.log("Из бочки выпал обычный ресурс!");
       // Собираем список ресурсов (исключая "barrbel")

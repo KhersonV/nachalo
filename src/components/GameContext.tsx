@@ -6,7 +6,7 @@
 
 import React, { createContext, useContext, useReducer, useEffect } from "react";
 import { gameReducer } from "../logic/reducer";
-import { GameMode, GameState, PlayerState } from "../logic/types";
+import { GameMode, GameState } from "../logic/types";
 import { Action } from "../logic/actions";
 import { generateMap } from "../logic/generateMap";
 import initialPlayers from "../logic/initialPlayers";
@@ -56,17 +56,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     });
     dispatch({ type: "SET_GRID", payload: { grid: generatedGrid } });
   }, [instanceId]);
-
-  // useEffect(() => {
-  //   if (!state.monstersHaveAttacked) {
-  //     dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: false } });
-  //   }
-
-  //   if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
-  //     aggressiveMonstersAttack(state, dispatch);
-  //     dispatch({ type: "SET_MONSTERS_HAVE_ATTACKED", payload: { monstersHaveAttacked: true } });
-  //   }
-  // }, [state.turnCycle, state.monstersHaveAttacked, dispatch]);
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>
