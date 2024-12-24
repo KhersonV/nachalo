@@ -29,7 +29,7 @@ export default function GameManager() {
     attackPlayerOrMonsterSameCell,
     openBarrel: (playerId: number) => {
       // Реализуйте открытие бочки без направления, если нужно.
-      openBarrel(playerId, { dx: 0, dy: 0 }); 
+      openBarrel(playerId); 
       // Или полностью перепишите openBarrel так, чтобы не принимала dx/dy.
     },
     tryExitThroughPortal,
@@ -45,7 +45,7 @@ export default function GameManager() {
     handlersRef.current = {
       attackPlayerOrMonsterSameCell,
       openBarrel: (playerId: number) => {
-        openBarrel(playerId, { dx: 0, dy: 0 });
+        openBarrel(playerId);
       },
       tryExitThroughPortal,
       collectResourceIfOnTile,

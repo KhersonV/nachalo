@@ -20,6 +20,25 @@ export type Action =
   | { type: 'PICK_ARTIFACT'; payload: { playerId: number } }
   | { type: 'LOSE_ARTIFACT'; payload: { playerId: number } }
   | { type: 'ADD_ITEM'; payload: { playerId: number; itemType: string; description: string; image: string; bonus?: Record<string, number> } }
+  | {
+    type: 'ADD_RESOURCE';
+    payload: {
+      playerId: number;
+      resourceType: string;
+      description: string;
+      image: string;
+    };
+  }
+| {
+    type: 'ADD_ARTIFACT';
+    payload: {
+      playerId: number;
+      artifactName: string;
+      description: string;
+      image: string;
+      bonus?: Record<string, number>;
+    };
+  }
   | { type: 'REMOVE_RESOURCE'; payload: { cellId: number } }
   | { type: 'ADD_MONSTER'; payload: { cellId: number; monster: MonsterState } }
   | { type: 'TRY_EXIT_PORTAL'; payload: { playerId: number } }

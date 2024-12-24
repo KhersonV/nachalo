@@ -284,6 +284,72 @@ export function gameReducer(state: GameState, action: Action): GameState {
         return updatedState;
       }
 
+      case "REMOVE_RESOURCE": {
+        const { cellId } = action.payload;
+        // Убираем resource с клетки (cell)
+        const updatedGrid = state.grid.map((cell) =>
+          cell.id === cellId ? { ...cell, resource: null } : cell
+        );
+        return { ...state, grid: updatedGrid };
+      }
+  
+      // ----- Добавляем обычный ресурс (счётчик count) -----
+      case "ADD_RESOURCE": {
+        const { playerId, resourceType, description, image } = action.payload;
+        const updatedPlayers = state.players.map((player) => {
+          if (player.id !== playerId) return player;
+  
+          // Находим предыдущую запись в инвентаре (если есть).
+          const existingItem = player.inventory[resourceType] || { count: 0 };
+  
+          return {
+            ...player,
+            inventory: {
+              ...player.inventory,
+              [resourceType]: {
+                ...existingItem,
+                count: (existingItem.count || 0) + 1,
+                description,
+                image,
+              },
+            },
+          };
+        });
+  
+        return { ...state, players: updatedPlayers };
+      }
+  
+      // ----- Добавляем артефакт (уникальная вещь) -----
+      // Можно тоже вести счётчик count=1, если хотите разрешить
+      // несколько одинаковых артефактов. Или всегда 1.
+      case "ADD_ARTIFACT": {
+        const { playerId, artifactName, description, image, bonus } = action.payload;
+        const updatedPlayers = state.players.map((player) => {
+          if (player.id !== playerId) return player;
+  
+          // Пусть в inventory хранятся и артефакты, и ресурсы.
+          // Но артефакты чаще всего имеют count=1 (или вообще не используют count).
+          const existingItem = player.inventory[artifactName] || { count: 0 };
+  
+          return {
+            ...player,
+            inventory: {
+              ...player.inventory,
+              [artifactName]: {
+                ...existingItem,
+                count: (existingItem.count || 0) + 1, // при необходимости
+                description,
+                image,
+                bonus,
+              },
+            },
+          };
+        });
+  
+        return { ...state, players: updatedPlayers };
+      }
+  
+
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };
 

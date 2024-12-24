@@ -89,6 +89,11 @@ export function handleKeyDown(
       (c) => c.x === player.position.x && c.y === player.position.y
     );
     if (currentCell?.resource) {
+
+      if (currentCell.resource.type === "barrbel") {
+        openBarrel(playerId);
+      } else {
+
       dispatch({
         type: "COLLECT_RESOURCE",
         payload: {
@@ -101,7 +106,7 @@ export function handleKeyDown(
     if (currentCell?.isPortal) {
       dispatch({ type: "TRY_EXIT_PORTAL", payload: { playerId } });
     }
-  }
+  }}
 
   // Клавиша "A": атака, НО БЕЗ НАПРАВЛЕНИЯ
   if (["A", "a", "Ф", "ф"].includes(e.key)) {
