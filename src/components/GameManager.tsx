@@ -134,8 +134,14 @@ export default function GameManager() {
 
   // Инвентарь
   const memoizedInventory = useMemo(() => {
-    if (!state.inventoryOpen || !activePlayer?.inventory) return null;
-    return <Inventory items={activePlayer.inventory} />;
+    if (!state.inventoryOpen || !activePlayer) return null;
+    return (
+      <Inventory
+        // ПЕРЕДАЁМ РАЗДЕЛЁННЫЙ INVENTORY
+        resources={activePlayer.inventory.resources}
+        artifacts={activePlayer.inventory.artifacts}
+      />
+    );
   }, [state.inventoryOpen, activePlayer]);
 
   // Колбэк конца боя

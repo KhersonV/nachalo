@@ -107,7 +107,7 @@ export function useResourceSystem() {
         console.error(`Не удалось найти ресурс для ключа: ${randomResourceKey}`);
         return;
       }
-
+      const imagePath = `/main_resources/${randomResourceKey}.webp`;
       // Добавляем ресурс в инвентарь игрока
       dispatch({
         type: "ADD_RESOURCE",
@@ -115,7 +115,7 @@ export function useResourceSystem() {
           playerId,
           resourceType: randomResourceKey,
           description: selectedResource.description,
-          image: selectedResource.image.ground,
+          image: imagePath,
         },
       });
     }

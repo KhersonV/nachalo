@@ -1,10 +1,9 @@
-// src/logic/generateMap.ts
+// generateMap.ts
 
-import { PlayerState, Cell, GameMode, TerrainType } from "./types"; // Убедитесь, что путь корректен
-import { resources, createRandomMonster } from "./allData"; // Объедините импорты из одного места
+import { PlayerState, Cell, GameMode, TerrainType } from "./types";
+import { resources, createRandomMonster } from "./allData";
 
-// Определяем возможные типы местности на карте.
-const terrains: TerrainType[] = ["ground", "forest", "mountain", "ice", "river"]; // Указан тип TerrainType[]
+const terrains: TerrainType[] = ["ground", "forest", "mountain", "ice", "river"];
 
 export function generateMap(
   mode: GameMode,
@@ -36,7 +35,6 @@ export function generateMap(
       return possibleTerrains.find((t) => t !== prevTerrains[0]) || "ground";
     }
 
-    // Выбор случайного TerrainType из possibleTerrains
     return possibleTerrains[Math.floor(Math.random() * possibleTerrains.length)];
   };
 
@@ -45,31 +43,51 @@ export function generateMap(
     const y = Math.floor(id / width);
     const prevTerrains: TerrainType[] = [];
 
-    if (y > 0) prevTerrains.push(grid[(y - 1) * width + x]?.terrain as TerrainType);
-    if (x > 0) prevTerrains.push(grid[y * width + (x - 1)]?.terrain as TerrainType);
+    if (y > 0) {
+      prevTerrains.push(grid[(y - 1) * width + x]?.terrain as TerrainType);
+    }
+    if (x > 0) {
+      prevTerrains.push(grid[y * width + (x - 1)]?.terrain as TerrainType);
+    }
 
     const terrain: TerrainType = getNextTerrain(x, y, prevTerrains);
-    const isWalkable = terrain !== "river"; // Предположим, что "river" - непроходимая местность
+    const isWalkable = terrain !== "river";
 
-    const isBarrel = isWalkable && Math.random() < 0.05;
-    const spawnMonster = isWalkable && Math.random() < 0.1;
+    // ---------------------------
+    // 1) Определяем, есть ли бочка
+    // ---------------------------
+    const BARREL_SPAWN_CHANCE = 0.1; // 10% (пример)
+    const isBarrel = isWalkable && Math.random() < BARREL_SPAWN_CHANCE;
 
+    // ---------------------------
+    // 2) Определяем, есть ли "обычный" ресурс
+    // ---------------------------
+    // (Чтобы не затирать бочку, делаем это во "фторую" проверку)
     let resource: typeof resources[keyof typeof resources] | null = null;
-    if (isWalkable && !isBarrel && Math.random() < 0.1) {
+    if (isBarrel) {
+      // Если выпала бочка
+      resource = resources["barrbel"];
+    } else if (isWalkable && Math.random() < 0.1) {
+      // Иначе с 10% возьмём случайный ресурс
       const resArray = Object.values(resources);
       resource = resArray[Math.floor(Math.random() * resArray.length)];
     }
 
-    let monster = spawnMonster ? createRandomMonster() : undefined;
+    // ---------------------------
+    // 3) Определяем, есть ли монстр
+    // ---------------------------
+    const spawnMonster = isWalkable && Math.random() < 0.05;
+    const monster = spawnMonster ? createRandomMonster() : undefined;
 
+    // Формируем клетку
     grid.push({
       id,
       x,
       y,
-      terrain, // Теперь terrain строго типа TerrainType
+      terrain,
       resource: isWalkable ? resource : null,
       monster: isWalkable ? monster : undefined,
-      isPortal: false, // Инициализируем как false
+      isPortal: false, // потом можно задать "true" для одной клетки
     });
   }
 

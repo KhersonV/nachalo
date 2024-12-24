@@ -1,8 +1,6 @@
-//initialPlayers.ts
+// initialPlayers.ts
 
-import { PlayerState} from "./types"; // Убедитесь, что путь корректен
-
-
+import { PlayerState } from "./types";
 
 const initialPlayers: PlayerState[] = [
   {
@@ -13,7 +11,7 @@ const initialPlayers: PlayerState[] = [
     maxEnergy: 100,
     level: 1,
     experience: 0,
-    maxExperience: 500, // Исправлено с max_experience на maxExperience
+    maxExperience: 500,
     visionRange: 5,
     health: 100,
     maxHealth: 100,
@@ -21,10 +19,14 @@ const initialPlayers: PlayerState[] = [
     defense: 5,
     speed: 3,           
     maneuverability: 2, 
-    vision: 5, // Исправлено с visionRange: 5, на visionRange: 5,
-    image: "player-1.webp", // Исправлено с объекта на строку
-    inventory: {},
-    
+    vision: 5,
+    image: "player-1.webp",
+
+    // Новый формат inventory
+    inventory: {
+      resources: {},  // Пустой объект, без ресурсов изначально
+      artifacts: {},  // Пустой объект, без артефактов изначально
+    },
   },
   {
     id: 1,
@@ -34,7 +36,7 @@ const initialPlayers: PlayerState[] = [
     maxEnergy: 100,
     level: 1,
     experience: 0,
-    maxExperience: 500, // Исправлено с max_experience на maxExperience
+    maxExperience: 500,
     visionRange: 3,
     vision: 5,
     health: 100,
@@ -44,7 +46,12 @@ const initialPlayers: PlayerState[] = [
     speed: 3,            
     maneuverability: 2, 
     image: "player-2.webp",
-    inventory: {},
+
+    // Новый формат inventory
+    inventory: {
+      resources: {},
+      artifacts: {},
+    },
   },
 ];
 

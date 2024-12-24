@@ -60,61 +60,84 @@ export function gameReducer(state: GameState, action: Action): GameState {
 
     case "COLLECT_RESOURCE": {
       const { playerId, resourceType, cellId } = action.payload;
-      if (!resources[resourceType]) return state;
-
-      const updatedPlayers = state.players.map((player) =>
-        player.id === playerId
-          ? {
-              ...player,
-              inventory: {
-                ...player.inventory,
-                [resourceType]: {
-                  count: (player.inventory[resourceType]?.count || 0) + 1,
-                  description: resources[resourceType].description,
-                  image: `/main_resources/${resourceType}.webp`,
-                },
+      if (!resources[resourceType]) return state; // Если ресурс неизвестен, выходим
+    
+      const updatedPlayers = state.players.map((player) => {
+        if (player.id !== playerId) return player;
+    
+        // Допустим, мы решили, что все "обычные" ресурсы храним в player.inventory.resources
+        return {
+          ...player,
+          inventory: {
+            ...player.inventory,
+            resources: {
+              ...player.inventory.resources,
+              [resourceType]: {
+                // Берём старый count, если есть
+                count: (player.inventory.resources[resourceType]?.count || 0) + 1,
+                description: resources[resourceType].description,
+                image: `/main_resources/${resourceType}.webp`,
               },
-            }
-          : player
-      );
-
+            },
+          },
+        };
+      });
+    
+      // Удаляем ресурс с карты
       const updatedGrid = state.grid.map((cell) =>
         cell.id === cellId ? { ...cell, resource: null } : cell
       );
-
+    
       return { ...state, players: updatedPlayers, grid: updatedGrid };
     }
+    
 
     case "USE_ITEM": {
       const { playerId, itemType } = action.payload;
-
+    
       const updatedPlayers = state.players.map((player) => {
-        if (player.id === playerId && player.inventory[itemType]?.count > 0) {
-          const resourceEffect = resources[itemType]?.effect || 0;
-
-          return {
-            ...player,
-            inventory: {
-              ...player.inventory,
+        if (player.id !== playerId) return player;
+    
+        const item = player.inventory.resources[itemType];
+        if (!item || item.count <= 0) {
+          // Ресурса нет, ничего не делаем
+          return player;
+        }
+    
+        // Применяем эффект
+        const resourceEffect = resources[itemType]?.effect || 0;
+    
+        return {
+          ...player,
+          inventory: {
+            ...player.inventory,
+            resources: {
+              ...player.inventory.resources,
               [itemType]: {
-                ...player.inventory[itemType],
-                count: player.inventory[itemType].count - 1,
+                // Уменьшаем count
+                ...item,
+                count: item.count - 1,
               },
             },
-            // Применяем эффект ресурса
-            ...(itemType === "food"
-              ? { health: Math.min(player.maxHealth, player.health + resourceEffect) }
-              : {}),
-            ...(itemType === "water"
-              ? { energy: Math.min(player.maxEnergy, player.energy + resourceEffect) }
-              : {}),
-          };
-        }
-        return player;
+          },
+          // Если это "food" → восстанавливаем здоровье, 
+          // если "water" → восстанавливаем энергию, и т. п.
+          ...(itemType === "food"
+            ? {
+                health: Math.min(player.maxHealth, player.health + resourceEffect),
+              }
+            : {}),
+          ...(itemType === "water"
+            ? {
+                energy: Math.min(player.maxEnergy, player.energy + resourceEffect),
+              }
+            : {}),
+        };
       });
-
+    
       return { ...state, players: updatedPlayers };
     }
+    
 
     case "PASS_TURN": {
       const nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
@@ -294,61 +317,66 @@ export function gameReducer(state: GameState, action: Action): GameState {
       }
   
       // ----- Добавляем обычный ресурс (счётчик count) -----
-      case "ADD_RESOURCE": {
-        const { playerId, resourceType, description, image } = action.payload;
-        const updatedPlayers = state.players.map((player) => {
-          if (player.id !== playerId) return player;
-  
-          // Находим предыдущую запись в инвентаре (если есть).
-          const existingItem = player.inventory[resourceType] || { count: 0 };
-  
-          return {
-            ...player,
-            inventory: {
-              ...player.inventory,
-              [resourceType]: {
-                ...existingItem,
-                count: (existingItem.count || 0) + 1,
-                description,
-                image,
-              },
+      // reducer.ts (фрагмент)
+
+case "ADD_RESOURCE": {
+  const { playerId, resourceType, description, image } = action.payload;
+  return {
+    ...state,
+    players: state.players.map((player) => {
+      if (player.id !== playerId) return player;
+
+      // берем прежнюю запись, если есть
+      const existingItem = player.inventory.resources[resourceType] || { count: 0, description, image };
+
+      return {
+        ...player,
+        inventory: {
+          ...player.inventory,
+          resources: {
+            ...player.inventory.resources,
+            [resourceType]: {
+              ...existingItem,
+              count: (existingItem.count || 0) + 1,
+              description,
+              image,
             },
-          };
-        });
-  
-        return { ...state, players: updatedPlayers };
-      }
-  
-      // ----- Добавляем артефакт (уникальная вещь) -----
-      // Можно тоже вести счётчик count=1, если хотите разрешить
-      // несколько одинаковых артефактов. Или всегда 1.
-      case "ADD_ARTIFACT": {
-        const { playerId, artifactName, description, image, bonus } = action.payload;
-        const updatedPlayers = state.players.map((player) => {
-          if (player.id !== playerId) return player;
-  
-          // Пусть в inventory хранятся и артефакты, и ресурсы.
-          // Но артефакты чаще всего имеют count=1 (или вообще не используют count).
-          const existingItem = player.inventory[artifactName] || { count: 0 };
-  
-          return {
-            ...player,
-            inventory: {
-              ...player.inventory,
-              [artifactName]: {
-                ...existingItem,
-                count: (existingItem.count || 0) + 1, // при необходимости
-                description,
-                image,
-                bonus,
-              },
+          },
+        },
+      };
+    }),
+  };
+}
+
+case "ADD_ARTIFACT": {
+  const { playerId, artifactName, description, image, bonus } = action.payload;
+  return {
+    ...state,
+    players: state.players.map((player) => {
+      if (player.id !== playerId) return player;
+
+      const existingItem = player.inventory.artifacts[artifactName] || { count: 0, description, image };
+
+      return {
+        ...player,
+        inventory: {
+          ...player.inventory,
+          artifacts: {
+            ...player.inventory.artifacts,
+            [artifactName]: {
+              ...existingItem,
+              count: (existingItem.count || 0) + 1,
+              description,
+              image,
+              bonus,
             },
-          };
-        });
-  
-        return { ...state, players: updatedPlayers };
-      }
-  
+          },
+        },
+      };
+    }),
+  };
+}
+
 
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };

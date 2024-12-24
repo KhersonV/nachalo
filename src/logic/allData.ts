@@ -91,7 +91,7 @@ export const resources: { [key: string]: ResourceType } = {
       mountain: "/barrbel-mountain.webp",
     },
     description: "Бочка с ресурсом, артефактом или монстром.",
-    rarity: 0.01,
+    rarity: 0.3,
     effect: 0, // Эффект зависит от содержимого
     terrains: ["ground", "ice", "grass", "forest", "mountain"],
   },
@@ -314,7 +314,7 @@ export const artifacts: Artifact[] = [
   {
     id: 4,
     name: "Boots of Stealth",
-    image: "/artifacts/boots-of-stealth.webp",
+    image: "/artifacts/boots_of_stealth.webp",
     description: "Сапоги скрытности, позволяющие незаметно передвигаться.",
     bonus: { defense: 2, energy: 10 },
   },

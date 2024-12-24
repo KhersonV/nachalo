@@ -84,7 +84,10 @@ export type InventoryItem = {
 };
 
 // Инвентарь игрока.
-export type Inventory = Record<string, InventoryItem>;
+export type Inventory = {
+  resources: Record<string, InventoryItem>; 
+  artifacts: Record<string, InventoryItem>; 
+};
 
 // Тип для ресурса.
 export type ResourceType = {

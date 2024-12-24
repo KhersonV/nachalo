@@ -10,38 +10,43 @@ type InventoryItem = {
   count: number;
   description: string;
   image: string;
+  bonus?: Record<string, number>;
 };
 
 type InventoryProps = {
-  items: Record<string, InventoryItem>;
+  // Теперь ожидаем два набора предметов:
+  resources: Record<string, InventoryItem>;
+  artifacts: Record<string, InventoryItem>;
 };
 
-export default function Inventory({ items }: InventoryProps) {
-  const [filter, setFilter] = useState("");
+export default function Inventory({ resources, artifacts }: InventoryProps) {
   const { dispatch, state } = useGameContext();
+  const [activeTab, setActiveTab] = useState<"resources" | "artifacts">("resources");
+  const [filter, setFilter] = useState("");
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilter(e.target.value.toLowerCase());
   };
 
-  const filteredItems = Object.entries(items)
-    .filter(([key]) => key.toLowerCase() !== "barrbel")
-    .filter(([key]) => key.toLowerCase().includes(filter));
-
-  const getResourceImagePath = (resourceType: string): string => {
-    return `/main_resources/${resourceType}.webp`;
-  };
+  // Фильтрация
+  const filteredResources = Object.entries(resources).filter(([key]) =>
+    key.toLowerCase().includes(filter)
+  );
+  const filteredArtifacts = Object.entries(artifacts).filter(([key]) =>
+    key.toLowerCase().includes(filter)
+  );
 
   const handleUseItem = (type: string) => {
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (!currentPlayer) return;
-  
-    const item = currentPlayer.inventory[type];
+
+    // Пытаемся найти предмет среди resources
+    const item = currentPlayer.inventory.resources[type];
     if (!item || item.count <= 0) {
       console.error("Ресурс отсутствует или закончился.");
       return;
     }
-  
+
     dispatch({
       type: "USE_ITEM",
       payload: { playerId: currentPlayer.id, itemType: type },
@@ -50,6 +55,21 @@ export default function Inventory({ items }: InventoryProps) {
 
   return (
     <div className="inventory">
+      <div className="inventory-tabs">
+        <button
+          className={activeTab === "resources" ? "active-tab" : ""}
+          onClick={() => setActiveTab("resources")}
+        >
+          Ресурсы
+        </button>
+        <button
+          className={activeTab === "artifacts" ? "active-tab" : ""}
+          onClick={() => setActiveTab("artifacts")}
+        >
+          Артефакты
+        </button>
+      </div>
+
       <input
         className="inventory-search"
         type="text"
@@ -58,25 +78,45 @@ export default function Inventory({ items }: InventoryProps) {
         onChange={handleFilterChange}
       />
 
-      <div className="inventory-grid">
-        {filteredItems.map(([key, { count, description, image }]) => (
-          <div
-            className="inventory-item"
-            key={key}
-            onClick={() => handleUseItem(key)}
-          >
-            <img
-              src={getResourceImagePath(key)}
-              alt={key}
-              className="inventory-image"
-            />
-            <p>{key}</p>
-            <p>Количество: {count}</p>
-            <p className="inventory-description">{description}</p>
-            <p className="inventory-action-hint">Нажмите для использования</p>
-          </div>
-        ))}
-      </div>
+      {activeTab === "resources" && (
+        <div className="inventory-grid">
+          {filteredResources.map(([key, item]) => (
+            <div 
+              className="inventory-item" 
+              key={key}
+              onClick={() => handleUseItem(key)}
+            >
+              <img
+                src={item.image || `/main_resources/${key}.webp`} 
+                alt={key}
+                className="inventory-image"
+              />
+              <p>{key}</p>
+              <p>Количество: {item.count}</p>
+              <p className="inventory-description">{item.description}</p>
+              <p className="inventory-action-hint">Нажмите для использования</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "artifacts" && (
+        <div className="inventory-grid">
+          {filteredArtifacts.map(([key, item]) => (
+            <div className="inventory-item" key={key}>
+              <img
+                src={item.image} 
+                alt={key}
+                className="inventory-image"
+              />
+              <p>{key}</p>
+              <p>Количество: {item.count}</p>
+              <p className="inventory-description">{item.description}</p>
+              <p className="inventory-action-hint">Артефакт не используется</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
