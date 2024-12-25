@@ -1,9 +1,13 @@
 // src/logic/reducer.ts
 
-import { GameState, Entity } from "./types";
+import { GameState, InventoryItem, Entity, PlayerState, Artifact } from "./types";
 import { Action } from "./actions";
 import { resources } from "./allData";
-import { removeMonsterFromCell } from "./utils"; // Импортируем вспомогательную функцию
+import { removeMonsterFromCell } from "./utils"; // какая-то ваша вспомогательная функция
+
+function isPlayer(entity: Entity): entity is PlayerState {
+  return "level" in entity;
+}
 
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -90,7 +94,6 @@ export function gameReducer(state: GameState, action: Action): GameState {
     
       return { ...state, players: updatedPlayers, grid: updatedGrid };
     }
-    
 
     case "USE_ITEM": {
       const { playerId, itemType } = action.payload;
@@ -137,7 +140,6 @@ export function gameReducer(state: GameState, action: Action): GameState {
     
       return { ...state, players: updatedPlayers };
     }
-    
 
     case "PASS_TURN": {
       const nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
@@ -161,13 +163,11 @@ export function gameReducer(state: GameState, action: Action): GameState {
 
     case "UPDATE_MONSTER_ATTACK_TURN": {
       const { monsterId, turnCycle } = action.payload;
-
       const updatedGrid = state.grid.map((cell) =>
         cell.monster?.id === monsterId
           ? { ...cell, monster: { ...cell.monster, lastTurnAttacked: turnCycle } }
           : cell
       );
-
       return { ...state, grid: updatedGrid };
     }
 
@@ -181,14 +181,6 @@ export function gameReducer(state: GameState, action: Action): GameState {
       };
     }
 
-    case "REMOVE_PLAYER": {
-      const { playerId } = action.payload;
-      return {
-        ...state,
-        players: state.players.filter((player) => player.id !== playerId),
-      };
-    }
-
     case "START_BATTLE":
       return {
         ...state,
@@ -199,184 +191,293 @@ export function gameReducer(state: GameState, action: Action): GameState {
         },
       };
 
-      case "END_BATTLE": {
-        const { result, updatedAttacker, cellId } = action.payload;
-        console.log(`END_BATTLE: result=${result}, updatedAttacker=`, updatedAttacker, `cellId=${cellId}`);
-        
-        const { attacker, defender } = state.battleParticipants!;
-        let updatedState: GameState = { 
-          ...state, 
-          inBattle: false, 
-          battleParticipants: null 
-        };
-      
-        if (!updatedAttacker) {
-          console.error("updatedAttacker is undefined in END_BATTLE action.");
-          return state;
-        }
-      
-        if (result === "attacker-win") {
-          // Победил АТАКУЮЩИЙ (и это сущность, которую мы передали как updatedAttacker)
-      
-          if ("level" in updatedAttacker) {
-            // updatedAttacker – Игрок
-            console.log(`Победил игрок ${updatedAttacker.name}. Ему уже начислили XP в BattleScene.`);
-            
-            // Обновим игрока (победителя) в списке игроков
-            updatedState = {
-              ...updatedState,
-              players: state.players.map(player =>
-                player.id === updatedAttacker.id ? updatedAttacker : player
-              ),
-            };
-      
-            // Проигравший – defender
-            if (!("level" in defender)) {
-              // Защитник – монстр ⇒ убираем монстра с карты (cellId)
-              if (cellId !== -1) {
-                updatedState = removeMonsterFromCell(updatedState, cellId);
-                console.log(`Монстр ${defender.name} удалён из клетки id=${cellId}.`);
-              }
-            } else {
-              // Защитник – игрок ⇒ ставим ему HP=0 или убираем из players (ваша логика)
-              updatedState = {
-                ...updatedState,
-                players: updatedState.players.map(p =>
-                  p.id === defender.id ? { ...p, health: 0 } : p
-                ),
-              };
-            }
-      
-          } else {
-            // updatedAttacker – монстр
-            console.log(`Победил монстр ${updatedAttacker.name}. Проигравший - игрок attacker.`);
-      
-            // Значит, надо обнулить здоровье игрока, который проиграл
-            updatedState = {
-              ...updatedState,
-              players: updatedState.players.map(player =>
-                player.id === defender.id ? { ...player, health: 0 } : player
-              ),
-            };
-          }
-        }
-      
-        else if (result === "defender-win") {
-          // Победил ЗАЩИТНИК (и он передан в updatedAttacker)
-          if ("level" in updatedAttacker) {
-            // updatedAttacker – Игрок, значит он выиграл
-            console.log(`Победил игрок ${updatedAttacker.name}.`);
-      
-            // Обновим игрока (победителя)
-            updatedState = {
-              ...updatedState,
-              players: state.players.map(player =>
-                player.id === updatedAttacker.id ? updatedAttacker : player
-              ),
-            };
-      
-            // Проигравший – attacker
-            if (!("level" in attacker)) {
-              // attacker – монстр ⇒ убираем с карты
-              if (cellId !== -1) {
-                updatedState = removeMonsterFromCell(updatedState, cellId);
-                console.log(`Монстр ${attacker.name} удалён из клетки id=${cellId}.`);
-              }
-            } else {
-              // attacker – игрок ⇒ ставим ему HP=0 или убираем из массива
-              updatedState = {
-                ...updatedState,
-                players: updatedState.players.map(p =>
-                  p.id === attacker.id ? { ...p, health: 0 } : p
-                ),
-              };
-            }
-          } else {
-            // updatedAttacker – монстр, значит он выиграл
-            console.log(`Победил монстр ${updatedAttacker.name}. Проигравший - игрок attacker.`);
-            updatedState = {
-              ...updatedState,
-              players: state.players.map(p =>
-                p.id === attacker.id ? { ...p, health: 0 } : p
-              ),
-            };
-          }
-        }
-      
-        console.log("Updated State after END_BATTLE:", updatedState);
-        return updatedState;
-      }
+    // ----------------------------------------
+    // КЛЮЧЕВОЙ МОМЕНТ: логика конца боя
+    // ----------------------------------------
+    case "END_BATTLE": {
+      const { result, updatedAttacker, cellId } = action.payload;
+      const { attacker, defender } = state.battleParticipants || {};
+      if (!attacker || !defender || !updatedAttacker) return state;
 
-      case "REMOVE_RESOURCE": {
-        const { cellId } = action.payload;
-        // Убираем resource с клетки (cell)
-        const updatedGrid = state.grid.map((cell) =>
-          cell.id === cellId ? { ...cell, resource: null } : cell
+      let updatedState: GameState = {
+        ...state,
+        inBattle: false,
+        battleParticipants: null,
+      };
+
+      // Проверим, кто победил
+      if (result === "attacker-win" && isPlayer(updatedAttacker)) {
+        // Если защитник тоже был игроком, то это PvP
+        if (isPlayer(defender)) {
+          console.log(
+            `Игрок ${defender.name} погиб! У него есть артефакты?`,
+            defender.inventory.artifacts
+          );
+          const loserArtifacts = defender.inventory.artifacts;
+          
+          // Если есть хотя бы один артефакт — предлагаем окно выбора
+          if (Object.keys(loserArtifacts).length > 0) {
+            // НЕ УДАЛЯЕМ проигравшего из массива, 
+            // чтобы его инвентарь оставался доступным.
+            updatedState = {
+              ...updatedState,
+              artifactSelection: {
+                loserId: defender.id,    // ID проигравшего
+                winnerId: updatedAttacker.id,
+                // Внимание: складываем **InventoryItem** целиком
+                artifacts: { ...loserArtifacts },
+              },
+            };
+          } else {
+            // Если артефактов нет, просто удаляем проигравшего
+            updatedState = {
+              ...updatedState,
+              players: updatedState.players.filter((p) => p.id !== defender.id),
+            };
+          }
+        }
+        // Если защитник был монстром
+        else {
+          updatedState = removeMonsterFromCell(updatedState, cellId);
+        }
+
+        // Обновляем состояние победителя (у него уже может быть снижено здоровье и т.п.)
+        updatedState.players = updatedState.players.map((p) =>
+          p.id === updatedAttacker.id ? updatedAttacker : p
         );
-        return { ...state, grid: updatedGrid };
       }
-  
-      // ----- Добавляем обычный ресурс (счётчик count) -----
-      // reducer.ts (фрагмент)
+      // ---------------------------
+      else if (result === "defender-win" && isPlayer(updatedAttacker)) {
+        // Значит, проиграл attacker. Проверим, был ли он игроком
+        if (isPlayer(attacker)) {
+          console.log(
+            `Игрок ${attacker.name} погиб! У него есть артефакты?`,
+            attacker.inventory.artifacts
+          );
+          const loserArtifacts = attacker.inventory.artifacts;
 
-case "ADD_RESOURCE": {
-  const { playerId, resourceType, description, image } = action.payload;
-  return {
-    ...state,
-    players: state.players.map((player) => {
-      if (player.id !== playerId) return player;
+          if (Object.keys(loserArtifacts).length > 0) {
+            updatedState = {
+              ...updatedState,
+              artifactSelection: {
+                loserId: attacker.id,
+                winnerId: updatedAttacker.id,
+                artifacts: { ...loserArtifacts },
+              },
+            };
+          } else {
+            updatedState = {
+              ...updatedState,
+              players: updatedState.players.filter((p) => p.id !== attacker.id),
+            };
+          }
+        } else {
+          updatedState = removeMonsterFromCell(updatedState, cellId);
+        }
 
-      // берем прежнюю запись, если есть
-      const existingItem = player.inventory.resources[resourceType] || { count: 0, description, image };
+        // Обновляем победителя
+        updatedState.players = updatedState.players.map((p) =>
+          p.id === updatedAttacker.id ? updatedAttacker : p
+        );
+      }
 
+      return updatedState;
+    }
+    // ----------------------------------------
+    // ----------------------------------------
+
+    case "REMOVE_PLAYER": {
+      const { playerId } = action.payload;
       return {
-        ...player,
-        inventory: {
-          ...player.inventory,
-          resources: {
-            ...player.inventory.resources,
-            [resourceType]: {
-              ...existingItem,
-              count: (existingItem.count || 0) + 1,
-              description,
-              image,
+        ...state,
+        players: state.players.filter((player) => player.id !== playerId),
+      };
+    }
+
+    case "REMOVE_RESOURCE": {
+      const { cellId } = action.payload;
+      // Убираем resource с клетки (cell)
+      const updatedGrid = state.grid.map((cell) =>
+        cell.id === cellId ? { ...cell, resource: null } : cell
+      );
+      return { ...state, grid: updatedGrid };
+    }
+
+    // ----- Добавляем обычный ресурс (счётчик count) -----
+    case "ADD_RESOURCE": {
+      const { playerId, resourceType, description, image } = action.payload;
+      return {
+        ...state,
+        players: state.players.map((player) => {
+          if (player.id !== playerId) return player;
+
+          // берем прежнюю запись, если есть
+          const existingItem =
+            player.inventory.resources[resourceType] || { count: 0, description, image };
+
+          return {
+            ...player,
+            inventory: {
+              ...player.inventory,
+              resources: {
+                ...player.inventory.resources,
+                [resourceType]: {
+                  ...existingItem,
+                  count: (existingItem.count || 0) + 1,
+                  description,
+                  image,
+                },
+              },
             },
-          },
+          };
+        }),
+      };
+    }
+
+    // ----- Добавляем артефакт (но в виде InventoryItem) -----
+    case "ADD_ARTIFACT": {
+      const { playerId, artifactName, description, image, bonus } = action.payload;
+      return {
+        ...state,
+        players: state.players.map((player) => {
+          if (player.id !== playerId) return player;
+
+          const existingItem = player.inventory.artifacts[artifactName] || {
+            count: 0,
+            description,
+            image,
+            bonus,
+          };
+
+          return {
+            ...player,
+            inventory: {
+              ...player.inventory,
+              artifacts: {
+                ...player.inventory.artifacts,
+                [artifactName]: {
+                  ...existingItem,
+                  count: (existingItem.count || 0) + 1,
+                  description,
+                  image,
+                  bonus,
+                },
+              },
+            },
+          };
+        }),
+      };
+    }
+
+    // Начинаем выбор артефактов (если нужно вызвать вручную):
+    case "START_ARTIFACT_SELECTION": {
+      return {
+        ...state,
+        artifactSelection: {
+          loserId: action.payload.loserId,
+          winnerId: action.payload.winnerId,
+          // Обратите внимание: здесь у нас тип Record<string, Artifact>. 
+          // Но мы можем хранить именно InventoryItem, если так удобнее.
+          // Сейчас по коду - у нас ArtifactSelection ожидает InventoryItem,
+          // поэтому для примера предположим, что вы где-то сконвертировали их.
+          artifacts: {},
         },
       };
-    }),
-  };
-}
+    }
 
-case "ADD_ARTIFACT": {
-  const { playerId, artifactName, description, image, bonus } = action.payload;
-  return {
-    ...state,
-    players: state.players.map((player) => {
-      if (player.id !== playerId) return player;
-
-      const existingItem = player.inventory.artifacts[artifactName] || { count: 0, description, image };
-
+    // Отмена выбора (не переносим ничего)
+    case "CANCEL_ARTIFACT_SELECTION": {
       return {
-        ...player,
+        ...state,
+        artifactSelection: null,
+      };
+    }
+
+    // -------------------------------------------------------
+    // КЛЮЧЕВОЙ экшен - перенос выбранного артефакта от проигравшего к победителю
+    // -------------------------------------------------------
+    case "COMPLETE_ARTIFACT_SELECTION": {
+      const { winnerId, loserId, artifactKey } = action.payload;
+      const { artifactSelection } = state;
+
+      if (!artifactSelection) return state;
+
+      // Находим проигравшего и победителя в массиве.
+      const loserIndex = state.players.findIndex((p) => p.id === loserId);
+      const winnerIndex = state.players.findIndex((p) => p.id === winnerId);
+      if (loserIndex === -1 || winnerIndex === -1) {
+        // На всякий случай
+        return {
+          ...state,
+          artifactSelection: null,
+        };
+      }
+
+      const loser = state.players[loserIndex];
+      const winner = state.players[winnerIndex];
+
+      // Ищем артефакт в инвентаре проигравшего
+      const loserArtifacts = { ...loser.inventory.artifacts };
+      const artifactItem = loserArtifacts[artifactKey];
+      if (!artifactItem) {
+        // Артефакт не найден
+        return {
+          ...state,
+          artifactSelection: null,
+        };
+      }
+
+      console.log(
+        `Передаём артефакт "${artifactKey}" от ${loser.name} → ${winner.name}`
+      );
+
+      // Удаляем артефакт у проигравшего
+      delete loserArtifacts[artifactKey];
+
+      // Добавляем (или суммируем) у победителя
+      const winnerArtifacts = { ...winner.inventory.artifacts };
+      const existingWinnerItem = winnerArtifacts[artifactKey];
+      if (existingWinnerItem) {
+        // Если у победителя уже был этот ключ, суммируем
+        existingWinnerItem.count += artifactItem.count;
+      } else {
+        winnerArtifacts[artifactKey] = { ...artifactItem }; // копируем весь объект
+      }
+
+      // Собираем обновлённые объекты
+      const updatedLoser = {
+        ...loser,
         inventory: {
-          ...player.inventory,
-          artifacts: {
-            ...player.inventory.artifacts,
-            [artifactName]: {
-              ...existingItem,
-              count: (existingItem.count || 0) + 1,
-              description,
-              image,
-              bonus,
-            },
-          },
+          ...loser.inventory,
+          artifacts: loserArtifacts,
         },
       };
-    }),
-  };
-}
+      const updatedWinner = {
+        ...winner,
+        inventory: {
+          ...winner.inventory,
+          artifacts: winnerArtifacts,
+        },
+      };
 
+      // Теперь перезаписываем игроков в state.players
+      let updatedPlayers = [...state.players];
+      updatedPlayers[loserIndex] = updatedLoser;
+      updatedPlayers[winnerIndex] = updatedWinner;
+
+      // Допустим, мы хотим *после* передачи удалить проигравшего из игры.
+      // Но только если он точно мёртв (health <= 0).
+      // Если хотите убрать его независимо от здоровья — делайте без условия.
+      if (updatedLoser.health <= 0) {
+        updatedPlayers = updatedPlayers.filter((p) => p.id !== loserId);
+      }
+
+      return {
+        ...state,
+        players: updatedPlayers,
+        artifactSelection: null, // закрываем диалог
+      };
+    }
 
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };

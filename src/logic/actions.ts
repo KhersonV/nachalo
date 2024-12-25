@@ -1,8 +1,8 @@
 // src/logic/actions.ts
 
-import { GameMode, PlayerState, MonsterState, Cell } from "./types";
+import { GameMode, PlayerState, MonsterState, Cell, Artifact } from "./types";
 
-// Определение типа награды
+// Определение типа награды (если нужно).
 export type Reward = {
   experience: number;
   currency: number;
@@ -10,46 +10,102 @@ export type Reward = {
 
 // Определяем типы действий
 export type Action =
-  | { type: 'INITIALIZE_GAME'; payload: { mode: GameMode; instanceId: string; players: PlayerState[] } }
-  | { type: 'SET_INSTANCE_ID'; payload: { instanceId: string } }
-  | { type: 'MOVE_PLAYER'; payload: { playerId: number; newPosition: { x: number; y: number } } }
-  | { type: 'ATTACK'; payload: { attackerId: number; targetId: number; damage: number; targetType: 'player' | 'monster'; cellId?: number } }
-  | { type: 'COLLECT_RESOURCE'; payload: { playerId: number; resourceType: string; cellId: number } }
-  | { type: 'USE_ITEM'; payload: { playerId: number; itemType: string } }
-  | { type: 'PASS_TURN' }
-  | { type: 'PICK_ARTIFACT'; payload: { playerId: number } }
-  | { type: 'LOSE_ARTIFACT'; payload: { playerId: number } }
-  | { type: 'ADD_ITEM'; payload: { playerId: number; itemType: string; description: string; image: string; bonus?: Record<string, number> } }
+  | { type: "INITIALIZE_GAME"; payload: { mode: GameMode; instanceId: string; players: PlayerState[] } }
+  | { type: "SET_INSTANCE_ID"; payload: { instanceId: string } }
+  | { type: "MOVE_PLAYER"; payload: { playerId: number; newPosition: { x: number; y: number } } }
   | {
-    type: 'ADD_RESOURCE';
-    payload: {
-      playerId: number;
-      resourceType: string;
-      description: string;
-      image: string;
-    };
-  }
-| {
-    type: 'ADD_ARTIFACT';
-    payload: {
-      playerId: number;
-      artifactName: string;
-      description: string;
-      image: string;
-      bonus?: Record<string, number>;
-    };
-  }
-  | { type: 'REMOVE_RESOURCE'; payload: { cellId: number } }
-  | { type: 'ADD_MONSTER'; payload: { cellId: number; monster: MonsterState } }
-  | { type: 'TRY_EXIT_PORTAL'; payload: { playerId: number } }
-  | { type: 'PLAYER_DIED'; payload: { playerId: number } }
-  | { type: 'FINALIZE_INSTANCE'; payload: { instanceId: string; players: PlayerState[] } }
-  | { type: 'AWARD_REWARD'; payload: { playerId: number; reward: Reward } }
-  | { type: 'SET_GRID'; payload: { grid: Cell[] } }
-  | { type: 'TOGGLE_INVENTORY' }
-  | { type: 'SET_MONSTERS_HAVE_ATTACKED'; payload: { monstersHaveAttacked: boolean } }
-  | { type: 'UPDATE_MONSTER_ATTACK_TURN'; payload: { monsterId: number; turnCycle: number } }
+      type: "ATTACK";
+      payload: { 
+        attackerId: number; 
+        targetId: number; 
+        damage: number; 
+        targetType: "player" | "monster"; 
+        cellId?: number; 
+      };
+    }
+  | {
+      type: "COLLECT_RESOURCE";
+      payload: { playerId: number; resourceType: string; cellId: number };
+    }
+  | { type: "USE_ITEM"; payload: { playerId: number; itemType: string } }
+  | { type: "PASS_TURN" }
+  | { type: "PICK_ARTIFACT"; payload: { playerId: number } }
+  | { type: "LOSE_ARTIFACT"; payload: { playerId: number } }
+  | {
+      type: "ADD_ITEM";
+      payload: { 
+        playerId: number; 
+        itemType: string; 
+        description: string; 
+        image: string; 
+        bonus?: Record<string, number>; 
+      };
+    }
+  | {
+      type: "ADD_RESOURCE";
+      payload: {
+        playerId: number;
+        resourceType: string;
+        description: string;
+        image: string;
+      };
+    }
+  | {
+      type: "ADD_ARTIFACT";
+      payload: {
+        playerId: number;
+        artifactName: string;
+        description: string;
+        image: string;
+        bonus?: Record<string, number>;
+      };
+    }
+  | { type: "REMOVE_RESOURCE"; payload: { cellId: number } }
+  | { type: "ADD_MONSTER"; payload: { cellId: number; monster: MonsterState } }
+  | { type: "TRY_EXIT_PORTAL"; payload: { playerId: number } }
+  | { type: "PLAYER_DIED"; payload: { playerId: number } }
+  | { type: "FINALIZE_INSTANCE"; payload: { instanceId: string; players: PlayerState[] } }
+  | { type: "AWARD_REWARD"; payload: { playerId: number; reward: Reward } }
+  | { type: "SET_GRID"; payload: { grid: Cell[] } }
+  | { type: "TOGGLE_INVENTORY" }
+  | { type: "SET_MONSTERS_HAVE_ATTACKED"; payload: { monstersHaveAttacked: boolean } }
+  | { type: "UPDATE_MONSTER_ATTACK_TURN"; payload: { monsterId: number; turnCycle: number } }
   | { type: "UPDATE_PLAYER_STATS"; payload: { playerId: number; stats: Partial<PlayerState> } }
-  | { type: "START_BATTLE"; payload: { attacker: PlayerState | MonsterState; defender: PlayerState | MonsterState; cellId: number } } // Добавлено cellId
-  | { type: "END_BATTLE"; payload: { result: "attacker-win" | "defender-win"; updatedAttacker?: PlayerState | MonsterState; cellId: number } } // Добавлено cellId
-  | { type: "REMOVE_PLAYER"; payload: { playerId: number } };
+  | {
+      type: "START_BATTLE";
+      payload: {
+        attacker: PlayerState | MonsterState;
+        defender: PlayerState | MonsterState;
+        cellId: number;
+      };
+    }
+  | {
+      type: "END_BATTLE";
+      payload: {
+        result: "attacker-win" | "defender-win";
+        updatedAttacker?: PlayerState | MonsterState;
+        cellId: number;
+      };
+    }
+  | { type: "REMOVE_PLAYER"; payload: { playerId: number } }
+
+  // Начинаем выбор артефакта (сохраняем в стейте, какой loserId, какой winnerId, какие артефакты)
+  | {
+      type: "START_ARTIFACT_SELECTION";
+      payload: {
+        loserId: number;
+        winnerId: number;
+        artifacts: Record<string, Artifact>; 
+      };
+    }
+  // Отмена окна выбора (ничего не переносим)
+  | { type: "CANCEL_ARTIFACT_SELECTION" }
+  // Завершаем выбор и переносим в инвентарь победителя
+  | {
+      type: "COMPLETE_ARTIFACT_SELECTION";
+      payload: {
+        winnerId: number;
+        loserId: number;
+        artifactKey: string;
+      };
+    };

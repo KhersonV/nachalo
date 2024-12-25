@@ -77,6 +77,7 @@ export type BonusAttributes = {
 
 // Тип для предметов в инвентаре.
 export type InventoryItem = {
+  name?: string; // Название предмета (не обязательно)
   count: number;
   image: string;
   description: string;
@@ -132,7 +133,7 @@ export type Cell = {
   transition?: TransitionTile;
 };
 
-// Тип для клетки поля боя.
+// Тип для клетки поля боя (для примера).
 export type HexCell = {
   id: number;
   x: number;
@@ -152,11 +153,20 @@ export type BattleParticipants = {
   defender: Entity;
 };
 
-// Тип для награды.
+// Тип для награды (если нужно).
 export type Reward = {
   experience: number;
   currency: number;
   artifact?: string;
+};
+
+// **ВАЖНО**: тип выбора артефакта (передача от проигравшего к победителю).
+// Содержим два поля: loserId, winnerId. 
+// И список артефактов (InventoryItem), а не чистых Artifact, чтобы не было конфликтов типов.
+export type ArtifactSelection = {
+  loserId: number; 
+  winnerId: number; 
+  artifacts: Record<string, InventoryItem>; 
 };
 
 // Тип для глобального состояния игры.
@@ -177,8 +187,12 @@ export type GameState = {
   // Флаг, указывающий, что мы находимся в бою (при необходимости)
   inBattle: boolean;
   battleParticipants: BattleParticipants | null;
+
+  // Если после боя нужно выбрать артефакт из инвентаря проигравшего 
+  artifactSelection: ArtifactSelection | null;
 };
 
+// Тип для базовой структуры артефакта:
 export type Artifact = {
   id: number;
   name: string;

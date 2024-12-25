@@ -6,31 +6,34 @@ import Map from "./Map";
 import Players from "./Players";
 import Inventory from "./Inventory";
 import BattleScene from "./BattleScene";
+import ArtifactTransferDialog from "./ArtifactTransferDialog";
+
 import { useBattleSystem } from "../logic/battleSystem";
 import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
-import { Entity, GameState } from "../logic/types";
+
+import { Entity, GameState, PlayerState } from "../logic/types";
+import { Action } from "../logic/actions";
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
 
-  // Получаем новую функцию:
+  // Системы для атак, ресурсов, артефактов
   const { attackPlayerOrMonsterSameCell, monstersAttackPlayers } = useBattleSystem();
   const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
   const players = state.players;
   const currentPlayerIndex = state.currentPlayerIndex;
+  const activePlayer = players.length > 0 ? players[currentPlayerIndex] : null;
 
-  // Обратите внимание: теперь мы передаём в handlersRef
-  // именно attackPlayerOrMonsterSameCell (без направления).
+  // Ссылка на все обработчики, чтобы удобно передать в handleKeyDown
   const handlersRef = useRef({
     attackPlayerOrMonsterSameCell,
     openBarrel: (playerId: number) => {
-      // Реализуйте открытие бочки без направления, если нужно.
-      openBarrel(playerId); 
-      // Или полностью перепишите openBarrel так, чтобы не принимала dx/dy.
+      // Логика открытия бочки (без направления, т.к. используем player.position)
+      openBarrel(playerId);
     },
     tryExitThroughPortal,
     collectResourceIfOnTile,
@@ -41,6 +44,7 @@ export default function GameManager() {
     setInventoryOpen: () => dispatch({ type: "TOGGLE_INVENTORY" }),
   });
 
+  // Обновляем handlersRef при изменении зависимостей
   useEffect(() => {
     handlersRef.current = {
       attackPlayerOrMonsterSameCell,
@@ -67,8 +71,8 @@ export default function GameManager() {
     dispatch,
   ]);
 
+  // Монстры атакуют один раз за цикл
   useEffect(() => {
-    // Монстры ходят один раз за цикл
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       monstersAttackPlayers();
       dispatch({
@@ -78,13 +82,14 @@ export default function GameManager() {
     }
   }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
 
+  // Обработка клавиш
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
       e.preventDefault();
       handleKeyDown(e, {
         state,
         dispatch,
-        // Разворачиваем handlersRef.current,
+        // Передаём все handlers из ref
         ...handlersRef.current,
       });
     },
@@ -98,20 +103,13 @@ export default function GameManager() {
     };
   }, [onKeyDown]);
 
-  // Текущий игрок
-  const activePlayer = useMemo(() => {
-    if (players.length > 0 && currentPlayerIndex >= 0 && currentPlayerIndex < players.length) {
-      return players[currentPlayerIndex];
-    }
-    return null;
-  }, [players, currentPlayerIndex]);
-
+  // Кнопка "Передать ход"
   const passTurn = useCallback(() => {
     if (!activePlayer) return;
     dispatch({ type: "PASS_TURN" });
   }, [activePlayer, dispatch]);
 
-  // Карта
+  // Мемоизация карты
   const memoizedMap = useMemo(() => {
     if (!state.grid || !activePlayer) return null;
     return (
@@ -124,94 +122,132 @@ export default function GameManager() {
         activePlayerIndex={currentPlayerIndex}
       />
     );
-  }, [state.grid, players, activePlayer, state.mapWidth, state.mapHeight, currentPlayerIndex]);
+  }, [
+    state.grid,
+    players,
+    activePlayer,
+    state.mapWidth,
+    state.mapHeight,
+    currentPlayerIndex,
+  ]);
 
-  // Отображение игроков (списком)
+  // Мемоизация списка игроков
   const memoizedPlayers = useMemo(() => {
     if (!activePlayer) return null;
     return <Players players={players} activePlayerId={activePlayer.id} />;
   }, [players, activePlayer]);
 
-  // Инвентарь
+  // Мемоизация инвентаря (открывается, если state.inventoryOpen === true)
   const memoizedInventory = useMemo(() => {
     if (!state.inventoryOpen || !activePlayer) return null;
     return (
       <Inventory
-        // ПЕРЕДАЁМ РАЗДЕЛЁННЫЙ INVENTORY
         resources={activePlayer.inventory.resources}
         artifacts={activePlayer.inventory.artifacts}
       />
     );
   }, [state.inventoryOpen, activePlayer]);
 
+  // Функция определения cellId для монстра, если нужно
+  function findBattleCellId(
+    gameState: GameState,
+    participants: { attacker: Entity; defender: Entity }
+  ): number {
+    // Если защитник или атакующий - монстр, ищем клетку, где он стоит
+    const { attacker, defender } = participants;
+    // Поищем монстра, если есть
+    const cellWithAttackerMonster = gameState.grid.find(
+      (c) => c.monster && c.monster.id === attacker.id
+    );
+    if (cellWithAttackerMonster) return cellWithAttackerMonster.id;
+
+    const cellWithDefenderMonster = gameState.grid.find(
+      (c) => c.monster && c.monster.id === defender.id
+    );
+    if (cellWithDefenderMonster) return cellWithDefenderMonster.id;
+
+    return -1; // Если оба игроки — монстров нет
+  }
+
   // Колбэк конца боя
   const onBattleEnd = useCallback(
     (result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => {
-      console.log(
-        `Бой завершен: ${result}, обновленный атакующий:`,
-        updatedAttacker,
-        `cellId=${cellId}`
-      );
       dispatch({ type: "END_BATTLE", payload: { result, updatedAttacker, cellId } });
     },
     [dispatch]
   );
 
-  // Функция поиска cellId (если надо)
-  function findBattleCellId(
-    state: GameState,
-    battleParticipants: { attacker: Entity; defender: Entity }
-  ): number {
-    // Если атакующий - монстр
-    if (!("level" in battleParticipants.attacker)) {
-      const cell = state.grid.find(
-        (c) => c.monster && c.monster.id === battleParticipants.attacker.id
-      );
-      if (cell) return cell.id;
-    }
+  // ------------------------------------
+  // ЛОГИКА ВЫБОРА АРТЕФАКТА
+  // ------------------------------------
+  const artifactSelection = state.artifactSelection;
 
-    // Если защитник - монстр
-    if (!("level" in battleParticipants.defender)) {
-      const cell = state.grid.find(
-        (c) => c.monster && c.monster.id === battleParticipants.defender.id
-      );
-      if (cell) return cell.id;
-    }
+  // Когда пользователь кликает на один из артефактов проигравшего:
+  const handleArtifactTransfer = (artifactKey: string) => {
+    if (!artifactSelection) return;
+    dispatch({
+      type: "COMPLETE_ARTIFACT_SELECTION",
+      payload: {
+        winnerId: artifactSelection.winnerId,
+        loserId: artifactSelection.loserId,
+        artifactKey,
+      },
+    });
+  };
 
-    return -1; // не найден
+  // Отмена окна выбора:
+  const cancelArtifactTransfer = () => {
+    dispatch({ type: "CANCEL_ARTIFACT_SELECTION" });
+  };
+
+  // ------------------------------------
+  // РЕНДЕР
+  // ------------------------------------
+  // 1) Если в стейте есть флаг artifactSelection — показываем окно
+  if (artifactSelection) {
+    return (
+      <ArtifactTransferDialog
+        artifacts={artifactSelection.artifacts}
+        onSelectArtifact={handleArtifactTransfer}
+        onCancel={cancelArtifactTransfer}
+      />
+    );
   }
 
+  // 2) Иначе если идёт бой — показываем BattleScene
+  if (state.inBattle && state.battleParticipants) {
+    const { attacker, defender } = state.battleParticipants;
+    return (
+      <BattleScene
+        attacker={attacker}
+        defender={defender}
+        cellId={findBattleCellId(state, state.battleParticipants)}
+        onBattleEnd={onBattleEnd}
+        gridSize={7}
+      />
+    );
+  }
+
+  // 3) Если нет выбора артефакта и нет боя, рендерим обычную карту и т.д.
   return (
     <div>
-      {/* Если идёт бой, показываем только BattleScene */}
-      {state.inBattle && state.battleParticipants ? (
-        <BattleScene
-          attacker={state.battleParticipants.attacker}
-          defender={state.battleParticipants.defender}
-          cellId={findBattleCellId(state, state.battleParticipants)}
-          onBattleEnd={onBattleEnd}
-          gridSize={7}
-        />
-      ) : (
-        // ИНАЧЕ (если боя нет) - рендерим основную карту и т.д.
+      {activePlayer && (
         <>
-          {activePlayer && (
-            <>
-              <p>
-                {activePlayer.name}: HP={activePlayer.health}, Energy={activePlayer.energy}/
-                {activePlayer.maxEnergy}, Attack={activePlayer.attack}, Defense={
-                  activePlayer.defense
-                }, Level={activePlayer.level}
-              </p>
-              <button onClick={passTurn}>Передать ход</button>
-            </>
-          )}
-
-          {memoizedMap}
-          {memoizedPlayers}
-          {memoizedInventory}
+          <p>
+            {activePlayer.name}: 
+            HP={activePlayer.health}, 
+            Energy={activePlayer.energy}/{activePlayer.maxEnergy}, 
+            Attack={activePlayer.attack}, 
+            Defense={activePlayer.defense}, 
+            Level={activePlayer.level}
+          </p>
+          <button onClick={passTurn}>Передать ход</button>
         </>
       )}
+
+      {memoizedMap}
+      {memoizedPlayers}
+      {memoizedInventory}
     </div>
   );
 }

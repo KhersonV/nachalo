@@ -36,7 +36,7 @@ const initialState: GameState = {
   monstersHaveAttacked: false,
   inBattle: false,
   battleParticipants: null,
-  
+  artifactSelection: null,
 };
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
