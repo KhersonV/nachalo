@@ -11,20 +11,55 @@
 */
 
 .player-info {
-  margin:5px;
-  padding:5px;
-  border:1px solid #444;
-  border-radius:4px;
+  margin: 5px;
+  padding: 5px;
+  border: 1px solid #444;
+  border-radius: 4px;
 }
 
+/* Уже были: */
 .red-player {
-  color:red;
+  color: red;
 }
 
 .blue-player {
-  color:rgb(4, 104, 255);
+  color: rgb(4, 104, 255);
 }
 
 .active {
   border-color: yellow;
+}
+
+/* Добавляем остальные цвета из team1Colors: */
+.green-player {
+  color: green;
+}
+
+.yellow-player {
+  color: yellow;
+}
+
+.purple-player {
+  color: purple;
+}
+
+.white-player {
+  color: white;
+}
+
+/* Добавляем остальные цвета из team2Colors: */
+.brown-player {
+  color: brown;
+}
+
+.pink-player {
+  color: pink;
+}
+
+.gray-player {
+  color: gray;
+}
+
+.orange-player {
+  color: orange;
 }

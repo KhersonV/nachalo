@@ -21,11 +21,16 @@ type PlayerProps = {
 
 export default function Player({ player, isActive }: PlayerProps) {
   // Первый игрок - красный, второй - синий
-  const colorClass = player.id === 0 ? "red-player" : "blue-player";
+  const colorClass = player.colorClass ?? "default-color";
 
   return (
     <div className={`player-info ${colorClass} ${isActive ? "active" : ""}`}>
-      {player.name} (HP:{player.health}, Energy:{player.energy})
+      <img 
+      src={player.image} 
+      alt={player.name} 
+      style={{ width: "40px", height: "40px", marginRight: "10px" }}
+      />
+      <span>{player.name} (HP:{player.health}, Energy:{player.energy})</span>
     </div>
   );
 }

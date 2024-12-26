@@ -28,6 +28,7 @@ interface BasePlayerEntity {
   defense: number;
   vision: number;
   image: string;
+  colorClass: string;
   lastTurnAttacked?: number;
 }
 

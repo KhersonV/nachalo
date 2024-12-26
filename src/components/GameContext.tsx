@@ -14,7 +14,7 @@ import { gameReducer } from "../logic/reducer";
 import { GameMode, GameState } from "../logic/types";
 import { Action } from "../logic/actions";
 import { generateMap } from "../logic/generateMap";
-import initialPlayers from "../logic/initialPlayers";
+import initialPlayers , {assignTeamsAndColors} from "../logic/initialPlayers";
 
 type GameContextValue = {
   state: GameState;
@@ -51,7 +51,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
 
   useEffect(() => {
 
-  
+    assignTeamsAndColors(initialPlayers);
+
     const generatedGrid = generateMap(state.mode, initialPlayers, state.mapWidth, state.mapHeight);
     
 
