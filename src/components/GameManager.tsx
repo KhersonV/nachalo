@@ -1,4 +1,10 @@
-// src/components/GameManager.tsx
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*************************************** src/components/GameManager.tsx ******************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
 
 import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import { useGameContext } from "./GameContext";
@@ -13,8 +19,7 @@ import { useResourceSystem } from "../logic/resourceSystem";
 import { useArtifactLogic } from "../logic/artifactLogic";
 import { handleKeyDown } from "../logic/inputHandler";
 
-import { Entity, GameState, PlayerState } from "../logic/types";
-import { Action } from "../logic/actions";
+import { Entity, GameState } from "../logic/types";
 
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
@@ -170,12 +175,24 @@ export default function GameManager() {
   }
 
   // Колбэк конца боя
-  const onBattleEnd = useCallback(
-    (result: "attacker-win" | "defender-win", updatedAttacker: Entity, cellId: number) => {
-      dispatch({ type: "END_BATTLE", payload: { result, updatedAttacker, cellId } });
-    },
-    [dispatch]
-  );
+  const onBattleEnd = useCallback((
+    result: "attacker-win" | "defender-win",
+    payload: {
+      updatedAttacker: Entity;
+      updatedDefender: Entity;
+      cellId: number;
+    }
+  ) => {
+    dispatch({ 
+      type: "END_BATTLE", 
+      payload: {
+        result, 
+        updatedAttacker: payload.updatedAttacker,
+        updatedDefender: payload.updatedDefender,
+        cellId: payload.cellId,
+      }
+    });
+  }, [dispatch]);
 
   // ------------------------------------
   // ЛОГИКА ВЫБОРА АРТЕФАКТА

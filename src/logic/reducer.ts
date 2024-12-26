@@ -1,4 +1,12 @@
-// src/logic/reducer.ts
+
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//************************************************* src/logic/reducer.ts ******************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+
 
 import { GameState, InventoryItem, Entity, PlayerState, Artifact } from "./types";
 import { Action } from "./actions";
@@ -6,7 +14,7 @@ import { resources } from "./allData";
 import { removeMonsterFromCell } from "./utils"; // какая-то ваша вспомогательная функция
 
 function isPlayer(entity: Entity): entity is PlayerState {
-  return "level" in entity;
+  return "inventory" in entity;
 }
 
 export function gameReducer(state: GameState, action: Action): GameState {
@@ -38,7 +46,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
     }
 
     case "ATTACK": {
-      const { attackerId, targetId, damage, targetType, cellId } = action.payload;
+      const {  targetId, damage, targetType, cellId } = action.payload;
 
       if (targetType === "player") {
         const updatedPlayers = state.players.map((player) =>
@@ -191,100 +199,93 @@ export function gameReducer(state: GameState, action: Action): GameState {
         },
       };
 
+
+      ///***************************************************************
+      ///***************************************************************
+      ///***************************************************************
+      ///***************************************************************
+      ///***************************************************************
+      ///***************************************************************
+
     // ----------------------------------------
     // КЛЮЧЕВОЙ МОМЕНТ: логика конца боя
     // ----------------------------------------
     case "END_BATTLE": {
-      const { result, updatedAttacker, cellId } = action.payload;
+      const { result, updatedAttacker, updatedDefender, cellId } = action.payload;
       const { attacker, defender } = state.battleParticipants || {};
-      if (!attacker || !defender || !updatedAttacker) return state;
-
+      if (!attacker || !defender) return state;
+    
       let updatedState: GameState = {
         ...state,
         inBattle: false,
         battleParticipants: null,
       };
-
-      // Проверим, кто победил
-      if (result === "attacker-win" && isPlayer(updatedAttacker)) {
-        // Если защитник тоже был игроком, то это PvP
-        if (isPlayer(defender)) {
-          console.log(
-            `Игрок ${defender.name} погиб! У него есть артефакты?`,
-            defender.inventory.artifacts
-          );
-          const loserArtifacts = defender.inventory.artifacts;
-          
-          // Если есть хотя бы один артефакт — предлагаем окно выбора
-          if (Object.keys(loserArtifacts).length > 0) {
-            // НЕ УДАЛЯЕМ проигравшего из массива, 
-            // чтобы его инвентарь оставался доступным.
-            updatedState = {
-              ...updatedState,
-              artifactSelection: {
-                loserId: defender.id,    // ID проигравшего
-                winnerId: updatedAttacker.id,
-                // Внимание: складываем **InventoryItem** целиком
-                artifacts: { ...loserArtifacts },
-              },
-            };
-          } else {
-            // Если артефактов нет, просто удаляем проигравшего
-            updatedState = {
-              ...updatedState,
-              players: updatedState.players.filter((p) => p.id !== defender.id),
-            };
-          }
-        }
-        // Если защитник был монстром
-        else {
-          updatedState = removeMonsterFromCell(updatedState, cellId);
-        }
-
-        // Обновляем состояние победителя (у него уже может быть снижено здоровье и т.п.)
+    
+      // Обновляем здоровье атакующего, если он игрок
+      if (isPlayer(updatedAttacker)) {
         updatedState.players = updatedState.players.map((p) =>
-          p.id === updatedAttacker.id ? updatedAttacker : p
+          p.id === updatedAttacker.id ? { ...p, ...updatedAttacker } : p
         );
-      }
-      // ---------------------------
-      else if (result === "defender-win" && isPlayer(updatedAttacker)) {
-        // Значит, проиграл attacker. Проверим, был ли он игроком
-        if (isPlayer(attacker)) {
-          console.log(
-            `Игрок ${attacker.name} погиб! У него есть артефакты?`,
-            attacker.inventory.artifacts
-          );
-          const loserArtifacts = attacker.inventory.artifacts;
-
-          if (Object.keys(loserArtifacts).length > 0) {
-            updatedState = {
-              ...updatedState,
-              artifactSelection: {
-                loserId: attacker.id,
-                winnerId: updatedAttacker.id,
-                artifacts: { ...loserArtifacts },
-              },
-            };
-          } else {
-            updatedState = {
-              ...updatedState,
-              players: updatedState.players.filter((p) => p.id !== attacker.id),
-            };
-          }
+      } else {
+        // Или если это монстр
+        if (updatedAttacker.health <= 0) {
+          updatedState = removeMonsterFromCell(updatedState, cellId);
         } else {
-          updatedState = removeMonsterFromCell(updatedState, cellId);
+          updatedState.grid = updatedState.grid.map((c) => {
+            if (c.id === cellId && c.monster && c.monster.id === updatedAttacker.id) {
+              return {
+                ...c,
+                monster: { ...c.monster, health: updatedAttacker.health },
+              };
+            }
+            return c;
+          });
         }
-
-        // Обновляем победителя
-        updatedState.players = updatedState.players.map((p) =>
-          p.id === updatedAttacker.id ? updatedAttacker : p
-        );
       }
-
+    
+      // Обновляем здоровье защитника, если он игрок
+      if (isPlayer(updatedDefender)) {
+        updatedState.players = updatedState.players.map((p) =>
+          p.id === updatedDefender.id ? { ...p, ...updatedDefender } : p
+        );
+      } else {
+        if (updatedDefender.health <= 0) {
+          updatedState = removeMonsterFromCell(updatedState, cellId);
+        } else {
+          updatedState.grid = updatedState.grid.map((c) => {
+            if (c.id === cellId && c.monster && c.monster.id === updatedDefender.id) {
+              return {
+                ...c,
+                monster: { ...c.monster, health: updatedDefender.health },
+              };
+            }
+            return c;
+          });
+        }
+      }
+    
+      // Удаляем проигравшего игрока с нулевым здоровьем
+      if (result === "attacker-win" && isPlayer(updatedDefender)) {
+        if (updatedDefender.health <= 0) {
+          console.log(`Удаляем игрока ${updatedDefender.name} с нулевым здоровьем.`);
+          updatedState.players = updatedState.players.filter((p) => p.id !== updatedDefender.id);
+        }
+      } else if (result === "defender-win" && isPlayer(updatedAttacker)) {
+        if (updatedAttacker.health <= 0) {
+          console.log(`Удаляем игрока ${updatedAttacker.name} с нулевым здоровьем.`);
+          updatedState.players = updatedState.players.filter((p) => p.id !== updatedAttacker.id);
+        }
+      }
+    
       return updatedState;
     }
-    // ----------------------------------------
-    // ----------------------------------------
+    
+
+     ///***************************************************************
+     ///***************************************************************
+     ///***************************************************************
+     ///***************************************************************
+     ///***************************************************************
 
     case "REMOVE_PLAYER": {
       const { playerId } = action.payload;
@@ -396,55 +397,44 @@ export function gameReducer(state: GameState, action: Action): GameState {
     // -------------------------------------------------------
     // КЛЮЧЕВОЙ экшен - перенос выбранного артефакта от проигравшего к победителю
     // -------------------------------------------------------
+    
     case "COMPLETE_ARTIFACT_SELECTION": {
+      let updatedPlayers = [...state.players];
+    
       const { winnerId, loserId, artifactKey } = action.payload;
-      const { artifactSelection } = state;
-
-      if (!artifactSelection) return state;
-
-      // Находим проигравшего и победителя в массиве.
       const loserIndex = state.players.findIndex((p) => p.id === loserId);
       const winnerIndex = state.players.findIndex((p) => p.id === winnerId);
+    
       if (loserIndex === -1 || winnerIndex === -1) {
-        // На всякий случай
         return {
           ...state,
           artifactSelection: null,
         };
       }
-
-      const loser = state.players[loserIndex];
-      const winner = state.players[winnerIndex];
-
-      // Ищем артефакт в инвентаре проигравшего
+    
+      const loser = updatedPlayers[loserIndex];
+      const winner = updatedPlayers[winnerIndex];
+    
       const loserArtifacts = { ...loser.inventory.artifacts };
       const artifactItem = loserArtifacts[artifactKey];
       if (!artifactItem) {
-        // Артефакт не найден
         return {
           ...state,
           artifactSelection: null,
         };
       }
-
-      console.log(
-        `Передаём артефакт "${artifactKey}" от ${loser.name} → ${winner.name}`
-      );
-
+    
       // Удаляем артефакт у проигравшего
       delete loserArtifacts[artifactKey];
-
-      // Добавляем (или суммируем) у победителя
+    
+      // Добавляем артефакт победителю
       const winnerArtifacts = { ...winner.inventory.artifacts };
-      const existingWinnerItem = winnerArtifacts[artifactKey];
-      if (existingWinnerItem) {
-        // Если у победителя уже был этот ключ, суммируем
-        existingWinnerItem.count += artifactItem.count;
+      if (winnerArtifacts[artifactKey]) {
+        winnerArtifacts[artifactKey].count += artifactItem.count;
       } else {
-        winnerArtifacts[artifactKey] = { ...artifactItem }; // копируем весь объект
+        winnerArtifacts[artifactKey] = { ...artifactItem };
       }
-
-      // Собираем обновлённые объекты
+    
       const updatedLoser = {
         ...loser,
         inventory: {
@@ -452,6 +442,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
           artifacts: loserArtifacts,
         },
       };
+    
       const updatedWinner = {
         ...winner,
         inventory: {
@@ -459,25 +450,30 @@ export function gameReducer(state: GameState, action: Action): GameState {
           artifacts: winnerArtifacts,
         },
       };
-
-      // Теперь перезаписываем игроков в state.players
-      let updatedPlayers = [...state.players];
+    
       updatedPlayers[loserIndex] = updatedLoser;
       updatedPlayers[winnerIndex] = updatedWinner;
-
-      // Допустим, мы хотим *после* передачи удалить проигравшего из игры.
-      // Но только если он точно мёртв (health <= 0).
-      // Если хотите убрать его независимо от здоровья — делайте без условия.
+    
+      // Удаляем проигравшего игрока, если его здоровье <= 0
       if (updatedLoser.health <= 0) {
         updatedPlayers = updatedPlayers.filter((p) => p.id !== loserId);
       }
-
+    
+      // Сбрасываем индекс текущего игрока, если он удалён
+      let newCurrentPlayerIndex = state.currentPlayerIndex;
+      if (newCurrentPlayerIndex >= updatedPlayers.length) {
+        newCurrentPlayerIndex = 0;
+      }
+    
       return {
         ...state,
         players: updatedPlayers,
-        artifactSelection: null, // закрываем диалог
+        currentPlayerIndex: newCurrentPlayerIndex,
+        artifactSelection: null,
       };
     }
+    
+
 
     case "SET_MONSTERS_HAVE_ATTACKED":
       return { ...state, monstersHaveAttacked: action.payload.monstersHaveAttacked };

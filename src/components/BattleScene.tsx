@@ -1,3 +1,12 @@
+
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//************************************************* src/components/BattleScene.tsx ********************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+//*****************************************************************************************************************************
+
 import "../styles/battleScene.css";
 import React, { useState, useEffect } from "react";
 import { Entity, PlayerState } from "../logic/types";
@@ -10,17 +19,20 @@ type BattleSceneProps = {
   cellId: number;
   onBattleEnd: (
     result: "attacker-win" | "defender-win",
-    updatedAttacker: Entity,
-    cellId: number
+    payload: {
+      updatedAttacker: Entity;
+      updatedDefender: Entity;
+      cellId: number;
+    }
   ) => void;
   gridSize?: number;
 };
 
 const BATTLE_GRID_DEFAULT = 7;
-const MELEE_RANGE = 1; // Радиус ближней атаки для примера
+const MELEE_RANGE = 1; // Радиус ближней атаки
 
 function isPlayer(entity: Entity): entity is PlayerState {
-  return "level" in entity;
+  return "inventory" in entity;
 }
 
 export default function BattleScene({
@@ -61,25 +73,27 @@ export default function BattleScene({
   }
 
   // Атакующий наносит урон защитнику
-  function doAttack(atk: Entity, def: Entity, setDefHP: React.Dispatch<React.SetStateAction<number>>) {
+  function doAttack(
+    atk: Entity,
+    def: Entity,
+    setDefHP: React.Dispatch<React.SetStateAction<number>>
+  ) {
     const dmg = calcDamage(atk, def);
     console.log(`${atk.name} наносит ${dmg} урона ${def.name}`);
     setDefHP((prev) => prev - dmg);
   }
 
-  // Двигаем сущность (атакующего или защитника) на 1 клетку ближе по оси X
   function moveCloser(pos: Position, targetPos: Position): Position {
     if (pos.x < targetPos.x) {
       return { ...pos, x: pos.x + 1 };
     } else if (pos.x > targetPos.x) {
       return { ...pos, x: pos.x - 1 };
     }
-    // Если x уже совпадает, можно двигаться по y, но здесь упрощённый вариант
     return pos;
   }
 
   // --------------------------------------------------------------------------------
-  // Логика движения/атаки для монстра
+  // Логика авто-хода монстра
   // --------------------------------------------------------------------------------
   function handleMonsterTurn(isAttackerMonster: boolean) {
     if (isAttackerMonster) {
@@ -101,7 +115,6 @@ export default function BattleScene({
         setDefenderPos((prev) => moveCloser(prev, attackerPos));
       }
     }
-    // После действия – передаём ход
     endTurn();
   }
 
@@ -112,14 +125,12 @@ export default function BattleScene({
     if (hasBattleEnded) return;
 
     if (turn === "attacker") {
-      // attacker ходит
       if (distance <= MELEE_RANGE) {
         doAttack(attacker, defender, setDefenderHealth);
       } else {
         console.log(`${attacker.name} слишком далеко для атаки`);
       }
     } else {
-      // defender ходит
       if (distance <= MELEE_RANGE) {
         doAttack(defender, attacker, setAttackerHealth);
       } else {
@@ -130,7 +141,7 @@ export default function BattleScene({
   }
 
   // --------------------------------------------------------------------------------
-  // Общая функция движения по кнопке (только если игрок)
+  // Общая функция движения
   // --------------------------------------------------------------------------------
   function handleMove(direction: "left" | "right") {
     if (hasBattleEnded) return;
@@ -169,40 +180,47 @@ export default function BattleScene({
     if (!hasBattleEnded && (attackerHealth <= 0 || defenderHealth <= 0)) {
       setHasBattleEnded(true);
 
+      // Если атакующий умер => победил защитник
       if (attackerHealth <= 0) {
         console.log(`${attacker.name} погиб! Победитель ${defender.name}`);
-        onBattleEnd("defender-win", { ...defender, health: defenderHealth }, cellId);
-      } else {
+        onBattleEnd("defender-win", {
+          updatedAttacker: { ...attacker, health: attackerHealth },
+          updatedDefender: { ...defender, health: defenderHealth },
+          cellId,
+        });
+      }
+      // Иначе умер защитник => победитель атакующий
+      else {
         console.log(`${defender.name} погиб! Победитель ${attacker.name}`);
-        onBattleEnd("attacker-win", { ...attacker, health: attackerHealth }, cellId);
+        onBattleEnd("attacker-win", {
+          updatedAttacker: { ...attacker, health: attackerHealth },
+          updatedDefender: { ...defender, health: defenderHealth },
+          cellId,
+        });
       }
     }
-  }, [attackerHealth, defenderHealth, hasBattleEnded, onBattleEnd, attacker, defender, cellId]);
+  }, [
+    attackerHealth,
+    defenderHealth,
+    hasBattleEnded,
+    onBattleEnd,
+    attacker,
+    defender,
+    cellId,
+  ]);
 
   // --------------------------------------------------------------------------------
-  // Автоматический ход монстра через useEffect
+  // Автоматический ход монстра
   // --------------------------------------------------------------------------------
   useEffect(() => {
     if (hasBattleEnded) return;
 
     if (turn === "attacker" && !isPlayer(attacker)) {
-      // attacker - монстр, делаем автоход
       handleMonsterTurn(true);
     } else if (turn === "defender" && !isPlayer(defender)) {
-      // defender - монстр
       handleMonsterTurn(false);
     }
-  }, [
-    turn,
-    attacker,
-    defender,
-    distance,
-    hasBattleEnded,
-    attackerPos,
-    defenderPos,
-    // handleMonsterTurn - если вынести её во внешний scope, 
-    // можно добавлять в зависимости, но тогда нужно обернуть в useCallback
-  ]);
+  }, [turn, attacker, defender, distance, hasBattleEnded]);
 
   // --------------------------------------------------------------------------------
   // Рендер
@@ -235,9 +253,6 @@ export default function BattleScene({
       </p>
       <p>Ход: {turn === "attacker" ? attacker.name : defender.name}</p>
 
-      {/*
-        Кнопки для атакующего, если он - игрок, и сейчас его ход
-      */}
       {turn === "attacker" && isPlayer(attacker) && !hasBattleEnded && (
         <div>
           <button onClick={() => handleMove("left")}>Move Left</button>
@@ -246,9 +261,6 @@ export default function BattleScene({
         </div>
       )}
 
-      {/*
-        Кнопки для защитника, если он - игрок, и сейчас его ход
-      */}
       {turn === "defender" && isPlayer(defender) && !hasBattleEnded && (
         <div>
           <button onClick={() => handleMove("left")}>Move Left</button>

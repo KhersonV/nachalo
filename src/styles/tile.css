@@ -72,6 +72,7 @@
   left: 5px;
   display: flex;
   gap: 3px;
+  z-index: 2;
 }
 
 /* Каждый игрок - кружок своего цвета */
