@@ -30,8 +30,7 @@ export default function GameManager() {
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
 
   const players = state.players;
-  const currentPlayerIndex = state.currentPlayerIndex;
-  const activePlayer = players.length > 0 ? players[currentPlayerIndex] : null;
+  const activePlayer = state.players.find((p) => p.id === state.currentPlayerId) ?? null;
 
   // Ссылка на все обработчики, чтобы удобно передать в handleKeyDown
   const handlersRef = useRef({
@@ -124,7 +123,7 @@ export default function GameManager() {
         visionRange={activePlayer.visionRange}
         mapWidth={state.mapWidth}
         mapHeight={state.mapHeight}
-        activePlayerIndex={currentPlayerIndex}
+        activePlayerIndex={state.players.findIndex((p) => p.id === activePlayer.id)}
       />
     );
   }, [
@@ -133,7 +132,7 @@ export default function GameManager() {
     activePlayer,
     state.mapWidth,
     state.mapHeight,
-    currentPlayerIndex,
+   
   ]);
 
   // Мемоизация списка игроков

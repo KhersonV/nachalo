@@ -46,8 +46,10 @@ export default function Inventory({ resources, artifacts }: InventoryProps) {
   );
 
   const handleUseItem = (type: string) => {
-    const currentPlayer = state.players[state.currentPlayerIndex];
-    if (!currentPlayer) return;
+     const currentPlayer = state.players.find(p => p.id === state.currentPlayerId);
+     if (!currentPlayer) {
+       return null; // Или можно вывести пустой <></> 
+     }
 
     // Пытаемся найти предмет среди resources
     const item = currentPlayer.inventory.resources[type];

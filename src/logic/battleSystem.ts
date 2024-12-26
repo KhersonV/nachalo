@@ -12,7 +12,7 @@ import { Entity, PlayerState, GameState } from "./types";
 import { useCallback } from "react";
 
 function isPlayer(entity: Entity): entity is PlayerState {
-  return "level" in entity;
+  return "inventory" in entity;
 }
 
 export function useBattleSystem() {

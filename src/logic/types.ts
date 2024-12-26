@@ -187,7 +187,7 @@ export type GameState = {
   artifactOwner: number | null;
   portalPosition: { x: number; y: number } | null;
   instanceId: string;
-  currentPlayerIndex: number;
+  currentPlayerId: number;
   turnCycle: number;
   inventoryOpen: boolean;
   monstersHaveAttacked: boolean;

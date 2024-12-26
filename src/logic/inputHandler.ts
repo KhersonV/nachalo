@@ -46,7 +46,8 @@ export function handleKeyDown(
   }: { state: GameState; dispatch: React.Dispatch<Action> } & Handlers
 ) {
   if (!state.grid || state.players.length === 0) return;
-  const playerId = state.players[state.currentPlayerIndex].id;
+  const playerId = state.currentPlayerId;
+
   const player = state.players.find((p: PlayerState) => p.id === playerId);
   if (!player) return;
 

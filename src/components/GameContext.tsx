@@ -35,7 +35,7 @@ const initialState: GameState = {
   artifactOwner: null,
   portalPosition: null,
   instanceId: "",
-  currentPlayerIndex: 0,
+  currentPlayerId: 0,
   turnCycle: 1,
   inventoryOpen: false,
   monstersHaveAttacked: false,
