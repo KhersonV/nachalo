@@ -14,6 +14,7 @@ import React from "react";
 import Tile from "./Tile"; // Импортируем компонент Tile для отображения отдельных клеток карты
 import { Cell } from "../logic/types"; // Импортируем тип Cell для описания клеток карты
 import "../styles/map.css"; // Подключаем стили для карты
+import { useGameContext } from "./GameContext";
 
 // Тип свойств, которые принимает компонент Map
 type MapProps = {
@@ -37,7 +38,7 @@ export default function Map({
   // Получаем позицию активного игрока
   const activePlayerPos = playerPositions[activePlayerIndex];
   const { x, y } = activePlayerPos;
-
+  const { state } = useGameContext();
   // Рассчитываем границы видимой области карты для активного игрока
   const startX = Math.max(x - visionRange, 0); // Левая граница видимости
   const endX = Math.min(x + visionRange, mapWidth - 1); // Правая граница видимости
@@ -69,16 +70,15 @@ export default function Map({
     >
       {visibleTiles.map((cell) => {
         // Определяем, какие игроки находятся на текущей клетке
-        const playersOnThisCell = playerPositions
-          .map((pos, index) => (pos.x === cell.x && pos.y === cell.y ? index : -1)) // Сравниваем позиции игроков с текущей клеткой
-          .filter((idx) => idx !== -1); // Исключаем индексы для игроков, которые не находятся на клетке
-
+        const playerIdsOnThisCell = state.players
+        .filter((pl) => pl.position.x === cell.x && pl.position.y === cell.y)
+        .map((pl) => pl.id);
         // Рендерим клетку карты
         return (
           <Tile
             key={cell.id} // Уникальный ключ для клетки
             cell={cell} // Передаём данные о клетке
-            playersOnTile={playersOnThisCell} // Передаём индексы игроков, находящихся на этой клетке
+            playersOnTile={playerIdsOnThisCell} // Передаём индексы игроков, находящихся на этой клетке
           />
         );
       })}
