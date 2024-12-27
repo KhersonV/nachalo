@@ -199,27 +199,30 @@ export default function GameManager() {
   const artifactSelection = state.artifactSelection;
 
   // Когда пользователь кликает на один из артефактов проигравшего:
-  const handleArtifactTransfer = (artifactKey: string) => {
-    if (!artifactSelection) return;
+  const handleArtifactTransfer = useCallback((artifactKey: string) => {
+    if (!artifactSelection) 
+      {
+        console.log("GameManager => handleArtifactTransfer called! No artifactSelection");
+        return;
+      }
+    console.log("GameManager => handleArtifactTransfer called!");
+    console.log("   artifactKey:", artifactKey);
+    console.log("   artifactSelection:", artifactSelection);
+
     dispatch({
       type: "COMPLETE_ARTIFACT_SELECTION",
       payload: {
-        winnerId: artifactSelection.winnerId,
-        loserId: artifactSelection.loserId,
+        winnerId: artifactSelection?.winnerId,
+        loserId: artifactSelection?.loserId,
         artifactKey,
       },
     });
-  };
+  }, [dispatch, artifactSelection]);
 
-  // Отмена окна выбора:
-  const cancelArtifactTransfer = () => {
+  const cancelArtifactTransfer = useCallback(() => {
     dispatch({ type: "CANCEL_ARTIFACT_SELECTION" });
-  };
+  }, [dispatch]);
 
-  // ------------------------------------
-  // РЕНДЕР
-  // ------------------------------------
-  // 1) Если в стейте есть флаг artifactSelection — показываем окно
   if (artifactSelection) {
     return (
       <ArtifactTransferDialog
