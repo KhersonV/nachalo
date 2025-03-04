@@ -24,7 +24,7 @@ import { Entity, GameState } from "../logic/types";
 export default function GameManager() {
   const { state, dispatch } = useGameContext();
 
-  // Системы для атак, ресурсов, артефактов
+  // Системы
   const { attackPlayerOrMonsterSameCell, monstersAttackPlayers } = useBattleSystem();
   const { openBarrel, tryExitThroughPortal, collectResourceIfOnTile } = useResourceSystem();
   const { pickArtifact, loseArtifact, notifyArtifactOwner } = useArtifactLogic();
@@ -32,13 +32,10 @@ export default function GameManager() {
   const players = state.players;
   const activePlayer = state.players.find((p) => p.id === state.currentPlayerId) ?? null;
 
-  // Ссылка на все обработчики, чтобы удобно передать в handleKeyDown
+  // Храним все хендлеры в ref, чтобы передавать в handleKeyDown
   const handlersRef = useRef({
     attackPlayerOrMonsterSameCell,
-    openBarrel: (playerId: number) => {
-      // Логика открытия бочки (без направления, т.к. используем player.position)
-      openBarrel(playerId);
-    },
+    openBarrel: (playerId: number) => openBarrel(playerId),
     tryExitThroughPortal,
     collectResourceIfOnTile,
     pickArtifact,
@@ -48,13 +45,11 @@ export default function GameManager() {
     setInventoryOpen: () => dispatch({ type: "TOGGLE_INVENTORY" }),
   });
 
-  // Обновляем handlersRef при изменении зависимостей
+  // Обновляем ref при изменении зависимостей
   useEffect(() => {
     handlersRef.current = {
       attackPlayerOrMonsterSameCell,
-      openBarrel: (playerId: number) => {
-        openBarrel(playerId);
-      },
+      openBarrel: (playerId: number) => openBarrel(playerId),
       tryExitThroughPortal,
       collectResourceIfOnTile,
       pickArtifact,
@@ -75,7 +70,7 @@ export default function GameManager() {
     dispatch,
   ]);
 
-  // Монстры атакуют один раз за цикл
+  // Монстры атакуют (один раз за цикл)
   useEffect(() => {
     if (state.turnCycle > 1 && !state.monstersHaveAttacked) {
       monstersAttackPlayers();
@@ -86,14 +81,13 @@ export default function GameManager() {
     }
   }, [state.turnCycle, state.monstersHaveAttacked, dispatch, monstersAttackPlayers]);
 
-  // Обработка клавиш
+  // Клавиатурные события
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
       e.preventDefault();
       handleKeyDown(e, {
         state,
         dispatch,
-        // Передаём все handlers из ref
         ...handlersRef.current,
       });
     },
@@ -126,22 +120,15 @@ export default function GameManager() {
         activePlayerIndex={state.players.findIndex((p) => p.id === activePlayer.id)}
       />
     );
-  }, [
-    state.grid,
-    players,
-    activePlayer,
-    state.mapWidth,
-    state.mapHeight,
-   
-  ]);
+  }, [state.grid, players, activePlayer, state.mapWidth, state.mapHeight]);
 
-  // Мемоизация списка игроков
+  // Мемо списка игроков
   const memoizedPlayers = useMemo(() => {
     if (!activePlayer) return null;
     return <Players players={players} activePlayerId={activePlayer.id} />;
   }, [players, activePlayer]);
 
-  // Мемоизация инвентаря (открывается, если state.inventoryOpen === true)
+  // Мемо инвентаря
   const memoizedInventory = useMemo(() => {
     if (!state.inventoryOpen || !activePlayer) return null;
     return (
@@ -152,14 +139,12 @@ export default function GameManager() {
     );
   }, [state.inventoryOpen, activePlayer]);
 
-  // Функция определения cellId для монстра, если нужно
+  // Определяем cellId для монстра
   function findBattleCellId(
     gameState: GameState,
     participants: { attacker: Entity; defender: Entity }
   ): number {
-    // Если защитник или атакующий - монстр, ищем клетку, где он стоит
     const { attacker, defender } = participants;
-    // Поищем монстра, если есть
     const cellWithAttackerMonster = gameState.grid.find(
       (c) => c.monster && c.monster.id === attacker.id
     );
@@ -170,59 +155,65 @@ export default function GameManager() {
     );
     if (cellWithDefenderMonster) return cellWithDefenderMonster.id;
 
-    return -1; // Если оба игроки — монстров нет
+    return -1;
   }
 
-  // Колбэк конца боя
-  const onBattleEnd = useCallback((
-    result: "attacker-win" | "defender-win",
-    payload: {
-      updatedAttacker: Entity;
-      updatedDefender: Entity;
-      cellId: number;
-    }
-  ) => {
-    dispatch({ 
-      type: "END_BATTLE", 
-      payload: {
-        result, 
-        updatedAttacker: payload.updatedAttacker,
-        updatedDefender: payload.updatedDefender,
-        cellId: payload.cellId,
-      }
-    });
-  }, [dispatch]);
+  // Завершаем бой
+  const onBattleEnd = useCallback(
+    (result: "attacker-win" | "defender-win", payload: { updatedAttacker: Entity; updatedDefender: Entity; cellId: number }) => {
+      dispatch({
+        type: "END_BATTLE",
+        payload: {
+          result,
+          updatedAttacker: payload.updatedAttacker,
+          updatedDefender: payload.updatedDefender,
+          cellId: payload.cellId,
+        },
+      });
+    },
+    [dispatch]
+  );
 
-  // ------------------------------------
-  // ЛОГИКА ВЫБОРА АРТЕФАКТА
-  // ------------------------------------
+  // ---- Артефакт ----
   const artifactSelection = state.artifactSelection;
+  
+  // Локальный ref для "не посылать экшен дважды"
+  const artifactTransferRef = useRef(false);
 
-  // Когда пользователь кликает на один из артефактов проигравшего:
-  const handleArtifactTransfer = useCallback((artifactKey: string) => {
-    if (!artifactSelection) 
-      {
-        console.log("GameManager => handleArtifactTransfer called! No artifactSelection");
+  const handleArtifactTransfer = useCallback(
+    (artifactKey: string) => {
+      if (!artifactSelection) {
+        console.log("GameManager => handleArtifactTransfer called, but no artifactSelection");
         return;
       }
-    console.log("GameManager => handleArtifactTransfer called!");
-    console.log("   artifactKey:", artifactKey);
-    console.log("   artifactSelection:", artifactSelection);
+      // Если мы уже кликали – выходим
+      if (artifactTransferRef.current) {
+        console.log("GameManager => handleArtifactTransfer double-click prevented");
+        return;
+      }
+      // Ставим флажок, чтобы блокировать повтор
+      artifactTransferRef.current = true;
 
-    dispatch({
-      type: "COMPLETE_ARTIFACT_SELECTION",
-      payload: {
-        winnerId: artifactSelection?.winnerId,
-        loserId: artifactSelection?.loserId,
-        artifactKey,
-      },
-    });
-  }, [dispatch, artifactSelection]);
+      console.log("GameManager => handleArtifactTransfer called!");
+      dispatch({
+        type: "COMPLETE_ARTIFACT_SELECTION",
+        payload: {
+          winnerId: artifactSelection.winnerId,
+          loserId: artifactSelection.loserId,
+          artifactKey,
+        },
+      });
+    },
+    [dispatch, artifactSelection]
+  );
 
+  // Когда нажимаем "Отмена" – снимаем флажок
   const cancelArtifactTransfer = useCallback(() => {
+    artifactTransferRef.current = false;
     dispatch({ type: "CANCEL_ARTIFACT_SELECTION" });
   }, [dispatch]);
 
+  // Если есть artifactSelection – показываем диалог
   if (artifactSelection) {
     return (
       <ArtifactTransferDialog
@@ -233,7 +224,7 @@ export default function GameManager() {
     );
   }
 
-  // 2) Иначе если идёт бой — показываем BattleScene
+  // Если идёт бой
   if (state.inBattle && state.battleParticipants) {
     const { attacker, defender } = state.battleParticipants;
     return (
@@ -247,17 +238,17 @@ export default function GameManager() {
     );
   }
 
-  // 3) Если нет выбора артефакта и нет боя, рендерим обычную карту и т.д.
+  // Иначе обычная карта
   return (
     <div>
       {activePlayer && (
         <>
           <p>
-            {activePlayer.name}: 
-            HP={activePlayer.health}, 
-            Energy={activePlayer.energy}/{activePlayer.maxEnergy}, 
-            Attack={activePlayer.attack}, 
-            Defense={activePlayer.defense}, 
+            {activePlayer.name}:
+            HP={activePlayer.health},
+            Energy={activePlayer.energy}/{activePlayer.maxEnergy},
+            Attack={activePlayer.attack},
+            Defense={activePlayer.defense},
             Level={activePlayer.level}
           </p>
           <button onClick={passTurn}>Передать ход</button>

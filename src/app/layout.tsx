@@ -1,8 +1,12 @@
-//layout.tsx
-
+// app/layout.tsx
 import "../styles/globals.css";
+import { AuthProvider } from "../contexts/AuthContext";
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <head>
@@ -10,13 +14,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
       <body>
-        <header className="header">
-          <h1>Игра "Начало"</h1>
-        </header>
-        <main>{children}</main>
-        <footer className="footer">
-          <p>Все права защищены © 2024</p>
-        </footer>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

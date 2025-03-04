@@ -13,6 +13,9 @@ import { Action } from "./actions";
 import { resources } from "./allData";
 import { removeMonsterFromCell } from "./utils"; // какая-то ваша вспомогательная функция
 
+const usedTransactionIds = new Set<string>();
+
+
 function isPlayer(entity: Entity): entity is PlayerState {
   return "inventory" in entity;
 }
@@ -29,6 +32,11 @@ function endBattleSwitchCurrentPlayer(updatedState: GameState): GameState {
     }
   }
   return updatedState;
+}
+
+function generateTransactionId() {
+  // Можно GUID, Date.now() + Math.random(), nanoid и т.п.
+  return "tx_" + Math.floor(Math.random() * 1_000_000_000);
 }
 
 export function gameReducer(state: GameState, action: Action): GameState {
@@ -468,54 +476,51 @@ export function gameReducer(state: GameState, action: Action): GameState {
     // КЛЮЧЕВОЙ экшен - перенос выбранного артефакта от проигравшего к победителю
     // -------------------------------------------------------
     case "COMPLETE_ARTIFACT_SELECTION": {
+      // 1) Доп. защита: если artifactSelection уже сброшен => ничего не делаем
+      if (!state.artifactSelection) {
+        return state; 
+      }
+
       const { winnerId, loserId, artifactKey } = action.payload;
-    
       console.log("REDUCER => COMPLETE_ARTIFACT_SELECTION");
       console.log("   winnerId:", winnerId);
       console.log("   loserId:", loserId);
       console.log("   artifactKey:", artifactKey);
-    
-      // Копируем массив игроков (чтобы иммутабельно обновить состояние)
-      let updatedPlayers = [...state.players];
-    
-      // 1) Ищем победителя в updatedPlayers
-      const winnerIndex = updatedPlayers.findIndex((p) => p.id === winnerId);
-      if (winnerIndex === -1) {
-        console.log("   ERROR: winner not found => игрок с таким winnerId отсутствует.");
-        return {
-          ...state,
-          artifactSelection: null,
-        };
-      }
-    
-      // 2) Берём объект артефактов из artifactSelection (ту «копию» из проигравшего)
-      const loserArtifacts = { ...state.artifactSelection!.artifacts };
-      console.log("   loserArtifacts keys before transfer:", Object.keys(loserArtifacts));
-      console.log("   looking for artifactKey:", artifactKey);
-    
-      // 3) Проверяем, есть ли нужный артефакт по ключу artifactKey
+
+      // 2) Достаём копию артефактов проигравшего (из state.artifactSelection)
+      const loserArtifacts = { ...state.artifactSelection.artifacts };
       const artifactItem = loserArtifacts[artifactKey];
       if (!artifactItem) {
-        console.log("   ERROR: artifactItem is undefined -> нет такого ключа в loserArtifacts");
+        console.log("   ERROR: no artifactItem found => key:", artifactKey);
         return {
           ...state,
           artifactSelection: null,
         };
       }
-    
       console.log("   artifactItem to transfer:", artifactItem);
-    
-      // 4) Добавляем (или суммируем count) у победителя
+
+      // 3) Ищем победителя
+      const updatedPlayers = [...state.players];
+      const winnerIndex = updatedPlayers.findIndex((p) => p.id === winnerId);
+      if (winnerIndex === -1) {
+        console.log("   ERROR: winner not found, id=", winnerId);
+        return {
+          ...state,
+          artifactSelection: null,
+        };
+      }
+
+      // 4) Добавляем к победителю
       const winner = updatedPlayers[winnerIndex];
       const winnerArtifacts = { ...winner.inventory.artifacts };
-    
+
+      // Суммируем count
       if (winnerArtifacts[artifactKey]) {
         winnerArtifacts[artifactKey].count += artifactItem.count;
       } else {
         winnerArtifacts[artifactKey] = { ...artifactItem };
       }
-    
-      // 5) Обновляем победителя в списке игроков
+
       updatedPlayers[winnerIndex] = {
         ...winner,
         inventory: {
@@ -523,8 +528,8 @@ export function gameReducer(state: GameState, action: Action): GameState {
           artifacts: winnerArtifacts,
         },
       };
-    
-      // 6) Возвращаем новое состояние без artifactSelection (диалог закрываем)
+
+      // 5) Сбрасываем artifactSelection
       return {
         ...state,
         players: updatedPlayers,

@@ -1,32 +1,27 @@
-
-//*****************************************************************************************************************************
-//*****************************************************************************************************************************
-//*****************************************************************************************************************************
-//*************************************** src/components/Map.tsx **************************************************************
-//*****************************************************************************************************************************
-//*****************************************************************************************************************************
-//*****************************************************************************************************************************
-
-
+// src/components/Map.tsx
 "use client";
 
 import React from "react";
-import Tile from "./Tile"; // Импортируем компонент Tile для отображения отдельных клеток карты
-import { Cell } from "../logic/types"; // Импортируем тип Cell для описания клеток карты
-import "../styles/map.css"; // Подключаем стили для карты
-import { useGameContext } from "./GameContext";
 
-// Тип свойств, которые принимает компонент Map
-type MapProps = {
-  grid: Cell[]; // Сетка клеток карты
-  playerPositions: { x: number; y: number }[]; // Позиции всех игроков
-  visionRange: number; // Радиус видимости активного игрока
-  mapWidth: number; // Ширина карты
-  mapHeight: number; // Высота карты
-  activePlayerIndex: number; // Индекс активного игрока
-};
+export interface Cell {
+  id: number;
+  x: number;
+  y: number;
+  tileCode: number;
+  resource: any | null; // уточните тип, если нужно
+  isPortal?: boolean;
+  monster?: any;
+}
 
-// Компонент для отображения карты
+export interface MapProps {
+  grid: Cell[]; // массив объектов Cell
+  playerPositions: { x: number; y: number }[];
+  visionRange: number;
+  mapWidth: number;
+  mapHeight: number;
+  activePlayerIndex: number;
+}
+
 export default function Map({
   grid,
   playerPositions,
@@ -35,53 +30,55 @@ export default function Map({
   mapHeight,
   activePlayerIndex,
 }: MapProps) {
-  // Получаем позицию активного игрока
-  const activePlayerPos = playerPositions[activePlayerIndex];
-  const { x, y } = activePlayerPos;
-  const { state } = useGameContext();
-  // Рассчитываем границы видимой области карты для активного игрока
-  const startX = Math.max(x - visionRange, 0); // Левая граница видимости
-  const endX = Math.min(x + visionRange, mapWidth - 1); // Правая граница видимости
-  const startY = Math.max(y - visionRange, 0); // Верхняя граница видимости
-  const endY = Math.min(y + visionRange, mapHeight - 1); // Нижняя граница видимости
-
-  // Фильтруем клетки, которые находятся в пределах видимости активного игрока
-  const visibleTiles = grid.filter(
-    (cell) => cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
-  );
-
-  // Определяем количество строк и столбцов в видимой области карты
-  const rowsCount = endY - startY + 1; // Количество строк
-  const colsCount = endX - startX + 1; // Количество столбцов
-
-  // Размер одной клетки карты (в пикселях)
-  const tileSize = 80;
-
-  // Рендерим карту в виде сетки
   return (
     <div
-      className="map" // Класс для стилизации карты
       style={{
-        display: "grid", // Используем CSS Grid для расположения клеток
-        gridTemplateColumns: `repeat(${colsCount}, ${tileSize}px)`, // Устанавливаем количество столбцов и размер клеток
-        gridTemplateRows: `repeat(${rowsCount}, ${tileSize}px)`, // Устанавливаем количество строк и размер клеток
-        marginLeft: "100px", // Отступ карты от левого края
+        display: "grid",
+        gridTemplateColumns: `repeat(${mapWidth}, 60px)`,
+        gridTemplateRows: `repeat(${mapHeight}, 60px)`,
+        gap: "1px",
+        border: "2px solid #333",
+        marginTop: "1rem",
       }}
     >
-      {visibleTiles.map((cell) => {
-        // Определяем, какие игроки находятся на текущей клетке
-        const playerIdsOnThisCell = state.players
-        .filter((pl) => pl.position.x === cell.x && pl.position.y === cell.y)
-        .map((pl) => pl.id);
-        // Рендерим клетку карты
-        return (
-          <Tile
-            key={cell.id} // Уникальный ключ для клетки
-            cell={cell} // Передаём данные о клетке
-            playersOnTile={playerIdsOnThisCell} // Передаём индексы игроков, находящихся на этой клетке
-          />
-        );
-      })}
+      {grid.map((cell) => (
+        <div
+          key={cell.id}
+          style={{
+            width: "60px",
+            height: "60px",
+            backgroundColor: getTileColor(cell),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "10px",
+            color: "#fff",
+          }}
+        >
+          {cell.id}
+        </div>
+      ))}
     </div>
   );
+}
+
+// Функция для определения цвета тайла по его значению.
+function getTileColor(cell: Cell): string {
+
+  switch (cell.tileCode) {
+    case 49: // '1'
+      return "#8B4513"; // коричневый (граница)
+    case 48: // '0'
+      return "#CCCCCC"; // светло-серый (проходимый)
+    case 32: // пробел
+      return "#333333"; // темно-серый (непроходимый)
+    case 77: // 'M'
+      return "#FF0000"; // красный (монстр)
+    case 82: // 'R'
+      return "#00AA00"; // зелёный (ресурс)
+    case 80: // 'P'
+      return "#0000FF"; // синий (портал/старт)
+    default:
+      return "#999999"; // по умолчанию
+  }
 }
