@@ -8,35 +8,33 @@ export interface Cell {
   x: number;
   y: number;
   tileCode: number;
-  resource: any | null; // уточните тип, если нужно
+  resource: any | null;
   isPortal?: boolean;
   monster?: any;
 }
 
 export interface MapProps {
-  grid: Cell[]; // массив объектов Cell
-  playerPositions: { x: number; y: number }[];
-  visionRange: number;
+  grid: Cell[];
   mapWidth: number;
   mapHeight: number;
-  activePlayerIndex: number;
+  tileSize: number;
+  gap: number;
 }
 
 export default function Map({
   grid,
-  playerPositions,
-  visionRange,
   mapWidth,
   mapHeight,
-  activePlayerIndex,
+  tileSize,
+  gap,
 }: MapProps) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${mapWidth}, 60px)`,
-        gridTemplateRows: `repeat(${mapHeight}, 60px)`,
-        gap: "1px",
+        gridTemplateColumns: `repeat(${mapWidth}, ${tileSize}px)`,
+        gridTemplateRows: `repeat(${mapHeight}, ${tileSize}px)`,
+        gap: `${gap}px`,
         border: "2px solid #333",
         marginTop: "1rem",
       }}
@@ -45,8 +43,8 @@ export default function Map({
         <div
           key={cell.id}
           style={{
-            width: "60px",
-            height: "60px",
+            width: `${tileSize}px`,
+            height: `${tileSize}px`,
             backgroundColor: getTileColor(cell),
             display: "flex",
             alignItems: "center",
@@ -64,21 +62,20 @@ export default function Map({
 
 // Функция для определения цвета тайла по его значению.
 function getTileColor(cell: Cell): string {
-
   switch (cell.tileCode) {
     case 49: // '1'
-      return "#8B4513"; // коричневый (граница)
+      return "#8B4513";
     case 48: // '0'
-      return "#CCCCCC"; // светло-серый (проходимый)
+      return "#CCCCCC";
     case 32: // пробел
-      return "#333333"; // темно-серый (непроходимый)
+      return "#333333";
     case 77: // 'M'
-      return "#FF0000"; // красный (монстр)
+      return "#FF0000";
     case 82: // 'R'
-      return "#00AA00"; // зелёный (ресурс)
+      return "#00AA00";
     case 80: // 'P'
-      return "#0000FF"; // синий (портал/старт)
+      return "#0000FF";
     default:
-      return "#999999"; // по умолчанию
+      return "#999999";
   }
 }
