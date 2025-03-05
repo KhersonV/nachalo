@@ -1,3 +1,7 @@
+
+// Game_Servise
+
+
 package main
 
 import (
@@ -41,30 +45,30 @@ var levelThresholds = map[int]int{
 // ----------------- МОДЕЛИ ------------------
 
 type Player struct {
-	ID              int       `json:"id"`
-	UserID          int       `json:"user_id"`
-	Name            string    `json:"name"`
-	Image           string    `json:"image"`
-	ColorClass      string    `json:"color_class"`
-	PosX            int       `json:"pos_x"`
-	PosY            int       `json:"pos_y"`
-	Energy          int       `json:"energy"`
-	MaxEnergy       int       `json:"max_energy"`
-	Health          int       `json:"health"`
-	MaxHealth       int       `json:"max_health"`
-	Level           int       `json:"level"`
-	Experience      int       `json:"experience"`
-	MaxExperience   int       `json:"max_experience"`
-	Attack          int       `json:"attack"`
-	Defense         int       `json:"defense"`
-	Speed           int       `json:"speed"`
-	Maneuverability int       `json:"maneuverability"`
-	Vision          int       `json:"vision"`
-	VisionRange     int       `json:"vision_range"`
-	Balance         int       `json:"balance"`
-	Inventory       string    `json:"inventory"` // JSON-представление инвентаря
-	InstanceID      sql.NullString `json:"instance_id"` // для привязки к матчу
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              int            `json:"id"`
+	UserID          int            `json:"user_id"`
+	Name            string         `json:"name"`
+	Image           string         `json:"image"`
+	ColorClass      string         `json:"color_class"`
+	PosX            int            `json:"pos_x"`
+	PosY            int            `json:"pos_y"`
+	Energy          int            `json:"energy"`
+	MaxEnergy       int            `json:"max_energy"`
+	Health          int            `json:"health"`
+	MaxHealth       int            `json:"max_health"`
+	Level           int            `json:"level"`
+	Experience      int            `json:"experience"`
+	MaxExperience   int            `json:"max_experience"`
+	Attack          int            `json:"attack"`
+	Defense         int            `json:"defense"`
+	Speed           int            `json:"speed"`
+	Maneuverability int            `json:"maneuverability"`
+	Vision          int            `json:"vision"`
+	VisionRange     int            `json:"vision_range"`
+	Balance         int            `json:"balance"`
+	Inventory       string         `json:"inventory"` // JSON-представление инвентаря
+	InstanceID      sql.NullString `json:"instance_id"` // для привязки к матчу (если используется)
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
 type Monster struct {
@@ -159,13 +163,69 @@ func createMatchesTable() {
 	}
 }
 
+// Создаем таблицу для копий игроков в матчах.
+func createMatchPlayersTable() {
+	query := `
+	CREATE TABLE IF NOT EXISTS match_players (
+		id SERIAL PRIMARY KEY,
+		match_instance_id TEXT NOT NULL REFERENCES matches(instance_id) ON DELETE CASCADE,
+		player_id INTEGER NOT NULL,
+		name TEXT,
+		image TEXT,
+		color_class TEXT,
+		pos_x INTEGER,
+		pos_y INTEGER,
+		energy INTEGER,
+		max_energy INTEGER,
+		health INTEGER,
+		max_health INTEGER,
+		level INTEGER,
+		experience INTEGER,
+		max_experience INTEGER,
+		attack INTEGER,
+		defense INTEGER,
+		speed INTEGER,
+		maneuverability INTEGER,
+		vision INTEGER,
+		vision_range INTEGER,
+		balance INTEGER,
+		inventory JSONB,
+		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);`
+	if _, err := db.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы match_players: %v", err)
+	}
+}
+
+// Функция для вставки копии игрока в таблицу match_players.
+func createMatchPlayerCopy(matchID string, p *Player) error {
+	query := `
+		INSERT INTO match_players (
+			match_instance_id, player_id, name, image, color_class, pos_x, pos_y, energy, max_energy,
+			health, max_health, level, experience, max_experience, attack, defense, speed, maneuverability,
+			vision, vision_range, balance, inventory, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9,
+			$10, $11, $12, $13, $14, $15, $16, $17, $18,
+			$19, $20, $21, $22, $23
+		)
+	`
+	_, err := db.Exec(query, matchID, p.ID, p.Name, p.Image, p.ColorClass, p.PosX, p.PosY,
+		p.Energy, p.MaxEnergy, p.Health, p.MaxHealth, p.Level, p.Experience, p.MaxExperience,
+		p.Attack, p.Defense, p.Speed, p.Maneuverability, p.Vision, p.VisionRange, p.Balance,
+		p.Inventory, p.UpdatedAt)
+	return err
+}
+
 // ----------------- ОБРАБОТЧИКИ ДЛЯ МАТЧЕЙ ------------------
 
+// Добавляем поле PlayerIDs для передачи списка идентификаторов игроков, участвующих в матче.
 type RequestMatch struct {
 	InstanceID   string `json:"instance_id"`
 	Mode         string `json:"mode"`
 	TotalPlayers int    `json:"total_players"` // Общее число игроков в матче
 	TeamsCount   int    `json:"teams_count"`   // Количество команд
+	PlayerIDs    []int  `json:"player_ids"`    // Список ID игроков, участвующих в матче
 }
 
 func createMatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -213,13 +273,26 @@ func createMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Создаем копии игроков для матча.
+	for _, pid := range req.PlayerIDs {
+		player, err := getPlayerByID(pid)
+		if err != nil {
+			log.Printf("Ошибка получения игрока с ID %d: %v", pid, err)
+			continue // Можно также вернуть ошибку, если это критично
+		}
+		if err := createMatchPlayerCopy(instanceID, player); err != nil {
+			log.Printf("Ошибка копирования игрока с ID %d для матча %s: %v", pid, instanceID, err)
+		}
+	}
+
 	response := map[string]interface{}{
-		"instance_id": instanceID,
-		"mode":        req.Mode,
-		"map":         grid,
-		"created_at":  createdAt,
-		"map_width":   mapWidth,
-		"map_height":  mapHeight,
+		"instance_id":   instanceID,
+		"mode":          req.Mode,
+		"map":           grid,
+		"created_at":    createdAt,
+		"map_width":     mapWidth,
+		"map_height":    mapHeight,
+		"player_ids":    req.PlayerIDs,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -254,8 +327,7 @@ func getMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем список игроков, участвующих в матче.
-	// Предполагаем, что в таблице players есть поле instance_id, по которому фильтруем.
+	// Получаем список игроков из таблицы players, участвующих в матче.
 	playersQuery := `
 		SELECT id, user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, health, max_health, level, experience, max_experience,
 		       attack, defense, speed, maneuverability, vision, vision_range, balance, inventory, updated_at
@@ -798,6 +870,7 @@ func main() {
 	defer db.Close()
 	createPlayersTable()
 	createMatchesTable()
+	createMatchPlayersTable()
 
 	router := mux.NewRouter()
 	// Эндпойнт для создания персонажа (вызывается Auth-сервисом)

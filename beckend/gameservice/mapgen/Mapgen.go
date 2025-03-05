@@ -1,3 +1,5 @@
+//Mapgen
+
 package mapgen
 
 import (
