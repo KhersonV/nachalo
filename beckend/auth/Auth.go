@@ -1,4 +1,3 @@
-
 // Auth
 
 package main
@@ -16,11 +15,11 @@ import (
 
 	// Используем драйвер PostgreSQL
 	_ "github.com/lib/pq"
-	
+
 	// JWT библиотека
 	"github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/rs/cors"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Константы для подключения к БД и JWT

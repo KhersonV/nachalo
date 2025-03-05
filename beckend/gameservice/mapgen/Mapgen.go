@@ -1,5 +1,3 @@
-//Mapgen
-
 package mapgen
 
 import (
@@ -35,30 +33,27 @@ type MapConfig struct {
 
 // GenerateMap генерирует карту согласно конфигурации.
 // Размер карты вычисляется как (15 * TotalPlayers) x (15 * TotalPlayers).
-func GenerateMap(cfg MapConfig) (MapGrid, error) {
+// Возвращает карту, список стартовых позиций для команд и позицию портала.
+func GenerateMap(cfg MapConfig) (MapGrid, [][2]int, [2]int, error) {
 	if cfg.TotalPlayers < 1 {
-		return nil, errors.New("общее количество игроков должно быть >= 1")
+		return nil, nil, [2]int{}, errors.New("общее количество игроков должно быть >= 1")
 	}
 	if cfg.TeamsCount < 1 {
-		return nil, errors.New("количество команд должно быть >= 1")
+		return nil, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
 	}
 	width := 15 * cfg.TotalPlayers
 	height := 15 * cfg.TotalPlayers
 
-	// Инициализируем генератор случайных чисел.
 	rand.Seed(time.Now().UnixNano())
 
-	// Функция генерации базовой карты с границами и случайным заполнением внутренней области.
 	generate := func() MapGrid {
 		grid := make(MapGrid, height)
 		for y := 0; y < height; y++ {
 			grid[y] = make([]TileType, width)
 			for x := 0; x < width; x++ {
-				// На границах всегда ставим Border.
 				if x == 0 || y == 0 || x == width-1 || y == height-1 {
 					grid[y][x] = Border
 				} else {
-					// Внутренние клетки: с вероятностью WalkableProb ставим Walkable, иначе Obstacle.
 					if rand.Float64() < cfg.WalkableProb {
 						grid[y][x] = Walkable
 					} else {
@@ -70,8 +65,7 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 		return grid
 	}
 
-	// Функция размещения стартовых позиций для команд и одного портала.
-	// Возвращает список стартовых позиций ([2]int: x,y) и позицию портала.
+	// Размещает стартовые точки для команд и портал.
 	placeSpecialTilesForTeams := func(grid MapGrid, teamsCount int) ([][2]int, [2]int, error) {
 		var candidates []struct{ x, y int }
 		for y := 1; y < height-1; y++ {
@@ -84,7 +78,6 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 		if len(candidates) < teamsCount+1 {
 			return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для размещения специальных точек")
 		}
-		// Перемешиваем кандидатов.
 		rand.Shuffle(len(candidates), func(i, j int) {
 			candidates[i], candidates[j] = candidates[j], candidates[i]
 		})
@@ -94,15 +87,12 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 			grid[pt.y][pt.x] = StartTile
 			starts = append(starts, [2]int{pt.x, pt.y})
 		}
-		// Выбираем следующего кандидата для портала.
 		portalCandidate := candidates[teamsCount]
 		grid[portalCandidate.y][portalCandidate.x] = Portal
 		portalPos := [2]int{portalCandidate.x, portalCandidate.y}
 		return starts, portalPos, nil
 	}
 
-	// Функция проверки связности между точками: возвращает true, если из (startX, startY)
-	// можно добраться до (portalX, portalY) через проходимые тайлы.
 	isConnectedFrom := func(grid MapGrid, startX, startY, portalX, portalY int) bool {
 		visited := make([][]bool, height)
 		for i := range visited {
@@ -132,7 +122,6 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 		return false
 	}
 
-	// Проверяем связность для всех стартовых позиций.
 	allStartsConnected := func(grid MapGrid, starts [][2]int, portalX, portalY int) bool {
 		for _, start := range starts {
 			if !isConnectedFrom(grid, start[0], start[1], portalX, portalY) {
@@ -142,7 +131,6 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 		return true
 	}
 
-	// Функция размещения дополнительных объектов (ресурсов, монстров) на проходимых тайлах.
 	placeObjects := func(grid MapGrid) {
 		for y := 1; y < height-1; y++ {
 			for x := 1; x < width-1; x++ {
@@ -160,12 +148,15 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 	}
 
 	var grid MapGrid
-	// Генерируем карту до тех пор, пока для всех стартовых позиций обеспечена связность с порталом.
+	var starts [][2]int
+	var portal [2]int
+
 	for {
 		grid = generate()
-		starts, portal, err := placeSpecialTilesForTeams(grid, cfg.TeamsCount)
+		var err error
+		starts, portal, err = placeSpecialTilesForTeams(grid, cfg.TeamsCount)
 		if err != nil {
-			return nil, err
+			return nil, nil, [2]int{}, err
 		}
 		if allStartsConnected(grid, starts, portal[0], portal[1]) {
 			break
@@ -173,6 +164,5 @@ func GenerateMap(cfg MapConfig) (MapGrid, error) {
 	}
 
 	placeObjects(grid)
-
-	return grid, nil
+	return grid, starts, portal, nil
 }

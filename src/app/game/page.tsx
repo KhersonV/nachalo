@@ -5,10 +5,11 @@ import React from "react";
 import { useSearchParams } from "next/navigation";
 import { GameProvider } from "../../contexts/GameContextt";
 import MapWithCamera from "../../components/MapWithCamera";
+import GameController from "../../components/GameController";
 
 export default function GamePage() {
   const searchParams = useSearchParams();
-  const instanceId = searchParams.get("instance_id"); // без подчёркивания
+  const instanceId = searchParams.get("instance_id");
 
   if (!instanceId) {
     return <div>Не задан instance_id</div>;
@@ -16,7 +17,7 @@ export default function GamePage() {
 
   return (
     <GameProvider instanceId={instanceId}>
-      <MapWithCamera tileSize={80} viewportWidth={800} viewportHeight={600} />
+      <GameController />
     </GameProvider>
   );
 }

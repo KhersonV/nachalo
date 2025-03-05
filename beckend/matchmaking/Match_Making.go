@@ -1,6 +1,5 @@
 
 //Match_Making
-
 package main
 
 import (
@@ -15,27 +14,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// JoinRequest описывает запрос на вступление в очередь.
 type JoinRequest struct {
 	PlayerID int    `json:"player_id"`
-	Mode     string `json:"mode"`   // "PVE", "1x1", "3x3", "5x5"
-	Rating   int    `json:"rating"` // Рейтинг игрока
+	Mode     string `json:"mode"`
+	Rating   int    `json:"rating"`
 }
 
-// CancelRequest описывает запрос на отмену участия.
 type CancelRequest struct {
 	PlayerID int    `json:"player_id"`
 	Mode     string `json:"mode"`
 }
 
-// QueueEntry хранит информацию об игроке в очереди.
 type QueueEntry struct {
 	PlayerID int       `json:"player_id"`
 	Rating   int       `json:"rating"`
 	JoinTime time.Time `json:"join_time"`
 }
 
-// MatchInfo содержит данные сформированного матча.
 type MatchInfo struct {
 	InstanceID   string       `json:"instance_id"`
 	Mode         string       `json:"mode"`
@@ -53,12 +48,10 @@ var (
 	}
 	mu sync.Mutex
 
-	// Сохраняем сформированные матчи для каждого режима.
 	currentMatches = make(map[string]MatchInfo)
 	matchMu        sync.Mutex
 )
 
-// joinHandler добавляет игрока в очередь.
 func joinHandler(w http.ResponseWriter, r *http.Request) {
 	var req JoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -88,7 +81,6 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("You have joined the queue"))
 }
 
-// cancelHandler удаляет игрока из очереди.
 func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	var req CancelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -122,7 +114,6 @@ func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// statusHandler возвращает текущий статус очереди для заданного режима.
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	mu.Lock()
@@ -141,7 +132,6 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
-// matchHandler возвращает информацию о сформированном матче.
 func matchHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	playerID := r.URL.Query().Get("player_id")
@@ -161,7 +151,6 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 }
 
-// checkAndMakeMatch проверяет, можно ли сформировать матч.
 func checkAndMakeMatch(mode string) {
 	var needed int
 	if mode == "PVE" {
@@ -187,7 +176,6 @@ func checkAndMakeMatch(mode string) {
 	}
 }
 
-// createMatch создаёт матч, генерируя instanceId и уведомляя Game-сервис.
 func createMatch(mode string, group []QueueEntry) {
 	instanceID := uuid.New().String()
 	log.Printf("Match formed: instanceID=%s, mode=%s, players=%v", instanceID, mode, group)
@@ -211,10 +199,15 @@ func createMatch(mode string, group []QueueEntry) {
 		teamsCount = 2
 	}
 
+	playerIDs := make([]int, len(group))
+for i, entry := range group {
+	playerIDs[i] = entry.PlayerID
+}
+
 	matchReq := map[string]interface{}{
 		"instance_id":   instanceID,
 		"mode":          mode,
-		"players":       group,
+		"player_ids":    playerIDs,
 		"teams_count":   teamsCount,
 		"total_players": totalPlayers,
 	}

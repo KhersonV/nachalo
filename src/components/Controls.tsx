@@ -28,4 +28,3 @@ export default function Controls({ onMove, onAction }: ControlsProps) {
     </div>
   );
 }
-
