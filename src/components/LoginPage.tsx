@@ -30,25 +30,8 @@ const LoginPage = () => {
       }
 
       const data = await res.json();
-      const token = data.token;
-
-      // Получаем профиль пользователя, передавая токен
-      const profileRes = await fetch("http://localhost:8000/auth/profile", {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-      });
-
-      if (!profileRes.ok) {
-        const errorText = await profileRes.text();
-        throw new Error(errorText || "Ошибка получения профиля");
-      }
-
-      const userData = await profileRes.json();
-      // Здесь можно добавить токен в userData, если потребуется
-      login(userData);
+      console.log("Received login response:", data);
+      login(data);
     } catch (err: any) {
       setError(err.message || "Что-то пошло не так");
     }

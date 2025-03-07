@@ -1,5 +1,3 @@
-// Auth
-
 package main
 
 import (
@@ -13,21 +11,16 @@ import (
 	"os"
 	"time"
 
-	// Используем драйвер PostgreSQL
 	_ "github.com/lib/pq"
 
-	// JWT библиотека
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/rs/cors"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Константы для подключения к БД и JWT
-const (
-	// Пример строки подключения; замени значения на свои
-	connStr      = "user=admin password=yourpassword dbname=admin sslmode=disable"
-	jwtSecretKey = "supersecretkey" // Держи в секрете – лучше из переменной окружения!
-)
+var jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
+
+const connStr = "user=admin password=yourpassword dbname=admin sslmode=disable"
 
 // User описывает структуру пользователя, соответствующую таблице в БД
 type User struct {
@@ -39,17 +32,24 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// глобальная переменная для доступа к базе данных
+// LoginResponse – расширенный тип для ответа на логин, включает токен
+type LoginResponse struct {
+	ID        int       `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Rating    int       `json:"rating"`
+	CreatedAt time.Time `json:"created_at"`
+	Token     string    `json:"token"`
+}
+
 var db *sql.DB
 
-// Инициализация подключения к БД
 func initDB() {
 	var err error
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-	// Проверяем соединение
 	err = db.Ping()
 	if err != nil {
 		log.Fatalf("Невозможно подключиться к БД: %v", err)
@@ -57,7 +57,6 @@ func initDB() {
 	log.Println("Подключение к БД установлено")
 }
 
-// Создание таблицы пользователей, если её ещё нет
 func createUsersTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
@@ -74,9 +73,18 @@ func createUsersTable() {
 	}
 }
 
-// Функция для создания пользователя, возвращает его ID
+type RegisterRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 func createUser(email, password, name string) (int, error) {
-	// Хэшируем пароль
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return 0, fmt.Errorf("ошибка хэширования пароля: %w", err)
@@ -91,7 +99,6 @@ func createUser(email, password, name string) (int, error) {
 	return userID, nil
 }
 
-// Функция для получения пользователя по email
 func getUserByEmail(email string) (*User, error) {
 	user := &User{}
 	query := `SELECT id, email, password_hash, name, rating, created_at FROM users WHERE email=$1`
@@ -103,7 +110,6 @@ func getUserByEmail(email string) (*User, error) {
 	return user, nil
 }
 
-// Функция для получения пользователя по id
 func getUserByID(userID int) (*User, error) {
 	user := &User{}
 	query := `SELECT id, email, name, rating, created_at FROM users WHERE id=$1`
@@ -115,22 +121,6 @@ func getUserByID(userID int) (*User, error) {
 	return user, nil
 }
 
-// Структуры для запросов
-type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
-}
-
-type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type TokenResponse struct {
-	Token string `json:"token"`
-}
-
 // Обработчик регистрации
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
@@ -138,27 +128,23 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
 		return
 	}
-	// Проверяем наличие обязательных полей
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		http.Error(w, "Все поля (email, password, name) обязательны", http.StatusBadRequest)
 		return
 	}
-	// Создаем пользователя и получаем его ID
 	userID, err := createUser(req.Email, req.Password, req.Name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка регистрации: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// После успешной регистрации создаем персонажа в Game-сервисе.
-	// Формируем JSON с полем user_id.
+	// После регистрации можно вызвать Game-сервис для создания персонажа.
 	payload := map[string]int{"user_id": userID}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Ошибка маршаллинга для Game Service: %v", err)
 	} else {
-		// Отправляем POST-запрос на Game-сервис.
-		resp, err := http.Post("http://localhost:8001/game/player", "application/json", bytes.NewBuffer(jsonData))
+		resp, err := http.Post("http://localhost:8001/create/player", "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Printf("Ошибка создания персонажа в Game Service: %v", err)
 		} else {
@@ -175,7 +161,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Пользователь успешно зарегистрирован"))
 }
 
-// Обработчик логина
+// Обработчик логина, возвращающий данные пользователя вместе с токеном.
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -192,16 +178,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Пользователь не найден", http.StatusUnauthorized)
 		return
 	}
-	// Сравниваем пароль
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		http.Error(w, "Неверный пароль", http.StatusUnauthorized)
 		return
 	}
 
-	// Создаем JWT-токен
+	// Создаем JWT-токен с данными пользователя
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
-		"exp":     time.Now().Add(time.Hour * 72).Unix(), // срок действия 72 часа
+		"exp":     time.Now().Add(6 * time.Hour).Unix(),
 	})
 	tokenString, err := token.SignedString([]byte(jwtSecretKey))
 	if err != nil {
@@ -209,14 +194,26 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	loginResp := LoginResponse{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		Rating:    user.Rating,
+		CreatedAt: user.CreatedAt,
+		Token:     tokenString,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(TokenResponse{Token: tokenString})
+	json.NewEncoder(w).Encode(loginResp)
 }
+
+type contextKey string
+
+const userIDKey contextKey = "user_id"
 
 // Middleware для проверки JWT
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// JWT передается в заголовке Authorization: Bearer <token>
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Отсутствует токен", http.StatusUnauthorized)
@@ -229,9 +226,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Проверяем токен
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Проверка метода подписи
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("неожиданный метод подписи: %v", token.Header["alg"])
 			}
@@ -242,15 +237,13 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Извлекаем user_id из claims и записываем в контекст запроса
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			userID, ok := claims["user_id"].(float64) // JWT хранит числа как float64
+			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
 				return
 			}
-			// Записываем user_id в контекст
-			ctx := context.WithValue(r.Context(), "user_id", int(userID))
+			ctx := context.WithValue(r.Context(), userIDKey, int(userID))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			http.Error(w, "Неверные данные токена", http.StatusUnauthorized)
@@ -261,8 +254,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 // Обработчик получения профиля пользователя
 func profileHandler(w http.ResponseWriter, r *http.Request) {
-	// Извлекаем user_id из контекста
-	userID, ok := r.Context().Value("user_id").(int)
+	userID, ok := r.Context().Value(userIDKey).(int)
 	if !ok {
 		http.Error(w, "Не удалось определить пользователя", http.StatusUnauthorized)
 		return
@@ -277,28 +269,28 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(user)
 }
+
 func main() {
-	// Инициализация подключения к БД
+	jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
+	if jwtSecretKey == "" {
+		log.Fatal("JWT_SECRET_KEY environment variable is not set")
+	}
+	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
 	initDB()
 	defer db.Close()
 	createUsersTable()
 
 	mux := http.NewServeMux()
-
-	// Регистрация эндпойнтов
 	mux.HandleFunc("/auth/register", registerHandler)
 	mux.HandleFunc("/auth/login", loginHandler)
 	mux.Handle("/auth/profile", authMiddleware(http.HandlerFunc(profileHandler)))
 
-	// Настройка CORS: разрешаем запросы с http://localhost:3000 и необходимые методы/заголовки
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
 	})
-
-	// Оборачиваем mux в CORS handler
 	handler := c.Handler(mux)
 
 	port := os.Getenv("PORT")

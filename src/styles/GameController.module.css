@@ -1,0 +1,24 @@
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 800px;
+    margin: 0 auto;
+  }
+  
+  .mapContainer {
+    margin-left: -500;
+    width: 800px;
+    height: 600px;
+    margin-bottom: 20px; /* Отступ между картой и панелью управления */
+   
+  }
+  
+  .controlsContainer {
+    margin-left: -500;
+    width: 800px;
+    display: flex;
+    justify-content: flex-start; /* Выравнивание панели по левому краю */
+    padding-left: 10px;         /* Отступ слева для панели управления */
+  }
+  

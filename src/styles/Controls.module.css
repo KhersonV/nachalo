@@ -1,0 +1,31 @@
+.controlsContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .buttonRow {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  
+  .controlButton {
+    width: 50px;
+    height: 50px;
+    font-size: 20px;
+    cursor: pointer;
+  }
+  
+  .actionRow {
+    margin-top: 10px;
+  }
+  
+  .actionButton {
+    width: 120px;
+    height: 50px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  

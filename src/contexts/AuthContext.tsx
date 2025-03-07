@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 
 type User = {
   id: number;
+  email: string;
   name: string;
-  token?: string;
-  // можно добавить другие поля (email, token и т.д.)
+  token: string;
+  rating: number;
+  created_at: string;
 };
 
 type AuthContextType = {
@@ -23,7 +25,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const router = useRouter();
 
-  // Например, можно попробовать получить данные из localStorage при загрузке
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
@@ -32,15 +33,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = (userData: User) => {
+    console.log("Logging in with user data:", userData);
     setUser(userData);
     localStorage.setItem("user", JSON.stringify(userData));
-    router.push("/mode"); // После входа переходим на страницу игры
+    router.push("/mode");
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
-    router.push("/login"); // Перенаправление на страницу входа
+    router.push("/login");
   };
 
   return (

@@ -1,7 +1,7 @@
-// src/components/Controls.tsx
 "use client";
 
 import React from "react";
+import styles from "../styles/Controls.module.css";
 
 type ControlsProps = {
   onMove: (direction: "up" | "down" | "left" | "right") => void;
@@ -10,21 +10,28 @@ type ControlsProps = {
 
 export default function Controls({ onMove, onAction }: ControlsProps) {
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 20,
-        left: "50%",
-        transform: "translateX(-50%)",
-        display: "flex",
-        gap: "10px",
-      }}
-    >
-      <button onClick={() => onMove("up")}>↑</button>
-      <button onClick={() => onMove("down")}>↓</button>
-      <button onClick={() => onMove("left")}>←</button>
-      <button onClick={() => onMove("right")}>→</button>
-      <button onClick={() => onAction("attack")}>Пробел</button>
+    <div className={styles.controlsContainer}>
+      <div className={styles.buttonRow}>
+        <button className={styles.controlButton} onClick={() => onMove("up")}>
+          ↑
+        </button>
+      </div>
+      <div className={styles.buttonRow}>
+        <button className={styles.controlButton} onClick={() => onMove("left")}>
+          ←
+        </button>
+        <button className={styles.controlButton} onClick={() => onMove("down")}>
+          ↓
+        </button>
+        <button className={styles.controlButton} onClick={() => onMove("right")}>
+          →
+        </button>
+      </div>
+      <div className={styles.actionRow}>
+        <button className={styles.actionButton} onClick={() => onAction("attack")}>
+          Пробел
+        </button>
+      </div>
     </div>
   );
 }

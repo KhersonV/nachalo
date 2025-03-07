@@ -3,15 +3,19 @@
 package main
 
 import (
+	"strings"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"net/http"
 	"strconv"
 	"time"
 
 	// Подключаем зависимости.
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 
@@ -21,7 +25,7 @@ import (
 
 // Строка подключения к базе game_db.
 const connStr = "user=admin password=admin dbname=game_db sslmode=disable"
-
+var jwtSecretKey string
 // Глобальная переменная для подключения к БД.
 var db *sql.DB
 
@@ -206,7 +210,6 @@ func createMatchPlayerCopy(matchID string, p *Player, startX, startY, groupID in
 			$10, $11, $12, $13, $14, $15, $16, $17, $18,
 			$19, $20, $21, $22, $23, $24
 		);`
-	// Используем p.UserID, чтобы player_id было равно 13, если p.UserID==13.
 	_, err := db.Exec(query, matchID, p.UserID, p.Name, p.Image, p.ColorClass, startX, startY,
 		p.Energy, p.MaxEnergy, p.Health, p.MaxHealth, p.Level, p.Experience, p.MaxExperience,
 		p.Attack, p.Defense, p.Speed, p.Maneuverability, p.Vision, p.VisionRange, p.Balance,
@@ -216,6 +219,68 @@ func createMatchPlayerCopy(matchID string, p *Player, startX, startY, groupID in
 	}
 	return err
 }
+
+
+// JWT middleware для Game‑Service:
+// Проверяет, что токен присутствует и действителен, а также что идентификатор пользователя из токена совпадает с данными запроса.
+
+type contextKey string
+
+const userIDKey contextKey = "user_id"
+
+func gameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        authHeader := r.Header.Get("Authorization")
+        if authHeader == "" {
+            http.Error(w, "Отсутствует токен", http.StatusUnauthorized)
+            return
+        }
+        // Удаляем префикс "Bearer " и лишние пробелы
+        tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
+        if tokenString == "" {
+            http.Error(w, "Неверный формат токена", http.StatusUnauthorized)
+            return
+        }
+
+        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+                return nil, fmt.Errorf("неожиданный метод подписи: %v", token.Header["alg"])
+            }
+            return []byte(jwtSecretKey), nil
+        })
+        if err != nil {
+            log.Printf("Ошибка при разборе токена: %v", err)
+            http.Error(w, "Неверный или просроченный токен", http.StatusUnauthorized)
+            return
+        }
+        if !token.Valid {
+            http.Error(w, "Неверный или просроченный токен", http.StatusUnauthorized)
+            return
+        }
+
+        if claims, ok := token.Claims.(jwt.MapClaims); ok {
+            var uid int
+            // Обработка разных типов для user_id
+            switch v := claims["user_id"].(type) {
+            case float64:
+                uid = int(v)
+            case int:
+                uid = v
+            default:
+                log.Printf("Неожиданный тип для user_id: %T, значение: %v", claims["user_id"], claims["user_id"])
+                http.Error(w, "Неверный токен", http.StatusUnauthorized)
+                return
+            }
+            ctx := context.WithValue(r.Context(), userIDKey, uid)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        } else {
+            http.Error(w, "Неверные данные токена", http.StatusUnauthorized)
+            return
+        }
+    })
+}
+
+
 
 // ----------------- ОБРАБОТЧИКИ ДЛЯ МАТЧЕЙ ------------------
 
@@ -462,72 +527,73 @@ func getMatchHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ----------------- ОБРАБОТЧИКИ ДЛЯ PLAYERS ------------------
+
+
 type CreatePlayerRequest struct {
-	UserID int    `json:"user_id"`
-	Name   string `json:"name"`
-	Image  string `json:"image"`
+    UserID int    `json:"user_id"`
+    Name   string `json:"name"`
+    Image  string `json:"image"`
 }
 
 func createPlayerHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserID int    `json:"user_id"`
-		Name   string `json:"name"`
-		Image  string `json:"image"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
-		return
-	}
-	// Если UserID не передан, устанавливаем значение по умолчанию (для теста)
-	if req.UserID == 0 {
-		req.UserID = 1
-	}
-	// Если поля не переданы, устанавливаем значения по умолчанию
-	if req.Name == "" {
-		req.Name = "Player"
-	}
-	if req.Image == "" {
-		req.Image = "/player-1.webp"
-	}
-	query := `
+    var req CreatePlayerRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
+        return
+    }
+	log.Printf("Получен запрос на создание игрока: %+v", req)
+    // Здесь вы используете req.UserID, полученный из тела запроса.
+    if req.UserID == 0 {
+        http.Error(w, "user_id обязателен", http.StatusBadRequest)
+        return
+    }
+    if req.Name == "" {
+        req.Name = "Player"
+    }
+    if req.Image == "" {
+        req.Image = "/player-1.webp"
+    }
+    query := `
         INSERT INTO players (user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, health, max_health, level, experience, max_experience, attack, defense, speed, maneuverability, vision, vision_range, balance, inventory)
         VALUES ($1, $2, $3, 'red-player', 0, 0, 100, 100, 100, 100, 1, 0, 500, 10, 5, 3, 2, 5, 5, 0, '{}')
         RETURNING id, user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, health, max_health, level, experience, max_experience, attack, defense, speed, maneuverability, vision, vision_range, balance, inventory, updated_at
     `
-	player := &Player{}
-	err := db.QueryRow(query, req.UserID, req.Name, req.Image).Scan(
-		&player.ID,
-		&player.UserID,
-		&player.Name,
-		&player.Image,
-		&player.ColorClass,
-		&player.PosX,
-		&player.PosY,
-		&player.Energy,
-		&player.MaxEnergy,
-		&player.Health,
-		&player.MaxHealth,
-		&player.Level,
-		&player.Experience,
-		&player.MaxExperience,
-		&player.Attack,
-		&player.Defense,
-		&player.Speed,
-		&player.Maneuverability,
-		&player.Vision,
-		&player.VisionRange,
-		&player.Balance,
-		&player.Inventory,
-		&player.UpdatedAt,
-	)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка создания игрока: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(player)
+    player := &Player{}
+    err := db.QueryRow(query, req.UserID, req.Name, req.Image).Scan(
+        &player.ID,
+        &player.UserID,
+        &player.Name,
+        &player.Image,
+        &player.ColorClass,
+        &player.PosX,
+        &player.PosY,
+        &player.Energy,
+        &player.MaxEnergy,
+        &player.Health,
+        &player.MaxHealth,
+        &player.Level,
+        &player.Experience,
+        &player.MaxExperience,
+        &player.Attack,
+        &player.Defense,
+        &player.Speed,
+        &player.Maneuverability,
+        &player.Vision,
+        &player.VisionRange,
+        &player.Balance,
+        &player.Inventory,
+        &player.UpdatedAt,
+    )
+    if err != nil {
+        http.Error(w, fmt.Sprintf("Ошибка создания игрока: %v", err), http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(player)
 }
+
+
 
 func getPlayerHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -801,6 +867,19 @@ func moveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Извлекаем user_id из контекста (из JWT)
+	tokenUserID, ok := r.Context().Value(userIDKey).(int)
+	if !ok {
+		http.Error(w, "Не удалось определить пользователя из токена", http.StatusUnauthorized)
+		return
+	}
+
+	// Проверяем, что игрок пытается изменить свои данные
+	if tokenUserID != playerID {
+		http.Error(w, "Запрещено изменять данные другого игрока", http.StatusForbidden)
+		return
+	}
+
 	var req struct {
 		NewPosX int `json:"new_pos_x"`
 		NewPosY int `json:"new_pos_y"`
@@ -983,7 +1062,7 @@ func universalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	damage := attackerAttack - targetDefense
 	if damage < 1 {
-		damage = 1
+		damage = 0
 	}
 	newHealth := targetHealth - damage
 	if newHealth < 0 {
@@ -1117,6 +1196,12 @@ func enableCors(next http.Handler) http.Handler {
 }
 
 func main() {
+
+	jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
+	if jwtSecretKey == "" {
+		log.Fatal("JWT_SECRET_KEY environment variable is not set")
+	}
+	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
 	initDB()
 	defer db.Close()
 	createPlayersTable()
@@ -1125,7 +1210,7 @@ func main() {
 
 	router := mux.NewRouter()
 	// Эндпоинты для создания и получения игроков
-	router.HandleFunc("/game/player", createPlayerHandler).Methods("POST")
+	router.HandleFunc("/create/player", createPlayerHandler).Methods("POST")
 	router.HandleFunc("/game/player/{id}", getPlayerHandler).Methods("GET")
 	router.HandleFunc("/game/player/{id}/gain_experience", gainExperienceHandler).Methods("POST")
 	// Эндпоинты для работы с инвентарём
@@ -1135,8 +1220,9 @@ func main() {
 	router.HandleFunc("/game/createMatch", createMatchHandler).Methods("POST")
 	router.HandleFunc("/game/match", getMatchHandler).Methods("GET")
 	// Эндпоинты для перемещения и атаки (работают с match_players)
-	router.HandleFunc("/game/player/{id}/move", moveHandler).Methods("POST")
-	router.HandleFunc("/game/attack", universalAttackHandler).Methods("POST")
+	router.Handle("/game/player/{id}/move", gameAuthMiddleware(jwtSecretKey, http.HandlerFunc(moveHandler))).Methods("POST")
+	router.Handle("/game/attack", gameAuthMiddleware(jwtSecretKey, http.HandlerFunc(universalAttackHandler))).Methods("POST")
+	
 	// Маршруты для ресурсов и монстров
 	router.HandleFunc("/api/resources", getResourcesHandler).Methods("GET")
 	router.HandleFunc("/api/monsters", getMonstersHandler).Methods("GET")
