@@ -1,3 +1,9 @@
+
+//====================================
+//gameservice/handlers/resources.go
+//====================================
+
+
 package handlers
 
 import (

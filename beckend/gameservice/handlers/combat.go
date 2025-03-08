@@ -1,3 +1,8 @@
+
+//====================================
+//gameservice/handlers/combat.go
+//====================================
+
 package handlers
 
 import (
@@ -16,6 +21,7 @@ import (
 
 
 // ----------------- ПЕРЕМЕЩЕНИЕ ------------------
+
 func MoveHandler(w http.ResponseWriter, r *http.Request) {
     vars := mux.Vars(r)
     playerID, err := strconv.Atoi(vars["id"])
@@ -121,6 +127,20 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, fmt.Sprintf("Ошибка обновления позиции игрока: %v", err), http.StatusInternalServerError)
         return
     }
+
+    // Отправляем обновление по WebSocket всем клиентам
+    updateMsg := map[string]interface{}{
+        "type": "MOVE_PLAYER",
+        "payload": map[string]interface{}{
+            "playerId": playerID,
+            "newPosition": map[string]int{
+                "x": req.NewPosX,
+                "y": req.NewPosY,
+            },
+        },
+    }
+    updateJSON, _ := json.Marshal(updateMsg)
+    Broadcast(updateJSON)
 
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(player)

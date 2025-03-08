@@ -1,3 +1,8 @@
+
+// ==============================
+// /gameservice/models/player.go
+// ==============================
+
 package models
 
 import (

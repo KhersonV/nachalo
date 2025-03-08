@@ -1,3 +1,8 @@
+
+// ====================================
+// /gameservice/repository/inventory.go
+// ====================================
+
 package repository
 
 import (

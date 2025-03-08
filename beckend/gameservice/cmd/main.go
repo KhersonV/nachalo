@@ -1,5 +1,7 @@
-//============
+
+//=======================
 //gameservice/cmd/main.go
+//=======================
 
 package main
 
@@ -55,6 +57,8 @@ func main() {
 
     // Настраиваем маршруты
     router := mux.NewRouter()
+     // === websocket ===
+    router.HandleFunc("/ws", handlers.WsHandler)
 
     // === Эндпоинты для игроков ===
     router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")

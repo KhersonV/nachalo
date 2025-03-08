@@ -4,10 +4,12 @@
     align-items: flex-start;
     width: 800px;
     margin: 0 auto;
-  }
+    
+    margin-left: 500;
+}
   
   .mapContainer {
-    margin-left: -500;
+    margin-left: -400;
     width: 800px;
     height: 600px;
     margin-bottom: 20px; /* Отступ между картой и панелью управления */

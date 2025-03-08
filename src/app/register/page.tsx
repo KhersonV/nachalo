@@ -1,4 +1,7 @@
-// app/register/page.tsx
+//=======================
+// src/app/register/page.tsx
+//=======================
+
 "use client";
 
 import RegisterPage from "../../components/RegisterPage";

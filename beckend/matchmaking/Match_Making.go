@@ -1,4 +1,3 @@
-
 // ==============================
 // /matchmaking/Match_Making.go
 // ==============================
@@ -215,63 +214,9 @@ func createMatch(mode string, group []QueueEntry) {
 		playerIDs[i] = entry.PlayerID
 	}
 
-	//  Генерируем карту
-	// cfg := game.MapConfig{
-	// 	TotalPlayers: totalPlayers,
-	// 	TeamsCount:   teamsCount,
-	// 	WalkableProb: 0.8,
-	// 	ResourceProb: 0.1,
-	// 	MonsterProb:  0.05,
-	// }
-
-	// grid, _, _, err := game.GenerateMap(cfg)
-	// if err != nil {
-	// 	log.Printf("Ошибка генерации карты: %v", err)
-	// 	return
-	// }
-
-	// Сериализуем карту в JSON
-	// mapData, err := json.Marshal(grid)
-	// if err != nil {
-	// 	log.Printf("Ошибка маршалинга карты: %v", err)
-	// 	return
-	// }
-
 	// Создаем состояние матча
 	matchState := game.CreateMatchState(instanceID, playerIDs)
 	log.Printf("Создано состояние матча: %+v", matchState)
-
-	// Подготавливаем данные для вставки в таблицу matches.
-	// turnOrderJSON, err := json.Marshal(matchState.TurnOrder)
-	// if err != nil {
-	// 	log.Printf("Ошибка маршалинга turn_order: %v", err)
-	// 	return
-	// }
-
-	// matchInsertQuery := `
-    //     INSERT INTO matches (
-    //         instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order
-    //     ) VALUES (
-    //         $1, $2, $3, $4, $5, $6, $7, $8, $9
-    //     )
-    // `
-
-	// // _, err = repository.DB.Exec(matchInsertQuery,
-	// 	instanceID,
-	// 	mode,
-	// 	teamsCount,
-	// 	totalPlayers,
-	// 	len(grid[0]), // реальная ширина карты
-	// 	len(grid),    // реальная высота карты
-	// 	string(mapData),
-	// 	matchState.ActivePlayerID,
-	// 	string(turnOrderJSON),
-	// )
-	// if err != nil {
-	// 	log.Printf("Ошибка вставки матча в БД: %v", err)
-	// 	return
-	// }
-	// log.Printf("Матч с instance_id=%s успешно сохранён в БД", instanceID)
 
 	// Отправляем запрос в Game-сервис
 	matchReq := map[string]interface{}{
@@ -307,8 +252,6 @@ func createMatch(mode string, group []QueueEntry) {
 	matchMu.Unlock()
 }
 
-
-
 func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -324,10 +267,6 @@ func enableCors(next http.Handler) http.Handler {
 
 func main() {
 	repository.InitDB()
-	// repository.CreateMatchesTable()
-	// repository.CreatePlayersTable()
-	// repository.CreateMatchPlayersTable()
-	// repository.CreateInventoryTable()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")

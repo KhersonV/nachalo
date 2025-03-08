@@ -1,4 +1,8 @@
+
+//==================================
 // src/components/GameController.tsx
+//==================================
+
 "use client";
 
 import React, { useEffect } from "react";

@@ -57,6 +57,15 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Отправляем обновление по WebSocket всем клиентам
+    responseMsg := map[string]interface{}{
+        "type":    "SET_ACTIVE_PLAYER",
+        "payload": nextPlayer,
+    }
+    responseJSON, _ := json.Marshal(responseMsg)
+    // Вызов функции Broadcast из ws_handler.go
+    Broadcast(responseJSON)
+
     response := EndTurnResponse{ActivePlayer: nextPlayer}
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(response)

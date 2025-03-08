@@ -1,7 +1,12 @@
+
+//=============================
 // src/contexts/GameContextt.tsx
+//=============================
+
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
+import { useGameSocket } from "../hooks/useGameSocket";
 
 // Типы для бонусов, инвентаря и прочего
 export type BonusAttributes = {
@@ -310,6 +315,34 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       fetchMatchData();
     }
   }, [instanceId, resources.length, monsters.length]);
+
+
+  // Подключаем WebSocket для получения обновлений от сервера
+  useGameSocket((data) => {
+    console.log("Получено сообщение по WebSocket:", data);
+    // Пример обработки сообщения:
+    if (data.type === "MATCH_UPDATE") {
+      dispatch({
+        type: "SET_MATCH_DATA",
+        payload: {
+          instanceId: data.payload.instanceId,
+          mode: data.payload.mode,
+          grid: data.payload.grid,
+          mapWidth: data.payload.mapWidth,
+          mapHeight: data.payload.mapHeight,
+          players: data.payload.players,
+        },
+      });
+    } else if (data.type === "MOVE_PLAYER") {
+      dispatch({
+        type: "MOVE_PLAYER",
+        payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
+      });
+    } else if (data.type === "SET_ACTIVE_PLAYER") {
+      dispatch({ type: "SET_ACTIVE_PLAYER", payload: data.payload });
+    }
+    // Добавьте другие типы сообщений по необходимости.
+  });
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>

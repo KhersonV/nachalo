@@ -1,3 +1,8 @@
+
+// ==============================
+// /gameservice/models/monster.go
+// ==============================
+
 package models
 
 import "time"

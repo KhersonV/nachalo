@@ -1,4 +1,7 @@
-// app/mode/page.tsx
+//=======================
+// src/app/mode/page.tsx
+//=======================
+
 "use client";
 
 import React from "react";

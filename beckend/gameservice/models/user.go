@@ -1,3 +1,9 @@
+
+
+// ==============================
+// /gameservice/models/user.go
+// ==============================
+
 package models
 
 import "time"

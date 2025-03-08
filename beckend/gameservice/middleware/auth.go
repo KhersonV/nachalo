@@ -1,3 +1,8 @@
+
+//==============================
+//gameservice/middleware/auth.go
+//==============================
+
 package middleware
 
 import (

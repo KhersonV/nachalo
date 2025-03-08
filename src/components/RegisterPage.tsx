@@ -1,4 +1,8 @@
+
+//=====================================
 // src/components/RegisterPage.tsx
+//=====================================
+
 "use client";
 
 import React, { useState } from "react";
