@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useGame } from "../contexts/GameContextt";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
+import EndTurnButton from "./EndTurnButton";
 import styles from "../styles/GameController.module.css";
 
 export default function GameController() {
@@ -18,11 +19,11 @@ export default function GameController() {
     try {
       // Получаем токен из localStorage
       const storedUser = localStorage.getItem("user");
-    const token = storedUser ? JSON.parse(storedUser).token : "";
-    if (!token) {
-      console.error("Токен не найден в localStorage");
-      return null;
-    }
+      const token = storedUser ? JSON.parse(storedUser).token : "";
+      if (!token) {
+        console.error("Токен не найден в localStorage");
+        return null;
+      }
       console.log("Полученный токен:", token);
       const response = await fetch(
         `http://localhost:8001/game/player/${state.currentPlayerId}/move?instance_id=${instanceId}`,
@@ -101,7 +102,6 @@ export default function GameController() {
         payload: { playerId: activePlayer.id, newPosition: newPos },
       });
     } else {
-      // Если ошибка, можно уведомить пользователя и не обновлять состояние
       console.error("Перемещение не выполнено из-за ошибки сервера.");
     }
   };
@@ -133,6 +133,11 @@ export default function GameController() {
     console.log("На данной клетке нет интерактивных объектов", currentCell);
   };
 
+  // Функция обновления активного игрока после завершения хода
+  const handleTurnEnded = (newActivePlayer: number) => {
+    dispatch({ type: "SET_ACTIVE_PLAYER", payload: newActivePlayer });
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
@@ -150,6 +155,7 @@ export default function GameController() {
         handleAction();
       }
     };
+    
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state]);
@@ -161,6 +167,11 @@ export default function GameController() {
       </div>
       <div className={styles.controlsContainer}>
         <Controls onMove={handleMove} onAction={handleAction} />
+        <EndTurnButton
+          playerId={state.currentPlayerId}
+          instanceId={instanceId}
+          onTurnEnded={handleTurnEnded}
+        />
       </div>
     </div>
   );

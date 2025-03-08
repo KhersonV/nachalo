@@ -1,4 +1,6 @@
-package mapgen
+
+
+package game
 
 import (
 	"errors"

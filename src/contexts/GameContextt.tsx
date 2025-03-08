@@ -99,7 +99,6 @@ export type GameState = {
   players: PlayerState[];
   currentPlayerId: number;
 };
-
 export type Action =
   | {
       type: "SET_MATCH_DATA";
@@ -117,8 +116,14 @@ export type Action =
       payload: { playerId: number; newPosition: { x: number; y: number } };
     }
   | {
+      type: "SET_ACTIVE_PLAYER";
+      payload: number;
+    }
+  | {
       type: "RESET_STATE";
     };
+
+
 
 const initialState: GameState = {
   instanceId: "",
@@ -135,7 +140,6 @@ const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action>
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
-      // Если currentPlayerId ещё не установлен и есть хотя бы один игрок, устанавливаем его
       let currentId = state.currentPlayerId;
       if (currentId === 0 && action.payload.players.length > 0) {
         currentId = action.payload.players[0].id;
@@ -156,6 +160,11 @@ export function gameReducer(state: GameState, action: Action): GameState {
         players: state.players.map((p) =>
           p.id === action.payload.playerId ? { ...p, position: action.payload.newPosition } : p
         ),
+      };
+    case "SET_ACTIVE_PLAYER":
+      return {
+        ...state,
+        currentPlayerId: action.payload,
       };
     case "RESET_STATE":
       return { ...initialState };

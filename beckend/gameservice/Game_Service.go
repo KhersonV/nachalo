@@ -20,7 +20,7 @@ import (
 	_ "github.com/lib/pq"
 
 	// Локальный импорт пакета mapgen (убедитесь, что путь правильный)
-	"gameservice/mapgen"
+	"gameservice/game"
 )
 
 // Строка подключения к базе game_db.
@@ -324,7 +324,7 @@ func createMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := mapgen.MapConfig{
+	cfg := game.MapConfig{
 		TotalPlayers: req.TotalPlayers,
 		TeamsCount:   req.TeamsCount,
 		WalkableProb: 0.8,
@@ -333,7 +333,7 @@ func createMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Генерация карты с возвратом стартовых позиций и портала
-	grid, startPositions, _, err := mapgen.GenerateMap(cfg)
+	grid, startPositions, _, err := game.GenerateMap(cfg)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка генерации карты: %v", err), http.StatusInternalServerError)
 		return

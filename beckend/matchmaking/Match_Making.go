@@ -1,5 +1,8 @@
 
-//Match_Making
+// ==============================
+// /matchmaking/Match_Making.go
+// ==============================
+
 package main
 
 import (
@@ -10,8 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
+
+	"gameservice/game"
+	"gameservice/repository"
 )
 
 type JoinRequest struct {
@@ -41,13 +47,12 @@ type MatchInfo struct {
 
 var (
 	queues = map[string][]QueueEntry{
-		"PVE":  {},
-		"1x1":  {},
-		"3x3":  {},
-		"5x5":  {},
+		"PVE": {},
+		"1x1": {},
+		"3x3": {},
+		"5x5": {},
 	}
-	mu sync.Mutex
-
+	mu             sync.Mutex
 	currentMatches = make(map[string]MatchInfo)
 	matchMu        sync.Mutex
 )
@@ -68,15 +73,24 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, entry := range q {
+		if entry.PlayerID == req.PlayerID {
+			http.Error(w, "Player already in queue", http.StatusBadRequest)
+			return
+		}
+	}
+
 	entry := QueueEntry{
 		PlayerID: req.PlayerID,
 		Rating:   req.Rating,
 		JoinTime: time.Now(),
 	}
+
 	queues[req.Mode] = append(q, entry)
 	log.Printf("Player %d joined mode %s", req.PlayerID, req.Mode)
 
 	checkAndMakeMatch(req.Mode)
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("You have joined the queue"))
 }
@@ -87,6 +101,7 @@ func cancelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -105,6 +120,7 @@ func cancelHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		newQueue = append(newQueue, entry)
 	}
+
 	queues[req.Mode] = newQueue
 	if found {
 		log.Printf("Player %d cancelled from mode %s", req.PlayerID, req.Mode)
@@ -118,16 +134,19 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	mu.Lock()
 	defer mu.Unlock()
+
 	q, ok := queues[mode]
 	if !ok {
 		http.Error(w, "Unknown mode", http.StatusBadRequest)
 		return
 	}
+
 	response, err := json.Marshal(q)
 	if err != nil {
 		http.Error(w, "Error marshalling response", http.StatusInternalServerError)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(response)
 }
@@ -142,30 +161,23 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 
 	matchMu.Lock()
 	defer matchMu.Unlock()
+
 	if match, ok := currentMatches[mode]; ok {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(match)
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 }
 
 func checkAndMakeMatch(mode string) {
-	var needed int
-	if mode == "PVE" {
-		needed = 1
-	} else {
-		switch mode {
-		case "1x1":
-			needed = 2
-		case "3x3":
-			needed = 6
-		case "5x5":
-			needed = 10
-		default:
-			return
-		}
+	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "3x3": 6, "5x5": 10}
+	needed, ok := requiredPlayers[mode]
+	if !ok {
+		log.Printf("Unknown mode: %s", mode)
+		return
 	}
 
 	q := queues[mode]
@@ -175,7 +187,6 @@ func checkAndMakeMatch(mode string) {
 		go createMatch(mode, group)
 	}
 }
-
 func createMatch(mode string, group []QueueEntry) {
 	instanceID := uuid.New().String()
 	log.Printf("Match formed: instanceID=%s, mode=%s, players=%v", instanceID, mode, group)
@@ -200,10 +211,69 @@ func createMatch(mode string, group []QueueEntry) {
 	}
 
 	playerIDs := make([]int, len(group))
-for i, entry := range group {
-	playerIDs[i] = entry.PlayerID
-}
+	for i, entry := range group {
+		playerIDs[i] = entry.PlayerID
+	}
 
+	//  Генерируем карту
+	// cfg := game.MapConfig{
+	// 	TotalPlayers: totalPlayers,
+	// 	TeamsCount:   teamsCount,
+	// 	WalkableProb: 0.8,
+	// 	ResourceProb: 0.1,
+	// 	MonsterProb:  0.05,
+	// }
+
+	// grid, _, _, err := game.GenerateMap(cfg)
+	// if err != nil {
+	// 	log.Printf("Ошибка генерации карты: %v", err)
+	// 	return
+	// }
+
+	// Сериализуем карту в JSON
+	// mapData, err := json.Marshal(grid)
+	// if err != nil {
+	// 	log.Printf("Ошибка маршалинга карты: %v", err)
+	// 	return
+	// }
+
+	// Создаем состояние матча
+	matchState := game.CreateMatchState(instanceID, playerIDs)
+	log.Printf("Создано состояние матча: %+v", matchState)
+
+	// Подготавливаем данные для вставки в таблицу matches.
+	// turnOrderJSON, err := json.Marshal(matchState.TurnOrder)
+	// if err != nil {
+	// 	log.Printf("Ошибка маршалинга turn_order: %v", err)
+	// 	return
+	// }
+
+	// matchInsertQuery := `
+    //     INSERT INTO matches (
+    //         instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order
+    //     ) VALUES (
+    //         $1, $2, $3, $4, $5, $6, $7, $8, $9
+    //     )
+    // `
+
+	// // _, err = repository.DB.Exec(matchInsertQuery,
+	// 	instanceID,
+	// 	mode,
+	// 	teamsCount,
+	// 	totalPlayers,
+	// 	len(grid[0]), // реальная ширина карты
+	// 	len(grid),    // реальная высота карты
+	// 	string(mapData),
+	// 	matchState.ActivePlayerID,
+	// 	string(turnOrderJSON),
+	// )
+	// if err != nil {
+	// 	log.Printf("Ошибка вставки матча в БД: %v", err)
+	// 	return
+	// }
+	// log.Printf("Матч с instance_id=%s успешно сохранён в БД", instanceID)
+
+	// Отправляем запрос в Game-сервис
 	matchReq := map[string]interface{}{
 		"instance_id":   instanceID,
 		"mode":          mode,
@@ -211,13 +281,11 @@ for i, entry := range group {
 		"teams_count":   teamsCount,
 		"total_players": totalPlayers,
 	}
-
 	reqJSON, err := json.Marshal(matchReq)
 	if err != nil {
 		log.Printf("Ошибка маршалинга запроса матча: %v", err)
 		return
 	}
-
 	log.Printf("Отправляем запрос в Game-сервис: %s", string(reqJSON))
 	resp, err := http.Post("http://localhost:8001/game/createMatch", "application/json", bytes.NewBuffer(reqJSON))
 	if err != nil {
@@ -239,6 +307,8 @@ for i, entry := range group {
 	matchMu.Unlock()
 }
 
+
+
 func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -253,6 +323,12 @@ func enableCors(next http.Handler) http.Handler {
 }
 
 func main() {
+	repository.InitDB()
+	// repository.CreateMatchesTable()
+	// repository.CreatePlayersTable()
+	// repository.CreateMatchPlayersTable()
+	// repository.CreateInventoryTable()
+
 	r := mux.NewRouter()
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
@@ -261,10 +337,7 @@ func main() {
 
 	handler := enableCors(r)
 
-	srv := &http.Server{
-		Handler: handler,
-		Addr:    ":8002",
-	}
+	srv := &http.Server{Handler: handler, Addr: ":8002"}
 	log.Println("Matchmaking-сервис запущен на порту 8002")
 	log.Fatal(srv.ListenAndServe())
 }
