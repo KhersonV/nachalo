@@ -30,44 +30,44 @@ type EndTurnResponse struct {
 
 // EndTurnHandler обрабатывает запрос на завершение хода.
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
-    var req EndTurnRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("Ошибка декодирования запроса завершения хода: %v", err)
-        http.Error(w, "Bad request", http.StatusBadRequest)
-        return
-    }
+	var req EndTurnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Ошибка декодирования запроса завершения хода: %v", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 
-    tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
-    if !ok || tokenUserID != req.PlayerID {
-        http.Error(w, "Запрещено завершать ход другому игроку", http.StatusForbidden)
-        return
-    }
+	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || tokenUserID != req.PlayerID {
+		http.Error(w, "Запрещено завершать ход другому игроку", http.StatusForbidden)
+		log.Printf("PlayerID %d", req.PlayerID)
+		log.Printf("tokenUserID %d", tokenUserID)
+		return
+	}
 
-    matchState, ok := game.GetMatchState(req.InstanceID)
-    if !ok {
-        log.Printf("Матч с instance_id %s не найден", req.InstanceID)
-        http.Error(w, "Match not found", http.StatusNotFound)
-        return
-    }
+	matchState, ok := game.GetMatchState(req.InstanceID)
+	if !ok {
+		log.Printf("Матч с instance_id %s не найден", req.InstanceID)
+		http.Error(w, "Match not found", http.StatusNotFound)
+		return
+	}
 
-    nextPlayer, err := matchState.EndTurn(req.PlayerID)
-    if err != nil {
-        log.Printf("Ошибка завершения хода: %v", err)
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	nextPlayer, err := matchState.EndTurn(req.PlayerID)
+	if err != nil {
+		log.Printf("Ошибка завершения хода: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-    // Отправляем обновление по WebSocket всем клиентам
-    responseMsg := map[string]interface{}{
-        "type":    "SET_ACTIVE_PLAYER",
-        "payload": nextPlayer,
-    }
-    responseJSON, _ := json.Marshal(responseMsg)
-    // Вызов функции Broadcast из ws_handler.go
-    Broadcast(responseJSON)
+	// Отправляем обновление по WebSocket всем клиентам
+	responseMsg := map[string]interface{}{
+		"type":    "SET_ACTIVE_PLAYER",
+		"payload": nextPlayer,
+	}
+	responseJSON, _ := json.Marshal(responseMsg)
+	Broadcast(responseJSON)
 
-    response := EndTurnResponse{ActivePlayer: nextPlayer}
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	response := EndTurnResponse{ActivePlayer: nextPlayer}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
-

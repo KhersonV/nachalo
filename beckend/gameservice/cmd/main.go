@@ -82,8 +82,9 @@ func main() {
         middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UniversalAttackHandler))).
         Methods("POST")
         
-        router.HandleFunc("/game/endTurn", handlers.EndTurnHandler).Methods("POST")
-
+        router.Handle("/game/endTurn",
+        middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndTurnHandler)),
+    ).Methods("POST")
 
     // === Эндпоинты для ресурсов и монстров ===
     router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")

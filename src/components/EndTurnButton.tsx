@@ -25,6 +25,9 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
     }
     console.log("Отправка запроса завершения хода от игрока:", playerId, "с токеном:", token, "и instance_id:", instanceId);
     try {
+      console.log("Токен из localStorage:", token);
+      
+
       const response = await fetch("http://localhost:8001/game/endTurn", {
         method: "POST",
         headers: {

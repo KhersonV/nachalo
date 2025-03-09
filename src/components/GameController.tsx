@@ -7,7 +7,8 @@
 
 import React, { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useGame } from "../contexts/GameContextt";
+import { useGame, PlayerState } from "../contexts/GameContextt";
+import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
@@ -17,11 +18,20 @@ export default function GameController() {
   const { state, dispatch } = useGame();
   const searchParams = useSearchParams();
   const instanceId = searchParams.get("instance_id") || "";
+  const { user } = useAuth();
+
+  // Определяем, какой игрок принадлежит текущему клиенту.
+  const myPlayerId = user?.id;
+  const myPlayer: PlayerState | undefined = state.players.find(
+    (p) => p.id === myPlayerId
+  );
+
+  // Сравниваем, чей ход сейчас активен
+  const isMyTurn = myPlayerId === state.currentPlayerId;
 
   // Функция для перемещения игрока на сервере
   async function movePlayer(newPosX: number, newPosY: number) {
     try {
-      // Получаем токен из localStorage
       const storedUser = localStorage.getItem("user");
       const token = storedUser ? JSON.parse(storedUser).token : "";
       if (!token) {
@@ -29,8 +39,9 @@ export default function GameController() {
         return null;
       }
       console.log("Полученный токен:", token);
+      // Отправляем запрос по ID именно своего игрока, а не currentPlayerId
       const response = await fetch(
-        `http://localhost:8001/game/player/${state.currentPlayerId}/move?instance_id=${instanceId}`,
+        `http://localhost:8001/game/player/${myPlayerId}/move?instance_id=${instanceId}`,
         {
           method: "POST",
           headers: { 
@@ -56,14 +67,17 @@ export default function GameController() {
 
   const allowedTileCodes = [48, 80, 77, 82, 112];
   const handleMove = async (direction: "up" | "down" | "left" | "right") => {
-    const activePlayer = state.players.find((p) => p.id === state.currentPlayerId);
-    if (!activePlayer) {
-      console.warn("Активный игрок не найден");
+    if (!myPlayer) {
+      console.warn("Мой игрок не найден");
       return;
     }
-  
-    let newPos = { ...activePlayer.position };
-  
+    // Только активный игрок может отправлять запросы на перемещение
+    if (!isMyTurn) {
+      console.warn("Сейчас не ваш ход");
+      return;
+    }
+    let newPos = { ...myPlayer.position };
+
     if (direction === "up") {
       newPos.y -= 1;
     } else if (direction === "down") {
@@ -73,8 +87,7 @@ export default function GameController() {
     } else if (direction === "right") {
       newPos.x += 1;
     }
-  
-    // Проверка клетки, занятости, проходимости и т.п.
+    // Проверка клетки: наличие и проходимость
     const targetCell = state.grid.find(
       (cell) => cell.x === newPos.x && cell.y === newPos.y
     );
@@ -86,9 +99,10 @@ export default function GameController() {
       console.warn("Невозможно переместиться: клетка непроходимая", targetCell);
       return;
     }
+    // Проверяем, что клетка не занята другим игроком
     const otherPlayer = state.players.find(
       (p) =>
-        p.id !== activePlayer.id &&
+        p.id !== myPlayer.id &&
         p.position.x === newPos.x &&
         p.position.y === newPos.y
     );
@@ -100,10 +114,9 @@ export default function GameController() {
     // Отправляем запрос и ждём подтверждения от сервера
     const updatedPlayer = await movePlayer(newPos.x, newPos.y);
     if (updatedPlayer) {
-      // После подтверждения сервера обновляем локальное состояние
       dispatch({
         type: "MOVE_PLAYER",
-        payload: { playerId: activePlayer.id, newPosition: newPos },
+        payload: { playerId: myPlayer.id, newPosition: newPos },
       });
     } else {
       console.error("Перемещение не выполнено из-за ошибки сервера.");
@@ -111,6 +124,12 @@ export default function GameController() {
   };
   
   const handleAction = () => {
+    // Если ход не ваш, действия не выполняются
+    if (!isMyTurn) {
+      console.warn("Сейчас не ваш ход");
+      return;
+    }
+    // Логика для атаки, сбора ресурсов и прочего
     const activePlayer = state.players.find((p) => p.id === state.currentPlayerId);
     if (!activePlayer) return;
     const currentCell = state.grid.find(
@@ -162,20 +181,37 @@ export default function GameController() {
     
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state]);
+  }, [state, myPlayer, isMyTurn]);
 
   return (
     <div className={styles.container}>
       <div className={styles.mapContainer}>
-        <MapWithCamera tileSize={80} viewportWidth={800} viewportHeight={600} />
+        {myPlayer ? (
+          <MapWithCamera
+            tileSize={80}
+            viewportWidth={800}
+            viewportHeight={600}
+            myPlayer={myPlayer}
+          />
+        ) : (
+          <p>Загрузка карты...</p>
+        )}
       </div>
       <div className={styles.controlsContainer}>
-        <Controls onMove={handleMove} onAction={handleAction} />
-        <EndTurnButton
-          playerId={state.currentPlayerId}
-          instanceId={instanceId}
-          onTurnEnded={handleTurnEnded}
-        />
+        {isMyTurn ? (
+          <>
+            <Controls onMove={handleMove} onAction={handleAction} />
+            <EndTurnButton
+              playerId={myPlayerId!}
+              instanceId={instanceId}
+              onTurnEnded={handleTurnEnded}
+            />
+          </>
+        ) : (
+          <div className={styles.waitingOverlay}>
+            <p>Ожидание хода...</p>
+          </div>
+        )}
       </div>
     </div>
   );

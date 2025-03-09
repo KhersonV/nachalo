@@ -58,7 +58,7 @@ export type PlayerState = {
   rangeDistance?: number;
 };
 
-// Тип для монстра (упрощённый вариант, ожидающий, что API вернёт поле image как строку)
+// Тип для монстра (упрощённый)
 export type MonsterType = {
   id: number;
   name: string;
@@ -70,7 +70,7 @@ export type MonsterType = {
   speed: number;
   maneuverability: number;
   vision: number;
-  image: string; // Одна картинка для каждого монстра
+  image: string;
   created_at: string;
 };
 
@@ -104,6 +104,7 @@ export type GameState = {
   players: PlayerState[];
   currentPlayerId: number;
 };
+
 export type Action =
   | {
       type: "SET_MATCH_DATA";
@@ -127,8 +128,6 @@ export type Action =
   | {
       type: "RESET_STATE";
     };
-
-
 
 const initialState: GameState = {
   instanceId: "",
@@ -183,7 +182,7 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Функция для преобразования карты
+// Функция для преобразования карты из двумерного массива в массив клеток
 function convertMapData(rawMap: number[][], resources: ResourceType[], monsters: MonsterType[]): Cell[] {
   const cells: Cell[] = [];
   let id = 0;
@@ -194,22 +193,19 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
       let monster: MonsterType | null = null;
       let isPortal = false;
 
-      // Если tileCode равен 82 ('R') – клетка с ресурсом
-      if (tileCode === 82) {
+      if (tileCode === 82) { // 'R'
         if (resources && resources.length > 0) {
           const randomIndex = Math.floor(Math.random() * resources.length);
           resource = resources[randomIndex];
         }
       }
-      // Если tileCode равен 77 ('M') – клетка с монстром
-      if (tileCode === 77) {
+      if (tileCode === 77) { // 'M'
         if (monsters && monsters.length > 0) {
           const randomIndex = Math.floor(Math.random() * monsters.length);
           monster = monsters[randomIndex];
         }
       }
-      // Если tileCode равен 112 ('p') – клетка с порталом
-      if (tileCode === 112) {
+      if (tileCode === 112) { // 'p'
         isPortal = true;
       }
 
@@ -273,7 +269,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   }, [instanceId]);
 
   useEffect(() => {
-    // После того как загрузились ресурсы и монстры, загружаем данные матча
     async function fetchMatchData() {
       try {
         const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, {
@@ -288,7 +283,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         console.log("Полученные игроки:", data.players);
         const convertedGrid = convertMapData(data.map, resources, monsters);
         const players: PlayerState[] = data.players || [];
-        // Преобразуем каждого игрока, добавляя поле position (из pos_x, pos_y)
         const transformedPlayers = players.map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
@@ -316,11 +310,9 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length]);
 
-
-  // Подключаем WebSocket для получения обновлений от сервера
+  // Подключаем WebSocket и обрабатываем входящие сообщения
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
-    // Пример обработки сообщения:
     if (data.type === "MATCH_UPDATE") {
       dispatch({
         type: "SET_MATCH_DATA",
@@ -341,7 +333,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     } else if (data.type === "SET_ACTIVE_PLAYER") {
       dispatch({ type: "SET_ACTIVE_PLAYER", payload: data.payload });
     }
-    // Добавьте другие типы сообщений по необходимости.
   });
 
   return (

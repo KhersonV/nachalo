@@ -18,6 +18,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"auth/common"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/rs/cors"
 	"golang.org/x/crypto/bcrypt"
@@ -212,11 +213,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(loginResp)
 }
 
-type contextKey string
-
-const userIDKey contextKey = "user_id"
-
-// Middleware для проверки JWT
+// Middleware для проверки JWT с использованием общего ключа
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -243,12 +240,13 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			log.Printf("Claims токена: %+v", claims)
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
 				return
 			}
-			ctx := context.WithValue(r.Context(), userIDKey, int(userID))
+			ctx := context.WithValue(r.Context(), common.UserIDKey, int(userID))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			http.Error(w, "Неверные данные токена", http.StatusUnauthorized)
@@ -259,7 +257,7 @@ func authMiddleware(next http.Handler) http.Handler {
 
 // Обработчик получения профиля пользователя
 func profileHandler(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(userIDKey).(int)
+	userID, ok := r.Context().Value(common.UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Не удалось определить пользователя", http.StatusUnauthorized)
 		return
