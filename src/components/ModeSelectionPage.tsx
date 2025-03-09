@@ -31,20 +31,25 @@ async function joinQueue(mode: GameMode, player: PlayerInfo): Promise<void> {
   }
 }
 
-async function pollMatchStatus(mode: GameMode, playerId: number): Promise<string> {
+
+// Функция для опроса эндпоинта currentMatch, пока не получим instance_id
+async function pollCurrentMatch(playerId: number): Promise<string> {
   while (true) {
-    const res = await fetch(`${API_MATCH}/matchmaking/match?mode=${mode}&player_id=${playerId}`);
+    const res = await fetch(`${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`);
     const data = await res.json();
+    // Если в ответе есть поле instance_id, значит матч сформирован
     if (data.instance_id) {
       return data.instance_id;
     }
+    // Ждём 3 секунды и опрашиваем снова
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
 
+// Функция для старта матчмейкинга
 export async function startMatchmaking(mode: GameMode, player: PlayerInfo): Promise<string> {
   await joinQueue(mode, player);
-  const instanceId = await pollMatchStatus(mode, player.playerId);
+  const instanceId = await pollCurrentMatch(player.playerId);
   return instanceId;
 }
 

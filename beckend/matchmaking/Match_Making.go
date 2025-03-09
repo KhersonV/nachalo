@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"gameservice/repository"
 )
 
+// Типы запросов и структур остаются без изменений.
 type JoinRequest struct {
 	PlayerID int    `json:"player_id"`
 	Mode     string `json:"mode"`
@@ -46,16 +48,21 @@ type MatchInfo struct {
 
 var (
 	queues = map[string][]QueueEntry{
-		"PVE": {},
+		"PVE":  {},
 		"1x1": {},
 		"3x3": {},
 		"5x5": {},
 	}
-	mu             sync.Mutex
+	mu sync.Mutex
+
+	// Храним матчи по instance_id
 	currentMatches = make(map[string]MatchInfo)
-	matchMu        sync.Mutex
+	// Глобальная мапа сопоставлений: для каждого игрока его instance_id матча
+	playerMatches = make(map[int]string)
+	matchMu       sync.Mutex
 )
 
+// joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
 func joinHandler(w http.ResponseWriter, r *http.Request) {
 	var req JoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -72,6 +79,7 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Если игрок уже в очереди, сообщаем об ошибке
 	for _, entry := range q {
 		if entry.PlayerID == req.PlayerID {
 			http.Error(w, "Player already in queue", http.StatusBadRequest)
@@ -94,6 +102,7 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("You have joined the queue"))
 }
 
+// cancelHandler – удаляет игрока из очереди
 func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	var req CancelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -129,6 +138,7 @@ func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// statusHandler – возвращает очередь для указанного режима
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	mu.Lock()
@@ -150,6 +160,44 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
+// Новый эндпоинт: currentMatch – возвращает текущий матч для игрока по player_id
+func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
+	playerIDStr := r.URL.Query().Get("player_id")
+	if playerIDStr == "" {
+		http.Error(w, "player_id обязателен", http.StatusBadRequest)
+		return
+	}
+
+	var playerID int
+	if _, err := fmt.Sscanf(playerIDStr, "%d", &playerID); err != nil {
+		http.Error(w, "Некорректный player_id", http.StatusBadRequest)
+		return
+	}
+
+	matchMu.Lock()
+	defer matchMu.Unlock()
+
+	instanceID, exists := playerMatches[playerID]
+	if !exists {
+		// Если для данного игрока матч ещё не сформирован
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+		return
+	}
+
+	match, ok := currentMatches[instanceID]
+	if !ok {
+		// Если матч по instance_id не найден, возвращаем статус ожидания
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(match)
+}
+
+// matchHandler – оставляем для совместимости (возвращает матч по режиму, если он есть)
 func matchHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	playerID := r.URL.Query().Get("player_id")
@@ -158,19 +206,11 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matchMu.Lock()
-	defer matchMu.Unlock()
-
-	if match, ok := currentMatches[mode]; ok {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(match)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+	// Можно также делегировать текущему эндпоинту currentMatchHandler, если требуется
+	currentMatchHandler(w, r)
 }
 
+// checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
 	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "3x3": 6, "5x5": 10}
 	needed, ok := requiredPlayers[mode]
@@ -186,12 +226,14 @@ func checkAndMakeMatch(mode string) {
 		go createMatch(mode, group)
 	}
 }
+
+// createMatch – создает новый матч, обновляет currentMatches и playerMatches
 func createMatch(mode string, group []QueueEntry) {
+	// Генерируем уникальный instance_id для данного матча
 	instanceID := uuid.New().String()
 	log.Printf("Match formed: instanceID=%s, mode=%s, players=%v", instanceID, mode, group)
 
-	var totalPlayers int
-	var teamsCount int
+	var totalPlayers, teamsCount int
 	if mode == "PVE" {
 		totalPlayers = 1
 		teamsCount = 1
@@ -214,11 +256,11 @@ func createMatch(mode string, group []QueueEntry) {
 		playerIDs[i] = entry.PlayerID
 	}
 
-	// Создаем состояние матча
+	// Создаем состояние матча на сервере
 	matchState := game.CreateMatchState(instanceID, playerIDs)
 	log.Printf("Создано состояние матча: %+v", matchState)
 
-	// Отправляем запрос в Game-сервис
+	// Отправляем запрос в Game-сервис для создания матча
 	matchReq := map[string]interface{}{
 		"instance_id":   instanceID,
 		"mode":          mode,
@@ -240,15 +282,18 @@ func createMatch(mode string, group []QueueEntry) {
 	defer resp.Body.Close()
 	log.Printf("Game-сервис вернул статус: %s", resp.Status)
 
-	matchInfo := MatchInfo{
+	// Сохраняем состояние матча и сопоставление для каждого игрока
+	matchMu.Lock()
+	currentMatches[instanceID] = MatchInfo{
 		InstanceID:   instanceID,
 		Mode:         mode,
 		Players:      group,
 		TeamsCount:   teamsCount,
 		TotalPlayers: totalPlayers,
 	}
-	matchMu.Lock()
-	currentMatches[mode] = matchInfo
+	for _, entry := range group {
+		playerMatches[entry.PlayerID] = instanceID
+	}
 	matchMu.Unlock()
 }
 
@@ -272,6 +317,9 @@ func main() {
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
+	// Новый endpoint для получения текущего матча по player_id
+	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
+	// Для совместимости можно оставить и matchHandler, который теперь делегирует currentMatchHandler
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 
 	handler := enableCors(r)

@@ -1,4 +1,4 @@
-ты самый лучший программист в мире с опытом 100 лет в продакшене, и написал почти все игры в данном сигменте. так как ты самый лучший - помоги мне справитсясо следующей задачей.
+ты самый лучший программист в мире с опытом 100 лет в продакшене, и написал почти все игры в данном сегменте. так как ты самый лучший - помоги мне справится со следующей задачей.
 
 мне нужно:
 Перенести критичную логику (передача хода, обновление состояния,) на сервер, а клиент синхронизировать через WebSocket.
@@ -1500,12 +1500,10 @@ func GetMonstersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
 //==============================
 // gameservice/handlers/turn.go
 //==============================
-
-//   обработчик запроса на завершение хода:
-// ---------------------------------------------------------------------
 
 package handlers
 
@@ -1560,10 +1558,13 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Отправляем обновление по WebSocket всем клиентам
+	// Формируем сообщение для рассылки по WebSocket с информацией о новом активном игроке и instance_id
 	responseMsg := map[string]interface{}{
-		"type":    "SET_ACTIVE_PLAYER",
-		"payload": nextPlayer,
+		"type": "SET_ACTIVE_PLAYER",
+		"payload": map[string]interface{}{
+			"instanceId":   req.InstanceID,
+			"activePlayer": nextPlayer,
+		},
 	}
 	responseJSON, _ := json.Marshal(responseMsg)
 	Broadcast(responseJSON)
@@ -1572,7 +1573,6 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
-
 
 
 //====================================
@@ -2368,7 +2368,13 @@ func UpdatePlayer(player *models.Player) error {
     return err
 }
 
-===========================
+====================================================================================
+====================================================================================
+====================================================================================
+====================================================================================
+====================================================================================
+====================================================================================
+
 
 // ==============================
 // /matchmaking/Match_Making.go
@@ -2379,6 +2385,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -2391,6 +2398,7 @@ import (
 	"gameservice/repository"
 )
 
+// Типы запросов и структур остаются без изменений.
 type JoinRequest struct {
 	PlayerID int    `json:"player_id"`
 	Mode     string `json:"mode"`
@@ -2418,16 +2426,21 @@ type MatchInfo struct {
 
 var (
 	queues = map[string][]QueueEntry{
-		"PVE": {},
+		"PVE":  {},
 		"1x1": {},
 		"3x3": {},
 		"5x5": {},
 	}
-	mu             sync.Mutex
+	mu sync.Mutex
+
+	// Храним матчи по instance_id
 	currentMatches = make(map[string]MatchInfo)
-	matchMu        sync.Mutex
+	// Глобальная мапа сопоставлений: для каждого игрока его instance_id матча
+	playerMatches = make(map[int]string)
+	matchMu       sync.Mutex
 )
 
+// joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
 func joinHandler(w http.ResponseWriter, r *http.Request) {
 	var req JoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2444,6 +2457,7 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Если игрок уже в очереди, сообщаем об ошибке
 	for _, entry := range q {
 		if entry.PlayerID == req.PlayerID {
 			http.Error(w, "Player already in queue", http.StatusBadRequest)
@@ -2466,6 +2480,7 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("You have joined the queue"))
 }
 
+// cancelHandler – удаляет игрока из очереди
 func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	var req CancelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2501,6 +2516,7 @@ func cancelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// statusHandler – возвращает очередь для указанного режима
 func statusHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	mu.Lock()
@@ -2522,6 +2538,44 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(response)
 }
 
+// Новый эндпоинт: currentMatch – возвращает текущий матч для игрока по player_id
+func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
+	playerIDStr := r.URL.Query().Get("player_id")
+	if playerIDStr == "" {
+		http.Error(w, "player_id обязателен", http.StatusBadRequest)
+		return
+	}
+
+	var playerID int
+	if _, err := fmt.Sscanf(playerIDStr, "%d", &playerID); err != nil {
+		http.Error(w, "Некорректный player_id", http.StatusBadRequest)
+		return
+	}
+
+	matchMu.Lock()
+	defer matchMu.Unlock()
+
+	instanceID, exists := playerMatches[playerID]
+	if !exists {
+		// Если для данного игрока матч ещё не сформирован
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+		return
+	}
+
+	match, ok := currentMatches[instanceID]
+	if !ok {
+		// Если матч по instance_id не найден, возвращаем статус ожидания
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(match)
+}
+
+// matchHandler – оставляем для совместимости (возвращает матч по режиму, если он есть)
 func matchHandler(w http.ResponseWriter, r *http.Request) {
 	mode := r.URL.Query().Get("mode")
 	playerID := r.URL.Query().Get("player_id")
@@ -2530,19 +2584,11 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matchMu.Lock()
-	defer matchMu.Unlock()
-
-	if match, ok := currentMatches[mode]; ok {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(match)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+	// Можно также делегировать текущему эндпоинту currentMatchHandler, если требуется
+	currentMatchHandler(w, r)
 }
 
+// checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
 	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "3x3": 6, "5x5": 10}
 	needed, ok := requiredPlayers[mode]
@@ -2558,12 +2604,14 @@ func checkAndMakeMatch(mode string) {
 		go createMatch(mode, group)
 	}
 }
+
+// createMatch – создает новый матч, обновляет currentMatches и playerMatches
 func createMatch(mode string, group []QueueEntry) {
+	// Генерируем уникальный instance_id для данного матча
 	instanceID := uuid.New().String()
 	log.Printf("Match formed: instanceID=%s, mode=%s, players=%v", instanceID, mode, group)
 
-	var totalPlayers int
-	var teamsCount int
+	var totalPlayers, teamsCount int
 	if mode == "PVE" {
 		totalPlayers = 1
 		teamsCount = 1
@@ -2586,11 +2634,11 @@ func createMatch(mode string, group []QueueEntry) {
 		playerIDs[i] = entry.PlayerID
 	}
 
-	// Создаем состояние матча
+	// Создаем состояние матча на сервере
 	matchState := game.CreateMatchState(instanceID, playerIDs)
 	log.Printf("Создано состояние матча: %+v", matchState)
 
-	// Отправляем запрос в Game-сервис
+	// Отправляем запрос в Game-сервис для создания матча
 	matchReq := map[string]interface{}{
 		"instance_id":   instanceID,
 		"mode":          mode,
@@ -2612,15 +2660,18 @@ func createMatch(mode string, group []QueueEntry) {
 	defer resp.Body.Close()
 	log.Printf("Game-сервис вернул статус: %s", resp.Status)
 
-	matchInfo := MatchInfo{
+	// Сохраняем состояние матча и сопоставление для каждого игрока
+	matchMu.Lock()
+	currentMatches[instanceID] = MatchInfo{
 		InstanceID:   instanceID,
 		Mode:         mode,
 		Players:      group,
 		TeamsCount:   teamsCount,
 		TotalPlayers: totalPlayers,
 	}
-	matchMu.Lock()
-	currentMatches[mode] = matchInfo
+	for _, entry := range group {
+		playerMatches[entry.PlayerID] = instanceID
+	}
 	matchMu.Unlock()
 }
 
@@ -2644,6 +2695,9 @@ func main() {
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
+	// Новый endpoint для получения текущего матча по player_id
+	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
+	// Для совместимости можно оставить и matchHandler, который теперь делегирует currentMatchHandler
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 
 	handler := enableCors(r)
@@ -2652,6 +2706,7 @@ func main() {
 	log.Println("Matchmaking-сервис запущен на порту 8002")
 	log.Fatal(srv.ListenAndServe())
 }
+
 
 ======================================================================================================
 ======================================================================================================
@@ -3412,6 +3467,7 @@ export default function MapWithCamera({
 }
 
 
+
 //=====================================
 // src/components/ModeSelectionPage.tsx
 //=====================================
@@ -3443,20 +3499,25 @@ async function joinQueue(mode: GameMode, player: PlayerInfo): Promise<void> {
   }
 }
 
-async function pollMatchStatus(mode: GameMode, playerId: number): Promise<string> {
+
+// Функция для опроса эндпоинта currentMatch, пока не получим instance_id
+async function pollCurrentMatch(playerId: number): Promise<string> {
   while (true) {
-    const res = await fetch(`${API_MATCH}/matchmaking/match?mode=${mode}&player_id=${playerId}`);
+    const res = await fetch(`${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`);
     const data = await res.json();
+    // Если в ответе есть поле instance_id, значит матч сформирован
     if (data.instance_id) {
       return data.instance_id;
     }
+    // Ждём 3 секунды и опрашиваем снова
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
 
+// Функция для старта матчмейкинга
 export async function startMatchmaking(mode: GameMode, player: PlayerInfo): Promise<string> {
   await joinQueue(mode, player);
-  const instanceId = await pollMatchStatus(mode, player.playerId);
+  const instanceId = await pollCurrentMatch(player.playerId);
   return instanceId;
 }
 
@@ -3497,6 +3558,7 @@ export default function ModeSelectionPage() {
     </div>
   );
 }
+
 
 
 //=====================================
@@ -3648,17 +3710,16 @@ export function useAuth() {
 
 
 
-
-//=============================
+// ==============================
 // src/contexts/GameContextt.tsx
-//=============================
+// ==============================
 
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
 
-// Типы для бонусов, инвентаря и прочего
 export type BonusAttributes = {
   energy?: number;
   maxEnergy?: number;
@@ -3682,7 +3743,6 @@ export type Inventory = {
   artifacts: Record<string, InventoryItem>;
 };
 
-// Тип для игрока
 export type PlayerState = {
   id: number;
   name: string;
@@ -3708,7 +3768,6 @@ export type PlayerState = {
   rangeDistance?: number;
 };
 
-// Тип для монстра (упрощённый)
 export type MonsterType = {
   id: number;
   name: string;
@@ -3724,7 +3783,6 @@ export type MonsterType = {
   created_at: string;
 };
 
-// Тип для ресурса
 export type ResourceType = {
   id: number;
   type: string;
@@ -3733,7 +3791,6 @@ export type ResourceType = {
   image: string;
 };
 
-// Тип для клетки карты
 export type Cell = {
   id: number;
   x: number;
@@ -3744,7 +3801,6 @@ export type Cell = {
   isPortal?: boolean;
 };
 
-// Тип для состояния игры
 export type GameState = {
   instanceId: string;
   mode: string;
@@ -3832,7 +3888,6 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Функция для преобразования карты из двумерного массива в массив клеток
 function convertMapData(rawMap: number[][], resources: ResourceType[], monsters: MonsterType[]): Cell[] {
   const cells: Cell[] = [];
   let id = 0;
@@ -3843,19 +3898,15 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
       let monster: MonsterType | null = null;
       let isPortal = false;
 
-      if (tileCode === 82) { // 'R'
-        if (resources && resources.length > 0) {
-          const randomIndex = Math.floor(Math.random() * resources.length);
-          resource = resources[randomIndex];
-        }
+      if (tileCode === 82 && resources.length > 0) {
+        const randomIndex = Math.floor(Math.random() * resources.length);
+        resource = resources[randomIndex];
       }
-      if (tileCode === 77) { // 'M'
-        if (monsters && monsters.length > 0) {
-          const randomIndex = Math.floor(Math.random() * monsters.length);
-          monster = monsters[randomIndex];
-        }
+      if (tileCode === 77 && monsters.length > 0) {
+        const randomIndex = Math.floor(Math.random() * monsters.length);
+        monster = monsters[randomIndex];
       }
-      if (tileCode === 112) { // 'p'
+      if (tileCode === 112) {
         isPortal = true;
       }
 
@@ -3874,6 +3925,7 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
 }
 
 export function GameProvider({ instanceId, children }: GameProviderProps) {
+  const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
@@ -3882,7 +3934,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     console.log("instanceId изменился на:", instanceId);
     dispatch({ type: "RESET_STATE" });
 
-    // Загружаем ресурсы
     async function fetchResources() {
       try {
         const res = await fetch("http://localhost:8001/api/resources", { cache: "no-store" });
@@ -3898,7 +3949,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       }
     }
 
-    // Загружаем монстров
     async function fetchMonsters() {
       try {
         const res = await fetch("http://localhost:8001/api/monsters", { cache: "no-store" });
@@ -3918,26 +3968,30 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
+  
   useEffect(() => {
     async function fetchMatchData() {
       try {
-        const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, { cache: "no-store" });
         if (!res.ok) {
           console.error("Ошибка загрузки данных матча", await res.text());
+          router.replace("/mode");
           return;
         }
         const data = await res.json();
         console.log("Полученные данные матча:", data);
         console.log("Полученные игроки:", data.players);
+        if (data.instance_id !== instanceId) {
+          console.log("Актуальный instance_id отличается, обновляем URL:", data.instance_id);
+          router.replace(`/game?instance_id=${data.instance_id}`);
+          return;
+        }
         const convertedGrid = convertMapData(data.map, resources, monsters);
-        const players: PlayerState[] = data.players || [];
-        const transformedPlayers = players.map((p: any) => ({
+        const players = (data.players || []).map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
         }));
-        if (transformedPlayers.length === 0) {
+        if (players.length === 0) {
           console.warn("Массив игроков пуст!");
         }
         dispatch({
@@ -3948,7 +4002,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             grid: convertedGrid,
             mapWidth: data.map_width,
             mapHeight: data.map_height,
-            players: transformedPlayers,
+            players,
           },
         });
       } catch (err) {
@@ -3958,11 +4012,16 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     if (resources.length > 0 && monsters.length > 0) {
       fetchMatchData();
     }
-  }, [instanceId, resources.length, monsters.length]);
+  }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket и обрабатываем входящие сообщения
+  // Подключаем WebSocket и обрабатываем входящие сообщения только для текущего instance_id
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
+    // Фильтрация по instanceId остается без изменений
+    if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
+      console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      return;
+    }
     if (data.type === "MATCH_UPDATE") {
       dispatch({
         type: "SET_MATCH_DATA",
@@ -3981,9 +4040,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
       });
     } else if (data.type === "SET_ACTIVE_PLAYER") {
-      dispatch({ type: "SET_ACTIVE_PLAYER", payload: data.payload });
+      // Извлекаем activePlayer из payload
+      const activePlayer = data.payload.activePlayer;
+      dispatch({ type: "SET_ACTIVE_PLAYER", payload: activePlayer });
     }
-  });
+  }, { instanceId: state.instanceId });
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>
@@ -4001,30 +4062,58 @@ export function useGame() {
 }
 
 
-
-//===========================
+//=============================
 // src/hooks/useGameSocket.ts
-//===========================
+//=============================
 
 import { useEffect, useRef, useCallback } from "react";
 
-export function useGameSocket(onMessage: (data: any) => void) {
+// Опциональные настройки для подключения к WebSocket
+interface GameSocketOptions {
+  instanceId?: string;
+}
+
+export function useGameSocket(
+  onMessage: (data: any) => void,
+  options?: GameSocketOptions
+) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const url = "ws://localhost:8001/ws";
+  const url = "ws://localhost:8001/ws"; // При продакшене этот URL можно сделать настраиваемым
 
   const connect = useCallback(() => {
     ws.current = new WebSocket(url);
 
     ws.current.onopen = () => {
       console.log("WebSocket подключён.");
-      // При успешном подключении можно, например, отправить запрос на синхронизацию состояния
+      // Если передан instanceId, можно отправить сообщение для регистрации в конкретном матче
+      if (options?.instanceId) {
+        const joinMsg = {
+          type: "JOIN_MATCH",
+          instanceId: options.instanceId,
+        };
+        ws.current?.send(JSON.stringify(joinMsg));
+        console.log("Отправлено сообщение о присоединении к матчу:", joinMsg);
+      }
     };
 
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         console.log("Получено сообщение по WebSocket:", data);
+        // Если указан instanceId, фильтруем входящие сообщения по нему
+        if (options?.instanceId && data.payload && data.payload.instanceId) {
+          if (data.payload.instanceId !== options.instanceId) {
+            console.log(
+              "Сообщение не относится к текущему матчу (ожидаемый instanceId:",
+              options.instanceId,
+              "получен:",
+              data.payload.instanceId,
+              "). Игнорируем."
+            );
+            return;
+          }
+        }
         onMessage(data);
       } catch (e) {
         console.error("Ошибка парсинга сообщения:", e);
@@ -4037,16 +4126,16 @@ export function useGameSocket(onMessage: (data: any) => void) {
 
     ws.current.onclose = (event) => {
       console.log("WebSocket соединение закрыто:", event.code, event.reason);
-      // Если соединение закрыто не по инициативе клиента, попробуйте переподключиться
+      // Если соединение закрыто не по инициативе клиента (код 1000 – нормальное закрытие),
+      // пробуем переподключиться через 3 секунды
       if (event.code !== 1000) {
-        // Простая логика переподключения с задержкой (например, 3 секунды)
         reconnectTimeout.current = setTimeout(() => {
           console.log("Попытка переподключения...");
           connect();
         }, 3000);
       }
     };
-  }, [onMessage]);
+  }, [onMessage, options]);
 
   useEffect(() => {
     connect();
@@ -4059,4 +4148,3 @@ export function useGameSocket(onMessage: (data: any) => void) {
     };
   }, [connect]);
 }
-

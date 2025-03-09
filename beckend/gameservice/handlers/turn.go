@@ -3,9 +3,6 @@
 // gameservice/handlers/turn.go
 //==============================
 
-//   обработчик запроса на завершение хода:
-// ---------------------------------------------------------------------
-
 package handlers
 
 import (
@@ -59,10 +56,13 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Отправляем обновление по WebSocket всем клиентам
+	// Формируем сообщение для рассылки по WebSocket с информацией о новом активном игроке и instance_id
 	responseMsg := map[string]interface{}{
-		"type":    "SET_ACTIVE_PLAYER",
-		"payload": nextPlayer,
+		"type": "SET_ACTIVE_PLAYER",
+		"payload": map[string]interface{}{
+			"instanceId":   req.InstanceID,
+			"activePlayer": nextPlayer,
+		},
 	}
 	responseJSON, _ := json.Marshal(responseMsg)
 	Broadcast(responseJSON)

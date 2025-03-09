@@ -1,14 +1,13 @@
-
-//=============================
+// ==============================
 // src/contexts/GameContextt.tsx
-//=============================
+// ==============================
 
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
 
-// Типы для бонусов, инвентаря и прочего
 export type BonusAttributes = {
   energy?: number;
   maxEnergy?: number;
@@ -32,7 +31,6 @@ export type Inventory = {
   artifacts: Record<string, InventoryItem>;
 };
 
-// Тип для игрока
 export type PlayerState = {
   id: number;
   name: string;
@@ -58,7 +56,6 @@ export type PlayerState = {
   rangeDistance?: number;
 };
 
-// Тип для монстра (упрощённый)
 export type MonsterType = {
   id: number;
   name: string;
@@ -74,7 +71,6 @@ export type MonsterType = {
   created_at: string;
 };
 
-// Тип для ресурса
 export type ResourceType = {
   id: number;
   type: string;
@@ -83,7 +79,6 @@ export type ResourceType = {
   image: string;
 };
 
-// Тип для клетки карты
 export type Cell = {
   id: number;
   x: number;
@@ -94,7 +89,6 @@ export type Cell = {
   isPortal?: boolean;
 };
 
-// Тип для состояния игры
 export type GameState = {
   instanceId: string;
   mode: string;
@@ -182,7 +176,6 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Функция для преобразования карты из двумерного массива в массив клеток
 function convertMapData(rawMap: number[][], resources: ResourceType[], monsters: MonsterType[]): Cell[] {
   const cells: Cell[] = [];
   let id = 0;
@@ -193,19 +186,15 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
       let monster: MonsterType | null = null;
       let isPortal = false;
 
-      if (tileCode === 82) { // 'R'
-        if (resources && resources.length > 0) {
-          const randomIndex = Math.floor(Math.random() * resources.length);
-          resource = resources[randomIndex];
-        }
+      if (tileCode === 82 && resources.length > 0) {
+        const randomIndex = Math.floor(Math.random() * resources.length);
+        resource = resources[randomIndex];
       }
-      if (tileCode === 77) { // 'M'
-        if (monsters && monsters.length > 0) {
-          const randomIndex = Math.floor(Math.random() * monsters.length);
-          monster = monsters[randomIndex];
-        }
+      if (tileCode === 77 && monsters.length > 0) {
+        const randomIndex = Math.floor(Math.random() * monsters.length);
+        monster = monsters[randomIndex];
       }
-      if (tileCode === 112) { // 'p'
+      if (tileCode === 112) {
         isPortal = true;
       }
 
@@ -224,6 +213,7 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
 }
 
 export function GameProvider({ instanceId, children }: GameProviderProps) {
+  const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
@@ -232,7 +222,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     console.log("instanceId изменился на:", instanceId);
     dispatch({ type: "RESET_STATE" });
 
-    // Загружаем ресурсы
     async function fetchResources() {
       try {
         const res = await fetch("http://localhost:8001/api/resources", { cache: "no-store" });
@@ -248,7 +237,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       }
     }
 
-    // Загружаем монстров
     async function fetchMonsters() {
       try {
         const res = await fetch("http://localhost:8001/api/monsters", { cache: "no-store" });
@@ -268,26 +256,30 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
+  
   useEffect(() => {
     async function fetchMatchData() {
       try {
-        const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, { cache: "no-store" });
         if (!res.ok) {
           console.error("Ошибка загрузки данных матча", await res.text());
+          router.replace("/mode");
           return;
         }
         const data = await res.json();
         console.log("Полученные данные матча:", data);
         console.log("Полученные игроки:", data.players);
+        if (data.instance_id !== instanceId) {
+          console.log("Актуальный instance_id отличается, обновляем URL:", data.instance_id);
+          router.replace(`/game?instance_id=${data.instance_id}`);
+          return;
+        }
         const convertedGrid = convertMapData(data.map, resources, monsters);
-        const players: PlayerState[] = data.players || [];
-        const transformedPlayers = players.map((p: any) => ({
+        const players = (data.players || []).map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
         }));
-        if (transformedPlayers.length === 0) {
+        if (players.length === 0) {
           console.warn("Массив игроков пуст!");
         }
         dispatch({
@@ -298,7 +290,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             grid: convertedGrid,
             mapWidth: data.map_width,
             mapHeight: data.map_height,
-            players: transformedPlayers,
+            players,
           },
         });
       } catch (err) {
@@ -308,11 +300,16 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     if (resources.length > 0 && monsters.length > 0) {
       fetchMatchData();
     }
-  }, [instanceId, resources.length, monsters.length]);
+  }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket и обрабатываем входящие сообщения
+  // Подключаем WebSocket и обрабатываем входящие сообщения только для текущего instance_id
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
+    // Фильтрация по instanceId остается без изменений
+    if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
+      console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      return;
+    }
     if (data.type === "MATCH_UPDATE") {
       dispatch({
         type: "SET_MATCH_DATA",
@@ -331,9 +328,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
       });
     } else if (data.type === "SET_ACTIVE_PLAYER") {
-      dispatch({ type: "SET_ACTIVE_PLAYER", payload: data.payload });
+      // Извлекаем activePlayer из payload
+      const activePlayer = data.payload.activePlayer;
+      dispatch({ type: "SET_ACTIVE_PLAYER", payload: activePlayer });
     }
-  });
+  }, { instanceId: state.instanceId });
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>
