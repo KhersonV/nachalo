@@ -175,10 +175,15 @@ type GameProviderProps = {
   instanceId: string;
   children: React.ReactNode;
 };
-
-function convertMapData(rawMap: number[][], resources: ResourceType[], monsters: MonsterType[]): Cell[] {
+function convertMapData(
+  rawMap: number[][],
+  resources: ResourceType[],
+  monsters: MonsterType[]
+): Cell[] {
   const cells: Cell[] = [];
-  let id = 0;
+  let cellId = 0;
+  let instanceCounter = 1; // Счётчик для уникальных экземпляров ресурсов и монстров
+
   for (let y = 0; y < rawMap.length; y++) {
     for (let x = 0; x < rawMap[y].length; x++) {
       const tileCode = rawMap[y][x];
@@ -186,20 +191,36 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
       let monster: MonsterType | null = null;
       let isPortal = false;
 
-      if (tileCode === 82 && resources.length > 0) {
-        const randomIndex = Math.floor(Math.random() * resources.length);
-        resource = resources[randomIndex];
+      if (tileCode === 82) { // 'R' — ресурс
+        if (resources.length > 0) {
+          const randomIndex = Math.floor(Math.random() * resources.length);
+          // Клонируем шаблон ресурса и генерируем уникальный id
+          const resTemplate = resources[randomIndex];
+          resource = {
+            ...resTemplate,
+            id: parseInt(`${resTemplate.id}${instanceCounter}`) // либо использовать строковый id, например: resTemplate.id + "_" + instanceCounter
+          };
+          instanceCounter++;
+        }
       }
-      if (tileCode === 77 && monsters.length > 0) {
-        const randomIndex = Math.floor(Math.random() * monsters.length);
-        monster = monsters[randomIndex];
+      if (tileCode === 77) { // 'M' — монстр
+        if (monsters.length > 0) {
+          const randomIndex = Math.floor(Math.random() * monsters.length);
+          // Клонируем шаблон монстра и генерируем уникальный id
+          const monTemplate = monsters[randomIndex];
+          monster = {
+            ...monTemplate,
+            id: parseInt(`${monTemplate.id}${instanceCounter}`) // аналогично можно сделать строковый id
+          };
+          instanceCounter++;
+        }
       }
-      if (tileCode === 112) {
+      if (tileCode === 112) { // 'p' — портал
         isPortal = true;
       }
 
       cells.push({
-        id: id++,
+        id: cellId++,
         x,
         y,
         tileCode,
@@ -211,6 +232,7 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
   }
   return cells;
 }
+
 
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();

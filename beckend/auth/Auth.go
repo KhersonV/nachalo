@@ -145,7 +145,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// После регистрации можно вызвать Game-сервис для создания персонажа.
-	payload := map[string]int{"user_id": userID}
+	payload := map[string]interface{}{
+		"user_id": userID,
+		"name":    req.Name,}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Ошибка маршаллинга для Game Service: %v", err)

@@ -166,7 +166,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// После регистрации можно вызвать Game-сервис для создания персонажа.
-	payload := map[string]int{"user_id": userID}
+	payload := map[string]interface{}{
+		"user_id": userID,
+		"name":    req.Name,}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Ошибка маршаллинга для Game Service: %v", err)
@@ -335,97 +337,95 @@ func main() {
 package main
 
 import (
-    "log"
-    "net/http"
-    "os"
+	"log"
+	"net/http"
+	"os"
 
-    "github.com/gorilla/mux"
-    "gameservice/handlers"
-    "gameservice/middleware"
-    "gameservice/repository"
-    
+	"gameservice/handlers"
+	"gameservice/middleware"
+	"gameservice/repository"
+	"github.com/gorilla/mux"
 )
-
 
 // Пример CORS middleware (можно вынести отдельно, если захотите)
 func enableCors(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Access-Control-Allow-Origin", "*")
-        w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        if r.Method == http.MethodOptions {
-            w.WriteHeader(http.StatusOK)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
-    // Считываем секретный ключ для JWT
-    jwtSecretKey := os.Getenv("JWT_SECRET_KEY")
-    if jwtSecretKey == "" {
-        log.Fatal("JWT_SECRET_KEY environment variable is not set")
-    }
-    log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
+	// Считываем секретный ключ для JWT
+	jwtSecretKey := os.Getenv("JWT_SECRET_KEY")
+	if jwtSecretKey == "" {
+		log.Fatal("JWT_SECRET_KEY environment variable is not set")
+	}
+	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
 
-    // Инициализация БД
-    repository.InitDB()
-    defer repository.DB.Close()
+	// Инициализация БД
+	repository.InitDB()
+	defer repository.DB.Close()
 
-    // Создаём нужные таблицы, если их нет
-    repository.CreatePlayersTable()
-    repository.CreateMatchesTable()
-    repository.CreateMatchPlayersTable()
-    repository.CreateInventoryTable()
-    
-    if err := repository.RestoreMatchStates(); err != nil {
-        log.Fatalf("Ошибка восстановления состояний матчей: %v", err)
-    }
-    // при необходимости создавайте и таблицу inventory_items и т.д.
+	// Создаём нужные таблицы, если их нет
+	repository.CreatePlayersTable()
+	repository.CreateMatchesTable()
+	repository.CreateMatchPlayersTable()
+	repository.CreateInventoryTable()
 
-    // Настраиваем маршруты
-    router := mux.NewRouter()
-     // === websocket ===
-    router.HandleFunc("/ws", handlers.WsHandler)
+	if err := repository.RestoreMatchStates(); err != nil {
+		log.Fatalf("Ошибка восстановления состояний матчей: %v", err)
+	}
+	// при необходимости создавайте и таблицу inventory_items и т.д.
 
-    // === Эндпоинты для игроков ===
-    router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")
-    router.HandleFunc("/game/player/{id}", handlers.GetPlayerHandler).Methods("GET")
-    router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
+	// Настраиваем маршруты
+	router := mux.NewRouter()
+	// === websocket ===
+	router.HandleFunc("/ws", handlers.WsHandler)
 
-    // === Эндпоинты для инвентаря ===
-    router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")
-    router.HandleFunc("/game/player/{id}/inventory/use", handlers.UseInventoryHandler).Methods("POST")
+	// === Эндпоинты для игроков ===
+	router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")
+	router.HandleFunc("/game/player/{id}", handlers.GetPlayerHandler).Methods("GET")
+	router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
 
-    // === Эндпоинты для матчей ===
-    router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
-    router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
+	// === Эндпоинты для инвентаря ===
+	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")
+	router.HandleFunc("/game/player/{id}/inventory/use", handlers.UseInventoryHandler).Methods("POST")
 
-    // === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
-    router.Handle("/game/player/{id}/move",
-        middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHandler))).
-        Methods("POST")
+	// === Эндпоинты для матчей ===
+	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
+	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
 
-    router.Handle("/game/attack",
-        middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UniversalAttackHandler))).
-        Methods("POST")
-        
-        router.Handle("/game/endTurn",
-        middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndTurnHandler)),
-    ).Methods("POST")
+	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
+	router.Handle("/game/player/{id}/move",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHandler))).
+		Methods("POST")
 
-    // === Эндпоинты для ресурсов и монстров ===
-    router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
-    router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
+	router.Handle("/game/attack",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UniversalAttackHandler))).
+		Methods("POST")
 
-    // Подключаем CORS
-    handler := enableCors(router)
+	router.Handle("/game/endTurn",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndTurnHandler)),
+	).Methods("POST")
 
-    // Запускаем сервер на 8001 порту
-    port := "8001"
-    log.Printf("Game-сервис запущен на порту %s", port)
-    log.Fatal(http.ListenAndServe(":"+port, handler))
+	// === Эндпоинты для ресурсов и монстров ===
+	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
+	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
+
+	// Подключаем CORS
+	handler := enableCors(router)
+
+	// Запускаем сервер на 8001 порту
+	port := "8001"
+	log.Printf("Game-сервис запущен на порту %s", port)
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
 
 
@@ -698,145 +698,155 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 package handlers
 
 import (
-    "encoding/json"
-    "fmt"
-    "log"
-    "net/http"
-    "strconv"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"strconv"
 
-    "github.com/gorilla/mux"
-
-    "gameservice/middleware"
+	"github.com/gorilla/mux"
     "gameservice/models"
-    "gameservice/repository"
+	"gameservice/middleware"
+	"gameservice/repository"
 )
 
-
-// ----------------- ПЕРЕМЕЩЕНИЕ ------------------
+// Предположим, что стоимость перемещения составляет 10 единиц энергии.
+const moveEnergyCost = 10
 
 func MoveHandler(w http.ResponseWriter, r *http.Request) {
-    vars := mux.Vars(r)
-    playerID, err := strconv.Atoi(vars["id"])
-    if err != nil {
-        http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
-        return
-    }
+	vars := mux.Vars(r)
+	playerID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
+		return
+	}
 
-    // Извлекаем user_id из контекста (из JWT)
-    tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
-    if !ok {
-        http.Error(w, "Не удалось определить пользователя из токена", http.StatusUnauthorized)
-        return
-    }
-    // Проверяем, что игрок перемещает сам себя
-    if tokenUserID != playerID {
-        http.Error(w, "Запрещено изменять данные другого игрока", http.StatusForbidden)
-        return
-    }
+	// Извлекаем user_id из контекста (из JWT)
+	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Не удалось определить пользователя из токена", http.StatusUnauthorized)
+		return
+	}
+	// Проверяем, что игрок перемещает сам себя
+	if tokenUserID != playerID {
+		http.Error(w, "Запрещено изменять данные другого игрока", http.StatusForbidden)
+		return
+	}
 
-    var req struct {
-        NewPosX int `json:"new_pos_x"`
-        NewPosY int `json:"new_pos_y"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
-        return
-    }
+	var req struct {
+		NewPosX int `json:"new_pos_x"`
+		NewPosY int `json:"new_pos_y"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
+		return
+	}
 
-    instanceID := r.URL.Query().Get("instance_id")
-    if instanceID == "" {
-        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-        return
-    }
+	instanceID := r.URL.Query().Get("instance_id")
+	if instanceID == "" {
+		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+		return
+	}
 
-    // Получаем данные матча
-    var mapWidth, mapHeight int
-    var mapJSON []byte
-    query := `SELECT map_width, map_height, map FROM matches WHERE instance_id = $1;`
-    err = repository.DB.QueryRow(query, instanceID).Scan(&mapWidth, &mapHeight, &mapJSON)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка получения данных матча: %v", err), http.StatusInternalServerError)
-        return
-    }
+	// Получаем данные матча
+	var mapWidth, mapHeight int
+	var mapJSON []byte
+	query := `SELECT map_width, map_height, map FROM matches WHERE instance_id = $1;`
+	err = repository.DB.QueryRow(query, instanceID).Scan(&mapWidth, &mapHeight, &mapJSON)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка получения данных матча: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    // Проверяем границы
-    if req.NewPosX < 0 || req.NewPosX >= mapWidth || req.NewPosY < 0 || req.NewPosY >= mapHeight {
-        http.Error(w, "Новые координаты вне границ карты", http.StatusBadRequest)
-        return
-    }
+	// Проверяем границы
+	if req.NewPosX < 0 || req.NewPosX >= mapWidth || req.NewPosY < 0 || req.NewPosY >= mapHeight {
+		http.Error(w, "Новые координаты вне границ карты", http.StatusBadRequest)
+		return
+	}
 
-    // Десериализуем карту
-    var rawMap [][]int
-    if err := json.Unmarshal(mapJSON, &rawMap); err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
-        return
-    }
+	// Десериализуем карту
+	var rawMap [][]int
+	if err := json.Unmarshal(mapJSON, &rawMap); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    // Проверяем проходимость
-    targetTileCode := rawMap[req.NewPosY][req.NewPosX]
-    allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (в int)
-    passable := false
-    for _, code := range allowedTileCodes {
-        if targetTileCode == code {
-            passable = true
-            break
-        }
-    }
-    if !passable {
-        http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetTileCode), http.StatusBadRequest)
-        return
-    }
+	// Проверяем проходимость клетки
+	targetTileCode := rawMap[req.NewPosY][req.NewPosX]
+	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (в int)
+	passable := false
+	for _, code := range allowedTileCodes {
+		if targetTileCode == code {
+			passable = true
+			break
+		}
+	}
+	if !passable {
+		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetTileCode), http.StatusBadRequest)
+		return
+	}
 
-    // Проверяем коллизию с другими игроками
-    var collisionCount int
-    collisionQuery := `
-        SELECT COUNT(*) FROM match_players
-        WHERE match_instance_id = $1 AND pos_x = $2 AND pos_y = $3 AND player_id <> $4
-    `
-    err = repository.DB.QueryRow(collisionQuery, instanceID, req.NewPosX, req.NewPosY, playerID).Scan(&collisionCount)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка проверки коллизий: %v", err), http.StatusInternalServerError)
-        return
-    }
-    if collisionCount > 0 {
-        http.Error(w, "Невозможно переместиться: клетка занята другим игроком", http.StatusBadRequest)
-        return
-    }
+	// Проверяем коллизию с другими игроками
+	var collisionCount int
+	collisionQuery := `
+		SELECT COUNT(*) FROM match_players
+		WHERE match_instance_id = $1 AND pos_x = $2 AND pos_y = $3 AND player_id <> $4
+	`
+	err = repository.DB.QueryRow(collisionQuery, instanceID, req.NewPosX, req.NewPosY, playerID).Scan(&collisionCount)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка проверки коллизий: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if collisionCount > 0 {
+		http.Error(w, "Невозможно переместиться: клетка занята другим игроком", http.StatusBadRequest)
+		return
+	}
 
-    // Получаем игрока из match_players
-    player, err := repository.GetMatchPlayerByID(instanceID, playerID)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
-        return
-    }
+	// Получаем игрока из match_players
+	player, err := repository.GetMatchPlayerByID(instanceID, playerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    // Обновляем позицию
-    player.PosX = req.NewPosX
-    player.PosY = req.NewPosY
+	// Проверяем энергию
+	if player.Energy < moveEnergyCost {
+		http.Error(w, "Недостаточно энергии для перемещения", http.StatusBadRequest)
+		return
+	}
 
-    err = repository.UpdateMatchPlayer(instanceID, player)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка обновления позиции игрока: %v", err), http.StatusInternalServerError)
-        return
-    }
+	// Списываем энергию
+	player.Energy -= moveEnergyCost
 
-    // Отправляем обновление по WebSocket всем клиентам
-    updateMsg := map[string]interface{}{
-        "type": "MOVE_PLAYER",
-        "payload": map[string]interface{}{
-            "playerId": playerID,
-            "newPosition": map[string]int{
-                "x": req.NewPosX,
-                "y": req.NewPosY,
-            },
-        },
-    }
-    updateJSON, _ := json.Marshal(updateMsg)
-    Broadcast(updateJSON)
+	// Обновляем позицию
+	player.PosX = req.NewPosX
+	player.PosY = req.NewPosY
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(player)
+	// Обновляем данные игрока в БД (включая энергию)
+	err = repository.UpdateMatchPlayer(instanceID, player)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка обновления позиции игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Отправляем обновление по WebSocket всем клиентам
+	updateMsg := map[string]interface{}{
+		"type": "MOVE_PLAYER",
+		"payload": map[string]interface{}{
+			"playerId": playerID,
+			"newPosition": map[string]int{
+				"x": req.NewPosX,
+				"y": req.NewPosY,
+			},
+		},
+	}
+	updateJSON, _ := json.Marshal(updateMsg)
+	Broadcast(updateJSON)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(player)
 }
+
 
 // ----------------- АТАКА ------------------
 
@@ -1240,6 +1250,7 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+
 //====================================
 //gameservice/handlers/players.go
 //====================================
@@ -1302,16 +1313,16 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
     // Создаём запись в таблице players
     query := `
         INSERT INTO players (
-            user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, 
+            user_id, name, image,  pos_x, pos_y, energy, max_energy, 
             health, max_health, level, experience, max_experience, attack, defense, 
             speed, maneuverability, vision, vision_range, balance, inventory
         )
         VALUES (
-            $1, $2, $3, 'red-player', 0, 0, 100, 100,
+            $1, $2, $3, 0, 0, 100, 100,
             100, 100, 1, 0, 500, 10, 5,
-            3, 2, 5, 5, 0, '{}'
+            3, 2, 2, 2, 0, '{}'
         )
-        RETURNING id, user_id, name, image, color_class, pos_x, pos_y, energy, max_energy,
+        RETURNING id, user_id, name, image, pos_x, pos_y, energy, max_energy,
                   health, max_health, level, experience, max_experience, attack, defense,
                   speed, maneuverability, vision, vision_range, balance, inventory, updated_at
     `
@@ -1321,7 +1332,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
         &player.UserID,
         &player.Name,
         &player.Image,
-        &player.ColorClass,
         &player.PosX,
         &player.PosY,
         &player.Energy,
@@ -1509,10 +1519,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"net/http"
-	"log"
+	"gameservice/game"
 	"gameservice/middleware"
-	"gameservice/game" // Импорт пакета, где определено состояние матчей и логика ходов
+	"gameservice/repository"
+	"log"
+	"net/http"
 )
 
 // EndTurnRequest представляет запрос на завершение хода.
@@ -1522,10 +1533,14 @@ type EndTurnRequest struct {
 	InstanceID string `json:"instance_id"`
 }
 
-// EndTurnResponse возвращает ID нового активного игрока.
+// EndTurnResponse возвращает ID нового активного игрока и его энергию.
 type EndTurnResponse struct {
 	ActivePlayer int `json:"active_player"`
+	Energy       int `json:"energy"`
 }
+
+// Константа пополнения энергии при получении хода
+const energyRegen = 10
 
 // EndTurnHandler обрабатывает запрос на завершение хода.
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
@@ -1544,6 +1559,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Получаем состояние матча
 	matchState, ok := game.GetMatchState(req.InstanceID)
 	if !ok {
 		log.Printf("Матч с instance_id %s не найден", req.InstanceID)
@@ -1551,10 +1567,34 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nextPlayer, err := matchState.EndTurn(req.PlayerID)
+	// Завершаем ход и получаем ID следующего игрока
+	nextPlayerID, err := matchState.EndTurn(req.PlayerID)
 	if err != nil {
 		log.Printf("Ошибка завершения хода: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Получаем данные нового активного игрока
+	nextPlayer, err := repository.GetMatchPlayerByID(req.InstanceID, nextPlayerID)
+	if err != nil {
+		log.Printf("Ошибка получения данных нового активного игрока: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Пополняем энергию нового активного игрока
+	newEnergy := nextPlayer.Energy + energyRegen
+	if newEnergy > nextPlayer.MaxEnergy {
+		newEnergy = nextPlayer.MaxEnergy
+	}
+	nextPlayer.Energy = newEnergy
+
+	// Обновляем данные игрока в БД (включая энергию)
+	err = repository.UpdateMatchPlayer(req.InstanceID, nextPlayer)
+	if err != nil {
+		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -1563,13 +1603,14 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		"type": "SET_ACTIVE_PLAYER",
 		"payload": map[string]interface{}{
 			"instanceId":   req.InstanceID,
-			"activePlayer": nextPlayer,
+			"activePlayer": nextPlayerID,
+			"energy":       newEnergy,
 		},
 	}
 	responseJSON, _ := json.Marshal(responseMsg)
 	Broadcast(responseJSON)
 
-	response := EndTurnResponse{ActivePlayer: nextPlayer}
+	response := EndTurnResponse{ActivePlayer: nextPlayerID, Energy: newEnergy}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -3387,7 +3428,7 @@ export default function MapWithCamera({
 
   // Используем позицию своего игрока для центрирования камеры
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-  // Можно брать vision именно из myPlayer
+  // Берем vision из myPlayer (или используем значение по умолчанию)
   const visionRange = myPlayer?.vision ?? 3;
 
   // Задаём размер тайла
@@ -3443,24 +3484,32 @@ export default function MapWithCamera({
         />
 
         {/* Рендер изображений игроков */}
-        {players.map((player) => (
-          <img
-            key={player.id}
-            src={player.image}
-            alt={player.name}
-            title={player.name}
-            style={{
-              position: "absolute",
-              left: player.position.x * (tileSize + gap) + playerImageOffsetX,
-              top: player.position.y * (tileSize + gap) + playerImageOffsetY,
-              width: tileSize,
-              height: tileSize,
-              border: player.id === currentPlayerId ? "2px solid gold" : "none",
-              boxSizing: "border-box",
-              zIndex: 10,
-            }}
-          />
-        ))}
+        {players.map((player) => {
+          // Вычисляем видимость игрока относительно myPlayer
+          const dx = Math.abs(player.position.x - playerPosition.x);
+          const dy = Math.abs(player.position.y - playerPosition.y);
+          const playerVisible = dx <= visionRange && dy <= visionRange;
+
+          return (
+            <img
+              key={player.id}
+              src={player.image}
+              alt={player.name}
+              title={player.name}
+              style={{
+                position: "absolute",
+                left: player.position.x * (tileSize + gap) + playerImageOffsetX,
+                top: player.position.y * (tileSize + gap) + playerImageOffsetY,
+                width: tileSize,
+                height: tileSize,
+                border: player.id === currentPlayerId ? "2px solid gold" : "none",
+                boxSizing: "border-box",
+                zIndex: 10,
+                opacity: playerVisible ? 1 : 0, // затемнение для игроков вне видимости
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -3887,10 +3936,15 @@ type GameProviderProps = {
   instanceId: string;
   children: React.ReactNode;
 };
-
-function convertMapData(rawMap: number[][], resources: ResourceType[], monsters: MonsterType[]): Cell[] {
+function convertMapData(
+  rawMap: number[][],
+  resources: ResourceType[],
+  monsters: MonsterType[]
+): Cell[] {
   const cells: Cell[] = [];
-  let id = 0;
+  let cellId = 0;
+  let instanceCounter = 1; // Счётчик для уникальных экземпляров ресурсов и монстров
+
   for (let y = 0; y < rawMap.length; y++) {
     for (let x = 0; x < rawMap[y].length; x++) {
       const tileCode = rawMap[y][x];
@@ -3898,20 +3952,36 @@ function convertMapData(rawMap: number[][], resources: ResourceType[], monsters:
       let monster: MonsterType | null = null;
       let isPortal = false;
 
-      if (tileCode === 82 && resources.length > 0) {
-        const randomIndex = Math.floor(Math.random() * resources.length);
-        resource = resources[randomIndex];
+      if (tileCode === 82) { // 'R' — ресурс
+        if (resources.length > 0) {
+          const randomIndex = Math.floor(Math.random() * resources.length);
+          // Клонируем шаблон ресурса и генерируем уникальный id
+          const resTemplate = resources[randomIndex];
+          resource = {
+            ...resTemplate,
+            id: parseInt(`${resTemplate.id}${instanceCounter}`) // либо использовать строковый id, например: resTemplate.id + "_" + instanceCounter
+          };
+          instanceCounter++;
+        }
       }
-      if (tileCode === 77 && monsters.length > 0) {
-        const randomIndex = Math.floor(Math.random() * monsters.length);
-        monster = monsters[randomIndex];
+      if (tileCode === 77) { // 'M' — монстр
+        if (monsters.length > 0) {
+          const randomIndex = Math.floor(Math.random() * monsters.length);
+          // Клонируем шаблон монстра и генерируем уникальный id
+          const monTemplate = monsters[randomIndex];
+          monster = {
+            ...monTemplate,
+            id: parseInt(`${monTemplate.id}${instanceCounter}`) // аналогично можно сделать строковый id
+          };
+          instanceCounter++;
+        }
       }
-      if (tileCode === 112) {
+      if (tileCode === 112) { // 'p' — портал
         isPortal = true;
       }
 
       cells.push({
-        id: id++,
+        id: cellId++,
         x,
         y,
         tileCode,

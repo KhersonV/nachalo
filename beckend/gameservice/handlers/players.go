@@ -62,16 +62,16 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
     // Создаём запись в таблице players
     query := `
         INSERT INTO players (
-            user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, 
+            user_id, name, image,  pos_x, pos_y, energy, max_energy, 
             health, max_health, level, experience, max_experience, attack, defense, 
             speed, maneuverability, vision, vision_range, balance, inventory
         )
         VALUES (
-            $1, $2, $3, 'red-player', 0, 0, 100, 100,
+            $1, $2, $3, 0, 0, 100, 100,
             100, 100, 1, 0, 500, 10, 5,
-            3, 2, 5, 5, 0, '{}'
+            3, 2, 2, 2, 0, '{}'
         )
-        RETURNING id, user_id, name, image, color_class, pos_x, pos_y, energy, max_energy,
+        RETURNING id, user_id, name, image, pos_x, pos_y, energy, max_energy,
                   health, max_health, level, experience, max_experience, attack, defense,
                   speed, maneuverability, vision, vision_range, balance, inventory, updated_at
     `
@@ -81,7 +81,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
         &player.UserID,
         &player.Name,
         &player.Image,
-        &player.ColorClass,
         &player.PosX,
         &player.PosY,
         &player.Energy,

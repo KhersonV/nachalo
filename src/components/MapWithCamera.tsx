@@ -27,7 +27,7 @@ export default function MapWithCamera({
 
   // Используем позицию своего игрока для центрирования камеры
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-  // Можно брать vision именно из myPlayer
+  // Берем vision из myPlayer (или используем значение по умолчанию)
   const visionRange = myPlayer?.vision ?? 3;
 
   // Задаём размер тайла
@@ -83,24 +83,32 @@ export default function MapWithCamera({
         />
 
         {/* Рендер изображений игроков */}
-        {players.map((player) => (
-          <img
-            key={player.id}
-            src={player.image}
-            alt={player.name}
-            title={player.name}
-            style={{
-              position: "absolute",
-              left: player.position.x * (tileSize + gap) + playerImageOffsetX,
-              top: player.position.y * (tileSize + gap) + playerImageOffsetY,
-              width: tileSize,
-              height: tileSize,
-              border: player.id === currentPlayerId ? "2px solid gold" : "none",
-              boxSizing: "border-box",
-              zIndex: 10,
-            }}
-          />
-        ))}
+        {players.map((player) => {
+          // Вычисляем видимость игрока относительно myPlayer
+          const dx = Math.abs(player.position.x - playerPosition.x);
+          const dy = Math.abs(player.position.y - playerPosition.y);
+          const playerVisible = dx <= visionRange && dy <= visionRange;
+
+          return (
+            <img
+              key={player.id}
+              src={player.image}
+              alt={player.name}
+              title={player.name}
+              style={{
+                position: "absolute",
+                left: player.position.x * (tileSize + gap) + playerImageOffsetX,
+                top: player.position.y * (tileSize + gap) + playerImageOffsetY,
+                width: tileSize,
+                height: tileSize,
+                border: player.id === currentPlayerId ? "2px solid gold" : "none",
+                boxSizing: "border-box",
+                zIndex: 10,
+                opacity: playerVisible ? 1 : 0, // затемнение для игроков вне видимости
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );
