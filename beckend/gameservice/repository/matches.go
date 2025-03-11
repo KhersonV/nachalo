@@ -16,22 +16,24 @@ import (
 // Сохранение матча в БД
 func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte, createdAt time.Time) (string, error) {
     query := `
-        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING instance_id;
     `
     var returnedID string
-    err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, createdAt).Scan(&returnedID)
+    // Задаем turn_number = 1 по умолчанию
+    err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, createdAt, 1).Scan(&returnedID)
     if err != nil {
         return "", err
     }
     return returnedID, nil
 }
 
+
 // Получить матч по instance_id
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
     query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at
+        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number
         FROM matches
         WHERE instance_id = $1
     `
@@ -45,6 +47,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
         &match.MapHeight,
         &match.Map,
         &match.CreatedAt,
+        &match.TurnNumber,
     )
     if err != nil {
         return nil, err
@@ -214,6 +217,16 @@ func GetPlayersInMatch(matchID string) ([]models.Player, error) {
         players = append(players, p)
     }
     return players, nil
+}
+
+func UpdateMatchTurn(instanceID string, activePlayer int, turnNumber int) error {
+    query := `
+        UPDATE matches
+        SET active_player_id = $1, turn_number = $2
+        WHERE instance_id = $3
+    `
+    _, err := DB.Exec(query, activePlayer, turnNumber, instanceID)
+    return err
 }
 
 // Прочие вспомогательные функции...

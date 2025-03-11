@@ -1,7 +1,6 @@
 // ==============================
 // src/contexts/GameContextt.tsx
 // ==============================
-
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
@@ -97,6 +96,7 @@ export type GameState = {
   mapHeight: number;
   players: PlayerState[];
   currentPlayerId: number;
+  turnNumber: number;
 };
 
 export type Action =
@@ -109,6 +109,7 @@ export type Action =
         mapWidth: number;
         mapHeight: number;
         players: PlayerState[];
+        turnNumber: number;
       };
     }
   | {
@@ -117,7 +118,7 @@ export type Action =
     }
   | {
       type: "SET_ACTIVE_PLAYER";
-      payload: number;
+      payload: { activePlayer: number; turnNumber: number };
     }
   | {
       type: "RESET_STATE";
@@ -131,6 +132,7 @@ const initialState: GameState = {
   mapHeight: 0,
   players: [],
   currentPlayerId: 0,
+  turnNumber: 1,
 };
 
 const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
@@ -151,6 +153,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mapHeight: action.payload.mapHeight,
         players: action.payload.players,
         currentPlayerId: currentId,
+        turnNumber: action.payload.turnNumber || state.turnNumber,
       };
     case "MOVE_PLAYER":
       return {
@@ -162,7 +165,8 @@ export function gameReducer(state: GameState, action: Action): GameState {
     case "SET_ACTIVE_PLAYER":
       return {
         ...state,
-        currentPlayerId: action.payload,
+        currentPlayerId: action.payload.activePlayer,
+        turnNumber: action.payload.turnNumber,
       };
     case "RESET_STATE":
       return { ...initialState };
@@ -175,6 +179,7 @@ type GameProviderProps = {
   instanceId: string;
   children: React.ReactNode;
 };
+
 function convertMapData(
   rawMap: number[][],
   resources: ResourceType[],
@@ -194,11 +199,10 @@ function convertMapData(
       if (tileCode === 82) { // 'R' — ресурс
         if (resources.length > 0) {
           const randomIndex = Math.floor(Math.random() * resources.length);
-          // Клонируем шаблон ресурса и генерируем уникальный id
           const resTemplate = resources[randomIndex];
           resource = {
             ...resTemplate,
-            id: parseInt(`${resTemplate.id}${instanceCounter}`) // либо использовать строковый id, например: resTemplate.id + "_" + instanceCounter
+            id: parseInt(`${resTemplate.id}${instanceCounter}`)
           };
           instanceCounter++;
         }
@@ -206,11 +210,10 @@ function convertMapData(
       if (tileCode === 77) { // 'M' — монстр
         if (monsters.length > 0) {
           const randomIndex = Math.floor(Math.random() * monsters.length);
-          // Клонируем шаблон монстра и генерируем уникальный id
           const monTemplate = monsters[randomIndex];
           monster = {
             ...monTemplate,
-            id: parseInt(`${monTemplate.id}${instanceCounter}`) // аналогично можно сделать строковый id
+            id: parseInt(`${monTemplate.id}${instanceCounter}`)
           };
           instanceCounter++;
         }
@@ -232,7 +235,6 @@ function convertMapData(
   }
   return cells;
 }
-
 
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
@@ -278,7 +280,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
-  
   useEffect(() => {
     async function fetchMatchData() {
       try {
@@ -313,6 +314,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
+            turnNumber: data.turn_number,
           },
         });
       } catch (err) {
@@ -324,10 +326,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket и обрабатываем входящие сообщения только для текущего instance_id
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
-    // Фильтрация по instanceId остается без изменений
     if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
       console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
       return;
@@ -342,6 +342,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           mapWidth: data.payload.mapWidth,
           mapHeight: data.payload.mapHeight,
           players: data.payload.players,
+          turnNumber: data.payload.turn_number,
         },
       });
     } else if (data.type === "MOVE_PLAYER") {
@@ -350,9 +351,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
       });
     } else if (data.type === "SET_ACTIVE_PLAYER") {
-      // Извлекаем activePlayer из payload
-      const activePlayer = data.payload.activePlayer;
-      dispatch({ type: "SET_ACTIVE_PLAYER", payload: activePlayer });
+      const { activePlayer, turnNumber } = data.payload;
+      dispatch({ type: "SET_ACTIVE_PLAYER", payload: { activePlayer, turnNumber } });
     }
   }, { instanceId: state.instanceId });
 

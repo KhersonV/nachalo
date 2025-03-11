@@ -20,4 +20,5 @@ type MatchInfo struct {
     MapHeight    int             `json:"map_height"`
     Map          json.RawMessage `json:"map"`
     CreatedAt    time.Time       `json:"created_at"`
+    TurnNumber   int             `json:"turn_number"`
 }

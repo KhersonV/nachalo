@@ -16,6 +16,7 @@ type MatchState struct {
 	InstanceID     string
 	ActivePlayerID int   // ID игрока, чей ход
 	TurnOrder      []int // Очередность ходов (список ID игроков)
+	TurnNumber     int   // Номер текущего хода
 	mu             sync.Mutex
 }
 
@@ -50,8 +51,11 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 
 	// Определяем следующего игрока циклически.
 	nextIndex := (index + 1) % len(m.TurnOrder)
+	if nextIndex == 0 {
+		m.TurnNumber++
+	}
 	m.ActivePlayerID = m.TurnOrder[nextIndex]
-	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d", currentPlayerID, m.ActivePlayerID)
+	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActivePlayerID, m.TurnNumber)
 	return m.ActivePlayerID, nil
 }
 
@@ -68,6 +72,7 @@ func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 		InstanceID:     instanceID,
 		TurnOrder:      playerIDs,
 		ActivePlayerID: 0,
+		TurnNumber:     1,
 	}
 	if len(playerIDs) > 0 {
 		matchState.ActivePlayerID = playerIDs[0]

@@ -1,7 +1,6 @@
 //==============================
 // gameservice/handlers/turn.go
 //==============================
-
 package handlers
 
 import (
@@ -20,16 +19,17 @@ type EndTurnRequest struct {
 	InstanceID string `json:"instance_id"`
 }
 
-// EndTurnResponse возвращает ID нового активного игрока и его энергию.
+// EndTurnResponse возвращает статус матча, включая активного игрока, энергию и номер хода.
 type EndTurnResponse struct {
 	ActivePlayer int `json:"active_player"`
 	Energy       int `json:"energy"`
+	TurnNumber   int `json:"turn_number"`
 }
 
 // Константа пополнения энергии при получении хода
 const energyRegen = 10
 
-// EndTurnHandler обрабатывает запрос на завершение хода.
+// EndTurnHandler теперь полностью выполняет логику смены хода на сервере
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	var req EndTurnRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -38,11 +38,10 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверяем, что игрок завершает свой ход
 	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok || tokenUserID != req.PlayerID {
 		http.Error(w, "Запрещено завершать ход другому игроку", http.StatusForbidden)
-		log.Printf("PlayerID %d", req.PlayerID)
-		log.Printf("tokenUserID %d", tokenUserID)
 		return
 	}
 
@@ -54,7 +53,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Завершаем ход и получаем ID следующего игрока
+	// Завершаем ход (логика выбора следующего игрока находится в EndTurn)
 	nextPlayerID, err := matchState.EndTurn(req.PlayerID)
 	if err != nil {
 		log.Printf("Ошибка завершения хода: %v", err)
@@ -70,6 +69,13 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Обновляем данные матча в БД
+if err := repository.UpdateMatchTurn(req.InstanceID, nextPlayerID, matchState.TurnNumber); err != nil {
+    log.Printf("Ошибка обновления матча в БД: %v", err)
+    http.Error(w, "Internal server error", http.StatusInternalServerError)
+    return
+}
+
 	// Пополняем энергию нового активного игрока
 	newEnergy := nextPlayer.Energy + energyRegen
 	if newEnergy > nextPlayer.MaxEnergy {
@@ -77,27 +83,32 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	nextPlayer.Energy = newEnergy
 
-	// Обновляем данные игрока в БД (включая энергию)
-	err = repository.UpdateMatchPlayer(req.InstanceID, nextPlayer)
-	if err != nil {
+	// Обновляем данные игрока в БД (энергия и прочее обновление состояния)
+	if err = repository.UpdateMatchPlayer(req.InstanceID, nextPlayer); err != nil {
 		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Формируем сообщение для рассылки по WebSocket с информацией о новом активном игроке и instance_id
-	responseMsg := map[string]interface{}{
+	// Формируем сообщение для WebSocket с полным новым состоянием матча
+	updateMsg := map[string]interface{}{
 		"type": "SET_ACTIVE_PLAYER",
 		"payload": map[string]interface{}{
 			"instanceId":   req.InstanceID,
 			"activePlayer": nextPlayerID,
 			"energy":       newEnergy,
+			"turnNumber":   matchState.TurnNumber,
 		},
 	}
-	responseJSON, _ := json.Marshal(responseMsg)
-	Broadcast(responseJSON)
+	updateJSON, _ := json.Marshal(updateMsg)
+	Broadcast(updateJSON)
 
-	response := EndTurnResponse{ActivePlayer: nextPlayerID, Energy: newEnergy}
+	// Отправляем ответ клиенту
+	response := EndTurnResponse{
+		ActivePlayer: nextPlayerID,
+		Energy:       newEnergy,
+		TurnNumber:   matchState.TurnNumber,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }

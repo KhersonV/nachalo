@@ -12,6 +12,7 @@ import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
+import TurnIndicator from "./TurnIndicator";
 import styles from "../styles/GameController.module.css";
 
 export default function GameController() {
@@ -157,8 +158,11 @@ export default function GameController() {
   };
 
   // Функция обновления активного игрока после завершения хода
-  const handleTurnEnded = (newActivePlayer: number) => {
-    dispatch({ type: "SET_ACTIVE_PLAYER", payload: newActivePlayer });
+  const handleTurnEnded = (data: { activePlayer: number; turnNumber: number; energy: number }) => {
+    dispatch({ 
+      type: "SET_ACTIVE_PLAYER",
+      payload: { activePlayer: data.activePlayer, turnNumber: data.turnNumber},
+    });
   };
 
   useEffect(() => {
@@ -206,6 +210,7 @@ export default function GameController() {
               instanceId={instanceId}
               onTurnEnded={handleTurnEnded}
             />
+             <TurnIndicator /> 
           </>
         ) : (
           <div className={styles.waitingOverlay}>

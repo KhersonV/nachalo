@@ -67,25 +67,25 @@ func CreatePlayersTable() {
 }
 
 func CreateMatchesTable() {
-    query := `
+	query := `
     CREATE TABLE IF NOT EXISTS matches (
         instance_id TEXT PRIMARY KEY,
         mode TEXT NOT NULL,
         teams_count INTEGER NOT NULL,
         total_players INTEGER NOT NULL,
-        map_width INTEGER NOT NULL,
-        map_height INTEGER NOT NULL,
-        map JSONB NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         active_player_id INTEGER,
-        turn_order JSONB
+        turn_order JSONB,
+        turn_number INTEGER DEFAULT 1,
+        map_height INTEGER NOT NULL,
+        map_width INTEGER NOT NULL,
+        map JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     `
-    if _, err := DB.Exec(query); err != nil {
-        log.Fatalf("Ошибка создания таблицы matches: %v", err)
-    }
+	if _, err := DB.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы matches: %v", err)
+	}
 }
-
 
 func CreateMatchPlayersTable() {
     query := `

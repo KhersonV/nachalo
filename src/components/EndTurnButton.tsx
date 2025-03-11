@@ -8,7 +8,7 @@ import React from 'react';
 interface EndTurnButtonProps {
   playerId: number;
   instanceId: string;
-  onTurnEnded: (newActivePlayer: number) => void;
+  onTurnEnded: (data: { activePlayer: number; turnNumber: number; energy: number }) => void;
 }
 
 function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps) {
@@ -23,11 +23,7 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
       console.error("Токен не найден в localStorage");
       return;
     }
-    console.log("Отправка запроса завершения хода от игрока:", playerId, "с токеном:", token, "и instance_id:", instanceId);
     try {
-      console.log("Токен из localStorage:", token);
-      
-
       const response = await fetch("http://localhost:8001/game/endTurn", {
         method: "POST",
         headers: {
@@ -44,8 +40,13 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
       }
       
       const data = await response.json();
-      console.log("Новый активный игрок:", data.active_player);
-      onTurnEnded(data.active_player);
+      console.log("Ответ от сервера на завершение хода:", data);
+      // Вызовем onTurnEnded с данными, чтобы обновить состояние на фронте
+      onTurnEnded({
+        activePlayer: data.active_player,
+        turnNumber: data.turn_number,
+        energy: data.energy,
+      });
     } catch (error) {
       console.error("Ошибка при выполнении запроса:", error);
     }
@@ -53,5 +54,5 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
   
   return <button onClick={handleEndTurn}>Конец хода</button>;
 }
-     
+
 export default EndTurnButton;
