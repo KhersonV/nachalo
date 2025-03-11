@@ -7,6 +7,13 @@
 
 
 
+
+
+
+
+
+
+
 //===================
 //auth/contextkeys.go
 //===================
@@ -18,6 +25,18 @@ type ContextKey string
 
 // UserIDKey – ключ для хранения идентификатора пользователя.
 const UserIDKey ContextKey = "user_id"
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //================
@@ -330,6 +349,22 @@ func main() {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //=======================
 //gameservice/cmd/main.go
 //=======================
@@ -427,6 +462,20 @@ func main() {
 	log.Printf("Game-сервис запущен на порту %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //====================================
@@ -602,6 +651,19 @@ func GenerateMap(cfg MapConfig) (MapGrid, [][2]int, [2]int, error) {
 	return grid, starts, portal, nil
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 //==========================
 // gameservice/game/match.go
 //==========================
@@ -619,6 +681,7 @@ type MatchState struct {
 	InstanceID     string
 	ActivePlayerID int   // ID игрока, чей ход
 	TurnOrder      []int // Очередность ходов (список ID игроков)
+	TurnNumber     int   // Номер текущего хода
 	mu             sync.Mutex
 }
 
@@ -653,8 +716,11 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 
 	// Определяем следующего игрока циклически.
 	nextIndex := (index + 1) % len(m.TurnOrder)
+	if nextIndex == 0 {
+		m.TurnNumber++
+	}
 	m.ActivePlayerID = m.TurnOrder[nextIndex]
-	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d", currentPlayerID, m.ActivePlayerID)
+	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActivePlayerID, m.TurnNumber)
 	return m.ActivePlayerID, nil
 }
 
@@ -671,6 +737,7 @@ func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 		InstanceID:     instanceID,
 		TurnOrder:      playerIDs,
 		ActivePlayerID: 0,
+		TurnNumber:     1,
 	}
 	if len(playerIDs) > 0 {
 		matchState.ActivePlayerID = playerIDs[0]
@@ -689,6 +756,17 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 	ms, ok := MatchStates[instanceID]
 	return ms, ok
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 //====================================
@@ -1008,6 +1086,19 @@ func updateMonster(monster *models.Monster) error {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 //====================================
 //gameservice/handlers/inventory.go
 //====================================
@@ -1088,6 +1179,21 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte("Предмет успешно использован/удалён"))
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //===============================
 // gameservice/handlers/match.go
 //===============================
@@ -1095,158 +1201,171 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 package handlers
 
 import (
-    "encoding/json"
-    "fmt"
-    "log"
-    "net/http"
-    "time"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
 
-    "gameservice/game"
-    "gameservice/repository"
+	"gameservice/game"
+	"gameservice/repository"
 )
 
 type RequestMatch struct {
-    InstanceID   string `json:"instance_id"`
-    Mode         string `json:"mode"`
-    PlayerIDs    []int  `json:"player_ids"`
-    TeamsCount   int    `json:"teams_count"`
-    TotalPlayers int    `json:"total_players"`
+	InstanceID   string `json:"instance_id"`
+	Mode         string `json:"mode"`
+	PlayerIDs    []int  `json:"player_ids"`
+	TeamsCount   int    `json:"teams_count"`
+	TotalPlayers int    `json:"total_players"`
 }
 
 func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
-    var req RequestMatch
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Bad request", http.StatusBadRequest)
-        return
-    }
+	var req RequestMatch
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
 
-    cfg := game.MapConfig{
-        TotalPlayers: req.TotalPlayers,
-        TeamsCount:   req.TeamsCount,
-        WalkableProb: 0.8,
-        ResourceProb: 0.1,
-        MonsterProb:  0.05,
-    }
+	cfg := game.MapConfig{
+		TotalPlayers: req.TotalPlayers,
+		TeamsCount:   req.TeamsCount,
+		WalkableProb: 0.8,
+		ResourceProb: 0.1,
+		MonsterProb:  0.05,
+	}
 
-    grid, startPositions, _, err := game.GenerateMap(cfg)
-    if err != nil {
-        log.Printf("Ошибка генерации карты: %v", err)
-        http.Error(w, "Ошибка генерации карты", http.StatusInternalServerError)
-        return
-    }
+	grid, startPositions, _, err := game.GenerateMap(cfg)
+	if err != nil {
+		log.Printf("Ошибка генерации карты: %v", err)
+		http.Error(w, "Ошибка генерации карты", http.StatusInternalServerError)
+		return
+	}
 
-    mapData, err := json.Marshal(grid)
-    if err != nil {
-        http.Error(w, "Ошибка маршалинга карты", http.StatusInternalServerError)
-        return
-    }
+	mapData, err := json.Marshal(grid)
+	if err != nil {
+		http.Error(w, "Ошибка маршалинга карты", http.StatusInternalServerError)
+		return
+	}
 
-    createdAt := time.Now()
+	createdAt := time.Now()
 
-    _, err = repository.DB.Exec(`
+	_, err = repository.DB.Exec(`
         INSERT INTO matches (
-            instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order, created_at
+            instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order, created_at, turn_number
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1
         )`,
-        req.InstanceID,
-        req.Mode,
-        req.TeamsCount,
-        req.TotalPlayers,
-        len(grid[0]),
-        len(grid),
-        string(mapData),
-        req.PlayerIDs[0],
-        fmt.Sprintf("[%d]", req.PlayerIDs[0]),
-        createdAt,
-    )
-    if err != nil {
-        log.Printf("Ошибка вставки матча: %v", err)
-        http.Error(w, "Ошибка сохранения матча", http.StatusInternalServerError)
-        return
-    }
+		req.InstanceID,
+		req.Mode,
+		req.TeamsCount,
+		req.TotalPlayers,
+		len(grid[0]),
+		len(grid),
+		string(mapData),
+		req.PlayerIDs[0],
+		fmt.Sprintf("[%d]", req.PlayerIDs[0]),
+		createdAt,
+	)
+	if err != nil {
+		log.Printf("Ошибка вставки матча: %v", err)
+		http.Error(w, "Ошибка сохранения матча", http.StatusInternalServerError)
+		return
+	}
 
-    // Важно: СОЗДАЁМ СОСТОЯНИЕ МАТЧА сразу
-    game.CreateMatchState(req.InstanceID, req.PlayerIDs)
+	// Создаём состояние матча (в котором теперь хранится TurnNumber)
+	game.CreateMatchState(req.InstanceID, req.PlayerIDs)
 
-    // Вставляем игроков в таблицу match_players
-    for i, playerID := range req.PlayerIDs {
-        player, err := repository.GetPlayerByUserID(playerID)
-        if err != nil {
-            log.Printf("Игрок с ID %d не найден: %v", playerID, err)
-            continue
-        }
+	// Вставляем игроков в таблицу match_players
+	for i, playerID := range req.PlayerIDs {
+		player, err := repository.GetPlayerByUserID(playerID)
+		if err != nil {
+			log.Printf("Игрок с ID %d не найден: %v", playerID, err)
+			continue
+		}
 
-        pos := startPositions[0] // для PVE одна команда
-        groupID := 1
-        if req.TeamsCount > 1 && i >= len(req.PlayerIDs)/2 {
-            pos = startPositions[1]
-            groupID = 2
-        }
+		pos := startPositions[0] // для PVE одна команда
+		groupID := 1
+		if req.TeamsCount > 1 && i >= len(req.PlayerIDs)/2 {
+			pos = startPositions[1]
+			groupID = 2
+		}
 
-        err = repository.CreateMatchPlayerCopy(req.InstanceID, player, pos[0], pos[1], groupID)
-        if err != nil {
-            log.Printf("Ошибка вставки игрока в матч: %v", err)
-            continue
-        }
-    }
+		err = repository.CreateMatchPlayerCopy(req.InstanceID, player, pos[0], pos[1], groupID)
+		if err != nil {
+			log.Printf("Ошибка вставки игрока в матч: %v", err)
+			continue
+		}
+	}
 
-    playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
-    if err != nil {
-        log.Printf("Ошибка получения игроков после вставки: %v", err)
-        http.Error(w, "Ошибка получения игроков", http.StatusInternalServerError)
-        return
-    }
+	playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+	if err != nil {
+		log.Printf("Ошибка получения игроков после вставки: %v", err)
+		http.Error(w, "Ошибка получения игроков", http.StatusInternalServerError)
+		return
+	}
 
-    response := map[string]interface{}{
-        "instance_id": req.InstanceID,
-        "mode":        req.Mode,
-        "map":         grid,
-        "created_at":  createdAt,
-        "map_width":   len(grid[0]),
-        "map_height":  len(grid),
-        "player_ids":  req.PlayerIDs,
-        "players":     playersInMatch,
-    }
+	response := map[string]interface{}{
+		"instance_id": req.InstanceID,
+		"mode":        req.Mode,
+		"map":         grid,
+		"created_at":  createdAt,
+		"map_width":   len(grid[0]),
+		"map_height":  len(grid),
+		"player_ids":  req.PlayerIDs,
+		"players":     playersInMatch,
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-    instanceID := r.URL.Query().Get("instance_id")
-    if instanceID == "" {
-        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-        return
-    }
+	instanceID := r.URL.Query().Get("instance_id")
+	if instanceID == "" {
+		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+		return
+	}
 
-    match, err := repository.GetMatchByID(instanceID)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
-        return
-    }
+	match, err := repository.GetMatchByID(instanceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
+		return
+	}
 
-    players, err := repository.GetPlayersInMatch(instanceID)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
-        return
-    }
+	players, err := repository.GetPlayersInMatch(instanceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    response := map[string]interface{}{
-        "instance_id":   match.InstanceID,
-        "mode":          match.Mode,
-        "teams_count":   match.TeamsCount,
-        "total_players": match.TotalPlayers,
-        "map_width":     match.MapWidth,
-        "map_height":    match.MapHeight,
-        "map":           match.Map, // json.RawMessage
-        "players":       players,
-        "created_at":    match.CreatedAt,
-    }
+	response := map[string]interface{}{
+		"instance_id":   match.InstanceID,
+		"mode":          match.Mode,
+		"teams_count":   match.TeamsCount,
+		"total_players": match.TotalPlayers,
+		"map_width":     match.MapWidth,
+		"map_height":    match.MapHeight,
+		"map":           match.Map, // json.RawMessage
+		"players":       players,
+		"created_at":    match.CreatedAt,
+        "turn_number":   match.TurnNumber, 
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1424,6 +1543,23 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //====================================
 //gameservice/handlers/resources.go
 //====================================
@@ -1511,6 +1647,19 @@ func GetMonstersHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 //==============================
 // gameservice/handlers/turn.go
 //==============================
@@ -1533,16 +1682,17 @@ type EndTurnRequest struct {
 	InstanceID string `json:"instance_id"`
 }
 
-// EndTurnResponse возвращает ID нового активного игрока и его энергию.
+// EndTurnResponse возвращает статус матча, включая активного игрока, энергию и номер хода.
 type EndTurnResponse struct {
 	ActivePlayer int `json:"active_player"`
 	Energy       int `json:"energy"`
+	TurnNumber   int `json:"turn_number"`
 }
 
 // Константа пополнения энергии при получении хода
 const energyRegen = 10
 
-// EndTurnHandler обрабатывает запрос на завершение хода.
+// EndTurnHandler теперь полностью выполняет логику смены хода на сервере
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	var req EndTurnRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1551,11 +1701,10 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверяем, что игрок завершает свой ход
 	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok || tokenUserID != req.PlayerID {
 		http.Error(w, "Запрещено завершать ход другому игроку", http.StatusForbidden)
-		log.Printf("PlayerID %d", req.PlayerID)
-		log.Printf("tokenUserID %d", tokenUserID)
 		return
 	}
 
@@ -1567,7 +1716,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Завершаем ход и получаем ID следующего игрока
+	// Завершаем ход (логика выбора следующего игрока находится в EndTurn)
 	nextPlayerID, err := matchState.EndTurn(req.PlayerID)
 	if err != nil {
 		log.Printf("Ошибка завершения хода: %v", err)
@@ -1583,6 +1732,13 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Обновляем данные матча в БД
+if err := repository.UpdateMatchTurn(req.InstanceID, nextPlayerID, matchState.TurnNumber); err != nil {
+    log.Printf("Ошибка обновления матча в БД: %v", err)
+    http.Error(w, "Internal server error", http.StatusInternalServerError)
+    return
+}
+
 	// Пополняем энергию нового активного игрока
 	newEnergy := nextPlayer.Energy + energyRegen
 	if newEnergy > nextPlayer.MaxEnergy {
@@ -1590,30 +1746,46 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	nextPlayer.Energy = newEnergy
 
-	// Обновляем данные игрока в БД (включая энергию)
-	err = repository.UpdateMatchPlayer(req.InstanceID, nextPlayer)
-	if err != nil {
+	// Обновляем данные игрока в БД (энергия и прочее обновление состояния)
+	if err = repository.UpdateMatchPlayer(req.InstanceID, nextPlayer); err != nil {
 		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// Формируем сообщение для рассылки по WebSocket с информацией о новом активном игроке и instance_id
-	responseMsg := map[string]interface{}{
+	// Формируем сообщение для WebSocket с полным новым состоянием матча
+	updateMsg := map[string]interface{}{
 		"type": "SET_ACTIVE_PLAYER",
 		"payload": map[string]interface{}{
 			"instanceId":   req.InstanceID,
 			"activePlayer": nextPlayerID,
 			"energy":       newEnergy,
+			"turnNumber":   matchState.TurnNumber,
 		},
 	}
-	responseJSON, _ := json.Marshal(responseMsg)
-	Broadcast(responseJSON)
+	updateJSON, _ := json.Marshal(updateMsg)
+	Broadcast(updateJSON)
 
-	response := EndTurnResponse{ActivePlayer: nextPlayerID, Energy: newEnergy}
+	// Отправляем ответ клиенту
+	response := EndTurnResponse{
+		ActivePlayer: nextPlayerID,
+		Energy:       newEnergy,
+		TurnNumber:   matchState.TurnNumber,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 //====================================
@@ -1679,6 +1851,24 @@ func Broadcast(message []byte) {
 		}
 	}
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //==============================
@@ -1760,6 +1950,17 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 // ==============================
 // /gameservice/models/match.go
 // ==============================
@@ -1780,7 +1981,15 @@ type MatchInfo struct {
     MapHeight    int             `json:"map_height"`
     Map          json.RawMessage `json:"map"`
     CreatedAt    time.Time       `json:"created_at"`
+    TurnNumber   int             `json:"turn_number"`
 }
+
+
+
+
+
+
+
 
 
 // ==============================
@@ -1805,6 +2014,19 @@ type Monster struct {
     Image           string    `json:"image"`
     CreatedAt       time.Time `json:"created_at"`
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // ==============================
@@ -1847,6 +2069,16 @@ type Player struct {
 
 
 
+
+
+
+
+
+
+
+
+
+
 // ==============================
 // /gameservice/models/user.go
 // ==============================
@@ -1861,6 +2093,17 @@ type User struct {
     Password  string    `json:"-"`
     CreatedAt time.Time `json:"created_at"`
 }
+
+
+
+
+
+
+
+
+
+
+
 
 // ==============================
 // /gameservice/repository/db.go
@@ -1930,25 +2173,25 @@ func CreatePlayersTable() {
 }
 
 func CreateMatchesTable() {
-    query := `
+	query := `
     CREATE TABLE IF NOT EXISTS matches (
         instance_id TEXT PRIMARY KEY,
         mode TEXT NOT NULL,
         teams_count INTEGER NOT NULL,
         total_players INTEGER NOT NULL,
-        map_width INTEGER NOT NULL,
-        map_height INTEGER NOT NULL,
-        map JSONB NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         active_player_id INTEGER,
-        turn_order JSONB
+        turn_order JSONB,
+        turn_number INTEGER DEFAULT 1,
+        map_height INTEGER NOT NULL,
+        map_width INTEGER NOT NULL,
+        map JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
     `
-    if _, err := DB.Exec(query); err != nil {
-        log.Fatalf("Ошибка создания таблицы matches: %v", err)
-    }
+	if _, err := DB.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы matches: %v", err)
+	}
 }
-
 
 func CreateMatchPlayersTable() {
     query := `
@@ -2039,6 +2282,17 @@ func RestoreMatchStates() error {
 // Прочие функции для инициализации и т.п.
 
 
+
+
+
+
+
+
+
+
+
+
+
 // ====================================
 // /gameservice/repository/inventory.go
 // ====================================
@@ -2110,6 +2364,22 @@ func RemoveInventoryItem(playerID int, itemType string, itemID int, count int) e
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ====================================
 // /gameservice/repository/matches.go
 // ====================================
@@ -2127,22 +2397,24 @@ import (
 // Сохранение матча в БД
 func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte, createdAt time.Time) (string, error) {
     query := `
-        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING instance_id;
     `
     var returnedID string
-    err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, createdAt).Scan(&returnedID)
+    // Задаем turn_number = 1 по умолчанию
+    err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, createdAt, 1).Scan(&returnedID)
     if err != nil {
         return "", err
     }
     return returnedID, nil
 }
 
+
 // Получить матч по instance_id
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
     query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at
+        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number
         FROM matches
         WHERE instance_id = $1
     `
@@ -2156,6 +2428,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
         &match.MapHeight,
         &match.Map,
         &match.CreatedAt,
+        &match.TurnNumber,
     )
     if err != nil {
         return nil, err
@@ -2327,7 +2600,32 @@ func GetPlayersInMatch(matchID string) ([]models.Player, error) {
     return players, nil
 }
 
+func UpdateMatchTurn(instanceID string, activePlayer int, turnNumber int) error {
+    query := `
+        UPDATE matches
+        SET active_player_id = $1, turn_number = $2
+        WHERE instance_id = $3
+    `
+    _, err := DB.Exec(query, activePlayer, turnNumber, instanceID)
+    return err
+}
+
 // Прочие вспомогательные функции...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2901,6 +3199,20 @@ export default function HomePage() {
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //==================================
 // src/components/Controls.tsx
 //==================================
@@ -2945,17 +3257,27 @@ export default function Controls({ onMove, onAction }: ControlsProps) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 //==================================
 // src/components/EndTurnButton.tsx
 //==================================
-
 
 import React from 'react';
 
 interface EndTurnButtonProps {
   playerId: number;
   instanceId: string;
-  onTurnEnded: (newActivePlayer: number) => void;
+  onTurnEnded: (data: { activePlayer: number; turnNumber: number; energy: number }) => void;
 }
 
 function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps) {
@@ -2970,11 +3292,7 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
       console.error("Токен не найден в localStorage");
       return;
     }
-    console.log("Отправка запроса завершения хода от игрока:", playerId, "с токеном:", token, "и instance_id:", instanceId);
     try {
-      console.log("Токен из localStorage:", token);
-      
-
       const response = await fetch("http://localhost:8001/game/endTurn", {
         method: "POST",
         headers: {
@@ -2991,8 +3309,13 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
       }
       
       const data = await response.json();
-      console.log("Новый активный игрок:", data.active_player);
-      onTurnEnded(data.active_player);
+      console.log("Ответ от сервера на завершение хода:", data);
+      // Вызовем onTurnEnded с данными, чтобы обновить состояние на фронте
+      onTurnEnded({
+        activePlayer: data.active_player,
+        turnNumber: data.turn_number,
+        energy: data.energy,
+      });
     } catch (error) {
       console.error("Ошибка при выполнении запроса:", error);
     }
@@ -3000,8 +3323,26 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
   
   return <button onClick={handleEndTurn}>Конец хода</button>;
 }
-     
+
 export default EndTurnButton;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //==================================
 // src/components/GameController.tsx
@@ -3016,6 +3357,7 @@ import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
+import TurnIndicator from "./TurnIndicator";
 import styles from "../styles/GameController.module.css";
 
 export default function GameController() {
@@ -3161,8 +3503,11 @@ export default function GameController() {
   };
 
   // Функция обновления активного игрока после завершения хода
-  const handleTurnEnded = (newActivePlayer: number) => {
-    dispatch({ type: "SET_ACTIVE_PLAYER", payload: newActivePlayer });
+  const handleTurnEnded = (data: { activePlayer: number; turnNumber: number; energy: number }) => {
+    dispatch({ 
+      type: "SET_ACTIVE_PLAYER",
+      payload: { activePlayer: data.activePlayer, turnNumber: data.turnNumber},
+    });
   };
 
   useEffect(() => {
@@ -3210,6 +3555,7 @@ export default function GameController() {
               instanceId={instanceId}
               onTurnEnded={handleTurnEnded}
             />
+             <TurnIndicator /> 
           </>
         ) : (
           <div className={styles.waitingOverlay}>
@@ -3220,6 +3566,24 @@ export default function GameController() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //==================================
@@ -3294,6 +3658,18 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //==================================
@@ -3397,6 +3773,22 @@ function getTileColor(cell: Cell): string {
       return "#952215"; // по умолчанию
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3517,6 +3909,21 @@ export default function MapWithCamera({
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //=====================================
 // src/components/ModeSelectionPage.tsx
 //=====================================
@@ -3610,6 +4017,22 @@ export default function ModeSelectionPage() {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //=====================================
 // src/components/RegisterPage.tsx
 //=====================================
@@ -3692,6 +4115,50 @@ const RegisterPage = () => {
 export default RegisterPage;
 
 
+
+
+
+
+
+
+
+
+
+
+
+//=====================================
+// src/components/TurnIndicator.tsx
+//=====================================
+
+"use client";
+
+import React from "react";
+import { useGame } from "../contexts/GameContextt";
+
+const TurnIndicator = () => {
+  const { state } = useGame();
+
+  return (
+    <div style={{ padding: "0.5rem", backgroundColor: "#222", color: "#fff", borderRadius: "4px", width: 100 }}>
+      <p>Turn: {state.turnNumber}</p>
+    </div>
+  );
+};
+
+export default TurnIndicator;
+
+
+
+
+
+
+
+
+
+
+
+
+
 //=============================
 // src/contexts/AuthContext.tsx
 //=============================
@@ -3759,10 +4226,17 @@ export function useAuth() {
 
 
 
+
+
+
+
+
+
+
+
 // ==============================
 // src/contexts/GameContextt.tsx
 // ==============================
-
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
@@ -3858,6 +4332,7 @@ export type GameState = {
   mapHeight: number;
   players: PlayerState[];
   currentPlayerId: number;
+  turnNumber: number;
 };
 
 export type Action =
@@ -3870,6 +4345,7 @@ export type Action =
         mapWidth: number;
         mapHeight: number;
         players: PlayerState[];
+        turnNumber: number;
       };
     }
   | {
@@ -3878,7 +4354,7 @@ export type Action =
     }
   | {
       type: "SET_ACTIVE_PLAYER";
-      payload: number;
+      payload: { activePlayer: number; turnNumber: number };
     }
   | {
       type: "RESET_STATE";
@@ -3892,6 +4368,7 @@ const initialState: GameState = {
   mapHeight: 0,
   players: [],
   currentPlayerId: 0,
+  turnNumber: 1,
 };
 
 const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
@@ -3912,6 +4389,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mapHeight: action.payload.mapHeight,
         players: action.payload.players,
         currentPlayerId: currentId,
+        turnNumber: action.payload.turnNumber || state.turnNumber,
       };
     case "MOVE_PLAYER":
       return {
@@ -3923,7 +4401,8 @@ export function gameReducer(state: GameState, action: Action): GameState {
     case "SET_ACTIVE_PLAYER":
       return {
         ...state,
-        currentPlayerId: action.payload,
+        currentPlayerId: action.payload.activePlayer,
+        turnNumber: action.payload.turnNumber,
       };
     case "RESET_STATE":
       return { ...initialState };
@@ -3936,6 +4415,7 @@ type GameProviderProps = {
   instanceId: string;
   children: React.ReactNode;
 };
+
 function convertMapData(
   rawMap: number[][],
   resources: ResourceType[],
@@ -3955,11 +4435,10 @@ function convertMapData(
       if (tileCode === 82) { // 'R' — ресурс
         if (resources.length > 0) {
           const randomIndex = Math.floor(Math.random() * resources.length);
-          // Клонируем шаблон ресурса и генерируем уникальный id
           const resTemplate = resources[randomIndex];
           resource = {
             ...resTemplate,
-            id: parseInt(`${resTemplate.id}${instanceCounter}`) // либо использовать строковый id, например: resTemplate.id + "_" + instanceCounter
+            id: parseInt(`${resTemplate.id}${instanceCounter}`)
           };
           instanceCounter++;
         }
@@ -3967,11 +4446,10 @@ function convertMapData(
       if (tileCode === 77) { // 'M' — монстр
         if (monsters.length > 0) {
           const randomIndex = Math.floor(Math.random() * monsters.length);
-          // Клонируем шаблон монстра и генерируем уникальный id
           const monTemplate = monsters[randomIndex];
           monster = {
             ...monTemplate,
-            id: parseInt(`${monTemplate.id}${instanceCounter}`) // аналогично можно сделать строковый id
+            id: parseInt(`${monTemplate.id}${instanceCounter}`)
           };
           instanceCounter++;
         }
@@ -4038,7 +4516,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
-  
   useEffect(() => {
     async function fetchMatchData() {
       try {
@@ -4073,6 +4550,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
+            turnNumber: data.turn_number,
           },
         });
       } catch (err) {
@@ -4084,10 +4562,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket и обрабатываем входящие сообщения только для текущего instance_id
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
-    // Фильтрация по instanceId остается без изменений
     if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
       console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
       return;
@@ -4102,6 +4578,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           mapWidth: data.payload.mapWidth,
           mapHeight: data.payload.mapHeight,
           players: data.payload.players,
+          turnNumber: data.payload.turn_number,
         },
       });
     } else if (data.type === "MOVE_PLAYER") {
@@ -4110,9 +4587,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
       });
     } else if (data.type === "SET_ACTIVE_PLAYER") {
-      // Извлекаем activePlayer из payload
-      const activePlayer = data.payload.activePlayer;
-      dispatch({ type: "SET_ACTIVE_PLAYER", payload: activePlayer });
+      const { activePlayer, turnNumber } = data.payload;
+      dispatch({ type: "SET_ACTIVE_PLAYER", payload: { activePlayer, turnNumber } });
     }
   }, { instanceId: state.instanceId });
 
@@ -4130,6 +4606,21 @@ export function useGame() {
   }
   return context;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 //=============================
