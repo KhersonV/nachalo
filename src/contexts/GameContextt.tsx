@@ -109,6 +109,7 @@ export type Action =
         mapWidth: number;
         mapHeight: number;
         players: PlayerState[];
+        activePlayer: number;
         turnNumber: number;
       };
     }
@@ -152,7 +153,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mapWidth: action.payload.mapWidth,
         mapHeight: action.payload.mapHeight,
         players: action.payload.players,
-        currentPlayerId: currentId,
+        currentPlayerId: action.payload.activePlayer,
         turnNumber: action.payload.turnNumber || state.turnNumber,
       };
     case "MOVE_PLAYER":
@@ -314,6 +315,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
+            activePlayer: data.active_player,
             turnNumber: data.turn_number,
           },
         });
@@ -342,6 +344,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           mapWidth: data.payload.mapWidth,
           mapHeight: data.payload.mapHeight,
           players: data.payload.players,
+          activePlayer: data.payload.active_player,
           turnNumber: data.payload.turn_number,
         },
       });

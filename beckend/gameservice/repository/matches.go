@@ -33,7 +33,7 @@ func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, ma
 // Получить матч по instance_id
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
     query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number
+        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, active_player_id, turn_number
         FROM matches
         WHERE instance_id = $1
     `
@@ -47,6 +47,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
         &match.MapHeight,
         &match.Map,
         &match.CreatedAt,
+        &match.ActivePlayerID,
         &match.TurnNumber,
     )
     if err != nil {

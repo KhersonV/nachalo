@@ -1304,6 +1304,11 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1)
+	if err != nil {
+		log.Printf("Ошибка обновления состояния матча: %v", err)
+	}
+
 	response := map[string]interface{}{
 		"instance_id": req.InstanceID,
 		"mode":        req.Mode,
@@ -1338,6 +1343,12 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Если active_player_id равен 0, назначаем первого игрока активным (если он есть)
+	activePlayer := match.ActivePlayerID
+	if activePlayer == 0 && len(players) > 0 {
+		activePlayer = players[0].ID
+	}
+
 	response := map[string]interface{}{
 		"instance_id":   match.InstanceID,
 		"mode":          match.Mode,
@@ -1348,13 +1359,13 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		"map":           match.Map, // json.RawMessage
 		"players":       players,
 		"created_at":    match.CreatedAt,
-        "turn_number":   match.TurnNumber, 
+		"active_player": activePlayer,     // возвращаем актуальный activePlayer
+		"turn_number":   match.TurnNumber, // и turn_number
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
-
 
 
 
@@ -1961,6 +1972,8 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 
 
 
+
+
 // ==============================
 // /gameservice/models/match.go
 // ==============================
@@ -1968,21 +1981,23 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 package models
 
 import (
-    "encoding/json"
-    "time"
+	"encoding/json"
+	"time"
 )
 
 type MatchInfo struct {
-    InstanceID   string          `json:"instance_id"`
-    Mode         string          `json:"mode"`
-    TeamsCount   int             `json:"teams_count"`
-    TotalPlayers int             `json:"total_players"`
-    MapWidth     int             `json:"map_width"`
-    MapHeight    int             `json:"map_height"`
-    Map          json.RawMessage `json:"map"`
-    CreatedAt    time.Time       `json:"created_at"`
-    TurnNumber   int             `json:"turn_number"`
+	InstanceID     string          `json:"instance_id"`
+	Mode           string          `json:"mode"`
+	TeamsCount     int             `json:"teams_count"`
+	TotalPlayers   int             `json:"total_players"`
+	MapWidth       int             `json:"map_width"`
+	MapHeight      int             `json:"map_height"`
+	Map            json.RawMessage `json:"map"`
+	CreatedAt      time.Time       `json:"created_at"`
+	ActivePlayerID int             `json:"active_player"`
+	TurnNumber     int             `json:"turn_number"`
 }
+
 
 
 
@@ -2414,7 +2429,7 @@ func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, ma
 // Получить матч по instance_id
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
     query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number
+        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, active_player_id, turn_number
         FROM matches
         WHERE instance_id = $1
     `
@@ -2428,6 +2443,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
         &match.MapHeight,
         &match.Map,
         &match.CreatedAt,
+        &match.ActivePlayerID,
         &match.TurnNumber,
     )
     if err != nil {
@@ -4345,6 +4361,7 @@ export type Action =
         mapWidth: number;
         mapHeight: number;
         players: PlayerState[];
+        activePlayer: number;
         turnNumber: number;
       };
     }
@@ -4388,7 +4405,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mapWidth: action.payload.mapWidth,
         mapHeight: action.payload.mapHeight,
         players: action.payload.players,
-        currentPlayerId: currentId,
+        currentPlayerId: action.payload.activePlayer,
         turnNumber: action.payload.turnNumber || state.turnNumber,
       };
     case "MOVE_PLAYER":
@@ -4550,6 +4567,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
+            activePlayer: data.active_player,
             turnNumber: data.turn_number,
           },
         });
@@ -4578,6 +4596,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           mapWidth: data.payload.mapWidth,
           mapHeight: data.payload.mapHeight,
           players: data.payload.players,
+          activePlayer: data.payload.active_player,
           turnNumber: data.payload.turn_number,
         },
       });

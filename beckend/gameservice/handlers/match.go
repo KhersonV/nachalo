@@ -108,6 +108,11 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1)
+	if err != nil {
+		log.Printf("Ошибка обновления состояния матча: %v", err)
+	}
+
 	response := map[string]interface{}{
 		"instance_id": req.InstanceID,
 		"mode":        req.Mode,
@@ -142,6 +147,12 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Если active_player_id равен 0, назначаем первого игрока активным (если он есть)
+	activePlayer := match.ActivePlayerID
+	if activePlayer == 0 && len(players) > 0 {
+		activePlayer = players[0].ID
+	}
+
 	response := map[string]interface{}{
 		"instance_id":   match.InstanceID,
 		"mode":          match.Mode,
@@ -152,7 +163,8 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		"map":           match.Map, // json.RawMessage
 		"players":       players,
 		"created_at":    match.CreatedAt,
-        "turn_number":   match.TurnNumber, 
+		"active_player": activePlayer,     // возвращаем актуальный activePlayer
+		"turn_number":   match.TurnNumber, // и turn_number
 	}
 
 	w.Header().Set("Content-Type", "application/json")
