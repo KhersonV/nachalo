@@ -1,7 +1,5 @@
 ты самый лучший программист в мире с опытом 100 лет в продакшене, и написал почти все игры в данном сегменте. так как ты самый лучший - помоги мне справится со следующей задачей.
 
-мне нужно:
-Перенести критичную логику (передача хода, обновление состояния,) на сервер, а клиент синхронизировать через WebSocket.
 
 если тебе нужно менять код, то обязательно указывай что это за файл и какая функция. а лучше переписывай всю функцию целиком.
 
@@ -3427,7 +3425,7 @@ export default function GameController() {
     }
   }
 
-  const allowedTileCodes = [48, 80, 77, 82, 112];
+  const allowedTileCodes = [48, 80, 82, 112];
   const handleMove = async (direction: "up" | "down" | "left" | "right") => {
     if (!myPlayer) {
       console.warn("Мой игрок не найден");
@@ -3602,6 +3600,7 @@ export default function GameController() {
 
 
 
+
 //==================================
 // src/components/LoginPage.tsx
 //==================================
@@ -3701,9 +3700,9 @@ export interface Cell {
   x: number;
   y: number;
   tileCode: number;
-  resource: any | null;
+  resource: { image?: string } | null;
   isPortal?: boolean;
-  monster?: any;
+  monster?: { image?: string } | null;
 }
 
 export interface MapProps {
@@ -3725,7 +3724,7 @@ export default function Map({
   visionRange,
   playerPosition,
 }: MapProps) {
-  // Функция для проверки, находится ли клетка в пределах видимости активного игрока.
+  
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
@@ -3761,16 +3760,17 @@ export default function Map({
             justifyContent: "center",
             fontSize: "10px",
             color: "#fff",
+            position: "relative",
           }}
         >
-          {cell.id}
+          {renderCellContent(cell)}
         </div>
       ))}
     </div>
   );
 }
 
-// Функция, возвращающая цвет для клетки в зависимости от ее tileCode.
+// Функция, возвращающая фон по умолчанию, если изображение не задано
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
     case 48: // '0'
@@ -3789,6 +3789,31 @@ function getTileColor(cell: Cell): string {
       return "#952215"; // по умолчанию
   }
 }
+
+// Функция, которая возвращает JSX для содержимого клетки: изображение монстра или ресурса, если оно задано
+function renderCellContent(cell: Cell) {
+  if (cell.monster && cell.monster.image) {
+    return (
+      <img
+        src={cell.monster.image}
+        alt="monster"
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    );
+  }
+  if (cell.resource && cell.resource.image) {
+    return (
+      <img
+        src={cell.resource.image}
+        alt="resource"
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    );
+  }
+  // Если нет изображения, можно показать номер или оставить пустым
+  return null;
+}
+
 
 
 

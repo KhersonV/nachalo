@@ -12,9 +12,9 @@ export interface Cell {
   x: number;
   y: number;
   tileCode: number;
-  resource: any | null;
+  resource: { image?: string } | null;
   isPortal?: boolean;
-  monster?: any;
+  monster?: { image?: string } | null;
 }
 
 export interface MapProps {
@@ -36,7 +36,7 @@ export default function Map({
   visionRange,
   playerPosition,
 }: MapProps) {
-  // Функция для проверки, находится ли клетка в пределах видимости активного игрока.
+  
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
@@ -72,16 +72,17 @@ export default function Map({
             justifyContent: "center",
             fontSize: "10px",
             color: "#fff",
+            position: "relative",
           }}
         >
-          {cell.id}
+          {renderCellContent(cell)}
         </div>
       ))}
     </div>
   );
 }
 
-// Функция, возвращающая цвет для клетки в зависимости от ее tileCode.
+// Функция, возвращающая фон по умолчанию, если изображение не задано
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
     case 48: // '0'
@@ -99,4 +100,28 @@ function getTileColor(cell: Cell): string {
     default:
       return "#952215"; // по умолчанию
   }
+}
+
+// Функция, которая возвращает JSX для содержимого клетки: изображение монстра или ресурса, если оно задано
+function renderCellContent(cell: Cell) {
+  if (cell.monster && cell.monster.image) {
+    return (
+      <img
+        src={cell.monster.image}
+        alt="monster"
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    );
+  }
+  if (cell.resource && cell.resource.image) {
+    return (
+      <img
+        src={cell.resource.image}
+        alt="resource"
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
+    );
+  }
+  // Если нет изображения, можно показать номер или оставить пустым
+  return null;
 }

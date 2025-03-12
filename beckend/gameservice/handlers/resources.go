@@ -61,6 +61,7 @@ type MonsterData struct {
     Image           string    `json:"image"`
 	CreatedAt       time.Time `json:"created_at"`
 }
+
 func GetMonstersHandler(w http.ResponseWriter, r *http.Request) {
 	query := `SELECT id, name, type, health, max_health, attack, defense, speed, maneuverability, vision, image, created_at FROM monsters;`
 	rows, err := repository.DB.Query(query)

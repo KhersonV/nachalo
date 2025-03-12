@@ -66,7 +66,7 @@ export default function GameController() {
     }
   }
 
-  const allowedTileCodes = [48, 80, 77, 82, 112];
+  const allowedTileCodes = [48, 80, 82, 112];
   const handleMove = async (direction: "up" | "down" | "left" | "right") => {
     if (!myPlayer) {
       console.warn("Мой игрок не найден");
