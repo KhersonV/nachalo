@@ -22,4 +22,6 @@ type MatchInfo struct {
 	CreatedAt      time.Time       `json:"created_at"`
 	ActivePlayerID int             `json:"active_player"`
 	TurnNumber     int             `json:"turn_number"`
+	StartPositions  json.RawMessage `json:"start_positions"`
+	PortalPosition  json.RawMessage `json:"portal_position"`
 }

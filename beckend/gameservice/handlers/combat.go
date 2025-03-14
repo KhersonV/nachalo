@@ -1,4 +1,3 @@
-
 //====================================
 //gameservice/handlers/combat.go
 //====================================
@@ -13,7 +12,8 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-    "gameservice/models"
+	"gameservice/game"
+	"gameservice/models"
 	"gameservice/middleware"
 	"gameservice/repository"
 )
@@ -66,31 +66,43 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем границы
+	// Проверяем границы координат
 	if req.NewPosX < 0 || req.NewPosX >= mapWidth || req.NewPosY < 0 || req.NewPosY >= mapHeight {
 		http.Error(w, "Новые координаты вне границ карты", http.StatusBadRequest)
 		return
 	}
 
-	// Десериализуем карту
-	var rawMap [][]int
-	if err := json.Unmarshal(mapJSON, &rawMap); err != nil {
+	// Десериализуем карту как срез структур FullCell
+	var fullCells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &fullCells); err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Проверяем проходимость клетки
-	targetTileCode := rawMap[req.NewPosY][req.NewPosX]
-	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (в int)
+	// Находим клетку с нужными координатами
+	var targetCell *game.FullCell
+	for i := range fullCells {
+		if fullCells[i].X == req.NewPosX && fullCells[i].Y == req.NewPosY {
+			targetCell = &fullCells[i]
+			break
+		}
+	}
+	if targetCell == nil {
+		http.Error(w, "Целевая клетка не найдена", http.StatusBadRequest)
+		return
+	}
+
+	// Проверяем проходимость клетки. Пример: разрешаем перемещение, если клетка имеет один из следующих tileCode:
+	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (предполагаемые числовые значения)
 	passable := false
 	for _, code := range allowedTileCodes {
-		if targetTileCode == code {
+		if targetCell.TileCode == code {
 			passable = true
 			break
 		}
 	}
 	if !passable {
-		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetTileCode), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetCell.TileCode), http.StatusBadRequest)
 		return
 	}
 
@@ -126,7 +138,7 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	// Списываем энергию
 	player.Energy -= moveEnergyCost
 
-	// Обновляем позицию
+	// Обновляем позицию игрока
 	player.PosX = req.NewPosX
 	player.PosY = req.NewPosY
 
@@ -155,161 +167,156 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
-
 // ----------------- АТАКА ------------------
 
 type AttackRequest struct {
-    AttackerType string `json:"attacker_type"` // "player" или "monster"
-    AttackerID   int    `json:"attacker_id"`
-    TargetType   string `json:"target_type"`   // "player" или "monster"
-    TargetID     int    `json:"target_id"`
-    InstanceID   string `json:"instance_id"`   // Для работы с match‑копиями
+	AttackerType string `json:"attacker_type"` // "player" или "monster"
+	AttackerID   int    `json:"attacker_id"`
+	TargetType   string `json:"target_type"`   // "player" или "monster"
+	TargetID     int    `json:"target_id"`
+	InstanceID   string `json:"instance_id"`   // Для работы с match‑копиями
 }
 
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
-    var req AttackRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
-        return
-    }
+	var req AttackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
+		return
+	}
 
-    var attackerAttack, targetDefense int
-    var err error
+	var attackerAttack, targetDefense int
 
-    // Определяем атаку
-    switch req.AttackerType {
-    case "player":
-        player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
-        if errP != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения атакующего игрока: %v", errP), http.StatusInternalServerError)
-            return
-        }
-        attackerAttack = player.Attack
-    case "monster":
-        monster, errM := getMonsterByID(req.AttackerID)
-        if errM != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения атакующего монстра: %v", errM), http.StatusInternalServerError)
-            return
-        }
-        attackerAttack = monster.Attack
-    default:
-        http.Error(w, "Неверный тип атакующего", http.StatusBadRequest)
-        return
-    }
+	// Определяем атаку
+	switch req.AttackerType {
+	case "player":
+		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		if errP != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения атакующего игрока: %v", errP), http.StatusInternalServerError)
+			return
+		}
+		attackerAttack = player.Attack
+	case "monster":
+		monster, errM := getMonsterByID(req.AttackerID)
+		if errM != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения атакующего монстра: %v", errM), http.StatusInternalServerError)
+			return
+		}
+		attackerAttack = monster.Attack
+	default:
+		http.Error(w, "Неверный тип атакующего", http.StatusBadRequest)
+		return
+	}
 
-    // Определяем защиту и здоровье
-    var targetHealth int
-    switch req.TargetType {
-    case "player":
-        player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-        if errP != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели-игрока: %v", errP), http.StatusInternalServerError)
-            return
-        }
-        targetDefense = player.Defense
-        targetHealth = player.Health
-    case "monster":
-        monster, errM := getMonsterByID(req.TargetID)
-        if errM != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errM), http.StatusInternalServerError)
-            return
-        }
-        targetDefense = monster.Defense
-        targetHealth = monster.Health
-    default:
-        http.Error(w, "Неверный тип цели", http.StatusBadRequest)
-        return
-    }
+	// Определяем защиту и здоровье цели
+	var targetHealth int
+	switch req.TargetType {
+	case "player":
+		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		if errP != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели-игрока: %v", errP), http.StatusInternalServerError)
+			return
+		}
+		targetDefense = player.Defense
+		targetHealth = player.Health
+	case "monster":
+		monster, errM := getMonsterByID(req.TargetID)
+		if errM != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errM), http.StatusInternalServerError)
+			return
+		}
+		targetDefense = monster.Defense
+		targetHealth = monster.Health
+	default:
+		http.Error(w, "Неверный тип цели", http.StatusBadRequest)
+		return
+	}
 
-    damage := attackerAttack - targetDefense
-    if damage < 1 {
-        damage = 0
-    }
-    newHealth := targetHealth - damage
-    if newHealth < 0 {
-        newHealth = 0
-    }
+	damage := attackerAttack - targetDefense
+	if damage < 1 {
+		damage = 0
+	}
+	newHealth := targetHealth - damage
+	if newHealth < 0 {
+		newHealth = 0
+	}
 
-    // Применяем результат
-    switch req.TargetType {
-    case "player":
-        target, errT := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-        if errT != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели игрока: %v", errT), http.StatusInternalServerError)
-            return
-        }
-        target.Health = newHealth
-        err = repository.UpdateMatchPlayer(req.InstanceID, target)
-        if err != nil {
-            http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
-            return
-        }
-    case "monster":
-        target, errT := getMonsterByID(req.TargetID)
-        if errT != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели монстра: %v", errT), http.StatusInternalServerError)
-            return
-        }
-        target.Health = newHealth
-        err = updateMonster(target)
-        if err != nil {
-            http.Error(w, fmt.Sprintf("Ошибка обновления цели монстра: %v", err), http.StatusInternalServerError)
-            return
-        }
-    }
+	// Применяем результат атаки
+	switch req.TargetType {
+	case "player":
+		target, errT := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		if errT != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели игрока: %v", errT), http.StatusInternalServerError)
+			return
+		}
+		target.Health = newHealth
+		err := repository.UpdateMatchPlayer(req.InstanceID, target)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
+			return
+		}
+	case "monster":
+		target, errT := getMonsterByID(req.TargetID)
+		if errT != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели монстра: %v", errT), http.StatusInternalServerError)
+			return
+		}
+		target.Health = newHealth
+		err := updateMonster(target)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка обновления цели монстра: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
 
-    log.Printf("Атакующий %s %d атаковал цель %s %d, нанеся %d урона", req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, damage)
-    response := map[string]interface{}{
-        "attacker_type": req.AttackerType,
-        "attacker_id":   req.AttackerID,
-        "target_type":   req.TargetType,
-        "target_id":     req.TargetID,
-        "damage":        damage,
-        "new_target_hp": newHealth,
-    }
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	log.Printf("Атакующий %s %d атаковал цель %s %d, нанеся %d урона", req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, damage)
+	response := map[string]interface{}{
+		"attacker_type": req.AttackerType,
+		"attacker_id":   req.AttackerID,
+		"target_type":   req.TargetType,
+		"target_id":     req.TargetID,
+		"damage":        damage,
+		"new_target_hp": newHealth,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // ----------------- Работа с монстрами (упрощённо) ------------------
 
-// В вашем исходном коде эти функции были "getMonsterByID" и "updateMonster".
-// Их можно вынести в repository, но оставим здесь для наглядности.
-
 func getMonsterByID(id int) (*models.Monster, error) {
-    monster := &models.Monster{}
-    query := `
+	monster := &models.Monster{}
+	query := `
         SELECT id, name, type, health, max_health, attack, defense, speed, 
                maneuverability, vision, created_at
         FROM monsters
         WHERE id = $1
     `
-    row := repository.DB.QueryRow(query, id)
-    err := row.Scan(
-        &monster.ID,
-        &monster.Name,
-        &monster.Type,
-        &monster.Health,
-        &monster.MaxHealth,
-        &monster.Attack,
-        &monster.Defense,
-        &monster.Speed,
-        &monster.Maneuverability,
-        &monster.Vision,
-        &monster.CreatedAt,
-    )
-    if err != nil {
-        return nil, err
-    }
-    return monster, nil
+	row := repository.DB.QueryRow(query, id)
+	err := row.Scan(
+		&monster.ID,
+		&monster.Name,
+		&monster.Type,
+		&monster.Health,
+		&monster.MaxHealth,
+		&monster.Attack,
+		&monster.Defense,
+		&monster.Speed,
+		&monster.Maneuverability,
+		&monster.Vision,
+		&monster.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return monster, nil
 }
 
 func updateMonster(monster *models.Monster) error {
-    query := `
+	query := `
         UPDATE monsters
         SET health = $1
         WHERE id = $2
     `
-    _, err := repository.DB.Exec(query, monster.Health, monster.ID)
-    return err
+	_, err := repository.DB.Exec(query, monster.Health, monster.ID)
+	return err
 }

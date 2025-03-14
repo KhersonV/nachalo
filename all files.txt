@@ -475,9 +475,8 @@ func main() {
 
 
 
-
 //====================================
-//gameservice/game/mapgen.go
+// gameservice/game/mapgen.go
 //====================================
 
 package game
@@ -492,162 +491,208 @@ import (
 type TileType rune
 
 const (
-	Border    TileType = '1' // Граница карты (непроходимый тайл)
-	Walkable  TileType = '0' // Проходимый тайл, на котором могут появляться объекты
+	Border    TileType = '1' // Граница карты (непроходимый)
+	Walkable  TileType = '0' // Проходимый тайл
 	Obstacle  TileType = ' ' // Непроходимый тайл (препятствие)
-	Portal    TileType = 'p' // Портал для завершения инстанса (ровно один)
-	StartTile TileType = 'P' // Стартовая позиция для команды
-	// Дополнительные символы можно добавить по необходимости.
+	Portal    TileType = 'p' // Портал (выход)
+	StartTile TileType = 'P' // Стартовая позиция
 )
-
-// MapGrid – карта в виде двумерного среза тайлов.
-type MapGrid [][]TileType
 
 // MapConfig задаёт параметры генерации карты.
 type MapConfig struct {
-	TotalPlayers  int     // Общее количество игроков в матче (например, 10 для 5х5).
-	TeamsCount    int     // Количество команд (например, 2).
-	WalkableProb  float64 // Вероятность, что внутренний тайл будет проходимым ("0").
-	ResourceProb  float64 // Вероятность появления ресурса на проходимом тайле.
-	MonsterProb   float64 // Вероятность появления монстра на проходимом тайле.
-	// Размер карты будет вычисляться как (15 * TotalPlayers) по ширине и высоте.
+	TotalPlayers int     // Общее количество игроков
+	TeamsCount   int     // Количество команд
+	WalkableProb float64 // Вероятность, что тайл будет проходимым
+	ResourceProb float64 // Вероятность появления ресурса на проходимом тайле
+	MonsterProb  float64 // Вероятность появления монстра на проходимом тайле
 }
 
-// GenerateMap генерирует карту согласно конфигурации.
-// Размер карты вычисляется как (15 * TotalPlayers) x (15 * TotalPlayers).
-// Возвращает карту, список стартовых позиций для команд и позицию портала.
-func GenerateMap(cfg MapConfig) (MapGrid, [][2]int, [2]int, error) {
+// ResourceData – структура для хранения данных ресурса.
+type ResourceData struct {
+	ID          int            `json:"id"`
+	Type        string         `json:"type"`        // тип ресурса (например, "wood", "food")
+	Description string         `json:"description"` // описание ресурса
+	Effect      map[string]int `json:"effect"`      // эффекты или бонусы (например, {"energy": 10})
+	Image       string         `json:"image"`       // путь к изображению ресурса
+	// Дополнительные поля можно добавить
+}
+
+// MonsterData – структура для хранения данных монстра.
+type MonsterData struct {
+	ID              int    `json:"id"`
+	Name            string `json:"name"`            // имя монстра (например, "Goblin")
+	Type            string `json:"type"`            // тип монстра (например, "aggressive")
+	Health          int    `json:"health"`          // текущее здоровье
+	MaxHealth       int    `json:"max_health"`      // максимальное здоровье
+	Attack          int    `json:"attack"`          // показатель атаки
+	Defense         int    `json:"defense"`         // показатель защиты
+	Speed           int    `json:"speed"`           // скорость
+	Maneuverability int    `json:"maneuverability"` // маневренность
+	Vision          int    `json:"vision"`          // радиус видения
+	Image           string `json:"image"`           // путь к изображению монстра
+	// Дополнительные поля можно добавить
+}
+
+// FullCell – полная информация о клетке карты.
+// Добавлены поля CellID (уникальный идентификатор) и IsPlayer (указывает, находится ли игрок в клетке).
+type FullCell struct {
+	CellID   int           `json:"cell_id"`            // Уникальный идентификатор клетки
+	X        int           `json:"x"`                  // Координата X
+	Y        int           `json:"y"`                  // Координата Y
+	TileCode int           `json:"tileCode"`           // Код тайла (например, Walkable, Border, Portal, 'R', 'M', 'P')
+	Resource *ResourceData `json:"resource,omitempty"` // Данные ресурса (если клетка содержит ресурс)
+	Monster  *MonsterData  `json:"monster,omitempty"`  // Данные монстра (если клетка содержит монстра)
+	IsPortal bool          `json:"isPortal,omitempty"` // Флаг, что клетка является порталом
+	IsPlayer bool          `json:"isPlayer,omitempty"` // Флаг, что в клетке находится игрок
+}
+
+// GenerateFullMap генерирует полную карту, фиксируя размещение ресурсов и монстров.
+// Функция возвращает срез FullCell, ширину, высоту, массив стартовых позиций и позицию портала.
+func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []MonsterData) ([]FullCell, int, int, [][2]int, [2]int, error) {
+	// Проверка входных параметров.
 	if cfg.TotalPlayers < 1 {
-		return nil, nil, [2]int{}, errors.New("общее количество игроков должно быть >= 1")
+		return nil, 0, 0, nil, [2]int{}, errors.New("общее количество игроков должно быть >= 1")
 	}
 	if cfg.TeamsCount < 1 {
-		return nil, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
+		return nil, 0, 0, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
 	}
+
+	// Определяем размеры карты: ширина и высота равны 15 * TotalPlayers.
 	width := 15 * cfg.TotalPlayers
 	height := 15 * cfg.TotalPlayers
 
+	// Инициализация генератора случайных чисел.
 	rand.Seed(time.Now().UnixNano())
 
-	generate := func() MapGrid {
-		grid := make(MapGrid, height)
-		for y := 0; y < height; y++ {
-			grid[y] = make([]TileType, width)
-			for x := 0; x < width; x++ {
-				if x == 0 || y == 0 || x == width-1 || y == height-1 {
-					grid[y][x] = Border
+	// Генерация базовой карты в виде двумерного среза tileCode.
+	grid := make([][]int, height)
+	for y := 0; y < height; y++ {
+		grid[y] = make([]int, width)
+		for x := 0; x < width; x++ {
+			if x == 0 || y == 0 || x == width-1 || y == height-1 {
+				grid[y][x] = int(Border)
+			} else {
+				if rand.Float64() < cfg.WalkableProb {
+					grid[y][x] = int(Walkable)
 				} else {
-					if rand.Float64() < cfg.WalkableProb {
-						grid[y][x] = Walkable
-					} else {
-						grid[y][x] = Obstacle
-					}
+					grid[y][x] = int(Obstacle)
 				}
 			}
 		}
-		return grid
 	}
 
-	// Размещает стартовые точки для команд и портал.
-	placeSpecialTilesForTeams := func(grid MapGrid, teamsCount int) ([][2]int, [2]int, error) {
+	// Функция для размещения специальных тайлов: стартовых позиций и портала.
+	placeSpecialTiles := func(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
 		var candidates []struct{ x, y int }
+		// Собираем все проходимые тайлы (Walkable).
 		for y := 1; y < height-1; y++ {
 			for x := 1; x < width-1; x++ {
-				if grid[y][x] == Walkable {
+				if grid[y][x] == int(Walkable) {
 					candidates = append(candidates, struct{ x, y int }{x, y})
 				}
 			}
 		}
+		// Для размещения необходимо как минимум teamsCount+1 проходимых тайлов.
 		if len(candidates) < teamsCount+1 {
 			return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для размещения специальных точек")
 		}
+		// Перемешиваем кандидатов.
 		rand.Shuffle(len(candidates), func(i, j int) {
 			candidates[i], candidates[j] = candidates[j], candidates[i]
 		})
 		var starts [][2]int
+		// Первые teamsCount кандидатов назначаются стартовыми позициями.
 		for i := 0; i < teamsCount; i++ {
 			pt := candidates[i]
-			grid[pt.y][pt.x] = StartTile
+			grid[pt.y][pt.x] = int(StartTile)
 			starts = append(starts, [2]int{pt.x, pt.y})
 		}
+		// Следующий кандидат назначается порталом.
 		portalCandidate := candidates[teamsCount]
-		grid[portalCandidate.y][portalCandidate.x] = Portal
+		grid[portalCandidate.y][portalCandidate.x] = int(Portal)
 		portalPos := [2]int{portalCandidate.x, portalCandidate.y}
 		return starts, portalPos, nil
 	}
 
-	isConnectedFrom := func(grid MapGrid, startX, startY, portalX, portalY int) bool {
-		visited := make([][]bool, height)
-		for i := range visited {
-			visited[i] = make([]bool, width)
-		}
-		type Point struct{ x, y int }
-		queue := []Point{{startX, startY}}
-		visited[startY][startX] = true
-		dirs := []Point{{0, 1}, {0, -1}, {1, 0}, {-1, 0}}
-		for len(queue) > 0 {
-			p := queue[0]
-			queue = queue[1:]
-			if p.x == portalX && p.y == portalY {
-				return true
-			}
-			for _, d := range dirs {
-				nx, ny := p.x+d.x, p.y+d.y
-				if nx < 0 || nx >= width || ny < 0 || ny >= height {
-					continue
-				}
-				if !visited[ny][nx] && (grid[ny][nx] == Walkable || grid[ny][nx] == StartTile || grid[ny][nx] == Portal) {
-					visited[ny][nx] = true
-					queue = append(queue, Point{nx, ny})
-				}
-			}
-		}
-		return false
+	startPositions, portalPos, err := placeSpecialTiles(grid, cfg.TeamsCount)
+	if err != nil {
+		return nil, 0, 0, nil, [2]int{}, err
 	}
 
-	allStartsConnected := func(grid MapGrid, starts [][2]int, portalX, portalY int) bool {
-		for _, start := range starts {
-			if !isConnectedFrom(grid, start[0], start[1], portalX, portalY) {
-				return false
-			}
-		}
-		return true
-	}
+	// Формируем полную карту.
+	var fullCells []FullCell
+	cellIDCounter := 1
+	// Счётчики для уникальных ID копий ресурсов и монстров.
+	resourceCounter := 1
+	monsterCounter := 1
 
-	placeObjects := func(grid MapGrid) {
-		for y := 1; y < height-1; y++ {
-			for x := 1; x < width-1; x++ {
-				if grid[y][x] != Walkable {
-					continue
-				}
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			tileCode := grid[y][x]
+			var res *ResourceData = nil
+			var mon *MonsterData = nil
+			isPortal := false
+
+			// Если клетка исходно проходимая (Walkable), случайно решаем, появится ли в ней ресурс или монстр.
+			if tileCode == int(Walkable) {
 				r := rand.Float64()
-				if r < cfg.MonsterProb {
-					grid[y][x] = 'M'
-				} else if r < cfg.MonsterProb+cfg.ResourceProb {
-					grid[y][x] = 'R'
+				if r < cfg.MonsterProb && len(monsters) > 0 {
+					chosen := monsters[rand.Intn(len(monsters))]
+					// Генерируем уникальный ID для этой копии.
+					newID := chosen.ID*1000000 + monsterCounter
+					monsterCounter++
+					mon = &MonsterData{
+						ID:              newID,
+						Name:            chosen.Name,
+						Type:            chosen.Type,
+						Health:          chosen.Health,
+						MaxHealth:       chosen.MaxHealth,
+						Attack:          chosen.Attack,
+						Defense:         chosen.Defense,
+						Speed:           chosen.Speed,
+						Maneuverability: chosen.Maneuverability,
+						Vision:          chosen.Vision,
+						Image:           chosen.Image,
+					}
+					// Обновляем tileCode, чтобы отметить наличие монстра.
+					tileCode = int('M')
+				} else if r < cfg.MonsterProb+cfg.ResourceProb && len(resources) > 0 {
+					chosen := resources[rand.Intn(len(resources))]
+					newID := chosen.ID*1000000 + resourceCounter
+					resourceCounter++
+					res = &ResourceData{
+						ID:          newID,
+						Type:        chosen.Type,
+						Description: chosen.Description,
+						Effect:      chosen.Effect,
+						Image:       chosen.Image,
+					}
+					tileCode = int('R')
 				}
 			}
+
+			// Если клетка имеет код портала, устанавливаем флаг.
+			if tileCode == int(Portal) || tileCode == 112 {
+				isPortal = true
+			}
+
+			fullCells = append(fullCells, FullCell{
+				CellID:   cellIDCounter,
+				X:        x,
+				Y:        y,
+				TileCode: tileCode,
+				Resource: res,
+				Monster:  mon,
+				IsPortal: isPortal,
+				IsPlayer: false,
+			})
+			cellIDCounter++
 		}
 	}
 
-	var grid MapGrid
-	var starts [][2]int
-	var portal [2]int
-
-	for {
-		grid = generate()
-		var err error
-		starts, portal, err = placeSpecialTilesForTeams(grid, cfg.TeamsCount)
-		if err != nil {
-			return nil, nil, [2]int{}, err
-		}
-		if allStartsConnected(grid, starts, portal[0], portal[1]) {
-			break
-		}
-	}
-
-	placeObjects(grid)
-	return grid, starts, portal, nil
+	return fullCells, width, height, startPositions, portalPos, nil
 }
+
 
 
 
@@ -766,7 +811,6 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 
 
 
-
 //====================================
 //gameservice/handlers/combat.go
 //====================================
@@ -781,7 +825,8 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-    "gameservice/models"
+	"gameservice/game"
+	"gameservice/models"
 	"gameservice/middleware"
 	"gameservice/repository"
 )
@@ -834,31 +879,43 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем границы
+	// Проверяем границы координат
 	if req.NewPosX < 0 || req.NewPosX >= mapWidth || req.NewPosY < 0 || req.NewPosY >= mapHeight {
 		http.Error(w, "Новые координаты вне границ карты", http.StatusBadRequest)
 		return
 	}
 
-	// Десериализуем карту
-	var rawMap [][]int
-	if err := json.Unmarshal(mapJSON, &rawMap); err != nil {
+	// Десериализуем карту как срез структур FullCell
+	var fullCells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &fullCells); err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Проверяем проходимость клетки
-	targetTileCode := rawMap[req.NewPosY][req.NewPosX]
-	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (в int)
+	// Находим клетку с нужными координатами
+	var targetCell *game.FullCell
+	for i := range fullCells {
+		if fullCells[i].X == req.NewPosX && fullCells[i].Y == req.NewPosY {
+			targetCell = &fullCells[i]
+			break
+		}
+	}
+	if targetCell == nil {
+		http.Error(w, "Целевая клетка не найдена", http.StatusBadRequest)
+		return
+	}
+
+	// Проверяем проходимость клетки. Пример: разрешаем перемещение, если клетка имеет один из следующих tileCode:
+	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (предполагаемые числовые значения)
 	passable := false
 	for _, code := range allowedTileCodes {
-		if targetTileCode == code {
+		if targetCell.TileCode == code {
 			passable = true
 			break
 		}
 	}
 	if !passable {
-		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetTileCode), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetCell.TileCode), http.StatusBadRequest)
 		return
 	}
 
@@ -894,7 +951,7 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	// Списываем энергию
 	player.Energy -= moveEnergyCost
 
-	// Обновляем позицию
+	// Обновляем позицию игрока
 	player.PosX = req.NewPosX
 	player.PosY = req.NewPosY
 
@@ -923,163 +980,158 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
-
 // ----------------- АТАКА ------------------
 
 type AttackRequest struct {
-    AttackerType string `json:"attacker_type"` // "player" или "monster"
-    AttackerID   int    `json:"attacker_id"`
-    TargetType   string `json:"target_type"`   // "player" или "monster"
-    TargetID     int    `json:"target_id"`
-    InstanceID   string `json:"instance_id"`   // Для работы с match‑копиями
+	AttackerType string `json:"attacker_type"` // "player" или "monster"
+	AttackerID   int    `json:"attacker_id"`
+	TargetType   string `json:"target_type"`   // "player" или "monster"
+	TargetID     int    `json:"target_id"`
+	InstanceID   string `json:"instance_id"`   // Для работы с match‑копиями
 }
 
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
-    var req AttackRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
-        return
-    }
+	var req AttackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
+		return
+	}
 
-    var attackerAttack, targetDefense int
-    var err error
+	var attackerAttack, targetDefense int
 
-    // Определяем атаку
-    switch req.AttackerType {
-    case "player":
-        player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
-        if errP != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения атакующего игрока: %v", errP), http.StatusInternalServerError)
-            return
-        }
-        attackerAttack = player.Attack
-    case "monster":
-        monster, errM := getMonsterByID(req.AttackerID)
-        if errM != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения атакующего монстра: %v", errM), http.StatusInternalServerError)
-            return
-        }
-        attackerAttack = monster.Attack
-    default:
-        http.Error(w, "Неверный тип атакующего", http.StatusBadRequest)
-        return
-    }
+	// Определяем атаку
+	switch req.AttackerType {
+	case "player":
+		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		if errP != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения атакующего игрока: %v", errP), http.StatusInternalServerError)
+			return
+		}
+		attackerAttack = player.Attack
+	case "monster":
+		monster, errM := getMonsterByID(req.AttackerID)
+		if errM != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения атакующего монстра: %v", errM), http.StatusInternalServerError)
+			return
+		}
+		attackerAttack = monster.Attack
+	default:
+		http.Error(w, "Неверный тип атакующего", http.StatusBadRequest)
+		return
+	}
 
-    // Определяем защиту и здоровье
-    var targetHealth int
-    switch req.TargetType {
-    case "player":
-        player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-        if errP != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели-игрока: %v", errP), http.StatusInternalServerError)
-            return
-        }
-        targetDefense = player.Defense
-        targetHealth = player.Health
-    case "monster":
-        monster, errM := getMonsterByID(req.TargetID)
-        if errM != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errM), http.StatusInternalServerError)
-            return
-        }
-        targetDefense = monster.Defense
-        targetHealth = monster.Health
-    default:
-        http.Error(w, "Неверный тип цели", http.StatusBadRequest)
-        return
-    }
+	// Определяем защиту и здоровье цели
+	var targetHealth int
+	switch req.TargetType {
+	case "player":
+		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		if errP != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели-игрока: %v", errP), http.StatusInternalServerError)
+			return
+		}
+		targetDefense = player.Defense
+		targetHealth = player.Health
+	case "monster":
+		monster, errM := getMonsterByID(req.TargetID)
+		if errM != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errM), http.StatusInternalServerError)
+			return
+		}
+		targetDefense = monster.Defense
+		targetHealth = monster.Health
+	default:
+		http.Error(w, "Неверный тип цели", http.StatusBadRequest)
+		return
+	}
 
-    damage := attackerAttack - targetDefense
-    if damage < 1 {
-        damage = 0
-    }
-    newHealth := targetHealth - damage
-    if newHealth < 0 {
-        newHealth = 0
-    }
+	damage := attackerAttack - targetDefense
+	if damage < 1 {
+		damage = 0
+	}
+	newHealth := targetHealth - damage
+	if newHealth < 0 {
+		newHealth = 0
+	}
 
-    // Применяем результат
-    switch req.TargetType {
-    case "player":
-        target, errT := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-        if errT != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели игрока: %v", errT), http.StatusInternalServerError)
-            return
-        }
-        target.Health = newHealth
-        err = repository.UpdateMatchPlayer(req.InstanceID, target)
-        if err != nil {
-            http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
-            return
-        }
-    case "monster":
-        target, errT := getMonsterByID(req.TargetID)
-        if errT != nil {
-            http.Error(w, fmt.Sprintf("Ошибка получения цели монстра: %v", errT), http.StatusInternalServerError)
-            return
-        }
-        target.Health = newHealth
-        err = updateMonster(target)
-        if err != nil {
-            http.Error(w, fmt.Sprintf("Ошибка обновления цели монстра: %v", err), http.StatusInternalServerError)
-            return
-        }
-    }
+	// Применяем результат атаки
+	switch req.TargetType {
+	case "player":
+		target, errT := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		if errT != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели игрока: %v", errT), http.StatusInternalServerError)
+			return
+		}
+		target.Health = newHealth
+		err := repository.UpdateMatchPlayer(req.InstanceID, target)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
+			return
+		}
+	case "monster":
+		target, errT := getMonsterByID(req.TargetID)
+		if errT != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения цели монстра: %v", errT), http.StatusInternalServerError)
+			return
+		}
+		target.Health = newHealth
+		err := updateMonster(target)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка обновления цели монстра: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
 
-    log.Printf("Атакующий %s %d атаковал цель %s %d, нанеся %d урона", req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, damage)
-    response := map[string]interface{}{
-        "attacker_type": req.AttackerType,
-        "attacker_id":   req.AttackerID,
-        "target_type":   req.TargetType,
-        "target_id":     req.TargetID,
-        "damage":        damage,
-        "new_target_hp": newHealth,
-    }
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	log.Printf("Атакующий %s %d атаковал цель %s %d, нанеся %d урона", req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, damage)
+	response := map[string]interface{}{
+		"attacker_type": req.AttackerType,
+		"attacker_id":   req.AttackerID,
+		"target_type":   req.TargetType,
+		"target_id":     req.TargetID,
+		"damage":        damage,
+		"new_target_hp": newHealth,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // ----------------- Работа с монстрами (упрощённо) ------------------
 
-// В вашем исходном коде эти функции были "getMonsterByID" и "updateMonster".
-// Их можно вынести в repository, но оставим здесь для наглядности.
-
 func getMonsterByID(id int) (*models.Monster, error) {
-    monster := &models.Monster{}
-    query := `
+	monster := &models.Monster{}
+	query := `
         SELECT id, name, type, health, max_health, attack, defense, speed, 
                maneuverability, vision, created_at
         FROM monsters
         WHERE id = $1
     `
-    row := repository.DB.QueryRow(query, id)
-    err := row.Scan(
-        &monster.ID,
-        &monster.Name,
-        &monster.Type,
-        &monster.Health,
-        &monster.MaxHealth,
-        &monster.Attack,
-        &monster.Defense,
-        &monster.Speed,
-        &monster.Maneuverability,
-        &monster.Vision,
-        &monster.CreatedAt,
-    )
-    if err != nil {
-        return nil, err
-    }
-    return monster, nil
+	row := repository.DB.QueryRow(query, id)
+	err := row.Scan(
+		&monster.ID,
+		&monster.Name,
+		&monster.Type,
+		&monster.Health,
+		&monster.MaxHealth,
+		&monster.Attack,
+		&monster.Defense,
+		&monster.Speed,
+		&monster.Maneuverability,
+		&monster.Vision,
+		&monster.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return monster, nil
 }
 
 func updateMonster(monster *models.Monster) error {
-    query := `
+	query := `
         UPDATE monsters
         SET health = $1
         WHERE id = $2
     `
-    _, err := repository.DB.Exec(query, monster.Health, monster.ID)
-    return err
+	_, err := repository.DB.Exec(query, monster.Health, monster.ID)
+	return err
 }
 
 
@@ -1191,7 +1243,6 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 //===============================
 // gameservice/handlers/match.go
 //===============================
@@ -1232,14 +1283,39 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		MonsterProb:  0.05,
 	}
 
-	grid, startPositions, _, err := game.GenerateMap(cfg)
+	// Получите ресурсы и монстров из БД (например, функции repository.GetResourcesData(), repository.GetMonstersData())
+	resourcesFromDB, err := repository.GetResourcesData() // функция должна вернуть []game.ResourceData
 	if err != nil {
-		log.Printf("Ошибка генерации карты: %v", err)
+		http.Error(w, "Ошибка загрузки ресурсов", http.StatusInternalServerError)
+		return
+	}
+	monstersFromDB, err := repository.GetMonstersData() // функция должна вернуть []game.MonsterData
+	if err != nil {
+		http.Error(w, "Ошибка загрузки монстров", http.StatusInternalServerError)
+		return
+	}
+
+	// Генерируем полную карту
+	fullMap, mapWidth, mapHeight, startPositions, portalPos, err := game.GenerateFullMap(cfg, resourcesFromDB, monstersFromDB)
+	if err != nil {
+		log.Printf("Ошибка генерации полной карты: %v", err)
 		http.Error(w, "Ошибка генерации карты", http.StatusInternalServerError)
 		return
 	}
 
-	mapData, err := json.Marshal(grid)
+	// Преобразуем startPositions и portalPos в JSON
+	startPosJSON, err := json.Marshal(startPositions)
+	if err != nil {
+		http.Error(w, "Ошибка маршалинга стартовых позиций", http.StatusInternalServerError)
+		return
+	}
+	portalPosJSON, err := json.Marshal(portalPos)
+	if err != nil {
+		http.Error(w, "Ошибка маршалинга позиции портала", http.StatusInternalServerError)
+		return
+	}
+
+	mapData, err := json.Marshal(fullMap)
 	if err != nil {
 		http.Error(w, "Ошибка маршалинга карты", http.StatusInternalServerError)
 		return
@@ -1247,22 +1323,26 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	createdAt := time.Now()
 
+	// Сохраняем матч, включая новые поля start_positions и portal_position
 	_, err = repository.DB.Exec(`
         INSERT INTO matches (
-            instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order, created_at, turn_number
+            instance_id, mode, teams_count, total_players, map_width, map_height, map, 
+            active_player_id, turn_order, created_at, turn_number, start_positions, portal_position
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12
         )`,
 		req.InstanceID,
 		req.Mode,
 		req.TeamsCount,
 		req.TotalPlayers,
-		len(grid[0]),
-		len(grid),
+		mapWidth,
+		mapHeight,
 		string(mapData),
 		req.PlayerIDs[0],
 		fmt.Sprintf("[%d]", req.PlayerIDs[0]),
 		createdAt,
+		string(startPosJSON),
+		string(portalPosJSON),
 	)
 	if err != nil {
 		log.Printf("Ошибка вставки матча: %v", err)
@@ -1270,10 +1350,10 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаём состояние матча (в котором теперь хранится TurnNumber)
+	// Создаем локальное состояние матча
 	game.CreateMatchState(req.InstanceID, req.PlayerIDs)
 
-	// Вставляем игроков в таблицу match_players
+	// Распределяем игроков по стартовым позициям.
 	for i, playerID := range req.PlayerIDs {
 		player, err := repository.GetPlayerByUserID(playerID)
 		if err != nil {
@@ -1281,13 +1361,15 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		pos := startPositions[0] // для PVE одна команда
-		groupID := 1
-		if req.TeamsCount > 1 && i >= len(req.PlayerIDs)/2 {
-			pos = startPositions[1]
-			groupID = 2
+		var pos [2]int
+		// Если для команды больше одной стартовой позиции, распределяем их по очереди.
+		if i < len(startPositions) {
+			pos = startPositions[i]
+		} else {
+			pos = startPositions[0]
 		}
 
+		groupID := 1
 		err = repository.CreateMatchPlayerCopy(req.InstanceID, player, pos[0], pos[1], groupID)
 		if err != nil {
 			log.Printf("Ошибка вставки игрока в матч: %v", err)
@@ -1302,20 +1384,23 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
 	err = repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1)
 	if err != nil {
 		log.Printf("Ошибка обновления состояния матча: %v", err)
 	}
 
 	response := map[string]interface{}{
-		"instance_id": req.InstanceID,
-		"mode":        req.Mode,
-		"map":         grid,
-		"created_at":  createdAt,
-		"map_width":   len(grid[0]),
-		"map_height":  len(grid),
-		"player_ids":  req.PlayerIDs,
-		"players":     playersInMatch,
+		"instance_id":    req.InstanceID,
+		"mode":           req.Mode,
+		"map":            fullMap,
+		"created_at":     createdAt,
+		"map_width":      mapWidth,
+		"map_height":     mapHeight,
+		"player_ids":     req.PlayerIDs,
+		"players":        playersInMatch,
+		"start_positions": string(startPosJSON),
+		"portal_position": string(portalPosJSON),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1341,24 +1426,25 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Если active_player_id равен 0, назначаем первого игрока активным (если он есть)
 	activePlayer := match.ActivePlayerID
 	if activePlayer == 0 && len(players) > 0 {
 		activePlayer = players[0].ID
 	}
 
 	response := map[string]interface{}{
-		"instance_id":   match.InstanceID,
-		"mode":          match.Mode,
-		"teams_count":   match.TeamsCount,
-		"total_players": match.TotalPlayers,
-		"map_width":     match.MapWidth,
-		"map_height":    match.MapHeight,
-		"map":           match.Map, // json.RawMessage
-		"players":       players,
-		"created_at":    match.CreatedAt,
-		"active_player": activePlayer,     // возвращаем актуальный activePlayer
-		"turn_number":   match.TurnNumber, // и turn_number
+		"instance_id":     match.InstanceID,
+		"mode":            match.Mode,
+		"teams_count":     match.TeamsCount,
+		"total_players":   match.TotalPlayers,
+		"map_width":       match.MapWidth,
+		"map_height":      match.MapHeight,
+		"map":             match.Map, // сохранённый массив FullCell (JSON)
+		"players":         players,
+		"created_at":      match.CreatedAt,
+		"active_player":   activePlayer,
+		"turn_number":     match.TurnNumber,
+		"start_positions": match.StartPositions, // если у вас в модели MatchInfo есть это поле
+		"portal_position": match.PortalPosition,   // аналогично
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1972,6 +2058,7 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 
 
 
+
 // ==============================
 // /gameservice/models/match.go
 // ==============================
@@ -1994,7 +2081,10 @@ type MatchInfo struct {
 	CreatedAt      time.Time       `json:"created_at"`
 	ActivePlayerID int             `json:"active_player"`
 	TurnNumber     int             `json:"turn_number"`
+	StartPositions  json.RawMessage `json:"start_positions"`
+	PortalPosition  json.RawMessage `json:"portal_position"`
 }
+
 
 
 
@@ -2128,7 +2218,7 @@ import (
     "database/sql"
     "log"
     "encoding/json"
-    
+    "strings"
     _ "github.com/lib/pq"
     "gameservice/game"
 )
@@ -2290,6 +2380,65 @@ func RestoreMatchStates() error {
         log.Printf("Состояние матча %s восстановлено", instanceID)
     }
     return nil
+}
+
+
+
+// GetResourcesData извлекает данные ресурсов и возвращает срез game.ResourceData.
+func GetResourcesData() ([]game.ResourceData, error) {
+	var resources []game.ResourceData
+	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rd game.ResourceData
+		var effectBytes []byte
+		if err := rows.Scan(&rd.ID, &rd.Type, &rd.Description, &effectBytes, &rd.Image); err != nil {
+			return nil, err
+		}
+		// Преобразуем JSONB поле effect в map[string]int
+		var effect map[string]int
+		if err := json.Unmarshal(effectBytes, &effect); err != nil {
+			// Если эффект отсутствует или пустой, можно установить пустую мапу
+			effect = make(map[string]int)
+		}
+		rd.Effect = effect
+		// Удаляем лишние кавычки, если они есть
+		rd.Image = strings.Trim(rd.Image, "\"")
+		resources = append(resources, rd)
+	}
+	// Обработка ошибки rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+// GetMonstersData извлекает данные монстров и возвращает срез game.MonsterData.
+func GetMonstersData() ([]game.MonsterData, error) {
+	var monsters []game.MonsterData
+	rows, err := DB.Query(`SELECT id, name, type, health, max_health, attack, defense, speed, maneuverability, vision, image FROM monsters`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var md game.MonsterData
+		if err := rows.Scan(&md.ID, &md.Name, &md.Type, &md.Health, &md.MaxHealth, &md.Attack, &md.Defense, &md.Speed, &md.Maneuverability, &md.Vision, &md.Image, ); err != nil {
+			return nil, err
+		}
+		// Удаляем лишние кавычки из строки с изображением
+		md.Image = strings.Trim(md.Image, "\"")
+		monsters = append(monsters, md)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return monsters, nil
 }
 
 // Прочие функции для инициализации и т.п.
@@ -4274,16 +4423,17 @@ export function useAuth() {
 
 
 
-
 // ==============================
 // src/contexts/GameContextt.tsx
 // ==============================
+
 "use client";
 
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
 
+// Типы для бонусов и инвентаря
 export type BonusAttributes = {
   energy?: number;
   maxEnergy?: number;
@@ -4307,6 +4457,7 @@ export type Inventory = {
   artifacts: Record<string, InventoryItem>;
 };
 
+// Тип игрока, используемый на клиенте
 export type PlayerState = {
   id: number;
   name: string;
@@ -4332,6 +4483,7 @@ export type PlayerState = {
   rangeDistance?: number;
 };
 
+// Тип монстра
 export type MonsterType = {
   id: number;
   name: string;
@@ -4347,6 +4499,7 @@ export type MonsterType = {
   created_at: string;
 };
 
+// Тип ресурса
 export type ResourceType = {
   id: number;
   type: string;
@@ -4355,20 +4508,24 @@ export type ResourceType = {
   image: string;
 };
 
+// Тип клетки – мы добавляем поле cell_id вместо id
 export type Cell = {
-  id: number;
+  cell_id: number;
   x: number;
   y: number;
   tileCode: number;
   resource: ResourceType | null;
   monster: MonsterType | null;
   isPortal?: boolean;
+  // isPlayer можно добавить, если нужно
+  isPlayer?: boolean;
 };
 
+// Состояние игры
 export type GameState = {
   instanceId: string;
   mode: string;
-  grid: Cell[];
+  grid: Cell[]; // фиксированная карта, полученная с сервера
   mapWidth: number;
   mapHeight: number;
   players: PlayerState[];
@@ -4376,6 +4533,7 @@ export type GameState = {
   turnNumber: number;
 };
 
+// Действия редьюсера
 export type Action =
   | {
       type: "SET_MATCH_DATA";
@@ -4413,15 +4571,13 @@ const initialState: GameState = {
   turnNumber: 1,
 };
 
+// Создаем контекст
 const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
+// Редьюсер обновляет состояние игры по действиям
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
-      let currentId = state.currentPlayerId;
-      if (currentId === 0 && action.payload.players.length > 0) {
-        currentId = action.payload.players[0].id;
-      }
       return {
         ...state,
         instanceId: action.payload.instanceId,
@@ -4458,68 +4614,14 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-function convertMapData(
-  rawMap: number[][],
-  resources: ResourceType[],
-  monsters: MonsterType[]
-): Cell[] {
-  const cells: Cell[] = [];
-  let cellId = 0;
-  let instanceCounter = 1; // Счётчик для уникальных экземпляров ресурсов и монстров
-
-  for (let y = 0; y < rawMap.length; y++) {
-    for (let x = 0; x < rawMap[y].length; x++) {
-      const tileCode = rawMap[y][x];
-      let resource: ResourceType | null = null;
-      let monster: MonsterType | null = null;
-      let isPortal = false;
-
-      if (tileCode === 82) { // 'R' — ресурс
-        if (resources.length > 0) {
-          const randomIndex = Math.floor(Math.random() * resources.length);
-          const resTemplate = resources[randomIndex];
-          resource = {
-            ...resTemplate,
-            id: parseInt(`${resTemplate.id}${instanceCounter}`)
-          };
-          instanceCounter++;
-        }
-      }
-      if (tileCode === 77) { // 'M' — монстр
-        if (monsters.length > 0) {
-          const randomIndex = Math.floor(Math.random() * monsters.length);
-          const monTemplate = monsters[randomIndex];
-          monster = {
-            ...monTemplate,
-            id: parseInt(`${monTemplate.id}${instanceCounter}`)
-          };
-          instanceCounter++;
-        }
-      }
-      if (tileCode === 112) { // 'p' — портал
-        isPortal = true;
-      }
-
-      cells.push({
-        id: cellId++,
-        x,
-        y,
-        tileCode,
-        resource,
-        monster,
-        isPortal,
-      });
-    }
-  }
-  return cells;
-}
-
+// Функция GameProvider инициализирует состояние, загружает данные (ресурсы, монстров, матч) и подключает WebSocket.
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
 
+  // Загружаем ресурсы и монстров с сервера при изменении instanceId.
   useEffect(() => {
     console.log("instanceId изменился на:", instanceId);
     dispatch({ type: "RESET_STATE" });
@@ -4558,6 +4660,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
+  // Загружаем данные матча – сервер уже возвращает зафиксированную карту (fullCells)
   useEffect(() => {
     async function fetchMatchData() {
       try {
@@ -4575,20 +4678,17 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           router.replace(`/game?instance_id=${data.instance_id}`);
           return;
         }
-        const convertedGrid = convertMapData(data.map, resources, monsters);
+        // Предполагаем, что data.map уже является массивом клеток (с полями cell_id, x, y, tileCode, resource, monster, isPortal)
         const players = (data.players || []).map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
         }));
-        if (players.length === 0) {
-          console.warn("Массив игроков пуст!");
-        }
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
             instanceId: data.instance_id,
             mode: data.mode,
-            grid: convertedGrid,
+            grid: data.map, // Используем зафиксированную карту с сервера
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
@@ -4600,11 +4700,13 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         console.error("fetchMatchData error:", err);
       }
     }
+    // Загружаем данные матча только когда ресурсы и монстры уже получены
     if (resources.length > 0 && monsters.length > 0) {
       fetchMatchData();
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
+  // Подключаем WebSocket для обновлений матча
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
     if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
@@ -4650,6 +4752,7 @@ export function useGame() {
   }
   return context;
 }
+
 
 
 

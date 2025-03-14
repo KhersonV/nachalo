@@ -9,7 +9,7 @@ import (
     "database/sql"
     "log"
     "encoding/json"
-    
+    "strings"
     _ "github.com/lib/pq"
     "gameservice/game"
 )
@@ -171,6 +171,65 @@ func RestoreMatchStates() error {
         log.Printf("Состояние матча %s восстановлено", instanceID)
     }
     return nil
+}
+
+
+
+// GetResourcesData извлекает данные ресурсов и возвращает срез game.ResourceData.
+func GetResourcesData() ([]game.ResourceData, error) {
+	var resources []game.ResourceData
+	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var rd game.ResourceData
+		var effectBytes []byte
+		if err := rows.Scan(&rd.ID, &rd.Type, &rd.Description, &effectBytes, &rd.Image); err != nil {
+			return nil, err
+		}
+		// Преобразуем JSONB поле effect в map[string]int
+		var effect map[string]int
+		if err := json.Unmarshal(effectBytes, &effect); err != nil {
+			// Если эффект отсутствует или пустой, можно установить пустую мапу
+			effect = make(map[string]int)
+		}
+		rd.Effect = effect
+		// Удаляем лишние кавычки, если они есть
+		rd.Image = strings.Trim(rd.Image, "\"")
+		resources = append(resources, rd)
+	}
+	// Обработка ошибки rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+// GetMonstersData извлекает данные монстров и возвращает срез game.MonsterData.
+func GetMonstersData() ([]game.MonsterData, error) {
+	var monsters []game.MonsterData
+	rows, err := DB.Query(`SELECT id, name, type, health, max_health, attack, defense, speed, maneuverability, vision, image FROM monsters`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var md game.MonsterData
+		if err := rows.Scan(&md.ID, &md.Name, &md.Type, &md.Health, &md.MaxHealth, &md.Attack, &md.Defense, &md.Speed, &md.Maneuverability, &md.Vision, &md.Image, ); err != nil {
+			return nil, err
+		}
+		// Удаляем лишние кавычки из строки с изображением
+		md.Image = strings.Trim(md.Image, "\"")
+		monsters = append(monsters, md)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return monsters, nil
 }
 
 // Прочие функции для инициализации и т.п.

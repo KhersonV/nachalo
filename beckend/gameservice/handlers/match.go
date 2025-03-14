@@ -38,14 +38,39 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		MonsterProb:  0.05,
 	}
 
-	grid, startPositions, _, err := game.GenerateMap(cfg)
+	// Получите ресурсы и монстров из БД (например, функции repository.GetResourcesData(), repository.GetMonstersData())
+	resourcesFromDB, err := repository.GetResourcesData() // функция должна вернуть []game.ResourceData
 	if err != nil {
-		log.Printf("Ошибка генерации карты: %v", err)
+		http.Error(w, "Ошибка загрузки ресурсов", http.StatusInternalServerError)
+		return
+	}
+	monstersFromDB, err := repository.GetMonstersData() // функция должна вернуть []game.MonsterData
+	if err != nil {
+		http.Error(w, "Ошибка загрузки монстров", http.StatusInternalServerError)
+		return
+	}
+
+	// Генерируем полную карту
+	fullMap, mapWidth, mapHeight, startPositions, portalPos, err := game.GenerateFullMap(cfg, resourcesFromDB, monstersFromDB)
+	if err != nil {
+		log.Printf("Ошибка генерации полной карты: %v", err)
 		http.Error(w, "Ошибка генерации карты", http.StatusInternalServerError)
 		return
 	}
 
-	mapData, err := json.Marshal(grid)
+	// Преобразуем startPositions и portalPos в JSON
+	startPosJSON, err := json.Marshal(startPositions)
+	if err != nil {
+		http.Error(w, "Ошибка маршалинга стартовых позиций", http.StatusInternalServerError)
+		return
+	}
+	portalPosJSON, err := json.Marshal(portalPos)
+	if err != nil {
+		http.Error(w, "Ошибка маршалинга позиции портала", http.StatusInternalServerError)
+		return
+	}
+
+	mapData, err := json.Marshal(fullMap)
 	if err != nil {
 		http.Error(w, "Ошибка маршалинга карты", http.StatusInternalServerError)
 		return
@@ -53,22 +78,26 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	createdAt := time.Now()
 
+	// Сохраняем матч, включая новые поля start_positions и portal_position
 	_, err = repository.DB.Exec(`
         INSERT INTO matches (
-            instance_id, mode, teams_count, total_players, map_width, map_height, map, active_player_id, turn_order, created_at, turn_number
+            instance_id, mode, teams_count, total_players, map_width, map_height, map, 
+            active_player_id, turn_order, created_at, turn_number, start_positions, portal_position
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12
         )`,
 		req.InstanceID,
 		req.Mode,
 		req.TeamsCount,
 		req.TotalPlayers,
-		len(grid[0]),
-		len(grid),
+		mapWidth,
+		mapHeight,
 		string(mapData),
 		req.PlayerIDs[0],
 		fmt.Sprintf("[%d]", req.PlayerIDs[0]),
 		createdAt,
+		string(startPosJSON),
+		string(portalPosJSON),
 	)
 	if err != nil {
 		log.Printf("Ошибка вставки матча: %v", err)
@@ -76,10 +105,10 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаём состояние матча (в котором теперь хранится TurnNumber)
+	// Создаем локальное состояние матча
 	game.CreateMatchState(req.InstanceID, req.PlayerIDs)
 
-	// Вставляем игроков в таблицу match_players
+	// Распределяем игроков по стартовым позициям.
 	for i, playerID := range req.PlayerIDs {
 		player, err := repository.GetPlayerByUserID(playerID)
 		if err != nil {
@@ -87,13 +116,15 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		pos := startPositions[0] // для PVE одна команда
-		groupID := 1
-		if req.TeamsCount > 1 && i >= len(req.PlayerIDs)/2 {
-			pos = startPositions[1]
-			groupID = 2
+		var pos [2]int
+		// Если для команды больше одной стартовой позиции, распределяем их по очереди.
+		if i < len(startPositions) {
+			pos = startPositions[i]
+		} else {
+			pos = startPositions[0]
 		}
 
+		groupID := 1
 		err = repository.CreateMatchPlayerCopy(req.InstanceID, player, pos[0], pos[1], groupID)
 		if err != nil {
 			log.Printf("Ошибка вставки игрока в матч: %v", err)
@@ -108,20 +139,23 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
 	err = repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1)
 	if err != nil {
 		log.Printf("Ошибка обновления состояния матча: %v", err)
 	}
 
 	response := map[string]interface{}{
-		"instance_id": req.InstanceID,
-		"mode":        req.Mode,
-		"map":         grid,
-		"created_at":  createdAt,
-		"map_width":   len(grid[0]),
-		"map_height":  len(grid),
-		"player_ids":  req.PlayerIDs,
-		"players":     playersInMatch,
+		"instance_id":    req.InstanceID,
+		"mode":           req.Mode,
+		"map":            fullMap,
+		"created_at":     createdAt,
+		"map_width":      mapWidth,
+		"map_height":     mapHeight,
+		"player_ids":     req.PlayerIDs,
+		"players":        playersInMatch,
+		"start_positions": string(startPosJSON),
+		"portal_position": string(portalPosJSON),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -147,24 +181,25 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Если active_player_id равен 0, назначаем первого игрока активным (если он есть)
 	activePlayer := match.ActivePlayerID
 	if activePlayer == 0 && len(players) > 0 {
 		activePlayer = players[0].ID
 	}
 
 	response := map[string]interface{}{
-		"instance_id":   match.InstanceID,
-		"mode":          match.Mode,
-		"teams_count":   match.TeamsCount,
-		"total_players": match.TotalPlayers,
-		"map_width":     match.MapWidth,
-		"map_height":    match.MapHeight,
-		"map":           match.Map, // json.RawMessage
-		"players":       players,
-		"created_at":    match.CreatedAt,
-		"active_player": activePlayer,     // возвращаем актуальный activePlayer
-		"turn_number":   match.TurnNumber, // и turn_number
+		"instance_id":     match.InstanceID,
+		"mode":            match.Mode,
+		"teams_count":     match.TeamsCount,
+		"total_players":   match.TotalPlayers,
+		"map_width":       match.MapWidth,
+		"map_height":      match.MapHeight,
+		"map":             match.Map, // сохранённый массив FullCell (JSON)
+		"players":         players,
+		"created_at":      match.CreatedAt,
+		"active_player":   activePlayer,
+		"turn_number":     match.TurnNumber,
+		"start_positions": match.StartPositions, // если у вас в модели MatchInfo есть это поле
+		"portal_position": match.PortalPosition,   // аналогично
 	}
 
 	w.Header().Set("Content-Type", "application/json")
