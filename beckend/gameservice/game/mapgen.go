@@ -1,6 +1,6 @@
-//====================================
+//===============================
 // gameservice/game/mapgen.go
-//====================================
+//===============================
 
 package game
 
@@ -57,7 +57,6 @@ type MonsterData struct {
 }
 
 // FullCell – полная информация о клетке карты.
-// Добавлены поля CellID (уникальный идентификатор) и IsPlayer (указывает, находится ли игрок в клетке).
 type FullCell struct {
 	CellID   int           `json:"cell_id"`            // Уникальный идентификатор клетки
 	X        int           `json:"x"`                  // Координата X
@@ -87,7 +86,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	// Инициализация генератора случайных чисел.
 	rand.Seed(time.Now().UnixNano())
 
-	// Генерация базовой карты в виде двумерного среза tileCode.
+	// Генерация базовой карты – двумерного среза tileCode.
 	grid := make([][]int, height)
 	for y := 0; y < height; y++ {
 		grid[y] = make([]int, width)
@@ -107,7 +106,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	// Функция для размещения специальных тайлов: стартовых позиций и портала.
 	placeSpecialTiles := func(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
 		var candidates []struct{ x, y int }
-		// Собираем все проходимые тайлы (Walkable).
 		for y := 1; y < height-1; y++ {
 			for x := 1; x < width-1; x++ {
 				if grid[y][x] == int(Walkable) {
@@ -115,22 +113,18 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 				}
 			}
 		}
-		// Для размещения необходимо как минимум teamsCount+1 проходимых тайлов.
 		if len(candidates) < teamsCount+1 {
 			return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для размещения специальных точек")
 		}
-		// Перемешиваем кандидатов.
 		rand.Shuffle(len(candidates), func(i, j int) {
 			candidates[i], candidates[j] = candidates[j], candidates[i]
 		})
 		var starts [][2]int
-		// Первые teamsCount кандидатов назначаются стартовыми позициями.
 		for i := 0; i < teamsCount; i++ {
 			pt := candidates[i]
 			grid[pt.y][pt.x] = int(StartTile)
 			starts = append(starts, [2]int{pt.x, pt.y})
 		}
-		// Следующий кандидат назначается порталом.
 		portalCandidate := candidates[teamsCount]
 		grid[portalCandidate.y][portalCandidate.x] = int(Portal)
 		portalPos := [2]int{portalCandidate.x, portalCandidate.y}
@@ -142,13 +136,13 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, err
 	}
 
-	// Формируем полную карту.
-	var fullCells []FullCell
-	cellIDCounter := 1
-	// Счётчики для уникальных ID копий ресурсов и монстров.
+	// Счётчики для генерации уникальных идентификаторов для копий ресурсов и монстров.
 	resourceCounter := 1
 	monsterCounter := 1
 
+	// Формирование полной карты.
+	var fullCells []FullCell
+	cellIDCounter := 1
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			tileCode := grid[y][x]
@@ -156,7 +150,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 			var mon *MonsterData = nil
 			isPortal := false
 
-			// Если клетка исходно проходимая (Walkable), случайно решаем, появится ли в ней ресурс или монстр.
+			// Если клетка исходно проходимая (Walkable), решаем случайно, появится ли в ней ресурс или монстр.
 			if tileCode == int(Walkable) {
 				r := rand.Float64()
 				if r < cfg.MonsterProb && len(monsters) > 0 {
@@ -177,7 +171,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 						Vision:          chosen.Vision,
 						Image:           chosen.Image,
 					}
-					// Обновляем tileCode, чтобы отметить наличие монстра.
 					tileCode = int('M')
 				} else if r < cfg.MonsterProb+cfg.ResourceProb && len(resources) > 0 {
 					chosen := resources[rand.Intn(len(resources))]

@@ -6,16 +6,7 @@
 "use client";
 
 import React from "react";
-
-export interface Cell {
-  id: number;
-  x: number;
-  y: number;
-  tileCode: number;
-  resource: { image?: string } | null;
-  isPortal?: boolean;
-  monster?: { image?: string } | null;
-}
+import type { Cell } from "../types/GameTypes";
 
 export interface MapProps {
   grid: Cell[];
@@ -36,7 +27,6 @@ export default function Map({
   visionRange,
   playerPosition,
 }: MapProps) {
-  
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
@@ -66,7 +56,7 @@ export default function Map({
             width: `${tileSize}px`,
             height: `${tileSize}px`,
             backgroundColor: getTileColor(cell),
-            opacity: isCellVisible(cell) ? 1 : 0, // затемняем клетки вне видимости
+            opacity: isCellVisible(cell) ? 1 : 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -82,27 +72,25 @@ export default function Map({
   );
 }
 
-// Функция, возвращающая фон по умолчанию, если изображение не задано
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
     case 48: // '0'
-      return "#CCCCCC"; // светло-серый (проходимый)
+      return "#CCCCCC";
     case 80: // 'P'
-      return "#0000FF"; // синий (портал/старт)
+      return "#0000FF";
     case 32: // пробел
-      return "#333333"; // темно-серый (непроходимый)
+      return "#333333";
     case 77: // 'M'
-      return "#FF0000"; // красный (монстр)
+      return "#FF0000";
     case 82: // 'R'
-      return "#00AA00"; // зелёный (ресурс)
+      return "#00AA00";
     case 112: // 'p'
-      return "#02FEC0"; // для портала (настраивается)
+      return "#02FEC0";
     default:
-      return "#952215"; // по умолчанию
+      return "#952215";
   }
 }
 
-// Функция, которая возвращает JSX для содержимого клетки: изображение монстра или ресурса, если оно задано
 function renderCellContent(cell: Cell) {
   if (cell.monster && cell.monster.image) {
     return (
@@ -122,6 +110,5 @@ function renderCellContent(cell: Cell) {
       />
     );
   }
-  // Если нет изображения, можно показать номер или оставить пустым
   return null;
 }

@@ -7,133 +7,7 @@
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-
-// Типы для бонусов и инвентаря
-export type BonusAttributes = {
-  energy?: number;
-  maxEnergy?: number;
-  visionRange?: number;
-  health?: number;
-  maxHealth?: number;
-  attack?: number;
-  defense?: number;
-};
-
-export type InventoryItem = {
-  name?: string;
-  count: number;
-  image: string;
-  description: string;
-  bonus?: BonusAttributes;
-};
-
-export type Inventory = {
-  resources: Record<string, InventoryItem>;
-  artifacts: Record<string, InventoryItem>;
-};
-
-// Тип игрока, используемый на клиенте
-export type PlayerState = {
-  id: number;
-  name: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  vision: number;
-  image: string;
-  colorClass: string;
-  lastTurnAttacked?: number;
-  position: { x: number; y: number };
-  energy: number;
-  maxEnergy: number;
-  level: number;
-  experience: number;
-  maxExperience: number;
-  visionRange: number;
-  inventory: Inventory;
-  speed: number;
-  maneuverability: number;
-  rangeAttack?: boolean;
-  rangeDistance?: number;
-};
-
-// Тип монстра
-export type MonsterType = {
-  id: number;
-  name: string;
-  type: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  speed: number;
-  maneuverability: number;
-  vision: number;
-  image: string;
-  created_at: string;
-};
-
-// Тип ресурса
-export type ResourceType = {
-  id: number;
-  type: string;
-  description: string;
-  effect: Record<string, number>;
-  image: string;
-};
-
-// Тип клетки – мы добавляем поле cell_id вместо id
-export type Cell = {
-  cell_id: number;
-  x: number;
-  y: number;
-  tileCode: number;
-  resource: ResourceType | null;
-  monster: MonsterType | null;
-  isPortal?: boolean;
-  // isPlayer можно добавить, если нужно
-  isPlayer?: boolean;
-};
-
-// Состояние игры
-export type GameState = {
-  instanceId: string;
-  mode: string;
-  grid: Cell[]; // фиксированная карта, полученная с сервера
-  mapWidth: number;
-  mapHeight: number;
-  players: PlayerState[];
-  currentPlayerId: number;
-  turnNumber: number;
-};
-
-// Действия редьюсера
-export type Action =
-  | {
-      type: "SET_MATCH_DATA";
-      payload: {
-        instanceId: string;
-        mode: string;
-        grid: Cell[];
-        mapWidth: number;
-        mapHeight: number;
-        players: PlayerState[];
-        activePlayer: number;
-        turnNumber: number;
-      };
-    }
-  | {
-      type: "MOVE_PLAYER";
-      payload: { playerId: number; newPosition: { x: number; y: number } };
-    }
-  | {
-      type: "SET_ACTIVE_PLAYER";
-      payload: { activePlayer: number; turnNumber: number };
-    }
-  | {
-      type: "RESET_STATE";
-    };
+import type { GameState, Action, ResourceType, MonsterType, Cell } from "../types/GameTypes";
 
 const initialState: GameState = {
   instanceId: "",
@@ -146,13 +20,15 @@ const initialState: GameState = {
   turnNumber: 1,
 };
 
-// Создаем контекст
 const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
-// Редьюсер обновляет состояние игры по действиям
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
+      let currentId = state.currentPlayerId;
+      if (currentId === 0 && action.payload.players.length > 0) {
+        currentId = action.payload.players[0].id;
+      }
       return {
         ...state,
         instanceId: action.payload.instanceId,
@@ -189,14 +65,45 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Функция GameProvider инициализирует состояние, загружает данные (ресурсы, монстров, матч) и подключает WebSocket.
+// Если карта уже пришла с сервера в виде объектов (с полем cell_id), преобразуем их в тип Cell.
+function convertMapData(rawMap: any, resources: ResourceType[], monsters: MonsterType[]): Cell[] {
+  // Если массив не пустой и первый элемент имеет поле cell_id – это уже объект.
+  if (Array.isArray(rawMap) && rawMap.length > 0 && rawMap[0].cell_id !== undefined) {
+    return rawMap.map((cell: any) => ({
+      id: cell.cell_id,
+      x: cell.x,
+      y: cell.y,
+      tileCode: cell.tileCode,
+      resource: cell.resource,
+      monster: cell.monster,
+      isPortal: cell.isPortal,
+    }));
+  }
+  // Если приходит двумерный массив чисел, можно его преобразовать (если требуется).
+  const cells: Cell[] = [];
+  let cellId = 0;
+  for (let y = 0; y < rawMap.length; y++) {
+    for (let x = 0; x < rawMap[y].length; x++) {
+      cells.push({
+        id: cellId++,
+        x,
+        y,
+        tileCode: rawMap[y][x],
+        resource: null,
+        monster: null,
+        isPortal: false,
+      });
+    }
+  }
+  return cells;
+}
+
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
 
-  // Загружаем ресурсы и монстров с сервера при изменении instanceId.
   useEffect(() => {
     console.log("instanceId изменился на:", instanceId);
     dispatch({ type: "RESET_STATE" });
@@ -235,7 +142,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
-  // Загружаем данные матча – сервер уже возвращает зафиксированную карту (fullCells)
   useEffect(() => {
     async function fetchMatchData() {
       try {
@@ -253,17 +159,20 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           router.replace(`/game?instance_id=${data.instance_id}`);
           return;
         }
-        // Предполагаем, что data.map уже является массивом клеток (с полями cell_id, x, y, tileCode, resource, monster, isPortal)
+        const convertedGrid = convertMapData(data.map, resources, monsters);
         const players = (data.players || []).map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
         }));
+        if (players.length === 0) {
+          console.warn("Массив игроков пуст!");
+        }
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
             instanceId: data.instance_id,
             mode: data.mode,
-            grid: data.map, // Используем зафиксированную карту с сервера
+            grid: convertedGrid,
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
@@ -275,13 +184,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         console.error("fetchMatchData error:", err);
       }
     }
-    // Загружаем данные матча только когда ресурсы и монстры уже получены
     if (resources.length > 0 && monsters.length > 0) {
       fetchMatchData();
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket для обновлений матча
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
     if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {

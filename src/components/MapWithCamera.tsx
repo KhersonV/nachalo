@@ -6,8 +6,9 @@
 "use client";
 
 import React from "react";
-import { useGame, PlayerState } from "../contexts/GameContextt";
+import { useGame } from "../contexts/GameContextt";
 import Map from "./Map";
+import type { PlayerState } from "../types/GameTypes";
 
 interface MapWithCameraProps {
   tileSize: number;
@@ -25,33 +26,23 @@ export default function MapWithCamera({
   const { state } = useGame();
   const { grid, mapWidth, mapHeight, players, currentPlayerId } = state;
 
-  // Используем позицию своего игрока для центрирования камеры
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-  // Берем vision из myPlayer (или используем значение по умолчанию)
   const visionRange = myPlayer?.vision ?? 3;
-
-  // Задаём размер тайла
   const tileSize = Number(inputTileSize) || 60;
-  // Если размеры карты не переданы, используем значения по умолчанию
   const safeMapWidth = Number(mapWidth) || 15;
   const safeMapHeight = Number(mapHeight) || 15;
-
-  // Размер gap между клетками
   const gap = 1;
 
-  // Поправка для изображения игрока
-  const playerImageOffsetX = 2;
-  const playerImageOffsetY = 2;
-
-  // Вычисляем смещение камеры так, чтобы МЫ (myPlayer) оказались в центре вьюпорта.
   let offsetX = viewportWidth / 2 - (playerPosition.x * (tileSize + gap) + tileSize / 2);
   let offsetY = viewportHeight / 2 - (playerPosition.y * (tileSize + gap) + tileSize / 2);
 
-  // Ограничиваем смещение, чтобы камера не выходила за границы карты.
   const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
   const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
   offsetX = Math.min(0, Math.max(viewportWidth - totalWidth, offsetX));
   offsetY = Math.min(0, Math.max(viewportHeight - totalHeight, offsetY));
+
+  const playerImageOffsetX = 2;
+  const playerImageOffsetY = 2;
 
   return (
     <div
@@ -71,7 +62,6 @@ export default function MapWithCamera({
           transition: "top 0.3s, left 0.3s",
         }}
       >
-        {/* Рендер карты */}
         <Map
           grid={grid}
           mapWidth={safeMapWidth}
@@ -82,9 +72,7 @@ export default function MapWithCamera({
           playerPosition={playerPosition}
         />
 
-        {/* Рендер изображений игроков */}
         {players.map((player) => {
-          // Вычисляем видимость игрока относительно myPlayer
           const dx = Math.abs(player.position.x - playerPosition.x);
           const dy = Math.abs(player.position.y - playerPosition.y);
           const playerVisible = dx <= visionRange && dy <= visionRange;
@@ -104,7 +92,7 @@ export default function MapWithCamera({
                 border: player.id === currentPlayerId ? "2px solid gold" : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
-                opacity: playerVisible ? 1 : 0, // затемнение для игроков вне видимости
+                opacity: playerVisible ? 1 : 0,
               }}
             />
           );

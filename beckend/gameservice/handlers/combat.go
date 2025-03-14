@@ -19,7 +19,7 @@ import (
 )
 
 // Предположим, что стоимость перемещения составляет 10 единиц энергии.
-const moveEnergyCost = 10
+const moveEnergyCost = 1
 
 func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

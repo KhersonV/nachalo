@@ -1,5 +1,6 @@
 ты самый лучший программист в мире с опытом 100 лет в продакшене, и написал почти все игры в данном сегменте. так как ты самый лучший - помоги мне справится со следующей задачей.
 
+Мы переходим к новой, полностью переработанной версии кода, которая является базой для всех будущих изменений. Отныне все изменения и доработки будут вестись, отталкиваясь от этой версии. Все предыдущие версии файлов можно считать устаревшими и больше не использовать.
 
 если тебе нужно менять код, то обязательно указывай что это за файл и какая функция. а лучше переписывай всю функцию целиком.
 
@@ -474,10 +475,9 @@ func main() {
 
 
 
-
-//====================================
+//===============================
 // gameservice/game/mapgen.go
-//====================================
+//===============================
 
 package game
 
@@ -534,7 +534,6 @@ type MonsterData struct {
 }
 
 // FullCell – полная информация о клетке карты.
-// Добавлены поля CellID (уникальный идентификатор) и IsPlayer (указывает, находится ли игрок в клетке).
 type FullCell struct {
 	CellID   int           `json:"cell_id"`            // Уникальный идентификатор клетки
 	X        int           `json:"x"`                  // Координата X
@@ -564,7 +563,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	// Инициализация генератора случайных чисел.
 	rand.Seed(time.Now().UnixNano())
 
-	// Генерация базовой карты в виде двумерного среза tileCode.
+	// Генерация базовой карты – двумерного среза tileCode.
 	grid := make([][]int, height)
 	for y := 0; y < height; y++ {
 		grid[y] = make([]int, width)
@@ -584,7 +583,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	// Функция для размещения специальных тайлов: стартовых позиций и портала.
 	placeSpecialTiles := func(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
 		var candidates []struct{ x, y int }
-		// Собираем все проходимые тайлы (Walkable).
 		for y := 1; y < height-1; y++ {
 			for x := 1; x < width-1; x++ {
 				if grid[y][x] == int(Walkable) {
@@ -592,22 +590,18 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 				}
 			}
 		}
-		// Для размещения необходимо как минимум teamsCount+1 проходимых тайлов.
 		if len(candidates) < teamsCount+1 {
 			return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для размещения специальных точек")
 		}
-		// Перемешиваем кандидатов.
 		rand.Shuffle(len(candidates), func(i, j int) {
 			candidates[i], candidates[j] = candidates[j], candidates[i]
 		})
 		var starts [][2]int
-		// Первые teamsCount кандидатов назначаются стартовыми позициями.
 		for i := 0; i < teamsCount; i++ {
 			pt := candidates[i]
 			grid[pt.y][pt.x] = int(StartTile)
 			starts = append(starts, [2]int{pt.x, pt.y})
 		}
-		// Следующий кандидат назначается порталом.
 		portalCandidate := candidates[teamsCount]
 		grid[portalCandidate.y][portalCandidate.x] = int(Portal)
 		portalPos := [2]int{portalCandidate.x, portalCandidate.y}
@@ -619,13 +613,13 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, err
 	}
 
-	// Формируем полную карту.
-	var fullCells []FullCell
-	cellIDCounter := 1
-	// Счётчики для уникальных ID копий ресурсов и монстров.
+	// Счётчики для генерации уникальных идентификаторов для копий ресурсов и монстров.
 	resourceCounter := 1
 	monsterCounter := 1
 
+	// Формирование полной карты.
+	var fullCells []FullCell
+	cellIDCounter := 1
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			tileCode := grid[y][x]
@@ -633,7 +627,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 			var mon *MonsterData = nil
 			isPortal := false
 
-			// Если клетка исходно проходимая (Walkable), случайно решаем, появится ли в ней ресурс или монстр.
+			// Если клетка исходно проходимая (Walkable), решаем случайно, появится ли в ней ресурс или монстр.
 			if tileCode == int(Walkable) {
 				r := rand.Float64()
 				if r < cfg.MonsterProb && len(monsters) > 0 {
@@ -654,7 +648,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 						Vision:          chosen.Vision,
 						Image:           chosen.Image,
 					}
-					// Обновляем tileCode, чтобы отметить наличие монстра.
 					tileCode = int('M')
 				} else if r < cfg.MonsterProb+cfg.ResourceProb && len(resources) > 0 {
 					chosen := resources[rand.Intn(len(resources))]
@@ -692,6 +685,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 
 	return fullCells, width, height, startPositions, portalPos, nil
 }
+
 
 
 
@@ -810,7 +804,6 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 
 
 
-
 //====================================
 //gameservice/handlers/combat.go
 //====================================
@@ -832,7 +825,7 @@ import (
 )
 
 // Предположим, что стоимость перемещения составляет 10 единиц энергии.
-const moveEnergyCost = 10
+const moveEnergyCost = 1
 
 func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -1133,6 +1126,7 @@ func updateMonster(monster *models.Monster) error {
 	_, err := repository.DB.Exec(query, monster.Health, monster.ID)
 	return err
 }
+
 
 
 
@@ -3843,16 +3837,7 @@ export default LoginPage;
 "use client";
 
 import React from "react";
-
-export interface Cell {
-  id: number;
-  x: number;
-  y: number;
-  tileCode: number;
-  resource: { image?: string } | null;
-  isPortal?: boolean;
-  monster?: { image?: string } | null;
-}
+import type { Cell } from "../types/GameTypes";
 
 export interface MapProps {
   grid: Cell[];
@@ -3873,7 +3858,6 @@ export default function Map({
   visionRange,
   playerPosition,
 }: MapProps) {
-  
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
@@ -3903,7 +3887,7 @@ export default function Map({
             width: `${tileSize}px`,
             height: `${tileSize}px`,
             backgroundColor: getTileColor(cell),
-            opacity: isCellVisible(cell) ? 1 : 0, // затемняем клетки вне видимости
+            opacity: isCellVisible(cell) ? 1 : 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -3919,27 +3903,25 @@ export default function Map({
   );
 }
 
-// Функция, возвращающая фон по умолчанию, если изображение не задано
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
     case 48: // '0'
-      return "#CCCCCC"; // светло-серый (проходимый)
+      return "#CCCCCC";
     case 80: // 'P'
-      return "#0000FF"; // синий (портал/старт)
+      return "#0000FF";
     case 32: // пробел
-      return "#333333"; // темно-серый (непроходимый)
+      return "#333333";
     case 77: // 'M'
-      return "#FF0000"; // красный (монстр)
+      return "#FF0000";
     case 82: // 'R'
-      return "#00AA00"; // зелёный (ресурс)
+      return "#00AA00";
     case 112: // 'p'
-      return "#02FEC0"; // для портала (настраивается)
+      return "#02FEC0";
     default:
-      return "#952215"; // по умолчанию
+      return "#952215";
   }
 }
 
-// Функция, которая возвращает JSX для содержимого клетки: изображение монстра или ресурса, если оно задано
 function renderCellContent(cell: Cell) {
   if (cell.monster && cell.monster.image) {
     return (
@@ -3959,7 +3941,6 @@ function renderCellContent(cell: Cell) {
       />
     );
   }
-  // Если нет изображения, можно показать номер или оставить пустым
   return null;
 }
 
@@ -3989,8 +3970,9 @@ function renderCellContent(cell: Cell) {
 "use client";
 
 import React from "react";
-import { useGame, PlayerState } from "../contexts/GameContextt";
+import { useGame } from "../contexts/GameContextt";
 import Map from "./Map";
+import type { PlayerState } from "../types/GameTypes";
 
 interface MapWithCameraProps {
   tileSize: number;
@@ -4008,33 +3990,23 @@ export default function MapWithCamera({
   const { state } = useGame();
   const { grid, mapWidth, mapHeight, players, currentPlayerId } = state;
 
-  // Используем позицию своего игрока для центрирования камеры
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-  // Берем vision из myPlayer (или используем значение по умолчанию)
   const visionRange = myPlayer?.vision ?? 3;
-
-  // Задаём размер тайла
   const tileSize = Number(inputTileSize) || 60;
-  // Если размеры карты не переданы, используем значения по умолчанию
   const safeMapWidth = Number(mapWidth) || 15;
   const safeMapHeight = Number(mapHeight) || 15;
-
-  // Размер gap между клетками
   const gap = 1;
 
-  // Поправка для изображения игрока
-  const playerImageOffsetX = 2;
-  const playerImageOffsetY = 2;
-
-  // Вычисляем смещение камеры так, чтобы МЫ (myPlayer) оказались в центре вьюпорта.
   let offsetX = viewportWidth / 2 - (playerPosition.x * (tileSize + gap) + tileSize / 2);
   let offsetY = viewportHeight / 2 - (playerPosition.y * (tileSize + gap) + tileSize / 2);
 
-  // Ограничиваем смещение, чтобы камера не выходила за границы карты.
   const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
   const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
   offsetX = Math.min(0, Math.max(viewportWidth - totalWidth, offsetX));
   offsetY = Math.min(0, Math.max(viewportHeight - totalHeight, offsetY));
+
+  const playerImageOffsetX = 2;
+  const playerImageOffsetY = 2;
 
   return (
     <div
@@ -4054,7 +4026,6 @@ export default function MapWithCamera({
           transition: "top 0.3s, left 0.3s",
         }}
       >
-        {/* Рендер карты */}
         <Map
           grid={grid}
           mapWidth={safeMapWidth}
@@ -4065,9 +4036,7 @@ export default function MapWithCamera({
           playerPosition={playerPosition}
         />
 
-        {/* Рендер изображений игроков */}
         {players.map((player) => {
-          // Вычисляем видимость игрока относительно myPlayer
           const dx = Math.abs(player.position.x - playerPosition.x);
           const dy = Math.abs(player.position.y - playerPosition.y);
           const playerVisible = dx <= visionRange && dy <= visionRange;
@@ -4087,7 +4056,7 @@ export default function MapWithCamera({
                 border: player.id === currentPlayerId ? "2px solid gold" : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
-                opacity: playerVisible ? 1 : 0, // затемнение для игроков вне видимости
+                opacity: playerVisible ? 1 : 0,
               }}
             />
           );
@@ -4096,6 +4065,7 @@ export default function MapWithCamera({
     </div>
   );
 }
+
 
 
 
@@ -4422,7 +4392,6 @@ export function useAuth() {
 
 
 
-
 // ==============================
 // src/contexts/GameContextt.tsx
 // ==============================
@@ -4432,133 +4401,7 @@ export function useAuth() {
 import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-
-// Типы для бонусов и инвентаря
-export type BonusAttributes = {
-  energy?: number;
-  maxEnergy?: number;
-  visionRange?: number;
-  health?: number;
-  maxHealth?: number;
-  attack?: number;
-  defense?: number;
-};
-
-export type InventoryItem = {
-  name?: string;
-  count: number;
-  image: string;
-  description: string;
-  bonus?: BonusAttributes;
-};
-
-export type Inventory = {
-  resources: Record<string, InventoryItem>;
-  artifacts: Record<string, InventoryItem>;
-};
-
-// Тип игрока, используемый на клиенте
-export type PlayerState = {
-  id: number;
-  name: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  vision: number;
-  image: string;
-  colorClass: string;
-  lastTurnAttacked?: number;
-  position: { x: number; y: number };
-  energy: number;
-  maxEnergy: number;
-  level: number;
-  experience: number;
-  maxExperience: number;
-  visionRange: number;
-  inventory: Inventory;
-  speed: number;
-  maneuverability: number;
-  rangeAttack?: boolean;
-  rangeDistance?: number;
-};
-
-// Тип монстра
-export type MonsterType = {
-  id: number;
-  name: string;
-  type: string;
-  health: number;
-  maxHealth: number;
-  attack: number;
-  defense: number;
-  speed: number;
-  maneuverability: number;
-  vision: number;
-  image: string;
-  created_at: string;
-};
-
-// Тип ресурса
-export type ResourceType = {
-  id: number;
-  type: string;
-  description: string;
-  effect: Record<string, number>;
-  image: string;
-};
-
-// Тип клетки – мы добавляем поле cell_id вместо id
-export type Cell = {
-  cell_id: number;
-  x: number;
-  y: number;
-  tileCode: number;
-  resource: ResourceType | null;
-  monster: MonsterType | null;
-  isPortal?: boolean;
-  // isPlayer можно добавить, если нужно
-  isPlayer?: boolean;
-};
-
-// Состояние игры
-export type GameState = {
-  instanceId: string;
-  mode: string;
-  grid: Cell[]; // фиксированная карта, полученная с сервера
-  mapWidth: number;
-  mapHeight: number;
-  players: PlayerState[];
-  currentPlayerId: number;
-  turnNumber: number;
-};
-
-// Действия редьюсера
-export type Action =
-  | {
-      type: "SET_MATCH_DATA";
-      payload: {
-        instanceId: string;
-        mode: string;
-        grid: Cell[];
-        mapWidth: number;
-        mapHeight: number;
-        players: PlayerState[];
-        activePlayer: number;
-        turnNumber: number;
-      };
-    }
-  | {
-      type: "MOVE_PLAYER";
-      payload: { playerId: number; newPosition: { x: number; y: number } };
-    }
-  | {
-      type: "SET_ACTIVE_PLAYER";
-      payload: { activePlayer: number; turnNumber: number };
-    }
-  | {
-      type: "RESET_STATE";
-    };
+import type { GameState, Action, ResourceType, MonsterType, Cell } from "../types/GameTypes";
 
 const initialState: GameState = {
   instanceId: "",
@@ -4571,13 +4414,15 @@ const initialState: GameState = {
   turnNumber: 1,
 };
 
-// Создаем контекст
 const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
-// Редьюсер обновляет состояние игры по действиям
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
+      let currentId = state.currentPlayerId;
+      if (currentId === 0 && action.payload.players.length > 0) {
+        currentId = action.payload.players[0].id;
+      }
       return {
         ...state,
         instanceId: action.payload.instanceId,
@@ -4614,14 +4459,45 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Функция GameProvider инициализирует состояние, загружает данные (ресурсы, монстров, матч) и подключает WebSocket.
+// Если карта уже пришла с сервера в виде объектов (с полем cell_id), преобразуем их в тип Cell.
+function convertMapData(rawMap: any, resources: ResourceType[], monsters: MonsterType[]): Cell[] {
+  // Если массив не пустой и первый элемент имеет поле cell_id – это уже объект.
+  if (Array.isArray(rawMap) && rawMap.length > 0 && rawMap[0].cell_id !== undefined) {
+    return rawMap.map((cell: any) => ({
+      id: cell.cell_id,
+      x: cell.x,
+      y: cell.y,
+      tileCode: cell.tileCode,
+      resource: cell.resource,
+      monster: cell.monster,
+      isPortal: cell.isPortal,
+    }));
+  }
+  // Если приходит двумерный массив чисел, можно его преобразовать (если требуется).
+  const cells: Cell[] = [];
+  let cellId = 0;
+  for (let y = 0; y < rawMap.length; y++) {
+    for (let x = 0; x < rawMap[y].length; x++) {
+      cells.push({
+        id: cellId++,
+        x,
+        y,
+        tileCode: rawMap[y][x],
+        resource: null,
+        monster: null,
+        isPortal: false,
+      });
+    }
+  }
+  return cells;
+}
+
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
 
-  // Загружаем ресурсы и монстров с сервера при изменении instanceId.
   useEffect(() => {
     console.log("instanceId изменился на:", instanceId);
     dispatch({ type: "RESET_STATE" });
@@ -4660,7 +4536,6 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     fetchMonsters();
   }, [instanceId]);
 
-  // Загружаем данные матча – сервер уже возвращает зафиксированную карту (fullCells)
   useEffect(() => {
     async function fetchMatchData() {
       try {
@@ -4678,17 +4553,20 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           router.replace(`/game?instance_id=${data.instance_id}`);
           return;
         }
-        // Предполагаем, что data.map уже является массивом клеток (с полями cell_id, x, y, tileCode, resource, monster, isPortal)
+        const convertedGrid = convertMapData(data.map, resources, monsters);
         const players = (data.players || []).map((p: any) => ({
           ...p,
           position: { x: p.pos_x, y: p.pos_y },
         }));
+        if (players.length === 0) {
+          console.warn("Массив игроков пуст!");
+        }
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
             instanceId: data.instance_id,
             mode: data.mode,
-            grid: data.map, // Используем зафиксированную карту с сервера
+            grid: convertedGrid,
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
@@ -4700,13 +4578,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         console.error("fetchMatchData error:", err);
       }
     }
-    // Загружаем данные матча только когда ресурсы и монстры уже получены
     if (resources.length > 0 && monsters.length > 0) {
       fetchMatchData();
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  // Подключаем WebSocket для обновлений матча
   useGameSocket((data) => {
     console.log("Получено сообщение по WebSocket:", data);
     if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
@@ -4752,6 +4628,7 @@ export function useGame() {
   }
   return context;
 }
+
 
 
 
@@ -4856,3 +4733,143 @@ export function useGameSocket(
     };
   }, [connect]);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ==============================
+// src/types/GameTypes.ts
+// ==============================
+
+export type BonusAttributes = {
+    energy?: number;
+    maxEnergy?: number;
+    visionRange?: number;
+    health?: number;
+    maxHealth?: number;
+    attack?: number;
+    defense?: number;
+  };
+  
+  export type InventoryItem = {
+    name?: string;
+    count: number;
+    image: string;
+    description: string;
+    bonus?: BonusAttributes;
+  };
+  
+  export type Inventory = {
+    resources: Record<string, InventoryItem>;
+    artifacts: Record<string, InventoryItem>;
+  };
+  
+  export type PlayerState = {
+    id: number;
+    name: string;
+    health: number;
+    maxHealth: number;
+    attack: number;
+    defense: number;
+    vision: number;
+    image: string;
+    colorClass: string;
+    lastTurnAttacked?: number;
+    position: { x: number; y: number };
+    energy: number;
+    maxEnergy: number;
+    level: number;
+    experience: number;
+    maxExperience: number;
+    visionRange: number;
+    inventory: Inventory;
+    speed: number;
+    maneuverability: number;
+    rangeAttack?: boolean;
+    rangeDistance?: number;
+  };
+  
+  export type MonsterType = {
+    id: number;
+    name: string;
+    type: string;
+    health: number;
+    maxHealth: number;
+    attack: number;
+    defense: number;
+    speed: number;
+    maneuverability: number;
+    vision: number;
+    image: string;
+    created_at: string;
+  };
+  
+  export type ResourceType = {
+    id: number;
+    type: string;
+    description: string;
+    effect: Record<string, number>;
+    image: string;
+  };
+  
+  export interface Cell {
+    id: number;
+    x: number;
+    y: number;
+    tileCode: number;
+    resource: ResourceType | null;
+    monster?: MonsterType | null;
+    isPortal?: boolean;
+  }
+  
+  export type GameState = {
+    instanceId: string;
+    mode: string;
+    grid: Cell[];
+    mapWidth: number;
+    mapHeight: number;
+    players: PlayerState[];
+    currentPlayerId: number;
+    turnNumber: number;
+  };
+  
+  export type Action =
+    | {
+        type: "SET_MATCH_DATA";
+        payload: {
+          instanceId: string;
+          mode: string;
+          grid: Cell[];
+          mapWidth: number;
+          mapHeight: number;
+          players: PlayerState[];
+          activePlayer: number;
+          turnNumber: number;
+        };
+      }
+    | {
+        type: "MOVE_PLAYER";
+        payload: { playerId: number; newPosition: { x: number; y: number } };
+      }
+    | {
+        type: "SET_ACTIVE_PLAYER";
+        payload: { activePlayer: number; turnNumber: number };
+      }
+    | {
+        type: "RESET_STATE";
+      };
+  
+  
