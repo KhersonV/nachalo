@@ -7,73 +7,98 @@
 package repository
 
 import (
-    "log"
-    "time"
+	"encoding/json"
+	"log"
 
-    "gameservice/models"
+	"gameservice/models"
 )
 
+// GetPlayerByUserID получает игрока из таблицы players по user_id 
+// и формирует структуру PlayerResponse, разбирая поле position (JSONB).
+func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
+	player := &models.PlayerResponse{}
+	query := `
+		SELECT 
+			user_id, 
+			name, 
+			image, 
+			position, 
+			energy, 
+			max_energy, 
+			health, 
+			max_health, 
+			level, 
+			experience, 
+			max_experience, 
+			attack, 
+			defense, 
+			speed, 
+			maneuverability, 
+			vision, 
+			vision_range, 
+			balance, 
+			inventory
+		FROM players
+		WHERE user_id = $1
+	`
+	var positionJSON []byte
+	row := DB.QueryRow(query, userID)
+	err := row.Scan(
+		&player.UserID,
+		&player.Name,
+		&player.Image,
+		&positionJSON,
+		&player.Energy,
+		&player.MaxEnergy,
+		&player.Health,
+		&player.MaxHealth,
+		&player.Level,
+		&player.Experience,
+		&player.MaxExperience,
+		&player.Attack,
+		&player.Defense,
+		&player.Speed,
+		&player.Maneuverability,
+		&player.Vision,
+		&player.VisionRange,
+		&player.Balance,
+		&player.Inventory,
+	)
+	if err != nil {
+		log.Printf("GetPlayerByUserID: ошибка получения игрока user_id=%d: %v", userID, err)
+		return nil, err
+	}
 
-// Получение игрока по user_id (как в вашем коде)
-func GetPlayerByUserID(userID int) (*models.Player, error) {
-    player := &models.Player{}
-    query := `
-        SELECT id, user_id, name, image, color_class, pos_x, pos_y, energy, max_energy, 
-               health, max_health, level, experience, max_experience, attack, defense, 
-               speed, maneuverability, vision, vision_range, balance, inventory, updated_at
-        FROM players
-        WHERE user_id = $1
-    `
-    row := DB.QueryRow(query, userID)
-    err := row.Scan(
-        &player.ID,
-        &player.UserID,
-        &player.Name,
-        &player.Image,
-        &player.ColorClass,
-        &player.PosX,
-        &player.PosY,
-        &player.Energy,
-        &player.MaxEnergy,
-        &player.Health,
-        &player.MaxHealth,
-        &player.Level,
-        &player.Experience,
-        &player.MaxExperience,
-        &player.Attack,
-        &player.Defense,
-        &player.Speed,
-        &player.Maneuverability,
-        &player.Vision,
-        &player.VisionRange,
-        &player.Balance,
-        &player.Inventory,
-        &player.UpdatedAt,
-    )
-    if err != nil {
-        log.Printf("GetPlayerByUserID: ошибка получения игрока user_id=%d: %v", userID, err)
-        return nil, err
-    }
-    return player, nil
+	// Разбираем JSON из поля position и записываем его в структуру Position.
+	if err := json.Unmarshal(positionJSON, &player.Position); err != nil {
+		log.Printf("GetPlayerByUserID: ошибка разбора поля position: %v", err)
+		return nil, err
+	}
+
+	return player, nil
 }
 
-// Сохранение (обновление) игрока
-func UpdatePlayer(player *models.Player) error {
-    query := `
-        UPDATE players
-        SET pos_x = $1, pos_y = $2, energy = $3, health = $4, level = $5, experience = $6,
-            updated_at = $7
-        WHERE id = $8
-    `
-    _, err := DB.Exec(query,
-        player.PosX,
-        player.PosY,
-        player.Energy,
-        player.Health,
-        player.Level,
-        player.Experience,
-        time.Now(),
-        player.ID,
-    )
-    return err
+// UpdatePlayer обновляет данные игрока в таблице players.
+// Обновляются поле position (формируется из player.Position), энергия, здоровье, уровень и опыт.
+func UpdatePlayer(player *models.PlayerResponse) error {
+	// Формируем JSON из структуры Position.
+	positionJSON, err := json.Marshal(player.Position)
+	if err != nil {
+		return err
+	}
+
+	query := `
+		UPDATE players
+		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
+		WHERE user_id = $6
+	`
+	_, err = DB.Exec(query,
+		positionJSON,
+		player.Energy,
+		player.Health,
+		player.Level,
+		player.Experience,
+		player.UserID,
+	)
+	return err
 }

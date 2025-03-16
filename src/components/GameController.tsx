@@ -5,14 +5,16 @@
 
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useGame, PlayerState } from "../contexts/GameContextt";
+import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
+import type { PlayerState } from "../types/GameTypes";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
+import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
 
 export default function GameController() {
@@ -21,16 +23,19 @@ export default function GameController() {
   const instanceId = searchParams.get("instance_id") || "";
   const { user } = useAuth();
 
-  // Определяем, какой игрок принадлежит текущему клиенту.
   const myPlayerId = user?.id;
   const myPlayer: PlayerState | undefined = state.players.find(
-    (p) => p.id === myPlayerId
+    (p) => p.user_id === myPlayerId
   );
+  const isMyTurn = myPlayerId === state.active_user;
 
-  // Сравниваем, чей ход сейчас активен
-  const isMyTurn = myPlayerId === state.currentPlayerId;
+  const [showInventory, setShowInventory] = useState(false);
 
-  // Функция для перемещения игрока на сервере
+  useEffect(() => {
+    console.log("[GameController] myPlayerId:", myPlayerId, "active_user (active):", state.active_user);
+  }, [myPlayerId, state.active_user]);
+
+  // Функция отправки запроса на перемещение игрока
   async function movePlayer(newPosX: number, newPosY: number) {
     try {
       const storedUser = localStorage.getItem("user");
@@ -39,15 +44,13 @@ export default function GameController() {
         console.error("Токен не найден в localStorage");
         return null;
       }
-      console.log("Полученный токен:", token);
-      // Отправляем запрос по ID именно своего игрока, а не currentPlayerId
       const response = await fetch(
         `http://localhost:8001/game/player/${myPlayerId}/move?instance_id=${instanceId}`,
         {
           method: "POST",
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ new_pos_x: newPosX, new_pos_y: newPosY }),
         }
@@ -58,116 +61,182 @@ export default function GameController() {
         return null;
       }
       const updatedPlayer = await response.json();
-      console.log("Позиция обновлена на сервере:", updatedPlayer);
       return updatedPlayer;
     } catch (error) {
       console.error("Ошибка запроса перемещения:", error);
       return null;
     }
   }
-
-  const allowedTileCodes = [48, 80, 82, 112];
+  
+  // Функция для отправки запроса на сбор ресурса
+  async function collectResource(cellX: number, cellY: number) {
+    console.log("Начало сбора ресурса для клетки:", cellX, cellY);
+    try {
+      const storedUser = localStorage.getItem("user");
+      const token = storedUser ? JSON.parse(storedUser).token : "";
+      if (!token) {
+        console.error("Токен не найден в localStorage");
+        return;
+      }
+      const response = await fetch("http://localhost:8001/game/collectResource", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          instance_id: instanceId,
+          user_id: myPlayerId,
+          cell_x: cellX,
+          cell_y: cellY,
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Ошибка сбора ресурса:", errorText);
+        return;
+      }
+      const data = await response.json();
+      console.log("Ресурс успешно собран. Полученные данные клетки:", data.updatedCell);
+      
+      // Обновляем данные клетки
+      const updatedCell = {
+        cell_id: data.updatedCell.cell_id,
+        x: data.updatedCell.x,
+        y: data.updatedCell.y,
+        tileCode: data.updatedCell.tileCode,
+        resource: data.updatedCell.resource || null,
+        barbel: data.updatedCell.barbel || null,
+        monster: data.updatedCell.monster || null,
+        isPortal: data.updatedCell.isPortal,
+        isPlayer: data.updatedCell.isPlayer ?? false,
+      };
+      
+      dispatch({
+        type: "UPDATE_CELL",
+        payload: { updatedCell },
+      });
+      
+      // Запрашиваем обновленные данные игрока
+      const playerResponse = await fetch(
+        `http://localhost:8001/game/matchPlayer/${myPlayerId}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      
+      if (playerResponse.ok) {
+        const updatedPlayer = await playerResponse.json();
+       
+        console.log("Полученные обновлённые данные игрока:", updatedPlayer);
+        dispatch({
+          type: "UPDATE_PLAYER",
+          payload: { player: updatedPlayer },
+        });
+      } else {
+        const errorText = await playerResponse.text();
+        console.error("Ошибка запроса обновлённого игрока:", errorText);
+      }
+    } catch (error) {
+      console.error("Ошибка запроса сбора ресурса:", error);
+    }
+  }
+  
+  // Функция перемещения: вычисляем новые координаты и отправляем запрос на сервер.
   const handleMove = async (direction: "up" | "down" | "left" | "right") => {
     if (!myPlayer) {
       console.warn("Мой игрок не найден");
       return;
     }
-    // Только активный игрок может отправлять запросы на перемещение
     if (!isMyTurn) {
       console.warn("Сейчас не ваш ход");
       return;
     }
     let newPos = { ...myPlayer.position };
-
-    if (direction === "up") {
-      newPos.y -= 1;
-    } else if (direction === "down") {
-      newPos.y += 1;
-    } else if (direction === "left") {
-      newPos.x -= 1;
-    } else if (direction === "right") {
-      newPos.x += 1;
-    }
-    // Проверка клетки: наличие и проходимость
-    const targetCell = state.grid.find(
-      (cell) => cell.x === newPos.x && cell.y === newPos.y
-    );
-    if (!targetCell) {
-      console.warn("Целевая клетка не найдена для координат", newPos);
-      return;
-    }
-    if (!allowedTileCodes.includes(targetCell.tileCode)) {
-      console.warn("Невозможно переместиться: клетка непроходимая", targetCell);
-      return;
-    }
-    // Проверяем, что клетка не занята другим игроком
-    const otherPlayer = state.players.find(
-      (p) =>
-        p.id !== myPlayer.id &&
-        p.position.x === newPos.x &&
-        p.position.y === newPos.y
-    );
-    if (otherPlayer) {
-      console.warn("Невозможно переместиться: клетка занята другим игроком", otherPlayer);
-      return;
-    }
+    if (direction === "up") newPos.y -= 1;
+    else if (direction === "down") newPos.y += 1;
+    else if (direction === "left") newPos.x -= 1;
+    else if (direction === "right") newPos.x += 1;
   
-    // Отправляем запрос и ждём подтверждения от сервера
+    // Отправляем запрос перемещения на сервер (без проверок на клиенте)
     const updatedPlayer = await movePlayer(newPos.x, newPos.y);
     if (updatedPlayer) {
       dispatch({
         type: "MOVE_PLAYER",
-        payload: { playerId: myPlayer.id, newPosition: newPos },
+        payload: { userId: myPlayer.user_id, newPosition: newPos },
       });
     } else {
-      console.error("Перемещение не выполнено из-за ошибки сервера.");
+      console.log("Перемещение не выполнено из-за ошибки сервера.");
     }
   };
   
-  const handleAction = () => {
-    // Если ход не ваш, действия не выполняются
-    if (!isMyTurn) {
-      console.warn("Сейчас не ваш ход");
-      return;
-    }
-    // Логика для атаки, сбора ресурсов и прочего
-    const activePlayer = state.players.find((p) => p.id === state.currentPlayerId);
-    if (!activePlayer) return;
-    const currentCell = state.grid.find(
-      (cell) =>
-        cell.x === activePlayer.position.x &&
-        cell.y === activePlayer.position.y
-    );
-    if (!currentCell) {
-      console.log("Клетка не найдена");
-      return;
-    }
-    if (currentCell.monster) {
-      console.log("Начинаем бой с монстром", currentCell.monster);
-      return;
-    }
-    if (currentCell.resource) {
-      console.log("Собираем ресурс", currentCell.resource);
-      return;
-    }
-    if (currentCell.isPortal) {
-      console.log("Пытаемся выйти через портал");
-      return;
-    }
-    console.log("На данной клетке нет интерактивных объектов", currentCell);
-  };
+  // Функция действий на клетке: сервер принимает решение, что делать.
 
-  // Функция обновления активного игрока после завершения хода
-  const handleTurnEnded = (data: { activePlayer: number; turnNumber: number; energy: number }) => {
-    dispatch({ 
-      type: "SET_ACTIVE_PLAYER",
-      payload: { activePlayer: data.activePlayer, turnNumber: data.turnNumber},
+ const [isCollecting, setIsCollecting] = useState(false);
+
+const handleAction = () => {
+  if (!isMyTurn) {
+    console.warn("Сейчас не ваш ход");
+    return;
+  }
+  if (isCollecting) return; // предотвращаем повторные вызовы
+  setIsCollecting(true);
+
+  const activePlayer = state.players.find((p) => p.user_id === state.active_user);
+  if (!activePlayer) {
+    setIsCollecting(false);
+    return;
+  }
+  const currentCell = state.grid.find(
+    (cell) =>
+      cell.x === activePlayer.position.x &&
+      cell.y === activePlayer.position.y
+  );
+  if (!currentCell) {
+    console.log("Клетка не найдена");
+    setIsCollecting(false);
+    return;
+  }
+
+  if (currentCell.monster) {
+    console.log("Начинаем бой с монстром", currentCell.monster);
+    setIsCollecting(false);
+    return;
+  }
+  if (currentCell.resource) {
+    console.log("Собираем ресурс", currentCell.resource);
+    collectResource(currentCell.x, currentCell.y)
+      .finally(() => setIsCollecting(false));
+    return;
+  }
+  if (currentCell.barbel) {
+    console.log("Открываем бочку", currentCell.resource);
+    collectResource(currentCell.x, currentCell.y)
+      .finally(() => setIsCollecting(false));
+    return;
+  }
+  if (currentCell.isPortal) {
+    console.log("Пытаемся выйти через портал");
+    setIsCollecting(false);
+    return;
+  }
+  console.log("На данной клетке нет интерактивных объектов", currentCell);
+  setIsCollecting(false);
+};
+
+  const handleTurnEnded = (data: { active_user: number; turnNumber: number; energy: number }) => {
+    dispatch({
+      type: "SET_ACTIVE_USER",
+      payload: { active_user: data.active_user, turnNumber: data.turnNumber },
     });
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "i", "I", "ш", "Ш"].includes(e.key)) {
         e.preventDefault();
       }
       if (e.key === "ArrowUp") {
@@ -180,9 +249,11 @@ export default function GameController() {
         handleMove("right");
       } else if (e.key === " ") {
         handleAction();
+      } else if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш") {
+        setShowInventory((prev) => !prev);
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [state, myPlayer, isMyTurn]);
@@ -210,7 +281,7 @@ export default function GameController() {
               instanceId={instanceId}
               onTurnEnded={handleTurnEnded}
             />
-             <TurnIndicator /> 
+            <TurnIndicator />
           </>
         ) : (
           <div className={styles.waitingOverlay}>
@@ -218,6 +289,7 @@ export default function GameController() {
           </div>
         )}
       </div>
+      {showInventory && <Inventory />}
     </div>
   );
 }

@@ -60,7 +60,12 @@ func main() {
 
 	// === Эндпоинты для игроков ===
 	router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")
+
 	router.HandleFunc("/game/player/{id}", handlers.GetPlayerHandler).Methods("GET")
+
+	router.HandleFunc("/game/matchPlayer/{id}", handlers.GetMatchPlayerHandler).Methods("GET")
+
+
 	router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
 
 	// === Эндпоинты для инвентаря ===
@@ -85,6 +90,9 @@ func main() {
 	).Methods("POST")
 
 	// === Эндпоинты для ресурсов и монстров ===
+	// В файле gameservice/cmd/main.go, внутри настройки маршрутов:
+	router.HandleFunc("/game/collectResource", handlers.CollectResourceHandler).Methods("POST")
+
 	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
 	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
 

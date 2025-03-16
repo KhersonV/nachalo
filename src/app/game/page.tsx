@@ -8,7 +8,6 @@
 import React from "react";
 import { useSearchParams } from "next/navigation";
 import { GameProvider } from "../../contexts/GameContextt";
-import MapWithCamera from "../../components/MapWithCamera";
 import GameController from "../../components/GameController";
 
 export default function GamePage() {

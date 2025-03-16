@@ -14,7 +14,7 @@ import (
 // MatchState инкапсулирует состояние конкретного матча.
 type MatchState struct {
 	InstanceID     string
-	ActivePlayerID int   // ID игрока, чей ход
+	ActiveUserID int   // ID игрока, чей ход
 	TurnOrder      []int // Очередность ходов (список ID игроков)
 	TurnNumber     int   // Номер текущего хода
 	mu             sync.Mutex
@@ -31,8 +31,8 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	defer m.mu.Unlock()
 
 	// Проверяем, что запрос отправлен от игрока, у которого и должен быть ход.
-	if currentPlayerID != m.ActivePlayerID {
-		log.Printf("Ошибка: currentPlayerID (%d) != ActivePlayerID (%d). Невозможно завершить ход.", currentPlayerID, m.ActivePlayerID)
+	if currentPlayerID != m.ActiveUserID {
+		log.Printf("Ошибка: currentPlayerID (%d) != ActiveUserID (%d). Невозможно завершить ход.", currentPlayerID, m.ActiveUserID)
 		return 0, ErrNotYourTurn
 	}
 
@@ -54,9 +54,9 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	if nextIndex == 0 {
 		m.TurnNumber++
 	}
-	m.ActivePlayerID = m.TurnOrder[nextIndex]
-	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActivePlayerID, m.TurnNumber)
-	return m.ActivePlayerID, nil
+	m.ActiveUserID = m.TurnOrder[nextIndex]
+	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActiveUserID, m.TurnNumber)
+	return m.ActiveUserID, nil
 }
 
 // --- Хранилище состояний матчей ---
@@ -71,11 +71,11 @@ func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 	matchState := &MatchState{
 		InstanceID:     instanceID,
 		TurnOrder:      playerIDs,
-		ActivePlayerID: 0,
+		ActiveUserID: 0,
 		TurnNumber:     1,
 	}
 	if len(playerIDs) > 0 {
-		matchState.ActivePlayerID = playerIDs[0]
+		matchState.ActiveUserID = playerIDs[0]
 	}
 
 	MatchStatesMu.Lock()

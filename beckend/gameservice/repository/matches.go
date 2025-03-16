@@ -1,233 +1,341 @@
 
 // ====================================
-// /gameservice/repository/matches.go
+// gameservice/repository/matches.go
 // ====================================
 
 
 package repository
 
 import (
-    "log"
-    "time"
+	"encoding/json"
+	"log"
 
-    "gameservice/models"
+	"gameservice/game"
+	"gameservice/models"
 )
 
-// Сохранение матча в БД
-func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte, createdAt time.Time) (string, error) {
-    query := `
-        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, turn_number)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+// InsertMatch – сохраняет матч в таблице matches.
+func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte) (string, error) {
+	query := `
+        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, turn_number)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING instance_id;
     `
-    var returnedID string
-    // Задаем turn_number = 1 по умолчанию
-    err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, createdAt, 1).Scan(&returnedID)
-    if err != nil {
-        return "", err
-    }
-    return returnedID, nil
+	var returnedID string
+	// turn_number задаем равным 1 по умолчанию.
+	err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, 1).Scan(&returnedID)
+	if err != nil {
+		return "", err
+	}
+	return returnedID, nil
 }
 
-
-// Получить матч по instance_id
+// GetMatchByID – получает матч по instance_id из таблицы matches.
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
-    query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, created_at, active_player_id, turn_number
+	query := `
+        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, active_user_id, turn_number
         FROM matches
         WHERE instance_id = $1
     `
-    match := &models.MatchInfo{}
-    err := DB.QueryRow(query, instanceID).Scan(
-        &match.InstanceID,
-        &match.Mode,
-        &match.TeamsCount,
-        &match.TotalPlayers,
-        &match.MapWidth,
-        &match.MapHeight,
-        &match.Map,
-        &match.CreatedAt,
-        &match.ActivePlayerID,
-        &match.TurnNumber,
-    )
-    if err != nil {
-        return nil, err
-    }
-    return match, nil
+	match := &models.MatchInfo{}
+	err := DB.QueryRow(query, instanceID).Scan(
+		&match.InstanceID,
+		&match.Mode,
+		&match.TeamsCount,
+		&match.TotalPlayers,
+		&match.MapWidth,
+		&match.MapHeight,
+		&match.Map,
+		&match.ActiveUserID,
+		&match.TurnNumber,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return match, nil
 }
 
-// Создать копию игрока в match_players
-func CreateMatchPlayerCopy(matchID string, p *models.Player, startX, startY, groupID int) error {
-    query := `
-        INSERT INTO match_players (
-            match_instance_id, player_id, name, image, color_class, pos_x, pos_y, 
-            energy, max_energy, health, max_health, level, experience, max_experience,
-            attack, defense, speed, maneuverability, vision, vision_range, balance, inventory, 
-            group_id, updated_at
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, 
-            $8, $9, $10, $11, $12, $13, $14,
-            $15, $16, $17, $18, $19, $20, $21, $22, 
-            $23, $24
-        );
-    `
-    res, err := DB.Exec(query,
-        matchID, p.UserID, p.Name, p.Image, p.ColorClass, startX, startY,
-        p.Energy, p.MaxEnergy, p.Health, p.MaxHealth, p.Level, p.Experience, p.MaxExperience,
-        p.Attack, p.Defense, p.Speed, p.Maneuverability, p.Vision, p.VisionRange, p.Balance,
-        p.Inventory, groupID, p.UpdatedAt,
-    )
-    if err != nil {
-        log.Printf("CreateMatchPlayerCopy: ошибка вставки player_user_id=%d, matchID=%s: %v", p.UserID, matchID, err)
-        return err
-    }
-    affected, _ := res.RowsAffected()
-    log.Printf("CreateMatchPlayerCopy: успешно вставлено %d строк для player_user_id=%d, matchID=%s", affected, p.UserID, matchID)
-    return nil
+// CreateMatchPlayerCopy – создает копию игрока в таблице match_players для конкретного матча.
+func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, startY, groupID int) error {
+	// Формируем JSON для поля position.
+	position, err := json.Marshal(struct {
+		X int `json:"x"`
+		Y int `json:"y"`
+	}{X: startX, Y: startY})
+	if err != nil {
+		return err
+	}
+
+	query := `
+		INSERT INTO match_players (
+			match_instance_id, user_id, name, image, position, inventory,
+			level, energy, max_energy, health, max_health, experience, max_experience,
+			attack, defense, speed, maneuverability, vision, vision_range, balance, group_id
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12, $13,
+			$14, $15, $16, $17, $18, $19, $20, $21
+		);
+	`
+	res, err := DB.Exec(query,
+		matchID,
+		p.UserID,
+		p.Name,
+		p.Image,
+		position,
+		p.Inventory,
+		p.Level,
+		p.Energy,
+		p.MaxEnergy,
+		p.Health,
+		p.MaxHealth,
+		p.Experience,
+		p.MaxExperience,
+		p.Attack,
+		p.Defense,
+		p.Speed,
+		p.Maneuverability,
+		p.Vision,
+		p.VisionRange,
+		p.Balance,
+		groupID,
+	)
+	if err != nil {
+		log.Printf("CreateMatchPlayerCopy: ошибка вставки user_id=%d, matchID=%s: %v", p.UserID, matchID, err)
+		return err
+	}
+	affected, _ := res.RowsAffected()
+	log.Printf("CreateMatchPlayerCopy: успешно вставлено %d строк для user_id=%d, matchID=%s", affected, p.UserID, matchID)
+	return nil
 }
 
+// GetMatchPlayerByID – получает данные игрока из match_players по match_instance_id и user_id.
+func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, error) {
+	query := `
+		SELECT 
+			user_id,
+			name, 
+			image, 
+			position, 
+			inventory,
+			level,
+			energy,
+			max_energy,
+			health,
+			max_health,
+			experience,
+			max_experience,
+			attack,
+			defense,
+			speed,
+			maneuverability,
+			vision,
+			vision_range,
+			balance
+		FROM match_players
+		WHERE match_instance_id = $1 AND user_id = $2
+		LIMIT 1;
+	`
+	var pr models.PlayerResponse
+	var positionJSON []byte
 
-// Получить игрока из match_players по matchID + playerID
-func GetMatchPlayerByID(matchID string, playerID int) (*models.Player, error) {
-    player := &models.Player{}
-    query := `
-        SELECT id, player_id, name, image, color_class, pos_x, pos_y, energy, max_energy, 
-               health, max_health, level, experience, max_experience, attack, defense, 
-               speed, maneuverability, vision, vision_range, balance, inventory, updated_at
-        FROM match_players
-        WHERE match_instance_id = $1 AND player_id = $2
-    `
-    err := DB.QueryRow(query, matchID, playerID).Scan(
-        &player.ID,
-        &player.UserID,
-        &player.Name,
-        &player.Image,
-        &player.ColorClass,
-        &player.PosX,
-        &player.PosY,
-        &player.Energy,
-        &player.MaxEnergy,
-        &player.Health,
-        &player.MaxHealth,
-        &player.Level,
-        &player.Experience,
-        &player.MaxExperience,
-        &player.Attack,
-        &player.Defense,
-        &player.Speed,
-        &player.Maneuverability,
-        &player.Vision,
-        &player.VisionRange,
-        &player.Balance,
-        &player.Inventory,
-        &player.UpdatedAt,
-    )
-    if err != nil {
-        log.Printf("GetMatchPlayerByID: ошибка получения игрока matchID=%s, playerID=%d: %v", matchID, playerID, err)
-        return nil, err
-    }
-    return player, nil
+	err := DB.QueryRow(query, matchID, userID).Scan(
+		&pr.UserID,
+		&pr.Name,
+		&pr.Image,
+		&positionJSON,
+		&pr.Inventory,
+		&pr.Level,
+		&pr.Energy,
+		&pr.MaxEnergy,
+		&pr.Health,
+		&pr.MaxHealth,
+		&pr.Experience,
+		&pr.MaxExperience,
+		&pr.Attack,
+		&pr.Defense,
+		&pr.Speed,
+		&pr.Maneuverability,
+		&pr.Vision,
+		&pr.VisionRange,
+		&pr.Balance,
+	)
+	if err != nil {
+		log.Printf("GetMatchPlayerByID: ошибка получения игрока matchID=%s, user_id=%d: %v", matchID, userID, err)
+		return nil, err
+	}
+
+	// Распарсить JSON из поля position в структуру Position модели
+	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
+		return nil, err
+	}
+
+	return &pr, nil
 }
 
-// Обновить игрока в match_players
-func UpdateMatchPlayer(matchID string, player *models.Player) error {
-    query := `
-        UPDATE match_players
-        SET pos_x = $1, pos_y = $2, energy = $3, health = $4, level = $5, experience = $6,
-            updated_at = $7
-        WHERE match_instance_id = $8 AND player_id = $9
-    `
-    _, err := DB.Exec(query,
-        player.PosX,
-        player.PosY,
-        player.Energy,
-        player.Health,
-        player.Level,
-        player.Experience,
-        player.UpdatedAt,
-        matchID,
-        player.UserID,
-    )
-    return err
+// UpdateMatchPlayer – обновляет данные игрока в таблице match_players для конкретного матча.
+func UpdateMatchPlayer(player *models.PlayerResponse) error {
+	// Формируем JSON для поля position.
+	positionJSON, err := json.Marshal(player.Position)
+	if err != nil {
+		return err
+	}
+
+	query := `
+		UPDATE match_players
+		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
+		WHERE user_id = $6
+	`
+	_, err = DB.Exec(query,
+		positionJSON,
+		player.Energy,
+		player.Health,
+		player.Level,
+		player.Experience,
+		player.UserID,
+	)
+	return err
 }
 
-// Получить список игроков (Player) из match_players по matchID
-func GetPlayersInMatch(matchID string) ([]models.Player, error) {
-    query := `
-        SELECT 
-            player_id as id, 
-            name, 
-            image, 
-            color_class, 
-            pos_x, 
-            pos_y, 
-            energy, 
-            max_energy, 
-            health, 
-            max_health, 
-            level, 
-            experience, 
-            max_experience,
-            attack, 
-            defense, 
-            speed, 
-            maneuverability, 
-            vision, 
-            vision_range, 
-            balance, 
-            inventory, 
-            updated_at
-        FROM match_players
-        WHERE match_instance_id = $1
-    `
-    rows, err := DB.Query(query, matchID)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
+// GetPlayersInMatch – получает список игроков для матча (по match_instance_id) из таблицы match_players.
+func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
+	query := `
+		SELECT 
+			user_id,
+			name,
+			image,
+			position,
+			inventory,
+			level,
+			energy,
+			max_energy,
+			health,
+			max_health,
+			experience,
+			max_experience,
+			attack,
+			defense,
+			speed,
+			maneuverability,
+			vision,
+			vision_range,
+			balance
+		FROM match_players
+		WHERE match_instance_id = $1
+	`
+	rows, err := DB.Query(query, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    var players []models.Player
-    for rows.Next() {
-        var p models.Player
-        if err := rows.Scan(
-            &p.ID,
-            &p.Name,
-            &p.Image,
-            &p.ColorClass,
-            &p.PosX,
-            &p.PosY,
-            &p.Energy,
-            &p.MaxEnergy,
-            &p.Health,
-            &p.MaxHealth,
-            &p.Level,
-            &p.Experience,
-            &p.MaxExperience,
-            &p.Attack,
-            &p.Defense,
-            &p.Speed,
-            &p.Maneuverability,
-            &p.Vision,
-            &p.VisionRange,
-            &p.Balance,
-            &p.Inventory,
-            &p.UpdatedAt,
-        ); err != nil {
-            return nil, err
-        }
-        players = append(players, p)
-    }
-    return players, nil
+	var players []models.PlayerResponse
+	for rows.Next() {
+		var pr models.PlayerResponse
+		var positionJSON []byte
+		err := rows.Scan(
+			&pr.UserID,
+			&pr.Name,
+			&pr.Image,
+			&positionJSON,
+			&pr.Inventory,
+			&pr.Level,
+			&pr.Energy,
+			&pr.MaxEnergy,
+			&pr.Health,
+			&pr.MaxHealth,
+			&pr.Experience,
+			&pr.MaxExperience,
+			&pr.Attack,
+			&pr.Defense,
+			&pr.Speed,
+			&pr.Maneuverability,
+			&pr.Vision,
+			&pr.VisionRange,
+			&pr.Balance,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
+			return nil, err
+		}
+		players = append(players, pr)
+	}
+	return players, nil
 }
 
-func UpdateMatchTurn(instanceID string, activePlayer int, turnNumber int) error {
-    query := `
-        UPDATE matches
-        SET active_player_id = $1, turn_number = $2
-        WHERE instance_id = $3
-    `
-    _, err := DB.Exec(query, activePlayer, turnNumber, instanceID)
-    return err
+// UpdateMatchTurn – обновляет текущий ход матча в таблице matches.
+func UpdateMatchTurn(instanceID string, activeUserID int, turnNumber int) error {
+	query := `
+		UPDATE matches
+		SET active_user_id = $1, turn_number = $2
+		WHERE instance_id = $3
+	`
+	_, err := DB.Exec(query, activeUserID, turnNumber, instanceID)
+	return err
 }
 
-// Прочие вспомогательные функции...
+// GetItemEffect – получает эффект предмета из таблицы resources.
+func GetItemEffect(itemID int) (map[string]int, error) {
+	query := `SELECT effect FROM resources WHERE id = $1;`
+	var effectJSON []byte
+	err := DB.QueryRow(query, itemID).Scan(&effectJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	var effect map[string]int
+	if err := json.Unmarshal(effectJSON, &effect); err != nil {
+		return nil, err
+	}
+	return effect, nil
+}
+
+// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
+// Тип позиций здесь определён как struct{ X, Y int }.
+
+func UpdateCellPlayerFlags(instanceID string, oldPos, newPos struct{ X, Y int }) error {
+	// Извлекаем текущую карту матча.
+	var mapJSON []byte
+	query := `SELECT map FROM matches WHERE instance_id = $1;`
+	err := DB.QueryRow(query, instanceID).Scan(&mapJSON)
+	if err != nil {
+		return err
+	}
+
+	var cells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &cells); err != nil {
+		return err
+	}
+
+	log.Printf("[UpdateCellPlayerFlags] BEFORE update: oldPos: %+v, newPos: %+v", oldPos, newPos)
+	
+
+	// Обновляем клетку на старой позиции.
+	for i, cell := range cells {
+		if cell.X == oldPos.X && cell.Y == oldPos.Y {
+			log.Printf("[UpdateCellPlayerFlags] Обновление старой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=false", cell.CellID, cell.X, cell.Y)
+			cells[i].IsPlayer = false
+		}
+		if cell.X == newPos.X && cell.Y == newPos.Y {
+			log.Printf("[UpdateCellPlayerFlags] Обновление новой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=true", cell.CellID, cell.X, cell.Y)
+			cells[i].IsPlayer = true
+		}
+	}
+
+	newMapJSON, err := json.Marshal(cells)
+	if err != nil {
+		return err
+	}
+
+	// log.Printf("[UpdateCellPlayerFlags] NEW JSON: %s", string(newMapJSON))
+	updateQuery := `UPDATE matches SET map = $1 WHERE instance_id = $2;`
+	_, err = DB.Exec(updateQuery, string(newMapJSON), instanceID)
+	if err != nil {
+		log.Printf("[UpdateCellPlayerFlags] Ошибка обновления карты: %v", err)
+		return err
+	}
+	log.Printf("[UpdateCellPlayerFlags] Обновление карты прошло успешно для instanceID=%s", instanceID)
+	return nil
+}

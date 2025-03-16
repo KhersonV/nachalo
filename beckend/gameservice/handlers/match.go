@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"gameservice/game"
 	"gameservice/repository"
@@ -34,17 +33,18 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		TotalPlayers: req.TotalPlayers,
 		TeamsCount:   req.TeamsCount,
 		WalkableProb: 0.8,
+		BarbelProb: 0.1,
 		ResourceProb: 0.1,
 		MonsterProb:  0.05,
 	}
 
-	// Получите ресурсы и монстров из БД (например, функции repository.GetResourcesData(), repository.GetMonstersData())
-	resourcesFromDB, err := repository.GetResourcesData() // функция должна вернуть []game.ResourceData
+	// Получаем ресурсы и монстров из БД
+	resourcesFromDB, err := repository.GetResourcesData() // []game.ResourceData
 	if err != nil {
 		http.Error(w, "Ошибка загрузки ресурсов", http.StatusInternalServerError)
 		return
 	}
-	monstersFromDB, err := repository.GetMonstersData() // функция должна вернуть []game.MonsterData
+	monstersFromDB, err := repository.GetMonstersData() // []game.MonsterData
 	if err != nil {
 		http.Error(w, "Ошибка загрузки монстров", http.StatusInternalServerError)
 		return
@@ -58,7 +58,7 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Преобразуем startPositions и portalPos в JSON
+	// Преобразуем стартовые позиции и позицию портала в JSON
 	startPosJSON, err := json.Marshal(startPositions)
 	if err != nil {
 		http.Error(w, "Ошибка маршалинга стартовых позиций", http.StatusInternalServerError)
@@ -76,15 +76,16 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdAt := time.Now()
-
-	// Сохраняем матч, включая новые поля start_positions и portal_position
+	// Вставляем матч в таблицу matches.
+	// Новый порядок: instance_id, mode, teams_count, total_players, map_width, map_height, map,
+	// active_user_id, turn_order, turn_number, start_positions, portal_position.
+	// turn_number устанавливаем равным 1.
 	_, err = repository.DB.Exec(`
         INSERT INTO matches (
             instance_id, mode, teams_count, total_players, map_width, map_height, map, 
-            active_player_id, turn_order, created_at, turn_number, start_positions, portal_position
+            active_user_id, turn_order, turn_number, start_positions, portal_position
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, $11, $12
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11
         )`,
 		req.InstanceID,
 		req.Mode,
@@ -95,7 +96,6 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		string(mapData),
 		req.PlayerIDs[0],
 		fmt.Sprintf("[%d]", req.PlayerIDs[0]),
-		createdAt,
 		string(startPosJSON),
 		string(portalPosJSON),
 	)
@@ -105,7 +105,7 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Создаем локальное состояние матча
+	// Создаем локальное состояние матча.
 	game.CreateMatchState(req.InstanceID, req.PlayerIDs)
 
 	// Распределяем игроков по стартовым позициям.
@@ -117,7 +117,7 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var pos [2]int
-		// Если для команды больше одной стартовой позиции, распределяем их по очереди.
+		// Распределяем стартовые позиции по очереди.
 		if i < len(startPositions) {
 			pos = startPositions[i]
 		} else {
@@ -146,21 +146,21 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"instance_id":    req.InstanceID,
-		"mode":           req.Mode,
-		"map":            fullMap,
-		"created_at":     createdAt,
-		"map_width":      mapWidth,
-		"map_height":     mapHeight,
-		"player_ids":     req.PlayerIDs,
-		"players":        playersInMatch,
+		"instance_id":     req.InstanceID,
+		"mode":            req.Mode,
+		"map":             fullMap,
+		"map_width":       mapWidth,
+		"map_height":      mapHeight,
+		"player_ids":      req.PlayerIDs,
+		"players":         playersInMatch,
 		"start_positions": string(startPosJSON),
 		"portal_position": string(portalPosJSON),
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
 
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 	instanceID := r.URL.Query().Get("instance_id")
@@ -181,9 +181,9 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activePlayer := match.ActivePlayerID
-	if activePlayer == 0 && len(players) > 0 {
-		activePlayer = players[0].ID
+	activeUser := match.ActiveUserID
+	if activeUser == 0 && len(players) > 0 {
+		activeUser = players[0].UserID
 	}
 
 	response := map[string]interface{}{
@@ -195,8 +195,7 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		"map_height":      match.MapHeight,
 		"map":             match.Map, // сохранённый массив FullCell (JSON)
 		"players":         players,
-		"created_at":      match.CreatedAt,
-		"active_player":   activePlayer,
+		"active_user":   activeUser,
 		"turn_number":     match.TurnNumber,
 		"start_positions": match.StartPositions, // если у вас в модели MatchInfo есть это поле
 		"portal_position": match.PortalPosition,   // аналогично

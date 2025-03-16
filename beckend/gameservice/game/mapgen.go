@@ -1,6 +1,6 @@
-//===============================
+// ====================================
 // gameservice/game/mapgen.go
-//===============================
+// ====================================
 
 package game
 
@@ -21,13 +21,19 @@ const (
 	StartTile TileType = 'P' // Стартовая позиция
 )
 
+const (
+	BarbelTile TileType = 'B' // Символ для бочки
+)
+
 // MapConfig задаёт параметры генерации карты.
 type MapConfig struct {
 	TotalPlayers int     // Общее количество игроков
 	TeamsCount   int     // Количество команд
 	WalkableProb float64 // Вероятность, что тайл будет проходимым
-	ResourceProb float64 // Вероятность появления ресурса на проходимом тайле
-	MonsterProb  float64 // Вероятность появления монстра на проходимом тайле
+	// Вероятности указываются как доли (например, 0.05 = 5%)
+	MonsterProb  float64 // Вероятность появления монстра
+	BarbelProb   float64 // Вероятность появления бочки
+	ResourceProb float64 // Вероятность появления обычного ресурса
 }
 
 // ResourceData – структура для хранения данных ресурса.
@@ -37,7 +43,6 @@ type ResourceData struct {
 	Description string         `json:"description"` // описание ресурса
 	Effect      map[string]int `json:"effect"`      // эффекты или бонусы (например, {"energy": 10})
 	Image       string         `json:"image"`       // путь к изображению ресурса
-	// Дополнительные поля можно добавить
 }
 
 // MonsterData – структура для хранения данных монстра.
@@ -53,25 +58,24 @@ type MonsterData struct {
 	Maneuverability int    `json:"maneuverability"` // маневренность
 	Vision          int    `json:"vision"`          // радиус видения
 	Image           string `json:"image"`           // путь к изображению монстра
-	// Дополнительные поля можно добавить
 }
 
 // FullCell – полная информация о клетке карты.
 type FullCell struct {
-	CellID   int           `json:"cell_id"`            // Уникальный идентификатор клетки
-	X        int           `json:"x"`                  // Координата X
-	Y        int           `json:"y"`                  // Координата Y
-	TileCode int           `json:"tileCode"`           // Код тайла (например, Walkable, Border, Portal, 'R', 'M', 'P')
-	Resource *ResourceData `json:"resource,omitempty"` // Данные ресурса (если клетка содержит ресурс)
-	Monster  *MonsterData  `json:"monster,omitempty"`  // Данные монстра (если клетка содержит монстра)
-	IsPortal bool          `json:"isPortal,omitempty"` // Флаг, что клетка является порталом
-	IsPlayer bool          `json:"isPlayer,omitempty"` // Флаг, что в клетке находится игрок
+	CellID   int           `json:"cell_id"`  // Уникальный идентификатор клетки
+	X        int           `json:"x"`        // Координата X
+	Y        int           `json:"y"`        // Координата Y
+	TileCode int           `json:"tileCode"` // Код тайла
+	Resource *ResourceData `json:"resource"` // Ресурс (если присутствует и НЕ является бочкой)
+	Barbel   *ResourceData `json:"barbel"`   // Бочка (если присутствует)
+	Monster  *MonsterData  `json:"monster"`  // Монстр (если присутствует)
+	IsPortal bool          `json:"isPortal"` // Портал
+	IsPlayer bool          `json:"isPlayer"` // Флаг наличия игрока
 }
 
 // GenerateFullMap генерирует полную карту, фиксируя размещение ресурсов и монстров.
-// Функция возвращает срез FullCell, ширину, высоту, массив стартовых позиций и позицию портала.
+// Возвращает срез FullCell, ширину, высоту, массив стартовых позиций и позицию портала.
 func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []MonsterData) ([]FullCell, int, int, [][2]int, [2]int, error) {
-	// Проверка входных параметров.
 	if cfg.TotalPlayers < 1 {
 		return nil, 0, 0, nil, [2]int{}, errors.New("общее количество игроков должно быть >= 1")
 	}
@@ -79,14 +83,12 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
 	}
 
-	// Определяем размеры карты: ширина и высота равны 15 * TotalPlayers.
 	width := 15 * cfg.TotalPlayers
 	height := 15 * cfg.TotalPlayers
 
-	// Инициализация генератора случайных чисел.
 	rand.Seed(time.Now().UnixNano())
 
-	// Генерация базовой карты – двумерного среза tileCode.
+	// Генерируем базовую сетку: границы – непроходимые, внутри случайно Walkable или Obstacle.
 	grid := make([][]int, height)
 	for y := 0; y < height; y++ {
 		grid[y] = make([]int, width)
@@ -103,7 +105,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		}
 	}
 
-	// Функция для размещения специальных тайлов: стартовых позиций и портала.
+	// Расположение специальных тайлов: стартовых позиций и портала.
 	placeSpecialTiles := func(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
 		var candidates []struct{ x, y int }
 		for y := 1; y < height-1; y++ {
@@ -136,26 +138,24 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, err
 	}
 
-	// Счётчики для генерации уникальных идентификаторов для копий ресурсов и монстров.
-	resourceCounter := 1
 	monsterCounter := 1
-
-	// Формирование полной карты.
 	var fullCells []FullCell
 	cellIDCounter := 1
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			tileCode := grid[y][x]
 			var res *ResourceData = nil
+			var barbel *ResourceData = nil
 			var mon *MonsterData = nil
 			isPortal := false
 
-			// Если клетка исходно проходимая (Walkable), решаем случайно, появится ли в ней ресурс или монстр.
+			// Если клетка исходно проходимая, решаем, появляется ли что-либо на ней.
 			if tileCode == int(Walkable) {
+				// Сначала проверяем шанс появления монстра
 				r := rand.Float64()
 				if r < cfg.MonsterProb && len(monsters) > 0 {
 					chosen := monsters[rand.Intn(len(monsters))]
-					// Генерируем уникальный ID для этой копии.
 					newID := chosen.ID*1000000 + monsterCounter
 					monsterCounter++
 					mon = &MonsterData{
@@ -172,32 +172,68 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 						Image:           chosen.Image,
 					}
 					tileCode = int('M')
-				} else if r < cfg.MonsterProb+cfg.ResourceProb && len(resources) > 0 {
-					chosen := resources[rand.Intn(len(resources))]
-					newID := chosen.ID*1000000 + resourceCounter
-					resourceCounter++
-					res = &ResourceData{
-						ID:          newID,
-						Type:        chosen.Type,
-						Description: chosen.Description,
-						Effect:      chosen.Effect,
-						Image:       chosen.Image,
+				} else {
+					// Если монстр не появился, генерируем новое случайное число для решения между бочкой и ресурсом.
+					r2 := rand.Float64()
+					// Если r2 меньше BarbelProb, то обязательно появляется бочка.
+					if r2 < cfg.BarbelProb && len(resources) > 0 {
+						// Находим ресурс с ID == 6 (предполагается, что он отвечает за бочку)
+						var barrel *ResourceData
+						for _, r := range resources {
+							if r.ID == 6 {
+								barrel = &ResourceData{
+									ID:          r.ID,
+									Type:        r.Type,
+									Description: r.Description,
+									Effect:      r.Effect,
+									Image:       r.Image,
+								}
+								break
+							}
+						}
+						// Если ресурс для бочки найден, устанавливаем его и меняем tileCode
+						if barrel != nil {
+							barbel = barrel
+							tileCode = int(BarbelTile)
+						}
+					} else if r2 < cfg.BarbelProb+cfg.ResourceProb && len(resources) > 0 {
+						// Иначе, если r2 попадает в диапазон для обычного ресурса, выбираем ресурс, у которого ID != 6.
+						var normalResource *ResourceData
+						// Попытаемся выбрать случайный ресурс, пока не найдём тот, у которого ID != 6.
+						for i := 0; i < 10; i++ {
+							candidate := resources[rand.Intn(len(resources))]
+							if candidate.ID != 6 {
+								normalResource = &ResourceData{
+									ID:          candidate.ID,
+									Type:        candidate.Type,
+									Description: candidate.Description,
+									Effect:      candidate.Effect,
+									Image:       candidate.Image,
+								}
+								break
+							}
+						}
+						if normalResource != nil {
+							res = normalResource
+							tileCode = int('R')
+						}
 					}
-					tileCode = int('R')
+					// Если ни одно из условий не выполнено, клетка остаётся просто Walkable (tileCode = '0')
 				}
 			}
 
-			// Если клетка имеет код портала, устанавливаем флаг.
 			if tileCode == int(Portal) || tileCode == 112 {
 				isPortal = true
 			}
 
+			// При генерации карты все поля явно устанавливаются:
 			fullCells = append(fullCells, FullCell{
 				CellID:   cellIDCounter,
 				X:        x,
 				Y:        y,
 				TileCode: tileCode,
 				Resource: res,
+				Barbel:   barbel,
 				Monster:  mon,
 				IsPortal: isPortal,
 				IsPlayer: false,
@@ -207,4 +243,39 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	}
 
 	return fullCells, width, height, startPositions, portalPos, nil
+}
+
+
+// OpenBarbel реализует логику открытия бочки.
+// В зависимости от случайного числа, из бочки может выпасть монстр (с уникальным id),
+// обычный ресурс или артефакт.
+func OpenBarbel(cell FullCell, resources []ResourceData, artifacts []ResourceData, monsters []MonsterData, monsterCounter *int) (interface{}, error) {
+	r := rand.Float64()
+	// 30% шанс выпадения монстра, 40% - ресурса, 30% - артефакта
+	if r < 0.3 && len(monsters) > 0 {
+		chosen := monsters[rand.Intn(len(monsters))]
+		newID := chosen.ID*1000000 + *monsterCounter
+		*monsterCounter++
+		monsterInstance := MonsterData{
+			ID:              newID,
+			Name:            chosen.Name,
+			Type:            chosen.Type,
+			Health:          chosen.Health,
+			MaxHealth:       chosen.MaxHealth,
+			Attack:          chosen.Attack,
+			Defense:         chosen.Defense,
+			Speed:           chosen.Speed,
+			Maneuverability: chosen.Maneuverability,
+			Vision:          chosen.Vision,
+			Image:           chosen.Image,
+		}
+		return monsterInstance, nil
+	} else if r < 0.3+0.4 && len(resources) > 0 {
+		chosen := resources[rand.Intn(len(resources))]
+		return chosen, nil
+	} else if len(artifacts) > 0 {
+		chosen := artifacts[rand.Intn(len(artifacts))]
+		return chosen, nil
+	}
+	return nil, errors.New("не удалось определить результат открытия бочки")
 }

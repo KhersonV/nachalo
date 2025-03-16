@@ -1,14 +1,23 @@
-// ==============================
+//==================================
 // src/contexts/GameContextt.tsx
-// ==============================
+//==================================
 
 "use client";
 
-import React, { createContext, useContext, useReducer, useEffect, Dispatch, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  Dispatch,
+  useState,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-import type { GameState, Action, ResourceType, MonsterType, Cell } from "../types/GameTypes";
+import type { GameState, Action, ResourceType, MonsterType, Cell, PlayerState } from "../types/GameTypes";
 
+// Начальное состояние
 const initialState: GameState = {
   instanceId: "",
   mode: "",
@@ -16,7 +25,7 @@ const initialState: GameState = {
   mapWidth: 0,
   mapHeight: 0,
   players: [],
-  currentPlayerId: 0,
+  active_user: 0,
   turnNumber: 1,
 };
 
@@ -25,10 +34,9 @@ const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action>
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
-      let currentId = state.currentPlayerId;
-      if (currentId === 0 && action.payload.players.length > 0) {
-        currentId = action.payload.players[0].id;
-      }
+      console.log("[GameReducer][SET_MATCH_DATA] Получены данные матча:", action.payload);
+      const active_user = action.payload.active_user;
+      console.log("[GameReducer] Устанавливаем active_user:", active_user);
       return {
         ...state,
         instanceId: action.payload.instanceId,
@@ -37,24 +45,70 @@ export function gameReducer(state: GameState, action: Action): GameState {
         mapWidth: action.payload.mapWidth,
         mapHeight: action.payload.mapHeight,
         players: action.payload.players,
-        currentPlayerId: action.payload.activePlayer,
+        active_user: active_user,
         turnNumber: action.payload.turnNumber || state.turnNumber,
       };
+
     case "MOVE_PLAYER":
+      console.log("[GameReducer][MOVE_PLAYER] Перемещение игрока:", action.payload);
+      const playerId = action.payload.userId;
       return {
         ...state,
         players: state.players.map((p) =>
-          p.id === action.payload.playerId ? { ...p, position: action.payload.newPosition } : p
+          p.user_id === playerId
+            ? { ...p, position: action.payload.newPosition }
+            : p
         ),
       };
-    case "SET_ACTIVE_PLAYER":
+
+    case "SET_ACTIVE_USER":
+      console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user);
       return {
         ...state,
-        currentPlayerId: action.payload.activePlayer,
+        active_user: action.payload.active_user,
         turnNumber: action.payload.turnNumber,
       };
+
+    case "UPDATE_PLAYER":
+      console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
+      const updatedData = action.payload.player;
+      const normalizedPlayer: PlayerState = {
+        ...updatedData,
+        position: { x: updatedData.position?.x, y: updatedData.position?.y },
+        user_id: updatedData.user_id,
+      };
+      if (typeof normalizedPlayer.inventory === "string") {
+        console.log("[GameReducer][UPDATE_PLAYER] Инвентарь как строка:", normalizedPlayer.inventory);
+        try {
+          normalizedPlayer.inventory = JSON.parse(normalizedPlayer.inventory);
+          console.log("[GameReducer][UPDATE_PLAYER] Парсенный инвентарь:", normalizedPlayer.inventory);
+        } catch (e) {
+          console.error("[GameReducer][UPDATE_PLAYER] Ошибка парсинга инвентаря:", e);
+          normalizedPlayer.inventory = { resources: {}, artifacts: {} };
+        }
+      }
+      console.log("[GameReducer][UPDATE_PLAYER] После нормализации:", normalizedPlayer);
+      return {
+        ...state,
+        players: state.players.map((p) =>
+          p.user_id === normalizedPlayer.user_id ? normalizedPlayer : p
+        ),
+      };
+
+    case "UPDATE_CELL":
+      // Обновляем только ту клетку, id которой совпадает с updatedCell.id
+      const { updatedCell } = action.payload;
+      return {
+        ...state,
+        grid: state.grid.map((cell) =>
+          cell.cell_id === updatedCell.cell_id ? { ...cell, ...updatedCell } : cell
+        ),
+      };
+
     case "RESET_STATE":
+      console.log("[GameReducer][RESET_STATE] Сброс состояния");
       return { ...initialState };
+
     default:
       return state;
   }
@@ -65,61 +119,33 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
-// Если карта уже пришла с сервера в виде объектов (с полем cell_id), преобразуем их в тип Cell.
-function convertMapData(rawMap: any, resources: ResourceType[], monsters: MonsterType[]): Cell[] {
-  // Если массив не пустой и первый элемент имеет поле cell_id – это уже объект.
-  if (Array.isArray(rawMap) && rawMap.length > 0 && rawMap[0].cell_id !== undefined) {
-    return rawMap.map((cell: any) => ({
-      id: cell.cell_id,
-      x: cell.x,
-      y: cell.y,
-      tileCode: cell.tileCode,
-      resource: cell.resource,
-      monster: cell.monster,
-      isPortal: cell.isPortal,
-    }));
-  }
-  // Если приходит двумерный массив чисел, можно его преобразовать (если требуется).
-  const cells: Cell[] = [];
-  let cellId = 0;
-  for (let y = 0; y < rawMap.length; y++) {
-    for (let x = 0; x < rawMap[y].length; x++) {
-      cells.push({
-        id: cellId++,
-        x,
-        y,
-        tileCode: rawMap[y][x],
-        resource: null,
-        monster: null,
-        isPortal: false,
-      });
-    }
-  }
-  return cells;
-}
-
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
+  const prevInstanceIdRef = useRef<string>("");
 
   useEffect(() => {
-    console.log("instanceId изменился на:", instanceId);
-    dispatch({ type: "RESET_STATE" });
+    console.log("[GameProvider] instanceId изменился на:", instanceId);
+    // Сброс состояния, если instanceId изменился
+    if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
+      dispatch({ type: "RESET_STATE" });
+    }
+    prevInstanceIdRef.current = instanceId;
 
     async function fetchResources() {
       try {
         const res = await fetch("http://localhost:8001/api/resources", { cache: "no-store" });
         if (!res.ok) {
-          console.error("Ошибка загрузки ресурсов", await res.text());
+          console.error("[GameProvider] Ошибка загрузки ресурсов", await res.text());
           return;
         }
         const data = await res.json();
-        console.log("Полученные ресурсы:", data);
+        console.log("[GameProvider] Полученные ресурсы:", data);
         setResources(data);
       } catch (err) {
-        console.error("fetchResources error:", err);
+        console.error("[GameProvider] fetchResources error:", err);
       }
     }
 
@@ -127,14 +153,14 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       try {
         const res = await fetch("http://localhost:8001/api/monsters", { cache: "no-store" });
         if (!res.ok) {
-          console.error("Ошибка загрузки монстров", await res.text());
+          console.error("[GameProvider] Ошибка загрузки монстров", await res.text());
           return;
         }
         const data = await res.json();
-        console.log("Полученные монстры:", data);
+        console.log("[GameProvider] Полученные монстры:", data);
         setMonsters(data);
       } catch (err) {
-        console.error("fetchMonsters error:", err);
+        console.error("[GameProvider] fetchMonsters error:", err);
       }
     }
 
@@ -147,41 +173,43 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
       try {
         const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, { cache: "no-store" });
         if (!res.ok) {
-          console.error("Ошибка загрузки данных матча", await res.text());
+          console.error("[GameProvider] Ошибка загрузки данных матча", await res.text());
           router.replace("/mode");
           return;
         }
         const data = await res.json();
-        console.log("Полученные данные матча:", data);
-        console.log("Полученные игроки:", data.players);
+        console.log("[GameProvider] Полученные данные матча:", data);
         if (data.instance_id !== instanceId) {
-          console.log("Актуальный instance_id отличается, обновляем URL:", data.instance_id);
+          console.log("[GameProvider] Актуальный instance_id отличается, обновляем URL:", data.instance_id);
           router.replace(`/game?instance_id=${data.instance_id}`);
           return;
         }
-        const convertedGrid = convertMapData(data.map, resources, monsters);
-        const players = (data.players || []).map((p: any) => ({
-          ...p,
-          position: { x: p.pos_x, y: p.pos_y },
-        }));
-        if (players.length === 0) {
-          console.warn("Массив игроков пуст!");
-        }
+        // Если сервер уже возвращает поле position, используем его без лишних преобразований
+        const players = (data.players || []).map((p: any) => {
+          console.log("[GameProvider] Original player data:", p);
+          return {
+            ...p,
+            user_id: p.user_id || p.player_id,
+            position: { x: p.position.x, y: p.position.y },
+          };
+        });
+
+        console.log("[GameProvider] Игроки после конвертации:", players);
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
             instanceId: data.instance_id,
             mode: data.mode,
-            grid: convertedGrid,
+            grid: data.map,
             mapWidth: data.map_width,
             mapHeight: data.map_height,
             players,
-            activePlayer: data.active_player,
+            active_user: data.active_user,
             turnNumber: data.turn_number,
           },
         });
       } catch (err) {
-        console.error("fetchMatchData error:", err);
+        console.error("[GameProvider] fetchMatchData error:", err);
       }
     }
     if (resources.length > 0 && monsters.length > 0) {
@@ -189,36 +217,54 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  useGameSocket((data) => {
-    console.log("Получено сообщение по WebSocket:", data);
-    if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
-      console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
-      return;
-    }
-    if (data.type === "MATCH_UPDATE") {
-      dispatch({
-        type: "SET_MATCH_DATA",
-        payload: {
-          instanceId: data.payload.instanceId,
-          mode: data.payload.mode,
-          grid: data.payload.grid,
-          mapWidth: data.payload.mapWidth,
-          mapHeight: data.payload.mapHeight,
-          players: data.payload.players,
-          activePlayer: data.payload.active_player,
-          turnNumber: data.payload.turn_number,
-        },
-      });
-    } else if (data.type === "MOVE_PLAYER") {
-      dispatch({
-        type: "MOVE_PLAYER",
-        payload: { playerId: data.payload.playerId, newPosition: data.payload.newPosition },
-      });
-    } else if (data.type === "SET_ACTIVE_PLAYER") {
-      const { activePlayer, turnNumber } = data.payload;
-      dispatch({ type: "SET_ACTIVE_PLAYER", payload: { activePlayer, turnNumber } });
-    }
-  }, { instanceId: state.instanceId });
+  useGameSocket(
+    (data) => {
+      console.log("[GameProvider] Получено сообщение по WebSocket:", data);
+      if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
+        console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+        return;
+      }
+      if (data.type === "MATCH_UPDATE") {
+        // Предполагаем, что сервер отправляет обновленный grid в data.payload.grid
+        dispatch({
+          type: "SET_MATCH_DATA",
+          payload: {
+            instanceId: data.payload.instanceId,
+            mode: data.payload.mode,
+            grid: data.payload.grid,
+            mapWidth: data.payload.mapWidth,
+            mapHeight: data.payload.mapHeight,
+            players: data.payload.players,
+            active_user: data.payload.active_player, // сервер может использовать active_player
+            turnNumber: data.payload.turn_number,
+          },
+        });
+      } else if (data.type === "MOVE_PLAYER") {
+        dispatch({
+          type: "MOVE_PLAYER",
+          payload: {
+            userId: data.payload.playerId || data.payload.userId,
+            newPosition: data.payload.newPosition,
+          },
+        });
+      }
+
+      else if (data.type === "RESOURCE_COLLECTED") {
+        // Обновляем клетку в grid
+        const { updatedCell } = data.payload;
+        dispatch({
+          type: "UPDATE_CELL",
+          payload: { updatedCell },
+        });
+      }
+      else if (data.type === "SET_ACTIVE_USER") {
+        console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
+        const { active_user, turnNumber } = data.payload;
+        dispatch({ type: "SET_ACTIVE_USER", payload: { active_user, turnNumber } });
+      }
+    },
+    { instanceId: state.instanceId }
+  );
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>

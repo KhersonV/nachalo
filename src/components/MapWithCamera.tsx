@@ -24,7 +24,7 @@ export default function MapWithCamera({
   myPlayer,
 }: MapWithCameraProps) {
   const { state } = useGame();
-  const { grid, mapWidth, mapHeight, players, currentPlayerId } = state;
+  const { grid, mapWidth, mapHeight, players, active_user } = state;
 
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
   const visionRange = myPlayer?.vision ?? 3;
@@ -40,6 +40,9 @@ export default function MapWithCamera({
   const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
   offsetX = Math.min(0, Math.max(viewportWidth - totalWidth, offsetX));
   offsetY = Math.min(0, Math.max(viewportHeight - totalHeight, offsetY));
+
+  console.log("[MapWithCamera] playerPosition:", playerPosition);
+  console.log("[MapWithCamera] offsetX:", offsetX, "offsetY:", offsetY);
 
   const playerImageOffsetX = 2;
   const playerImageOffsetY = 2;
@@ -79,7 +82,7 @@ export default function MapWithCamera({
 
           return (
             <img
-              key={player.id}
+              key={player.user_id}
               src={player.image}
               alt={player.name}
               title={player.name}
@@ -89,7 +92,7 @@ export default function MapWithCamera({
                 top: player.position.y * (tileSize + gap) + playerImageOffsetY,
                 width: tileSize,
                 height: tileSize,
-                border: player.id === currentPlayerId ? "2px solid gold" : "none",
+                border: player.user_id === active_user ? "2px solid gold" : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
                 opacity: playerVisible ? 1 : 0,

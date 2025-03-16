@@ -4,7 +4,6 @@
 
 import { useEffect, useRef, useCallback } from "react";
 
-// Опциональные настройки для подключения к WebSocket
 interface GameSocketOptions {
   instanceId?: string;
 }
@@ -14,22 +13,29 @@ export function useGameSocket(
   options?: GameSocketOptions
 ) {
   const ws = useRef<WebSocket | null>(null);
-  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const url = "ws://localhost:8001/ws"; // При продакшене этот URL можно сделать настраиваемым
+  const reconnectTimeout = useRef<number | null>(null);
+  // Используем протокол ws://, убедитесь, что сервер запущен и доступен
+  const url = "ws://localhost:8001/ws";
 
   const connect = useCallback(() => {
+    // Если уже есть открытое соединение, не создаём новое
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      console.log("WebSocket уже подключён");
+      return;
+    }
+
+    console.log("Попытка установить WebSocket соединение...");
     ws.current = new WebSocket(url);
 
     ws.current.onopen = () => {
-      console.log("WebSocket подключён.");
-      // Если передан instanceId, можно отправить сообщение для регистрации в конкретном матче
+      console.log("WebSocket соединение установлено");
       if (options?.instanceId) {
         const joinMsg = {
           type: "JOIN_MATCH",
           instanceId: options.instanceId,
         };
         ws.current?.send(JSON.stringify(joinMsg));
-        console.log("Отправлено сообщение о присоединении к матчу:", joinMsg);
+        console.log("Отправлено JOIN_MATCH сообщение:", joinMsg);
       }
     };
 
@@ -37,16 +43,9 @@ export function useGameSocket(
       try {
         const data = JSON.parse(event.data);
         console.log("Получено сообщение по WebSocket:", data);
-        // Если указан instanceId, фильтруем входящие сообщения по нему
         if (options?.instanceId && data.payload && data.payload.instanceId) {
           if (data.payload.instanceId !== options.instanceId) {
-            console.log(
-              "Сообщение не относится к текущему матчу (ожидаемый instanceId:",
-              options.instanceId,
-              "получен:",
-              data.payload.instanceId,
-              "). Игнорируем."
-            );
+            console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
             return;
           }
         }
@@ -61,12 +60,11 @@ export function useGameSocket(
     };
 
     ws.current.onclose = (event) => {
-      console.log("WebSocket соединение закрыто:", event.code, event.reason);
-      // Если соединение закрыто не по инициативе клиента (код 1000 – нормальное закрытие),
-      // пробуем переподключиться через 3 секунды
+      console.log(`WebSocket соединение закрыто (код: ${event.code}, причина: ${event.reason})`);
+      // Если закрытие произошло не по инициативе клиента (код 1000), пробуем переподключиться
       if (event.code !== 1000) {
-        reconnectTimeout.current = setTimeout(() => {
-          console.log("Попытка переподключения...");
+        console.log("Попытка переподключения через 3 секунды...");
+        reconnectTimeout.current = window.setTimeout(() => {
           connect();
         }, 3000);
       }
@@ -75,7 +73,6 @@ export function useGameSocket(
 
   useEffect(() => {
     connect();
-
     return () => {
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);

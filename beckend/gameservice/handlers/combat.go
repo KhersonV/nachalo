@@ -1,6 +1,7 @@
-//====================================
-//gameservice/handlers/combat.go
-//====================================
+
+// ====================================
+// gameservice/handlers/combat.go
+// ====================================
 
 package handlers
 
@@ -18,12 +19,12 @@ import (
 	"gameservice/repository"
 )
 
-// Предположим, что стоимость перемещения составляет 10 единиц энергии.
+// Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
 
 func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	playerID, err := strconv.Atoi(vars["id"])
+	userID, err := strconv.Atoi(vars["id"])
 	if err != nil {
 		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
 		return
@@ -36,7 +37,7 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Проверяем, что игрок перемещает сам себя
-	if tokenUserID != playerID {
+	if tokenUserID != userID {
 		http.Error(w, "Запрещено изменять данные другого игрока", http.StatusForbidden)
 		return
 	}
@@ -92,8 +93,9 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем проходимость клетки. Пример: разрешаем перемещение, если клетка имеет один из следующих tileCode:
-	allowedTileCodes := []int{48, 80, 77, 82, 112} // '0','P','M','R','p' (предполагаемые числовые значения)
+	// Допустимые tileCode для перемещения (добавляем 66 для клеток с бочкой)
+	allowedTileCodes := []int{48, 80, 82, 112, 66}
+
 	passable := false
 	for _, code := range allowedTileCodes {
 		if targetCell.TileCode == code {
@@ -106,13 +108,16 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Проверяем коллизию с другими игроками
-	var collisionCount int
+	// Проверяем коллизию с другими игроками.
 	collisionQuery := `
 		SELECT COUNT(*) FROM match_players
-		WHERE match_instance_id = $1 AND pos_x = $2 AND pos_y = $3 AND player_id <> $4
+		WHERE match_instance_id = $1 
+		  AND (position->>'x')::int = $2 
+		  AND (position->>'y')::int = $3 
+		  AND user_id <> $4
 	`
-	err = repository.DB.QueryRow(collisionQuery, instanceID, req.NewPosX, req.NewPosY, playerID).Scan(&collisionCount)
+	var collisionCount int
+	err = repository.DB.QueryRow(collisionQuery, instanceID, req.NewPosX, req.NewPosY, userID).Scan(&collisionCount)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка проверки коллизий: %v", err), http.StatusInternalServerError)
 		return
@@ -123,7 +128,7 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем игрока из match_players
-	player, err := repository.GetMatchPlayerByID(instanceID, playerID)
+	player, err := repository.GetMatchPlayerByID(instanceID, userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
 		return
@@ -135,17 +140,35 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Сохраняем старую позицию игрока
+	oldPos := struct{ X, Y int }{
+		X: player.Position.X,
+		Y: player.Position.Y,
+	}
+	log.Printf("[MoveHandler] Старая позиция игрока (userID=%d): %+v", userID, oldPos)
+
 	// Списываем энергию
 	player.Energy -= moveEnergyCost
 
 	// Обновляем позицию игрока
-	player.PosX = req.NewPosX
-	player.PosY = req.NewPosY
+	player.Position.X = req.NewPosX
+	player.Position.Y = req.NewPosY
 
 	// Обновляем данные игрока в БД (включая энергию)
-	err = repository.UpdateMatchPlayer(instanceID, player)
+	err = repository.UpdateMatchPlayer(player)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка обновления позиции игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Обновляем флаги клеток на сервере:
+	newPos := struct{ X, Y int }{
+		X: req.NewPosX,
+		Y: req.NewPosY,
+	}
+	log.Printf("[MoveHandler] Новая позиция игрока (userID=%d): %+v", userID, newPos)
+	if err := repository.UpdateCellPlayerFlags(instanceID, oldPos, newPos); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка обновления клеток: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -153,7 +176,7 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	updateMsg := map[string]interface{}{
 		"type": "MOVE_PLAYER",
 		"payload": map[string]interface{}{
-			"playerId": playerID,
+			"userId": userID,
 			"newPosition": map[string]int{
 				"x": req.NewPosX,
 				"y": req.NewPosY,
@@ -167,14 +190,15 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
+
 // ----------------- АТАКА ------------------
 
 type AttackRequest struct {
 	AttackerType string `json:"attacker_type"` // "player" или "monster"
 	AttackerID   int    `json:"attacker_id"`
-	TargetType   string `json:"target_type"`   // "player" или "monster"
+	TargetType   string `json:"target_type"` // "player" или "monster"
 	TargetID     int    `json:"target_id"`
-	InstanceID   string `json:"instance_id"`   // Для работы с match‑копиями
+	InstanceID   string `json:"instance_id"` // Для работы с match‑копиями
 }
 
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +273,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		target.Health = newHealth
-		err := repository.UpdateMatchPlayer(req.InstanceID, target)
+		err := repository.UpdateMatchPlayer(target)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
 			return
@@ -257,7 +281,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	case "monster":
 		target, errT := getMonsterByID(req.TargetID)
 		if errT != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения цели монстра: %v", errT), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errT), http.StatusInternalServerError)
 			return
 		}
 		target.Health = newHealth

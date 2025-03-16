@@ -34,7 +34,6 @@ type User struct {
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	Name         string    `json:"name"`
-	Rating       int       `json:"rating"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -43,7 +42,6 @@ type LoginResponse struct {
 	ID        int       `json:"id"`
 	Email     string    `json:"email"`
 	Name      string    `json:"name"`
-	Rating    int       `json:"rating"`
 	CreatedAt time.Time `json:"created_at"`
 	Token     string    `json:"token"`
 }
@@ -65,18 +63,18 @@ func initDB() {
 
 func createUsersTable() {
 	query := `
-	CREATE TABLE IF NOT EXISTS users (
+	CREATE TABLE IF NOT EXISTS public.users (
 		id SERIAL PRIMARY KEY,
 		email VARCHAR(255) UNIQUE NOT NULL,
 		password_hash VARCHAR(255) NOT NULL,
 		name VARCHAR(255) NOT NULL,
-		rating INT DEFAULT 0,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);`
 	_, err := db.Exec(query)
 	if err != nil {
 		log.Fatalf("Ошибка создания таблицы пользователей: %v", err)
 	}
+	log.Println("Таблица users успешно создана (или уже существует)")
 }
 
 type RegisterRequest struct {
@@ -97,7 +95,7 @@ func createUser(email, password, name string) (int, error) {
 	}
 
 	var userID int
-	query := `INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id`
+	query := `INSERT INTO public.users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id`
 	err = db.QueryRow(query, email, string(hashedPassword), name).Scan(&userID)
 	if err != nil {
 		return 0, fmt.Errorf("ошибка создания пользователя: %w", err)
@@ -107,9 +105,9 @@ func createUser(email, password, name string) (int, error) {
 
 func getUserByEmail(email string) (*User, error) {
 	user := &User{}
-	query := `SELECT id, email, password_hash, name, rating, created_at FROM users WHERE email=$1`
+	query := `SELECT id, email, password_hash, name, created_at FROM public.users WHERE email=$1`
 	row := db.QueryRow(query, email)
-	err := row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Name, &user.Rating, &user.CreatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Name, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -118,9 +116,9 @@ func getUserByEmail(email string) (*User, error) {
 
 func getUserByID(userID int) (*User, error) {
 	user := &User{}
-	query := `SELECT id, email, name, rating, created_at FROM users WHERE id=$1`
+	query := `SELECT id, email, name, created_at FROM public.users WHERE id=$1`
 	row := db.QueryRow(query, userID)
-	err := row.Scan(&user.ID, &user.Email, &user.Name, &user.Rating, &user.CreatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +126,7 @@ func getUserByID(userID int) (*User, error) {
 }
 
 // Обработчик регистрации
-func registerHandler(w http.ResponseWriter, r *http.Request) {
+	func registerHandler(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
@@ -144,10 +142,11 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// После регистрации можно вызвать Game-сервис для создания персонажа.
+	// Пример вызова другого сервиса (Game Service) для создания персонажа.
 	payload := map[string]interface{}{
 		"user_id": userID,
-		"name":    req.Name,}
+		"name":    req.Name,
+	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Ошибка маршаллинга для Game Service: %v", err)
@@ -206,7 +205,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		ID:        user.ID,
 		Email:     user.Email,
 		Name:      user.Name,
-		Rating:    user.Rating,
 		CreatedAt: user.CreatedAt,
 		Token:     tokenString,
 	}

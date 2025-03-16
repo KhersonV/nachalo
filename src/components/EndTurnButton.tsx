@@ -8,7 +8,7 @@ import React from 'react';
 interface EndTurnButtonProps {
   playerId: number;
   instanceId: string;
-  onTurnEnded: (data: { activePlayer: number; turnNumber: number; energy: number }) => void;
+  onTurnEnded: (data: { active_user: number; turnNumber: number; energy: number }) => void;
 }
 
 function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps) {
@@ -30,7 +30,7 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ player_id: playerId, instance_id: instanceId }),
+        body: JSON.stringify({ user_id: playerId, instance_id: instanceId }),
       });
       
       if (!response.ok) {
@@ -43,7 +43,7 @@ function EndTurnButton({ playerId, instanceId, onTurnEnded }: EndTurnButtonProps
       console.log("Ответ от сервера на завершение хода:", data);
       // Вызовем onTurnEnded с данными, чтобы обновить состояние на фронте
       onTurnEnded({
-        activePlayer: data.active_player,
+        active_user: data.active_user,
         turnNumber: data.turn_number,
         energy: data.energy,
       });

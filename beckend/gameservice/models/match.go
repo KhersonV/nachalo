@@ -8,7 +8,6 @@ package models
 
 import (
 	"encoding/json"
-	"time"
 )
 
 type MatchInfo struct {
@@ -19,8 +18,7 @@ type MatchInfo struct {
 	MapWidth       int             `json:"map_width"`
 	MapHeight      int             `json:"map_height"`
 	Map            json.RawMessage `json:"map"`
-	CreatedAt      time.Time       `json:"created_at"`
-	ActivePlayerID int             `json:"active_player"`
+	ActiveUserID int             `json:"active_user_id"`
 	TurnNumber     int             `json:"turn_number"`
 	StartPositions  json.RawMessage `json:"start_positions"`
 	PortalPosition  json.RawMessage `json:"portal_position"`
