@@ -94,6 +94,7 @@ if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.Turn
 	updateMsg := map[string]interface{}{
 		"type": "SET_ACTIVE_USER",
 		"payload": map[string]interface{}{
+			"instanceId": req.InstanceID, 
 			"active_user": nextUserID,
 			"energy":       newEnergy,
 			"turnNumber":   matchState.TurnNumber,
