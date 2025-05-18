@@ -19,6 +19,7 @@ export type InventoryItem = {
   image: string;
   description: string;
   bonus?: BonusAttributes;
+  effect?: Record<string, number>;
 };
 
 export type Inventory = {

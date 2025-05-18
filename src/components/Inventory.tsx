@@ -11,7 +11,7 @@ import type { Inventory, InventoryItem } from "../types/GameTypes";
 import styles from "../styles/Inventory.module.css";
 
 const Inventory: React.FC = () => {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const { user } = useAuth();
 
   // Ищем игрока по user.id (сравниваем числовые значения)
@@ -39,8 +39,55 @@ const Inventory: React.FC = () => {
     inventory = { resources: {}, artifacts: {} };
   }
 
+  // Обработчик использования предмета: отправляем запрос на сервер
+  const handleUseItem = async (
+    section: "resources" | "artifacts",
+    key: string,
+    item: InventoryItem
+  ) => {
+    if (item.count <= 0 || !user) return;
+
+    console.log(`Отправляем запрос на использование предмета: ${item.name || key}`);
+
+    // Здесь предполагается, что key имеет формат "itemType_itemID".
+    // Разбиваем ключ для получения типа и идентификатора.
+    const [itemType, idStr] = key.split("_");
+    const itemID = parseInt(idStr, 10);
+
+    try {
+      const response = await fetch(`http://localhost:8001/game/player/${user.id}/inventory/use`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          item_type: itemType,
+          item_id: itemID,
+          count: 1, // можно изменить, если нужно использовать более одного предмета
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Ошибка использования предмета", await response.text());
+        return;
+      }
+
+      console.log("Предмет успешно использован");
+      
+      // Если сервер возвращает обновлённый инвентарь или информацию об игроке,
+      // можно обновить состояние через dispatch или иным способом.
+      // Например, вызвать fetch для обновления данных игрока.
+      
+    } catch (error) {
+      console.error("Ошибка запроса на использование предмета", error);
+    }
+  };
+
   // Функция для рендера элементов инвентаря (для любого раздела)
-  const renderItems = (items: Record<string, InventoryItem> | undefined) => {
+  const renderItems = (
+    section: "resources" | "artifacts",
+    items: Record<string, InventoryItem> | undefined
+  ) => {
     const safeItems = items ?? {};
     return Object.entries(safeItems)
       .filter(([, item]) => item.count > 0)
@@ -53,6 +100,12 @@ const Inventory: React.FC = () => {
           />
           <div className={styles.itemName}>{item.name || key}</div>
           <div className={styles.itemCount}>Кол-во: {item.count}</div>
+          <button
+            className={styles.useButton}
+            onClick={() => handleUseItem(section, key, item)}
+          >
+            Использовать
+          </button>
         </div>
       ));
   };
@@ -64,13 +117,13 @@ const Inventory: React.FC = () => {
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>Ресурсы</h3>
           <div className={styles.itemsContainer}>
-            {renderItems(inventory.resources)}
+            {renderItems("resources", inventory.resources)}
           </div>
         </div>
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>Артефакты</h3>
           <div className={styles.itemsContainer}>
-            {renderItems(inventory.artifacts)}
+            {renderItems("artifacts", inventory.artifacts)}
           </div>
         </div>
       </div>

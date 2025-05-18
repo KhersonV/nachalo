@@ -49,9 +49,9 @@ type MatchInfo struct {
 var (
 	queues = map[string][]QueueEntry{
 		"PVE":  {},
-		"1x1": {},
-		"3x3": {},
-		"5x5": {},
+		"1x1":  {},
+		"3x3":  {},
+		"5x5":  {},
 	}
 	mu sync.Mutex
 
@@ -69,6 +69,29 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+
+	// проверяем в БД через GetPlayersInMatch, не участвует ли уже в каком-то currentMatches ====
+	matchMu.Lock()
+	for instID, match := range currentMatches {
+		players, err := repository.GetPlayersInMatch(instID)
+		if err != nil {
+			log.Printf("joinHandler: не удалось получить игроков для матча %s: %v", instID, err)
+			continue
+		}
+		for _, p := range players {
+			if p.UserID == req.PlayerID {
+				// Уже есть активный матч с этим игроком — сразу возвращаем его
+				matchMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(match); err != nil {
+					log.Printf("joinHandler: ошибка кодирования существующего матча: %v", err)
+				}
+				return
+			}
+		}
+	}
+	matchMu.Unlock()
+	// ==== /конец проверки активного матча ====
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -187,7 +210,6 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	match, ok := currentMatches[instanceID]
 	if !ok {
-		// Если матч по instance_id не найден, возвращаем статус ожидания
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 		return
@@ -197,16 +219,8 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(match)
 }
 
-// matchHandler – оставляем для совместимости (возвращает матч по режиму, если он есть)
+// matchHandler – оставляем для совместимости (делегирует currentMatchHandler)
 func matchHandler(w http.ResponseWriter, r *http.Request) {
-	mode := r.URL.Query().Get("mode")
-	playerID := r.URL.Query().Get("player_id")
-	if mode == "" || playerID == "" {
-		http.Error(w, "mode и player_id обязательны", http.StatusBadRequest)
-		return
-	}
-
-	// Можно также делегировать текущему эндпоинту currentMatchHandler, если требуется
 	currentMatchHandler(w, r)
 }
 
@@ -229,14 +243,11 @@ func checkAndMakeMatch(mode string) {
 
 // createMatch – создает новый матч, обновляет currentMatches и playerMatches
 func createMatch(mode string, group []QueueEntry) {
-	// Генерируем уникальный instance_id для данного матча
 	instanceID := uuid.New().String()
-	log.Printf("Match formed: instanceID=%s, mode=%s, players=%v", instanceID, mode, group)
 
 	var totalPlayers, teamsCount int
 	if mode == "PVE" {
-		totalPlayers = 1
-		teamsCount = 1
+		totalPlayers, teamsCount = 1, 1
 	} else {
 		switch mode {
 		case "1x1":
@@ -256,11 +267,11 @@ func createMatch(mode string, group []QueueEntry) {
 		playerIDs[i] = entry.PlayerID
 	}
 
-	// Создаем состояние матча на сервере
+	// Создаём внутреннее состояние матча
 	matchState := game.CreateMatchState(instanceID, playerIDs)
 	log.Printf("Создано состояние матча: %+v", matchState)
 
-	// Отправляем запрос в Game-сервис для создания матча
+	// Отправляем запрос в Game-сервис
 	matchReq := map[string]interface{}{
 		"instance_id":   instanceID,
 		"mode":          mode,
@@ -273,7 +284,6 @@ func createMatch(mode string, group []QueueEntry) {
 		log.Printf("Ошибка маршалинга запроса матча: %v", err)
 		return
 	}
-	log.Printf("Отправляем запрос в Game-сервис: %s", string(reqJSON))
 	resp, err := http.Post("http://localhost:8001/game/createMatch", "application/json", bytes.NewBuffer(reqJSON))
 	if err != nil {
 		log.Printf("Ошибка вызова Game-сервиса: %v", err)
@@ -297,6 +307,7 @@ func createMatch(mode string, group []QueueEntry) {
 	matchMu.Unlock()
 }
 
+// Простая CORS-обёртка
 func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -317,14 +328,12 @@ func main() {
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
-	// Новый endpoint для получения текущего матча по player_id
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
-	// Для совместимости можно оставить и matchHandler, который теперь делегирует currentMatchHandler
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 
 	handler := enableCors(r)
-
 	srv := &http.Server{Handler: handler, Addr: ":8002"}
+
 	log.Println("Matchmaking-сервис запущен на порту 8002")
 	log.Fatal(srv.ListenAndServe())
 }
