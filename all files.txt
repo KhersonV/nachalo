@@ -360,6 +360,16 @@ func main() {
 
 
 
+ ========================================================================================================================
+ ===============================================cmd=====================================================================
+ ==============================================cmd====================================================================
+ ===============================================cmd=====================================================================
+ ================================================cmd====================================================================
+ ========================================================================================================================
+
+
+
+
 
 
 
@@ -478,6 +488,13 @@ func main() {
 
 
 
+
+ ========================================================================================================================
+ ===============================================game=====================================================================
+ ==============================================game====================================================================
+ ===============================================game=====================================================================
+ ================================================game====================================================================
+ ========================================================================================================================
 
 
 
@@ -883,8 +900,12 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 
 
 
-
-
+ ========================================================================================================================
+ ===============================================handlers=====================================================================
+ ==============================================handlers====================================================================
+ ===============================================handlers=====================================================================
+ ================================================handlers====================================================================
+ ========================================================================================================================
 
 
 
@@ -2090,11 +2111,18 @@ updatedCell := UpdatedCellResponse{
     IsPlayer: targetCell["isPlayer"].(bool),
 }
 
+playerResp, err := repository.GetMatchPlayerByUserID(req.PlayerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 // Создаем сообщение для WS, которое уведомляет всех клиентов о сборе ресурса.
 wsMsg := map[string]interface{}{
     "type": "RESOURCE_COLLECTED",
     "payload": map[string]interface{}{
         "updatedCell": updatedCell,
+		"updatedPlayer": playerResp,
         // Если требуется, можно добавить данные игрока или инвентаря.
     },
 }
@@ -2107,10 +2135,12 @@ Broadcast(wsMsgBytes)
 response := map[string]interface{}{
     "message":     "Ресурс собран",
     "updatedCell": updatedCell,
+	"updatedPlayer": playerResp,
 }
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(response)
 }
+
 
 
 
@@ -2442,6 +2472,14 @@ func Broadcast(message []byte) {
 
 
 
+ ========================================================================================================================
+ ===============================================middleware=====================================================================
+ ==============================================middleware====================================================================
+ ===============================================middleware=====================================================================
+ ================================================middleware====================================================================
+ ========================================================================================================================
+
+
 
 
 
@@ -2536,6 +2574,12 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 
 
 
+ ========================================================================================================================
+ ===============================================MODELS=====================================================================
+ ==============================================MODELS====================================================================
+ ===============================================MODELS=====================================================================
+ ================================================MODELS====================================================================
+ ========================================================================================================================
 
 
 
@@ -2686,6 +2730,12 @@ type User struct {
 
 
 
+ ========================================================================================================================
+ ===================================================repository============================================================
+ ====================================================repository====================================================================
+ ====================================================repository=====================================================================
+ =====================================================repository====================================================================
+ ========================================================================================================================
 
 
 // ==============================
@@ -2814,7 +2864,7 @@ func CreateInventoryTable() {
 		user_id INTEGER NOT NULL,
 		item_type TEXT NOT NULL,
 		item_id INTEGER NOT NULL,
-		count INTEGER NOT NULL DEFAULT 0
+		item_count INTEGER NOT NULL DEFAULT 0
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
@@ -2936,6 +2986,7 @@ func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 
 
 
+
 // ====================================
 // gameservice/repository/inventory.go
 // ====================================
@@ -2967,7 +3018,7 @@ const (
 
 	// Запрос для получения количества предмета в таблице inventory_items
 	selectInventoryItemCountQuery = `
-		SELECT count 
+		SELECT  item_count
 		FROM inventory_items 
 		WHERE user_id = $1 AND item_type = $2 AND item_id = $3;
 	`
@@ -2981,67 +3032,99 @@ const (
 	// Запрос для обновления количества предмета в inventory_items
 	updateInventoryItemCountQuery = `
 		UPDATE inventory_items 
-		SET count = $1 
+		SET item_count = $1 
 		WHERE user_id = $2 AND item_type = $3 AND item_id = $4;
 	`
 )
 
 // AddInventoryItem добавляет указанное количество предмета в инвентарь игрока.
 // Инвентарь хранится в поле inventory таблицы match_players в формате JSON.
-
+// При этом запись в inventory_items обновляется или создаётся вручную.
 func AddInventoryItem(playerID int, itemType string, itemID int, count int, image string, description string) error {
+    // Начинаем транзакцию
+    tx, err := DB.Begin()
+    if err != nil {
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
 
-	var inventoryJSON string
-	var matchInstanceID string
+    // 1) Получаем текущий JSON-инвентарь и matchInstanceID через tx
+    var inventoryJSON string
+    var matchInstanceID string
+    err = tx.QueryRow(selectInventoryQuery, playerID).Scan(&inventoryJSON, &matchInstanceID)
+    if err != nil {
+        return fmt.Errorf("fetch inventory: %w", err)
+    }
 
-	// Выполняем запрос для получения текущего инвентаря
-	err := DB.QueryRow(selectInventoryQuery, playerID).Scan(&inventoryJSON, &matchInstanceID)
-	if err != nil {
-		return fmt.Errorf("error fetching inventory and match instance: %w", err)
-	}
+    // 2) Распарсиваем или инициализируем карту
+    inv := make(map[string]map[string]interface{})
+    if inventoryJSON != "" && inventoryJSON != "{}" {
+        if err := json.Unmarshal([]byte(inventoryJSON), &inv); err != nil {
+            inv = make(map[string]map[string]interface{})
+        }
+    }
 
-	// Если инвентарь пустой, инициализируем пустую мапу
-	inv := make(map[string]map[string]interface{})
-	if inventoryJSON != "" && inventoryJSON != "{}" {
-		if err := json.Unmarshal([]byte(inventoryJSON), &inv); err != nil {
-			// Если не удалось распарсить, инициализируем новый инвентарь
-			inv = make(map[string]map[string]interface{})
-		}
-	}
+    // 3) Обновляем map-представление инвентаря
+    key := fmt.Sprintf("%s_%d", itemType, itemID)
+    if entry, exists := inv[key]; exists {
+        if cur, ok := entry["item_count"].(float64); ok {
+            entry["item_count"] = cur + float64(count)
+        } else {
+            entry["item_count"] = count
+        }
+    } else {
+        inv[key] = map[string]interface{}{
+            "name":        itemType,
+            "item_count":       count,
+            "image":       image,
+            "description": description,
+        }
+    }
 
-	// Формируем ключ в формате "itemType_itemID"
-	key := fmt.Sprintf("%s_%d", itemType, itemID)
-	if entry, exists := inv[key]; exists {
-		// Если предмет уже существует, увеличиваем его количество
-		if currentCount, ok := entry["count"].(float64); ok {
-			entry["count"] = currentCount + float64(count)
-		} else {
-			entry["count"] = count
-		}
-	} else {
-		// Если предмета ещё нет, создаём новую запись
-		inv[key] = map[string]interface{}{
-			"name":        itemType,
-			"count":       count,
-			"image":       image,
-			"description": description,
-		}
-	}
+    // 4) Сериализуем обратно в JSON и обновляем поле в match_players
+    newInvBytes, err := json.Marshal(inv)
+    if err != nil {
+        return fmt.Errorf("marshal inventory: %w", err)
+    }
+    if _, err := tx.Exec(updatePlayerInventoryQuery, string(newInvBytes), matchInstanceID, playerID); err != nil {
+        return fmt.Errorf("update match_players.inventory: %w", err)
+    }
 
-	// Преобразуем обновлённую мапу обратно в JSON
-	newInvBytes, err := json.Marshal(inv)
-	if err != nil {
-		return fmt.Errorf("error marshalling updated inventory: %w", err)
-	}
+    // 5) Пытаемся UPDATE в normalized таблице
+    res, err := tx.Exec(`
+        UPDATE inventory_items
+           SET item_count = item_count + $4
+         WHERE user_id = $1
+           AND item_type = $2
+           AND item_id = $3
+    `, playerID, itemType, itemID, count)
+    if err != nil {
+        return fmt.Errorf("update inventory_items: %w", err)
+    }
 
-	// Обновляем инвентарь игрока в базе данных
-	err = UpdatePlayerInventory(matchInstanceID, playerID, string(newInvBytes))
-	if err != nil {
-		return fmt.Errorf("error updating player inventory: %w", err)
-	}
+    rows, err := res.RowsAffected()
+    if err != nil {
+        return fmt.Errorf("rows affected: %w", err)
+    }
 
-	return nil
+    // 6) Если не обновили ни одной строки — INSERT новую
+    if rows == 0 {
+        if _, err := tx.Exec(`
+            INSERT INTO inventory_items (user_id, item_type, item_id, item_count)
+            VALUES ($1, $2, $3, $4)
+        `, playerID, itemType, itemID, count); err != nil {
+            return fmt.Errorf("insert inventory_items: %w", err)
+        }
+    }
+
+    // 7) Фиксируем транзакцию
+    if err := tx.Commit(); err != nil {
+        return fmt.Errorf("tx commit: %w", err)
+    }
+
+    return nil
 }
+
 
 // RemoveInventoryItem уменьшает или удаляет количество предмета в инвентаре игрока.
 func RemoveInventoryItem(playerID int, itemType string, itemID int, count int) error {
@@ -3089,6 +3172,7 @@ func UpdatePlayerInventory(matchInstanceID string, playerID int, newInventory st
 
 	return nil
 }
+
 
 
 
@@ -3646,12 +3730,12 @@ func GetMonstersData() ([]game.MonsterData, error) {
 
 
 
-====================================================================================
-====================================================================================
-====================================================================================
-====================================================================================
-====================================================================================
-====================================================================================
+ ========================================================================================================================
+ ===================================================matchmaking============================================================
+ ====================================================matchmaking====================================================================
+ ====================================================matchmaking=====================================================================
+ =====================================================matchmaking====================================================================
+ ========================================================================================================================
 
 // ==============================
 // /matchmaking/Match_Making.go
@@ -4004,12 +4088,12 @@ func main() {
 
 
 
-======================================================================================================
-======================================================================================================
-======================================================================================================
-======================================================================================================
-======================================================================================================
-======================================================================================================
+======================================================================================================================================
+==================================src/app/========================================================================================
+===================================src/app/=========================================================================================
+===================================src/app/===========================================================================================
+==================================src/app/===================================================================================
+======================================================================================================================================
 
 
 
@@ -4170,6 +4254,12 @@ export default function HomePage() {
 
 
 
+======================================================================================================================================
+==================================src/components/========================================================================================
+===================================src/components/=========================================================================================
+===================================src/components/===========================================================================================
+==================================src/components/===================================================================================
+======================================================================================================================================
 
 
 
@@ -4662,7 +4752,7 @@ const Inventory: React.FC = () => {
     key: string,
     item: InventoryItem
   ) => {
-    if (item.count <= 0 || !user) return;
+    if (item.item_count <= 0 || !user) return;
 
     console.log(`Отправляем запрос на использование предмета: ${item.name || key}`);
 
@@ -4680,7 +4770,7 @@ const Inventory: React.FC = () => {
         body: JSON.stringify({
           item_type: itemType,
           item_id: itemID,
-          count: 1, // можно изменить, если нужно использовать более одного предмета
+          item_count: 1, // можно изменить, если нужно использовать более одного предмета
         }),
       });
 
@@ -4707,7 +4797,7 @@ const Inventory: React.FC = () => {
   ) => {
     const safeItems = items ?? {};
     return Object.entries(safeItems)
-      .filter(([, item]) => item.count > 0)
+      .filter(([, item]) => item.item_count > 0)
       .map(([key, item]) => (
         <div key={key} className={styles.item}>
           <img
@@ -4716,7 +4806,7 @@ const Inventory: React.FC = () => {
             className={styles.itemImage}
           />
           <div className={styles.itemName}>{item.name || key}</div>
-          <div className={styles.itemCount}>Кол-во: {item.count}</div>
+          <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
           <button
             className={styles.useButton}
             onClick={() => handleUseItem(section, key, item)}
@@ -5362,6 +5452,14 @@ export default TurnIndicator;
 
 
 
+======================================================================================================================================
+==================================src/contexts/========================================================================================
+===================================src/contexts/=========================================================================================
+===================================src/contexts/===========================================================================================
+==================================src/contexts/===================================================================================
+======================================================================================================================================
+
+
 
 
 
@@ -5440,7 +5538,6 @@ export function useAuth() {
 
 
 
-
 //==================================
 // src/contexts/GameContextt.tsx
 //==================================
@@ -5458,7 +5555,7 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-import type { GameState, Action, ResourceType, MonsterType, Cell, PlayerState } from "../types/GameTypes";
+import type { GameState, Action, ResourceType, MonsterType, PlayerState } from "../types/GameTypes";
 
 // Начальное состояние
 const initialState: GameState = {
@@ -5660,15 +5757,16 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  useGameSocket(
-    (data) => {
-      console.log("[GameProvider] Получено сообщение по WebSocket:", data);
-      if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
-        console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
-        return;
-      }
-      if (data.type === "MATCH_UPDATE") {
-        // Предполагаем, что сервер отправляет обновленный grid в data.payload.grid
+ useGameSocket(
+  (data) => {
+    // Игнорируем сообщения не для текущего матча
+    if (data.payload?.instanceId && data.payload.instanceId !== state.instanceId) {
+      console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      return;
+    }
+
+    switch (data.type) {
+      case "MATCH_UPDATE":
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
@@ -5678,11 +5776,13 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.payload.mapWidth,
             mapHeight: data.payload.mapHeight,
             players: data.payload.players,
-            active_user: data.payload.active_player, // сервер может использовать active_player
+            active_user: data.payload.active_player, // или active_user
             turnNumber: data.payload.turn_number,
           },
         });
-      } else if (data.type === "MOVE_PLAYER") {
+        break;
+
+      case "MOVE_PLAYER":
         dispatch({
           type: "MOVE_PLAYER",
           payload: {
@@ -5690,24 +5790,42 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             newPosition: data.payload.newPosition,
           },
         });
-      }
+        break;
 
-      else if (data.type === "RESOURCE_COLLECTED") {
-        // Обновляем клетку в grid
-        const { updatedCell } = data.payload;
+      case "RESOURCE_COLLECTED": {
+        const { updatedCell, updatedPlayer } = data.payload;
         dispatch({
           type: "UPDATE_CELL",
           payload: { updatedCell },
         });
+        if (updatedPlayer) {
+          dispatch({
+            type: "UPDATE_PLAYER",
+            payload: { player: updatedPlayer },
+          });
+        }
+        break;
       }
-      else if (data.type === "SET_ACTIVE_USER") {
+
+      case "SET_ACTIVE_USER":
         console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
-        const { active_user, turnNumber } = data.payload;
-        dispatch({ type: "SET_ACTIVE_USER", payload: { active_user, turnNumber } });
-      }
-    },
-    { instanceId: state.instanceId }
-  );
+        dispatch({
+          type: "SET_ACTIVE_USER",
+          payload: {
+            active_user: data.payload.active_user,
+            turnNumber: data.payload.turnNumber,
+          },
+        });
+        break;
+
+      default:
+        // можно логировать непредвидённые типы
+        console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);
+    }
+  },
+  { instanceId: state.instanceId }
+);
+
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>
@@ -5733,6 +5851,14 @@ export function useGame() {
 
 
 
+
+
+======================================================================================================================================
+==================================src/hooks/========================================================================================
+===================================src/hooks/=========================================================================================
+===================================src/hooks/===========================================================================================
+==================================src/hooks/===================================================================================
+======================================================================================================================================
 
 
 
@@ -5764,29 +5890,29 @@ export function useGameSocket(
   const connect = useCallback(() => {
     // Если уже есть открытое соединение, не создаём новое
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      console.log("WebSocket уже подключён");
+      // console.log("WebSocket уже подключён");
       return;
     }
 
-    console.log("Попытка установить WebSocket соединение...");
+    // console.log("Попытка установить WebSocket соединение...");
     ws.current = new WebSocket(url);
 
     ws.current.onopen = () => {
-      console.log("WebSocket соединение установлено");
+      // console.log("WebSocket соединение установлено");
       if (options?.instanceId) {
         const joinMsg = {
           type: "JOIN_MATCH",
           instanceId: options.instanceId,
         };
         ws.current?.send(JSON.stringify(joinMsg));
-        console.log("Отправлено JOIN_MATCH сообщение:", joinMsg);
+        // console.log("Отправлено JOIN_MATCH сообщение:", joinMsg);
       }
     };
 
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log("Получено сообщение по WebSocket:", data);
+        // console.log("Получено сообщение по WebSocket:", data);
         if (options?.instanceId && data.payload && data.payload.instanceId) {
           if (data.payload.instanceId !== options.instanceId) {
             console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
@@ -5807,7 +5933,7 @@ export function useGameSocket(
       console.log(`WebSocket соединение закрыто (код: ${event.code}, причина: ${event.reason})`);
       // Если закрытие произошло не по инициативе клиента (код 1000), пробуем переподключиться
       if (event.code !== 1000) {
-        console.log("Попытка переподключения через 3 секунды...");
+        // console.log("Попытка переподключения через 3 секунды...");
         reconnectTimeout.current = window.setTimeout(() => {
           connect();
         }, 3000);
@@ -5836,6 +5962,14 @@ export function useGameSocket(
 
 
 
+======================================================================================================================================
+==================================src/types/========================================================================================
+===================================src/types/=========================================================================================
+===================================src/types/===========================================================================================
+==================================src/types/===================================================================================
+======================================================================================================================================
+
+
 
 
 
@@ -5858,7 +5992,7 @@ export type BonusAttributes = {
 
 export type InventoryItem = {
   name?: string;
-  count: number;
+  item_count: number;
   image: string;
   description: string;
   bonus?: BonusAttributes;

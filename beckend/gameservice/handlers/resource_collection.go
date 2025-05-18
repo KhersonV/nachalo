@@ -164,11 +164,18 @@ updatedCell := UpdatedCellResponse{
     IsPlayer: targetCell["isPlayer"].(bool),
 }
 
+playerResp, err := repository.GetMatchPlayerByUserID(req.PlayerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 // Создаем сообщение для WS, которое уведомляет всех клиентов о сборе ресурса.
 wsMsg := map[string]interface{}{
     "type": "RESOURCE_COLLECTED",
     "payload": map[string]interface{}{
         "updatedCell": updatedCell,
+		"updatedPlayer": playerResp,
         // Если требуется, можно добавить данные игрока или инвентаря.
     },
 }
@@ -181,6 +188,7 @@ Broadcast(wsMsgBytes)
 response := map[string]interface{}{
     "message":     "Ресурс собран",
     "updatedCell": updatedCell,
+	"updatedPlayer": playerResp,
 }
 w.Header().Set("Content-Type", "application/json")
 json.NewEncoder(w).Encode(response)

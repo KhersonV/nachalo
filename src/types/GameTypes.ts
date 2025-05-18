@@ -15,7 +15,7 @@ export type BonusAttributes = {
 
 export type InventoryItem = {
   name?: string;
-  count: number;
+  item_count: number;
   image: string;
   description: string;
   bonus?: BonusAttributes;

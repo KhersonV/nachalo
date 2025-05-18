@@ -124,7 +124,7 @@ func CreateInventoryTable() {
 		user_id INTEGER NOT NULL,
 		item_type TEXT NOT NULL,
 		item_id INTEGER NOT NULL,
-		count INTEGER NOT NULL DEFAULT 0
+		item_count INTEGER NOT NULL DEFAULT 0
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {

@@ -15,7 +15,7 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-import type { GameState, Action, ResourceType, MonsterType, Cell, PlayerState } from "../types/GameTypes";
+import type { GameState, Action, ResourceType, MonsterType, PlayerState } from "../types/GameTypes";
 
 // Начальное состояние
 const initialState: GameState = {
@@ -217,15 +217,16 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
-  useGameSocket(
-    (data) => {
-      console.log("[GameProvider] Получено сообщение по WebSocket:", data);
-      if (data.payload && data.payload.instanceId && data.payload.instanceId !== state.instanceId) {
-        console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
-        return;
-      }
-      if (data.type === "MATCH_UPDATE") {
-        // Предполагаем, что сервер отправляет обновленный grid в data.payload.grid
+ useGameSocket(
+  (data) => {
+    // Игнорируем сообщения не для текущего матча
+    if (data.payload?.instanceId && data.payload.instanceId !== state.instanceId) {
+      console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      return;
+    }
+
+    switch (data.type) {
+      case "MATCH_UPDATE":
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
@@ -235,11 +236,13 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             mapWidth: data.payload.mapWidth,
             mapHeight: data.payload.mapHeight,
             players: data.payload.players,
-            active_user: data.payload.active_player, // сервер может использовать active_player
+            active_user: data.payload.active_player, // или active_user
             turnNumber: data.payload.turn_number,
           },
         });
-      } else if (data.type === "MOVE_PLAYER") {
+        break;
+
+      case "MOVE_PLAYER":
         dispatch({
           type: "MOVE_PLAYER",
           payload: {
@@ -247,24 +250,42 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
             newPosition: data.payload.newPosition,
           },
         });
-      }
+        break;
 
-      else if (data.type === "RESOURCE_COLLECTED") {
-        // Обновляем клетку в grid
-        const { updatedCell } = data.payload;
+      case "RESOURCE_COLLECTED": {
+        const { updatedCell, updatedPlayer } = data.payload;
         dispatch({
           type: "UPDATE_CELL",
           payload: { updatedCell },
         });
+        if (updatedPlayer) {
+          dispatch({
+            type: "UPDATE_PLAYER",
+            payload: { player: updatedPlayer },
+          });
+        }
+        break;
       }
-      else if (data.type === "SET_ACTIVE_USER") {
+
+      case "SET_ACTIVE_USER":
         console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
-        const { active_user, turnNumber } = data.payload;
-        dispatch({ type: "SET_ACTIVE_USER", payload: { active_user, turnNumber } });
-      }
-    },
-    { instanceId: state.instanceId }
-  );
+        dispatch({
+          type: "SET_ACTIVE_USER",
+          payload: {
+            active_user: data.payload.active_user,
+            turnNumber: data.payload.turnNumber,
+          },
+        });
+        break;
+
+      default:
+        // можно логировать непредвидённые типы
+        console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);
+    }
+  },
+  { instanceId: state.instanceId }
+);
+
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>

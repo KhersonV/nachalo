@@ -45,7 +45,7 @@ const Inventory: React.FC = () => {
     key: string,
     item: InventoryItem
   ) => {
-    if (item.count <= 0 || !user) return;
+    if (item.item_count <= 0 || !user) return;
 
     console.log(`Отправляем запрос на использование предмета: ${item.name || key}`);
 
@@ -63,7 +63,7 @@ const Inventory: React.FC = () => {
         body: JSON.stringify({
           item_type: itemType,
           item_id: itemID,
-          count: 1, // можно изменить, если нужно использовать более одного предмета
+          item_count: 1, // можно изменить, если нужно использовать более одного предмета
         }),
       });
 
@@ -90,7 +90,7 @@ const Inventory: React.FC = () => {
   ) => {
     const safeItems = items ?? {};
     return Object.entries(safeItems)
-      .filter(([, item]) => item.count > 0)
+      .filter(([, item]) => item.item_count > 0)
       .map(([key, item]) => (
         <div key={key} className={styles.item}>
           <img
@@ -99,7 +99,7 @@ const Inventory: React.FC = () => {
             className={styles.itemImage}
           />
           <div className={styles.itemName}>{item.name || key}</div>
-          <div className={styles.itemCount}>Кол-во: {item.count}</div>
+          <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
           <button
             className={styles.useButton}
             onClick={() => handleUseItem(section, key, item)}
