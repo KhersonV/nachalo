@@ -277,7 +277,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           },
         });
         break;
-
+      case "UPDATE_PLAYER": {
+        const { player } = data.payload;
+        dispatch({ type: "UPDATE_PLAYER", payload: { player } });
+        break;
+      }
       default:
         // можно логировать непредвидённые типы
         console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);

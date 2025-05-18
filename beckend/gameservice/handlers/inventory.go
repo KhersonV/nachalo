@@ -7,7 +7,7 @@
 package handlers
 
 import (
-    "log"
+   
     "encoding/json"
     "fmt"
     "net/http"
@@ -88,20 +88,12 @@ func AddInventoryHandler(w http.ResponseWriter, r *http.Request) {
 //    "item_id": 3,
 //    "count": 1
 // }
-// Последовательность действий:
-// 1. SQL-запрос в таблице inventory_items для получения текущего количества:
-//      SELECT count FROM inventory_items WHERE user_id = $1 AND item_type = $2 AND item_id = $3;
-// 2. Если новое количество (текущее - запрошенное) <= 0, выполняется SQL-запрос:
-//      DELETE FROM inventory_items WHERE user_id = $1 AND item_type = $2 AND item_id = $3;
-//    иначе – обновляется количество с помощью:
-//      UPDATE inventory_items SET count = $1 WHERE user_id = $2 AND item_type = $3 AND item_id = $4;
-// 3. После успешного изменения предмета, извлекаются данные игрока (через GetMatchPlayerByUserID)
-//    для применения эффекта предмета (например, увеличение энергии или здоровья).
-// 4. Применённый эффект определяется с помощью запроса (например, из таблицы resources):
-//      (логика внутри repository.GetItemEffect)
-// 5. Обновление игрока производится через repository.UpdateMatchPlayer, который внутри выполняет SQL UPDATE.
+
+
+// UseInventoryHandler обрабатывает POST /game/player/{id}/inventory/use.
+// После синхронизации таблиц он отправляет обновлённого игрока по WebSocket.
 func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
-    // Получаем playerID из URL-параметров
+    // 1. Парсим playerID
     vars := mux.Vars(r)
     playerID, err := strconv.Atoi(vars["id"])
     if err != nil {
@@ -109,74 +101,63 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Декодируем JSON-запрос с параметрами использования предмета
+    // 2. Парсим тело запроса
     var req struct {
         ItemType string `json:"item_type"`
         ItemID   int    `json:"item_id"`
         Count    int    `json:"count"`
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
+        http.Error(w, "Неверный формат JSON", http.StatusBadRequest)
         return
     }
     if req.Count <= 0 {
         req.Count = 1
     }
 
-    // Уменьшаем количество предмета в таблице inventory_items.
-    // Внутри repository.RemoveInventoryItem происходит:
-    // 1. SELECT count FROM inventory_items WHERE user_id = $1 AND item_type = $2 AND item_id = $3;
-    // 2. Если (current count - req.Count) <= 0, выполняется DELETE:
-    //      DELETE FROM inventory_items WHERE user_id = $1 AND item_type = $2 AND item_id = $3;
-    //    иначе – UPDATE:
-    //      UPDATE inventory_items SET count = $1 WHERE user_id = $2 AND item_type = $3 AND item_id = $4;
-    err = repository.RemoveInventoryItem(playerID, req.ItemType, req.ItemID, req.Count)
-    if err != nil {
+    // 3. Снижаем количество в normalized таблице и синхронизируем JSON
+    if err := repository.RemoveInventoryItemAndSyncJSON(playerID, req.ItemType, req.ItemID, req.Count); err != nil {
         http.Error(w, fmt.Sprintf("Ошибка использования предмета: %v", err), http.StatusInternalServerError)
         return
     }
 
-    // Извлекаем обновлённые данные игрока для применения эффекта предмета.
-    // SQL-запрос внутри repository.GetMatchPlayerByUserID, например:
-    //      SELECT * FROM match_players WHERE user_id = $1;
+    // 4. Получаем свежие данные игрока
     player, err := repository.GetMatchPlayerByUserID(playerID)
     if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+        http.Error(w, fmt.Sprintf("Ошибка получения данных игрока: %v", err), http.StatusInternalServerError)
         return
     }
 
-    // Получаем эффект предмета из таблицы ресурсов (или другой логики) через repository.GetItemEffect.
-    // Внутри функции может выполняться SQL-запрос к таблице resources:
-    //      SELECT energy, health, ... FROM resources WHERE item_id = $1;
-    effect, err := repository.GetItemEffect(req.ItemID)
-    if err != nil {
-        log.Printf("Эффект предмета не найден: %v", err)
-    } else {
-        // Применяем эффект, например, увеличиваем энергию и здоровье.
-        if energyBonus, ok := effect["energy"]; ok {
-            player.Energy += energyBonus
+    // 5. Применяем эффект предмета и сохраняем изменения энергии/здоровья
+    if effect, err := repository.GetItemEffect(req.ItemID); err == nil {
+        if add, ok := effect["energy"]; ok {
+            player.Energy += add
             if player.Energy > player.MaxEnergy {
                 player.Energy = player.MaxEnergy
             }
         }
-        if healthBonus, ok := effect["health"]; ok {
-            player.Health += healthBonus
+        if add, ok := effect["health"]; ok {
+            player.Health += add
             if player.Health > player.MaxHealth {
                 player.Health = player.MaxHealth
             }
         }
-        // Здесь можно добавить обработку других эффектов по необходимости.
+        _ = repository.UpdateMatchPlayer(player)
     }
 
-    // Обновляем данные игрока в базе.
-    // Функция repository.UpdateMatchPlayer внутри выполняет SQL UPDATE для сохранения изменённых параметров.
-    err = repository.UpdateMatchPlayer(player)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка обновления игрока: %v", err), http.StatusInternalServerError)
-        return
+    // 6. Рассылаем по WebSocket событие UPDATE_PLAYER с новым состоянием игрока
+    wsMsg := map[string]interface{}{
+        "type": "UPDATE_PLAYER",
+        "payload": map[string]interface{}{
+            "player": player,
+        },
     }
+    msgBytes, _ := json.Marshal(wsMsg)
+    Broadcast(msgBytes)
 
-    // Возвращаем явный ответ, что предмет использован и эффект применён.
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Предмет успешно использован и эффект применён"))
+    // 7. Возвращаем HTTP-ответ с обновлённым игроком
+    w.Header().Set("Content-Type", "application/json")
+    if err := json.NewEncoder(w).Encode(player); err != nil {
+        http.Error(w, fmt.Sprintf("Ошибка кодирования ответа: %v", err), http.StatusInternalServerError)
+    }
 }

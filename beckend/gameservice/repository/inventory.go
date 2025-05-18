@@ -138,33 +138,90 @@ func AddInventoryItem(playerID int, itemType string, itemID int, count int, imag
 }
 
 
-// RemoveInventoryItem уменьшает или удаляет количество предмета в инвентаре игрока.
-func RemoveInventoryItem(playerID int, itemType string, itemID int, count int) error {
-	var existingCount int
+// RemoveInventoryItemAndSyncJSON уменьшает количество предмета в inventory_items и синхронизирует JSON-инвентарь в match_players.
+func RemoveInventoryItemAndSyncJSON(playerID int, itemType string, itemID int, count int) error {
+    tx, err := DB.Begin()
+    if err != nil {
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
 
-	// Выполняем запрос для получения текущего количества предмета
-	err := DB.QueryRow(selectInventoryItemCountQuery, playerID, itemType, itemID).Scan(&existingCount)
-	if err != nil {
-		return fmt.Errorf("error fetching item count: %w", err)
-	}
+    // 1) Получаем текущий JSON-инвентарь и matchInstanceID
+    var inventoryJSON, matchInstanceID string
+    if err := tx.QueryRow(selectInventoryQuery, playerID).Scan(&inventoryJSON, &matchInstanceID); err != nil {
+        return fmt.Errorf("fetch inventory: %w", err)
+    }
 
-	newCount := existingCount - count
-	if newCount <= 0 {
-		// Если новое количество <= 0, удаляем запись
-		_, err = DB.Exec(deleteInventoryItemQuery, playerID, itemType, itemID)
-		if err != nil {
-			return fmt.Errorf("error deleting inventory item: %w", err)
-		}
-	} else {
-		// Иначе обновляем количество предмета
-		_, err = DB.Exec(updateInventoryItemCountQuery, newCount, playerID, itemType, itemID)
-		if err != nil {
-			return fmt.Errorf("error updating inventory item count: %w", err)
-		}
-	}
+    // 2) Уменьшаем или удаляем запись в normalized таблице
+    //   - сначала пытаемся обновить
+    res, err := tx.Exec(`
+        UPDATE inventory_items
+           SET item_count = item_count - $4
+         WHERE user_id = $1
+           AND item_type = $2
+           AND item_id = $3
+    `, playerID, itemType, itemID, count)
+    if err != nil {
+        return fmt.Errorf("update inventory_items: %w", err)
+    }
+    rows, err := res.RowsAffected()
+    if err != nil {
+        return fmt.Errorf("rows affected: %w", err)
+    }
+    if rows == 0 {
+        // ничего не обновилось — удалим на всякий случай
+        if _, err := tx.Exec(deleteInventoryItemQuery, playerID, itemType, itemID); err != nil {
+            return fmt.Errorf("delete inventory_items: %w", err)
+        }
+    } else {
+        // если после вычитания стало <=0, удалим строку
+        if _, err := tx.Exec(`
+            DELETE FROM inventory_items
+             WHERE user_id = $1
+               AND item_type = $2
+               AND item_id = $3
+               AND item_count <= 0
+        `, playerID, itemType, itemID); err != nil {
+            return fmt.Errorf("clean zero items: %w", err)
+        }
+    }
 
-	return nil
+    // 3) Обновляем JSON-поле inventory
+    inv := make(map[string]map[string]interface{})
+    if inventoryJSON != "" && inventoryJSON != "{}" {
+        if err := json.Unmarshal([]byte(inventoryJSON), &inv); err != nil {
+            inv = make(map[string]map[string]interface{})
+        }
+    }
+    key := fmt.Sprintf("%s_%d", itemType, itemID)
+    if entry, ok := inv[key]; ok {
+        // уменьшаем
+        if cur, ok2 := entry["item_count"].(float64); ok2 {
+            newCount := int(cur) - count
+            if newCount > 0 {
+                entry["item_count"] = newCount
+            } else {
+                delete(inv, key)
+            }
+        } else {
+            delete(inv, key)
+        }
+    }
+    // сохраняем обратно
+    newInvBytes, err := json.Marshal(inv)
+    if err != nil {
+        return fmt.Errorf("marshal inventory: %w", err)
+    }
+    if _, err := tx.Exec(updatePlayerInventoryQuery, string(newInvBytes), matchInstanceID, playerID); err != nil {
+        return fmt.Errorf("update match_players.inventory: %w", err)
+    }
+
+    if err := tx.Commit(); err != nil {
+        return fmt.Errorf("tx commit: %w", err)
+    }
+    return nil
 }
+
 
 // UpdatePlayerInventory обновляет поле inventory в таблице match_players для указанного игрока и матча.
 func UpdatePlayerInventory(matchInstanceID string, playerID int, newInventory string) error {
