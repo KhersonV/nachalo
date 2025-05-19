@@ -16,6 +16,7 @@ import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
+import PlayerHUD from "./PlayerHUD";
 
 export default function GameController() {
   const { state, dispatch } = useGame();
@@ -67,7 +68,7 @@ export default function GameController() {
       return null;
     }
   }
-  
+
   // Функция для отправки запроса на сбор ресурса
   async function collectResource(cellX: number, cellY: number) {
     console.log("Начало сбора ресурса для клетки:", cellX, cellY);
@@ -98,7 +99,7 @@ export default function GameController() {
       }
       const data = await response.json();
       console.log("Ресурс успешно собран. Полученные данные клетки:", data.updatedCell);
-      
+
       // Обновляем данные клетки
       const updatedCell = {
         cell_id: data.updatedCell.cell_id,
@@ -111,12 +112,12 @@ export default function GameController() {
         isPortal: data.updatedCell.isPortal,
         isPlayer: data.updatedCell.isPlayer ?? false,
       };
-      
+
       dispatch({
         type: "UPDATE_CELL",
         payload: { updatedCell },
       });
-      
+
       // Запрашиваем обновленные данные игрока
       const playerResponse = await fetch(
         `http://localhost:8001/game/matchPlayer/${myPlayerId}`,
@@ -127,10 +128,10 @@ export default function GameController() {
           },
         }
       );
-      
+
       if (playerResponse.ok) {
         const updatedPlayer = await playerResponse.json();
-       
+
         console.log("Полученные обновлённые данные игрока:", updatedPlayer);
         dispatch({
           type: "UPDATE_PLAYER",
@@ -144,7 +145,7 @@ export default function GameController() {
       console.error("Ошибка запроса сбора ресурса:", error);
     }
   }
-  
+
   // Функция перемещения: вычисляем новые координаты и отправляем запрос на сервер.
   const handleMove = async (direction: "up" | "down" | "left" | "right") => {
     if (!myPlayer) {
@@ -160,77 +161,77 @@ export default function GameController() {
     else if (direction === "down") newPos.y += 1;
     else if (direction === "left") newPos.x -= 1;
     else if (direction === "right") newPos.x += 1;
-  
+
     // Отправляем запрос перемещения на сервер (без проверок на клиенте)
     const updatedPlayer = await movePlayer(newPos.x, newPos.y);
     if (updatedPlayer) {
       dispatch({
-        type: "MOVE_PLAYER",
-        payload: { userId: myPlayer.user_id, newPosition: newPos },
+        type: "UPDATE_PLAYER",
+        payload: { player: updatedPlayer },
       });
     } else {
       console.log("Перемещение не выполнено из-за ошибки сервера.");
     }
   };
-  
+
   // Функция действий на клетке: сервер принимает решение, что делать.
 
- const [isCollecting, setIsCollecting] = useState(false);
+  const [isCollecting, setIsCollecting] = useState(false);
 
-const handleAction = () => {
-  if (!isMyTurn) {
-    console.warn("Сейчас не ваш ход");
-    return;
-  }
-  if (isCollecting) return; // предотвращаем повторные вызовы
-  setIsCollecting(true);
+  const handleAction = () => {
+    if (!isMyTurn) {
+      console.warn("Сейчас не ваш ход");
+      return;
+    }
+    if (isCollecting) return; // предотвращаем повторные вызовы
+    setIsCollecting(true);
 
-  const activePlayer = state.players.find((p) => p.user_id === state.active_user);
-  if (!activePlayer) {
-    setIsCollecting(false);
-    return;
-  }
-  const currentCell = state.grid.find(
-    (cell) =>
-      cell.x === activePlayer.position.x &&
-      cell.y === activePlayer.position.y
-  );
-  if (!currentCell) {
-    console.log("Клетка не найдена");
-    setIsCollecting(false);
-    return;
-  }
+    const activePlayer = state.players.find((p) => p.user_id === state.active_user);
+    if (!activePlayer) {
+      setIsCollecting(false);
+      return;
+    }
+    const currentCell = state.grid.find(
+      (cell) =>
+        cell.x === activePlayer.position.x &&
+        cell.y === activePlayer.position.y
+    );
+    if (!currentCell) {
+      console.log("Клетка не найдена");
+      setIsCollecting(false);
+      return;
+    }
 
-  if (currentCell.monster) {
-    console.log("Начинаем бой с монстром", currentCell.monster);
+    if (currentCell.monster) {
+      console.log("Начинаем бой с монстром", currentCell.monster);
+      setIsCollecting(false);
+      return;
+    }
+    if (currentCell.resource) {
+      console.log("Собираем ресурс", currentCell.resource);
+      collectResource(currentCell.x, currentCell.y)
+        .finally(() => setIsCollecting(false));
+      return;
+    }
+    if (currentCell.barbel) {
+      console.log("Открываем бочку", currentCell.resource);
+      collectResource(currentCell.x, currentCell.y)
+        .finally(() => setIsCollecting(false));
+      return;
+    }
+    if (currentCell.isPortal) {
+      console.log("Пытаемся выйти через портал");
+      setIsCollecting(false);
+      return;
+    }
+    console.log("На данной клетке нет интерактивных объектов", currentCell);
     setIsCollecting(false);
-    return;
-  }
-  if (currentCell.resource) {
-    console.log("Собираем ресурс", currentCell.resource);
-    collectResource(currentCell.x, currentCell.y)
-      .finally(() => setIsCollecting(false));
-    return;
-  }
-  if (currentCell.barbel) {
-    console.log("Открываем бочку", currentCell.resource);
-    collectResource(currentCell.x, currentCell.y)
-      .finally(() => setIsCollecting(false));
-    return;
-  }
-  if (currentCell.isPortal) {
-    console.log("Пытаемся выйти через портал");
-    setIsCollecting(false);
-    return;
-  }
-  console.log("На данной клетке нет интерактивных объектов", currentCell);
-  setIsCollecting(false);
-};
+  };
 
   const handleTurnEnded = (data: { active_user: number; turnNumber: number; energy: number }) => {
     dispatch({
       type: "SET_ACTIVE_USER",
-      payload: { active_user: data.active_user, turnNumber: data.turnNumber },
+      payload: { active_user: data.active_user, turnNumber: data.turnNumber, energy: data.energy, },
     });
   };
 
@@ -260,6 +261,14 @@ const handleAction = () => {
 
   return (
     <div className={styles.container}>
+      {myPlayer && (
+        <PlayerHUD
+          health={myPlayer.health}
+          maxHealth={myPlayer.maxHealth}
+          energy={myPlayer.energy}
+          maxEnergy={myPlayer.maxEnergy}
+        />
+      )}
       <div className={styles.mapContainer}>
         {myPlayer ? (
           <MapWithCamera

@@ -61,13 +61,21 @@ export function gameReducer(state: GameState, action: Action): GameState {
         ),
       };
 
-    case "SET_ACTIVE_USER":
-      console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user);
-      return {
-        ...state,
-        active_user: action.payload.active_user,
-        turnNumber: action.payload.turnNumber,
-      };
+   case "SET_ACTIVE_USER": {
+  console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
+  const { active_user, turnNumber, energy } = action.payload;
+  return {
+    ...state,
+    active_user,
+    turnNumber,
+    // обновляем энергию только у того, чей ход закончился
+    players: state.players.map(p =>
+      p.user_id === active_user
+        ? { ...p, energy: energy ?? p.energy }
+        : p
+    ),
+  };
+}
 
     case "UPDATE_PLAYER":
       console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
@@ -274,9 +282,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           payload: {
             active_user: data.payload.active_user,
             turnNumber: data.payload.turnNumber,
+            energy: data.payload.energy,
           },
         });
         break;
+
       case "UPDATE_PLAYER": {
         const { player } = data.payload;
         dispatch({ type: "UPDATE_PLAYER", payload: { player } });

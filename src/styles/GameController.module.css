@@ -24,3 +24,18 @@
     padding-left: 10px;         /* Отступ слева для панели управления */
   }
   
+  .hud {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  z-index: 20;
+}
+.hud p {
+  margin: 0;
+  line-height: 1.2;
+}

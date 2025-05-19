@@ -117,7 +117,7 @@ export type Action =
     }
   | {
       type: "SET_ACTIVE_USER";
-      payload: { active_user: number; turnNumber: number };
+      payload: { active_user: number; turnNumber: number; energy?: number};
     }
   | {
       type: "UPDATE_CELL";
