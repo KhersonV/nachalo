@@ -120,12 +120,17 @@ func CreateMatchPlayersTable() {
 func CreateInventoryTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS inventory_items (
-		id SERIAL PRIMARY KEY,
-		user_id INTEGER NOT NULL,
-		item_type TEXT NOT NULL,
-		item_id INTEGER NOT NULL,
-		item_count INTEGER NOT NULL DEFAULT 0
-	);
+  id SERIAL PRIMARY KEY,
+  instance_id TEXT NOT NULL
+    REFERENCES matches(instance_id)
+    ON DELETE CASCADE,
+  user_id INTEGER NOT NULL,
+  item_type TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (instance_id, user_id, item_type, item_id)
+);
+
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы inventory_items: %v", err)
