@@ -11,13 +11,12 @@ import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
-import type { PlayerState } from "../types/GameTypes";
+import type { PlayerState, MonsterType} from "../types/GameTypes";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
 import PlayerHUD from "./PlayerHUD";
-
 export default function GameController() {
   const { state, dispatch } = useGame();
   const searchParams = useSearchParams();
@@ -33,41 +32,129 @@ export default function GameController() {
   const [showInventory, setShowInventory] = useState(false);
 
   useEffect(() => {
-    console.log("[GameController] myPlayerId:", myPlayerId, "active_user (active):", state.active_user);
+    console.log(
+      "[GameController] myPlayerId:",
+      myPlayerId,
+      "active_user:",
+      state.active_user
+    );
   }, [myPlayerId, state.active_user]);
 
-  // Функция отправки запроса на перемещение игрока
+  // Универсальный обработчик: шаг или удар
+ 
+  async function handleMoveOrAttack(direction: "up" | "down" | "left" | "right") {
+    if (!myPlayer) {
+      console.warn("Мой игрок не найден");
+      return;
+    }
+    if (!isMyTurn) {
+      console.warn("Сейчас не ваш ход");
+      return;
+    }
+
+    // 1) Вычисляем соседнюю клетку
+    const deltas = {
+      up:    { x: 0,  y: -1 },
+      down:  { x: 0,  y:  1 },
+      left:  { x: -1, y:  0 },
+      right: { x: 1,  y:  0 },
+    } as const;
+    const { x: dx, y: dy } = deltas[direction];
+    const targetX = myPlayer.position.x + dx;
+    const targetY = myPlayer.position.y + dy;
+
+    // 2) Находим эту клетку в grid
+    const targetCell = state.grid.find(c => c.x === targetX && c.y === targetY);
+    console.group(`[handleMoveOrAttack] direction=${direction}`);
+    console.log("  myPlayer.position=", myPlayer.position);
+    console.log(`  target coords = (${targetX},${targetY})`);
+    if (!targetCell) {
+      console.warn("  Клетка за пределами карты, ничего не делаем");
+      console.groupEnd();
+      return;
+    }
+    console.log("  targetCell object:", targetCell);
+    if (targetCell.monster) {
+      console.log("  → В клетке есть монстр:", targetCell.monster);
+      console.log("     monster.id =", targetCell.monster.id);
+    }
+    if (targetCell.isPlayer) {
+      const other = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
+      console.log("  → В клетке есть игрок:", other);
+      if (other) console.log("     other.user_id =", other.user_id);
+    }
+    console.groupEnd();
+
+    // 3) Далее — единый запрос
+    console.log(`[handleMoveOrAttack] вызываем movePlayer(${targetX}, ${targetY})`);
+    const updatedPlayer = await movePlayer(targetX, targetY);
+
+    if (!updatedPlayer) {
+      console.error("[handleMoveOrAttack] Не удалось выполнить действие на сервере");
+      return;
+    }
+
+    console.log("[handleMoveOrAttack] server вернул updatedPlayer:", updatedPlayer);
+    dispatch({
+      type: "UPDATE_PLAYER",
+      payload: { player: updatedPlayer },
+    });
+  }
+
+    // 5) По необходимости можно затем подтянуть всю матрицу:
+    // const freshMatch = await fetchMatch(instanceId);
+    // dispatch({ type: "SET_MATCH_DATA", payload: freshMatch });
+  
+
+  // Запрос на ход или атаку
   async function movePlayer(newPosX: number, newPosY: number) {
-    try {
-      const storedUser = localStorage.getItem("user");
-      const token = storedUser ? JSON.parse(storedUser).token : "";
-      if (!token) {
-        console.error("Токен не найден в localStorage");
-        return null;
-      }
-      const response = await fetch(
-        `http://localhost:8001/game/player/${myPlayerId}/move?instance_id=${instanceId}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ new_pos_x: newPosX, new_pos_y: newPosY }),
-        }
-      );
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Ошибка перемещения:", errorText);
-        return null;
-      }
-      const updatedPlayer = await response.json();
-      return updatedPlayer;
-    } catch (error) {
-      console.error("Ошибка запроса перемещения:", error);
+  try {
+    const storedUser = localStorage.getItem("user");
+    const token = storedUser ? JSON.parse(storedUser).token : "";
+    if (!token) {
+      console.error("[movePlayer] Токен не найден");
       return null;
     }
+
+    const url = `http://localhost:8001/games/${instanceId}/player/${myPlayerId}/move`;
+    const body = { new_pos_x: newPosX, new_pos_y: newPosY };
+
+    console.group("[movePlayer]");
+    console.log("  URL:", url);
+    console.log("  Body:", body);
+    console.log("  Авторизация:", token.slice(0, 10) + "...");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    console.log("  Response status:", response.status);
+    const text = await response.text();
+    console.log("  Response body:", text);
+
+    if (!response.ok) {
+      console.error("[movePlayer] Ошибка перемещения:", text);
+      console.groupEnd();
+      return null;
+    }
+
+    const updatedPlayer = JSON.parse(text);
+    console.log("  Parsed updatedPlayer:", updatedPlayer);
+    console.groupEnd();
+    return updatedPlayer as PlayerState;
+  } catch (error) {
+    console.error("[movePlayer] Ошибка запроса:", error);
+    return null;
   }
+}
+
+
+
 
   // Функция для отправки запроса на сбор ресурса
   async function collectResource(cellX: number, cellY: number) {
@@ -241,13 +328,13 @@ export default function GameController() {
         e.preventDefault();
       }
       if (e.key === "ArrowUp") {
-        handleMove("up");
+        handleMoveOrAttack("up");
       } else if (e.key === "ArrowDown") {
-        handleMove("down");
+        handleMoveOrAttack("down");
       } else if (e.key === "ArrowLeft") {
-        handleMove("left");
+        handleMoveOrAttack("left");
       } else if (e.key === "ArrowRight") {
-        handleMove("right");
+        handleMoveOrAttack("right");
       } else if (e.key === " ") {
         handleAction();
       } else if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш") {

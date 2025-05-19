@@ -8,12 +8,50 @@
 а при необходимости переписывать всю функцию целиком для лучшей ясности и поддержки.
 
 Ты, безусловно, один из ведущих программистов с многовековым опытом в продакшене и разработке игр, и твоя экспертиза уже не раз доказала
-свою эффективность. Поэтому я уверен, что ты легко справишься с реализацией следующей функциональности:
+свою эффективность. 
+Вот тебе структура микросервера gameservice для более легкой навигации:
 
 
 
+gameservice
+├── cmd
+│   └── main.go                      // Точка входа: настраивает маршруты, CORS и запускает сервер
+├── game
+│   ├── mapgen.go           // Генерация карты и другие игровые утилиты
+│   └── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+├── handlers
+│   ├── auth.go                      // Обработчики для регистрации, логина, профиля (пустой пример)
+│   ├── combat.go                    // Обработчики для атаки, перемещения
+│   ├── inventory.go                 // Обработчики для работы с инвентарём
+│   ├── match_player.go
+│   ├── match.go                     // Обработчики для создания матчей, получения данных матчей
+│   ├── players.go                   // Обработчики для создания, получения, обновления игроков
+│   ├── resource_collection.go        
+│   ├── resources.go                 // загрузка из бд Ресурсов и Монстров
+|   ├── turn.go                      // Обработчик запроса на завершение хода
+│   └── ws_handler.go                // websockett
+├── middleware
+│   └── auth.go                         // JWT middleware
+├── models
+│   ├── match.go                        // Определения типа MatchInfo
+│   ├── monster.go                      // Определения типа Monster
+│   ├── player.go                       // Определения типа Player
+│   └── user.go                        // Определения типа User (пример-заглушка)
+├── repository
+│   ├── db.go                           // Инициализация и функции работы с БД (initDB, создание таблиц и т.п.)
+│   ├── inventory.go                 // Функции доступа к таблице inventory_items
+│   ├── match_monsters.go 
+│   ├── matches.go                   // Функции доступа к таблице matches и match_players
+│   ├── monsters.go
+│   ├── players.go                   // Функции доступа к таблице players
+│   ├── resources.go
+│   └── utils.go
+├── go.mod
+└── go.sum
 
 
+
+Поэтому я уверен, что ты легко справишься с реализацией следующей функциональности которую я передаю вместе с этим файлом в запросе.
 
 
 
@@ -456,8 +494,8 @@ func main() {
 	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
-	router.Handle("/game/player/{id}/move",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHandler))).
+	router.Handle("/games/{instance_id}/player/{id}/move",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveOrAttackHandler))).
 		Methods("POST")
 
 	router.Handle("/game/attack",
@@ -483,6 +521,7 @@ func main() {
 	log.Printf("Game-сервис запущен на порту %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
+
 
 
 
@@ -916,42 +955,65 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 package handlers
 
 import (
+	"bytes"
+	
 	"encoding/json"
 	"fmt"
-	"log"
+	
 	"net/http"
 	"strconv"
 
-	"github.com/gorilla/mux"
 	"gameservice/game"
-	"gameservice/models"
 	"gameservice/middleware"
 	"gameservice/repository"
+	"github.com/gorilla/mux"
 )
 
 // Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
 
-func MoveHandler(w http.ResponseWriter, r *http.Request) {
+// nopCloser нужен, чтобы bytes.Buffer имплементировал io.ReadCloser
+type nopCloser struct{ *bytes.Buffer }
+func (nopCloser) Close() error { return nil }
+
+// cellPassable возвращает, можно ли ходить по тайлу с данным кодом
+func cellPassable(code int) bool {
+	for _, c := range []int{48, 80, 82, 112, 66} {
+		if code == c {
+			return true
+		}
+	}
+	return false
+}
+
+// rWithBody создаёт http.Request с JSON-телом для внутреннего повторного вызова
+func rWithBody(body interface{}) *http.Request {
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(body)
+	return &http.Request{Body: nopCloser{buf}}
+}
+
+// MoveOrAttackHandler объединяет ход и атаку в один эндпоинт.
+
+
+// MoveOrAttackHandler объединяет ход и атаку в один эндпоинт.
+func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
+	instanceID := vars["instance_id"]
+
+	// 1) Аутентификация
 	userID, err := strconv.Atoi(vars["id"])
 	if err != nil {
 		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
 		return
 	}
-
-	// Извлекаем user_id из контекста (из JWT)
 	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Не удалось определить пользователя из токена", http.StatusUnauthorized)
-		return
-	}
-	// Проверяем, что игрок перемещает сам себя
-	if tokenUserID != userID {
-		http.Error(w, "Запрещено изменять данные другого игрока", http.StatusForbidden)
+	if !ok || tokenUserID != userID {
+		http.Error(w, "Запрещено действовать от лица другого игрока", http.StatusForbidden)
 		return
 	}
 
+	// 2) Парсим тело — только новые координаты
 	var req struct {
 		NewPosX int `json:"new_pos_x"`
 		NewPosY int `json:"new_pos_y"`
@@ -961,156 +1023,172 @@ func MoveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instanceID := r.URL.Query().Get("instance_id")
-	if instanceID == "" {
-		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+	// 3) Загружаем размеры карты для проверки границ
+	var mapW, mapH int
+	if err := repository.DB.QueryRow(
+		`SELECT map_width, map_height FROM matches WHERE instance_id = $1`,
+		instanceID,
+	).Scan(&mapW, &mapH); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка загрузки размеров карты: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if req.NewPosX < 0 || req.NewPosX >= mapW || req.NewPosY < 0 || req.NewPosY >= mapH {
+		http.Error(w, "Координаты вне карты", http.StatusBadRequest)
 		return
 	}
 
-	// Получаем данные матча
-	var mapWidth, mapHeight int
+	// 4) Пытаемся найти монстра в БД
+	mm, err := repository.GetMatchMonsterAt(instanceID, req.NewPosX, req.NewPosY)
+	if err != nil {
+		http.Error(w, "Ошибка чтения монстров", http.StatusInternalServerError)
+		return
+	}
+	if mm != nil {
+		// 5a) Это монстр — считаем урон
+		player, err := repository.GetMatchPlayerByID(instanceID, userID)
+		if err != nil {
+			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+			return
+		}
+		dmg := player.Attack - mm.Defense
+		if dmg < 0 {
+			dmg = 0
+		}
+		newHP := mm.Health - dmg
+		if newHP < 0 {
+			newHP = 0
+		}
+
+		// 5b) Обновляем здоровье монстра
+		if err := repository.UpdateMatchMonsterHealth(instanceID, mm.MonsterInstanceID, newHP); err != nil {
+			http.Error(w, "Ошибка обновления монстра", http.StatusInternalServerError)
+			return
+		}
+
+		// 5c) Отправляем HTTP-ответ
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"damage":        dmg,
+			"new_target_hp": newHP,
+		})
+
+		// 5d) Шлём WS-уведомление только об обновлённом монстре
+		updateMsg := map[string]interface{}{
+			"type": "MONSTER_HIT",
+			"payload": map[string]interface{}{
+				"x":                 req.NewPosX,
+				"y":                 req.NewPosY,
+				"monsterInstanceId": mm.MonsterInstanceID,
+				"newHP":             newHP,
+			},
+		}
+		b, _ := json.Marshal(updateMsg)
+		Broadcast(b)
+		return
+	}
+
+	// 6) Если там игрок — внутренняя атака
+	if cnt, _ := repository.CollisionCount(instanceID, req.NewPosX, req.NewPosY, userID); cnt > 0 {
+		other, err := repository.GetOtherPlayerID(instanceID, req.NewPosX, req.NewPosY, userID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Не удалось найти другого игрока: %v", err), http.StatusInternalServerError)
+			return
+		}
+		attackReq := AttackRequest{
+			AttackerType: "player",
+			AttackerID:   userID,
+			TargetType:   "player",
+			TargetID:     other,
+			InstanceID:   instanceID,
+		}
+		UniversalAttackHandler(w, rWithBody(attackReq))
+		return
+	}
+
+	// 7) Обычное перемещение: нужно проверить TileCode в JSON-карте
 	var mapJSON []byte
-	query := `SELECT map_width, map_height, map FROM matches WHERE instance_id = $1;`
-	err = repository.DB.QueryRow(query, instanceID).Scan(&mapWidth, &mapHeight, &mapJSON)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения данных матча: %v", err), http.StatusInternalServerError)
+	if err := repository.DB.QueryRow(
+		`SELECT map FROM matches WHERE instance_id = $1`,
+		instanceID,
+	).Scan(&mapJSON); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка загрузки карты: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// Проверяем границы координат
-	if req.NewPosX < 0 || req.NewPosX >= mapWidth || req.NewPosY < 0 || req.NewPosY >= mapHeight {
-		http.Error(w, "Новые координаты вне границ карты", http.StatusBadRequest)
+	var cells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &cells); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка разбора карты: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// Десериализуем карту как срез структур FullCell
-	var fullCells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &fullCells); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Находим клетку с нужными координатами
-	var targetCell *game.FullCell
-	for i := range fullCells {
-		if fullCells[i].X == req.NewPosX && fullCells[i].Y == req.NewPosY {
-			targetCell = &fullCells[i]
+	var target *game.FullCell
+	for i := range cells {
+		if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
+			target = &cells[i]
 			break
 		}
 	}
-	if targetCell == nil {
-		http.Error(w, "Целевая клетка не найдена", http.StatusBadRequest)
+	if target == nil {
+		http.Error(w, "Клетка не найдена", http.StatusBadRequest)
+		return
+	}
+	if !cellPassable(target.TileCode) {
+		http.Error(w, fmt.Sprintf("Непроходимый тайл %d", target.TileCode), http.StatusBadRequest)
 		return
 	}
 
-	// Допустимые tileCode для перемещения (добавляем 66 для клеток с бочкой)
-	allowedTileCodes := []int{48, 80, 82, 112, 66}
-
-	passable := false
-	for _, code := range allowedTileCodes {
-		if targetCell.TileCode == code {
-			passable = true
-			break
-		}
-	}
-	if !passable {
-		http.Error(w, fmt.Sprintf("Невозможно переместиться: клетка tileCode=%d непроходимая", targetCell.TileCode), http.StatusBadRequest)
-		return
-	}
-
-	// Проверяем коллизию с другими игроками.
-	collisionQuery := `
-		SELECT COUNT(*) FROM match_players
-		WHERE match_instance_id = $1 
-		  AND (position->>'x')::int = $2 
-		  AND (position->>'y')::int = $3 
-		  AND user_id <> $4
-	`
-	var collisionCount int
-	err = repository.DB.QueryRow(collisionQuery, instanceID, req.NewPosX, req.NewPosY, userID).Scan(&collisionCount)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка проверки коллизий: %v", err), http.StatusInternalServerError)
-		return
-	}
-	if collisionCount > 0 {
-		http.Error(w, "Невозможно переместиться: клетка занята другим игроком", http.StatusBadRequest)
-		return
-	}
-
-	// Получаем игрока из match_players
+	// 8) Обновляем позицию игрока
 	player, err := repository.GetMatchPlayerByID(instanceID, userID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Ошибка загрузки игрока: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// Проверяем энергию
 	if player.Energy < moveEnergyCost {
-		http.Error(w, "Недостаточно энергии для перемещения", http.StatusBadRequest)
+		http.Error(w, "Недостаточно энергии", http.StatusBadRequest)
 		return
 	}
-
-	// Сохраняем старую позицию игрока
-	oldPos := struct{ X, Y int }{
-		X: player.Position.X,
-		Y: player.Position.Y,
-	}
-	log.Printf("[MoveHandler] Старая позиция игрока (userID=%d): %+v", userID, oldPos)
-
-	// Списываем энергию
-	player.Energy -= moveEnergyCost
-
-	// Обновляем позицию игрока
+	oldPos := player.Position
+	player.Energy--
 	player.Position.X = req.NewPosX
 	player.Position.Y = req.NewPosY
 
-	// Обновляем данные игрока в БД (включая энергию)
-	err = repository.UpdateMatchPlayer(player)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка обновления позиции игрока: %v", err), http.StatusInternalServerError)
+	if err := repository.UpdateMatchPlayer(player); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка обновления игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := repository.UpdateCellPlayerFlags(instanceID, oldPos, player.Position); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка обновления карты: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Обновляем флаги клеток на сервере:
-	newPos := struct{ X, Y int }{
-		X: req.NewPosX,
-		Y: req.NewPosY,
-	}
-	log.Printf("[MoveHandler] Новая позиция игрока (userID=%d): %+v", userID, newPos)
-	if err := repository.UpdateCellPlayerFlags(instanceID, oldPos, newPos); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка обновления клеток: %v", err), http.StatusInternalServerError)
-		return
-	}
+	// 9) Уведомление по WebSocket о перемещении
+	moveMsg := map[string]interface{}{
+    "type": "MOVE_PLAYER",
+    "payload": map[string]interface{}{
+        "userId": userID,
+        "newPosition": map[string]int{
+            "x": req.NewPosX,
+            "y": req.NewPosY,
+        },
+    },
+}
+b2, _ := json.Marshal(moveMsg)
+Broadcast(b2)
 
-	// Отправляем обновление по WebSocket всем клиентам
-	updateMsg := map[string]interface{}{
-		"type": "MOVE_PLAYER",
-		"payload": map[string]interface{}{
-			"userId": userID,
-			"newPosition": map[string]int{
-				"x": req.NewPosX,
-				"y": req.NewPosY,
-			},
-		},
-	}
-	updateJSON, _ := json.Marshal(updateMsg)
-	Broadcast(updateJSON)
-
+	// 10) Отправляем клиенту обновлённого себя
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(player)
 }
 
-
-// ----------------- АТАКА ------------------
+// ----------------- АТАКА -----------------
 
 type AttackRequest struct {
-	AttackerType string `json:"attacker_type"` // "player" или "monster"
+	AttackerType string `json:"attacker_type"`
 	AttackerID   int    `json:"attacker_id"`
-	TargetType   string `json:"target_type"` // "player" или "monster"
+	TargetType   string `json:"target_type"`
 	TargetID     int    `json:"target_id"`
-	InstanceID   string `json:"instance_id"` // Для работы с match‑копиями
+	InstanceID   string `json:"instance_id"`
 }
 
+// UniversalAttackHandler — выполняет атаку и обновляет либо игрока, либо монстра прямо в JSON-карте.
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	var req AttackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1118,141 +1196,80 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var attackerAttack, targetDefense int
-
-	// Определяем атаку
-	switch req.AttackerType {
-	case "player":
-		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
-		if errP != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения атакующего игрока: %v", errP), http.StatusInternalServerError)
-			return
-		}
-		attackerAttack = player.Attack
-	case "monster":
-		monster, errM := getMonsterByID(req.AttackerID)
-		if errM != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения атакующего монстра: %v", errM), http.StatusInternalServerError)
-			return
-		}
-		attackerAttack = monster.Attack
-	default:
-		http.Error(w, "Неверный тип атакующего", http.StatusBadRequest)
+	// --- загрузим карту, чтобы работать с monster внутри неё ---
+	var mapJSON []byte
+	if err := repository.DB.QueryRow(
+		`SELECT map FROM matches WHERE instance_id=$1`, req.InstanceID,
+	).Scan(&mapJSON); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка загрузки карты: %v", err), http.StatusInternalServerError)
+		return
+	}
+	var cells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &cells); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Определяем защиту и здоровье цели
-	var targetHealth int
-	switch req.TargetType {
-	case "player":
-		player, errP := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-		if errP != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения цели-игрока: %v", errP), http.StatusInternalServerError)
-			return
+	// найдём cell с нужным TargetID
+	var attackerStats, defenderStats struct{ Attack, Defense, Health int }
+	for i := range cells {
+		c := &cells[i]
+		if req.AttackerType == "monster" && c.Monster != nil && c.Monster.ID == req.AttackerID {
+			attackerStats.Attack = c.Monster.Attack
 		}
-		targetDefense = player.Defense
-		targetHealth = player.Health
-	case "monster":
-		monster, errM := getMonsterByID(req.TargetID)
-		if errM != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errM), http.StatusInternalServerError)
-			return
+		if req.AttackerType == "player" && c.X == cells[i].X && c.Y == cells[i].Y {
+			// игроку stats берём из БД
+			pl, _ := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+			attackerStats.Attack = pl.Attack
 		}
-		targetDefense = monster.Defense
-		targetHealth = monster.Health
-	default:
-		http.Error(w, "Неверный тип цели", http.StatusBadRequest)
-		return
-	}
-
-	damage := attackerAttack - targetDefense
-	if damage < 1 {
-		damage = 0
-	}
-	newHealth := targetHealth - damage
-	if newHealth < 0 {
-		newHealth = 0
-	}
-
-	// Применяем результат атаки
-	switch req.TargetType {
-	case "player":
-		target, errT := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-		if errT != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения цели игрока: %v", errT), http.StatusInternalServerError)
-			return
+		if req.TargetType == "monster" && c.Monster != nil && c.Monster.ID == req.TargetID {
+			defenderStats.Defense = c.Monster.Defense
+			defenderStats.Health  = c.Monster.Health
 		}
-		target.Health = newHealth
-		err := repository.UpdateMatchPlayer(target)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Ошибка обновления цели игрока: %v", err), http.StatusInternalServerError)
-			return
-		}
-	case "monster":
-		target, errT := getMonsterByID(req.TargetID)
-		if errT != nil {
-			http.Error(w, fmt.Sprintf("Ошибка получения цели-монстра: %v", errT), http.StatusInternalServerError)
-			return
-		}
-		target.Health = newHealth
-		err := updateMonster(target)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Ошибка обновления цели монстра: %v", err), http.StatusInternalServerError)
-			return
+		if req.TargetType == "player" && c.X == cells[i].X && c.Y == cells[i].Y {
+			pl, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+			defenderStats.Defense = pl.Defense
+			defenderStats.Health  = pl.Health
 		}
 	}
 
-	log.Printf("Атакующий %s %d атаковал цель %s %d, нанеся %d урона", req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, damage)
-	response := map[string]interface{}{
-		"attacker_type": req.AttackerType,
-		"attacker_id":   req.AttackerID,
-		"target_type":   req.TargetType,
-		"target_id":     req.TargetID,
-		"damage":        damage,
-		"new_target_hp": newHealth,
+	// --- рассчитываем урон ---
+	dmg := attackerStats.Attack - defenderStats.Defense
+	if dmg < 0 {
+		dmg = 0
+	}
+	newHP := defenderStats.Health - dmg
+	if newHP < 0 {
+		newHP = 0
+	}
+
+	// --- применяем в карте (если монстр) или в БД (если игрок) ---
+	if req.TargetType == "monster" {
+		for i := range cells {
+			if cells[i].Monster != nil && cells[i].Monster.ID == req.TargetID {
+				cells[i].Monster.Health = newHP
+				break
+			}
+		}
+		// сохраняем обратно map JSON
+		updatedMap, _ := json.Marshal(cells)
+		repository.DB.Exec(
+			`UPDATE matches SET map = $1 WHERE instance_id = $2`,
+			string(updatedMap), req.InstanceID,
+		)
+	} else {
+		pl, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		pl.Health = newHP
+		repository.UpdateMatchPlayer(pl)
+	}
+
+	// --- отвечаем клиенту ---
+	resp := map[string]interface{}{
+		"damage":        dmg,
+		"new_target_hp": newHP,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-// ----------------- Работа с монстрами (упрощённо) ------------------
-
-func getMonsterByID(id int) (*models.Monster, error) {
-	monster := &models.Monster{}
-	query := `
-        SELECT id, name, type, health, max_health, attack, defense, speed, 
-               maneuverability, vision, created_at
-        FROM monsters
-        WHERE id = $1
-    `
-	row := repository.DB.QueryRow(query, id)
-	err := row.Scan(
-		&monster.ID,
-		&monster.Name,
-		&monster.Type,
-		&monster.Health,
-		&monster.MaxHealth,
-		&monster.Attack,
-		&monster.Defense,
-		&monster.Speed,
-		&monster.Maneuverability,
-		&monster.Vision,
-		&monster.CreatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return monster, nil
-}
-
-func updateMonster(monster *models.Monster) error {
-	query := `
-        UPDATE monsters
-        SET health = $1
-        WHERE id = $2
-    `
-	_, err := repository.DB.Exec(query, monster.Health, monster.ID)
-	return err
+	json.NewEncoder(w).Encode(resp)
 }
 
 
@@ -1511,7 +1528,6 @@ func GetMatchPlayerHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 //===============================
 // gameservice/handlers/match.go
 //===============================
@@ -1591,8 +1607,6 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Вставляем матч в таблицу matches.
-	// Новый порядок: instance_id, mode, teams_count, total_players, map_width, map_height, map,
-	// active_user_id, turn_order, turn_number, start_positions, portal_position.
 	// turn_number устанавливаем равным 1.
 	_, err = repository.DB.Exec(`
         INSERT INTO matches (
@@ -1618,6 +1632,35 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка сохранения матча", http.StatusInternalServerError)
 		return
 	}
+
+
+
+	//  вставляем всех монстров в match_monsters
+    for _, cell := range fullMap {
+        if cell.Monster != nil {
+            md := cell.Monster
+            err := repository.InsertMatchMonster(repository.MatchMonster{
+                InstanceID:      req.InstanceID,
+                RefID:           md.ID / 1_000_000,
+                X:               cell.X,
+                Y:               cell.Y,
+                Health:          md.Health,
+                MaxHealth:       md.MaxHealth,
+                Attack:          md.Attack,
+                Defense:         md.Defense,
+                Speed:           md.Speed,
+                Maneuverability: md.Maneuverability,
+                Vision:          md.Vision,
+                Image:           md.Image,
+            })
+            if err != nil {
+                log.Printf("failed to insert match_monster: %v", err)
+                http.Error(w, "internal error", http.StatusInternalServerError)
+                return
+            }
+        }
+    }
+
 
 	// Создаем локальное состояние матча.
 	game.CreateMatchState(req.InstanceID, req.PlayerIDs)
@@ -1718,6 +1761,7 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
 
 
 
@@ -2740,19 +2784,31 @@ import (
 const connStr = "user=admin password=admin dbname=game_db sslmode=disable"
 
 var DB *sql.DB
-
 func InitDB() {
-	var err error
-	DB, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatalf("Ошибка подключения к БД: %v", err)
-	}
-	err = DB.Ping()
-	if err != nil {
-		log.Fatalf("Невозможно подключиться к БД: %v", err)
-	}
-	log.Println("Подключение к БД установлено")
+    var err error
+    DB, err = sql.Open("postgres", connStr)
+    if err != nil {
+        log.Fatalf("Ошибка подключения к БД: %v", err)
+    }
+    if err = DB.Ping(); err != nil {
+        log.Fatalf("Невозможно подключиться к БД: %v", err)
+    }
+    log.Println("Подключение к БД установлено")
+
+    // Существующие таблицы
+    CreatePlayersTable()
+    CreateMatchesTable()
+    CreateMatchPlayersTable()
+    CreateInventoryTable()
+    // Добавляем нашу новую
+    CreateMatchMonstersTable()
+
+    // Восстанавливаем state матчей
+    if err := RestoreMatchStates(); err != nil {
+        log.Fatalf("Ошибка восстановления матчей: %v", err)
+    }
 }
+
 
 func CreatePlayersTable() {
 	query := `
@@ -2860,6 +2916,31 @@ func CreateInventoryTable() {
 	}
 }
 
+func CreateMatchMonstersTable() {
+  query := `
+  CREATE TABLE IF NOT EXISTS match_monsters (
+    match_instance_id TEXT NOT NULL REFERENCES matches(instance_id) ON DELETE CASCADE,
+    monster_instance_id SERIAL NOT NULL,
+    monster_ref_id      INT  NOT NULL,
+    pos_x               INT  NOT NULL,
+    pos_y               INT  NOT NULL,
+    health              INT  NOT NULL,
+    max_health          INT  NOT NULL,
+    attack              INT  NOT NULL,
+    defense             INT  NOT NULL,
+    speed               INT  NOT NULL,
+    maneuverability     INT  NOT NULL,
+    vision              INT  NOT NULL,
+    image               TEXT NOT NULL,
+    PRIMARY KEY (match_instance_id, monster_instance_id)
+  );
+  `
+  if _, err := DB.Exec(query); err != nil {
+    log.Fatalf("Ошибка создания таблицы match_monsters: %v", err)
+  }
+}
+
+
 func RestoreMatchStates() error {
 	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order FROM matches")
 	if err != nil {
@@ -2961,8 +3042,6 @@ func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 
 	return &pr, nil
 }
-
-
 
 
 
@@ -3235,6 +3314,88 @@ func RemoveInventoryItemAndSyncJSON(playerID int, itemType string, itemID int, c
 }
 
 
+
+
+
+
+
+
+
+
+
+
+
+// ========================================
+// gameservice/repository/match_monsters.go
+// ========================================
+
+
+
+package repository
+
+import (
+    "database/sql"
+)
+
+// Структура для работы с match_monsters
+type MatchMonster struct {
+    InstanceID        string
+    MonsterInstanceID int
+    RefID, X, Y       int
+    Health, MaxHealth int
+    Attack, Defense   int
+    Speed, Maneuverability, Vision int
+    Image             string
+}
+
+// Вставка монстра при создании матча
+func InsertMatchMonster(m MatchMonster) error {
+    _, err := DB.Exec(`
+        INSERT INTO match_monsters
+            (match_instance_id, monster_ref_id, pos_x, pos_y,
+             health, max_health, attack, defense, speed, maneuverability, vision, image)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    `,
+        m.InstanceID, m.RefID, m.X, m.Y,
+        m.Health, m.MaxHealth, m.Attack, m.Defense,
+        m.Speed, m.Maneuverability, m.Vision, m.Image,
+    )
+    return err
+}
+
+// Поиск монстра по позиции
+func GetMatchMonsterAt(instanceID string, x, y int) (*MatchMonster, error) {
+    var m MatchMonster
+    err := DB.QueryRow(`
+        SELECT
+          match_instance_id, monster_instance_id, monster_ref_id,
+          pos_x, pos_y, health, max_health,
+          attack, defense, speed, maneuverability, vision, image
+        FROM match_monsters
+        WHERE match_instance_id=$1 AND pos_x=$2 AND pos_y=$3
+    `, instanceID, x, y).Scan(
+        &m.InstanceID, &m.MonsterInstanceID, &m.RefID,
+        &m.X, &m.Y, &m.Health, &m.MaxHealth,
+        &m.Attack, &m.Defense, &m.Speed, &m.Maneuverability, &m.Vision, &m.Image,
+    )
+    if err == sql.ErrNoRows {
+        return nil, nil
+    }
+    if err != nil {
+        return nil, err
+    }
+    return &m, nil
+}
+
+// Обновление здоровья монстра после удара
+func UpdateMatchMonsterHealth(instanceID string, monsterInstanceID, newHP int) error {
+    _, err := DB.Exec(`
+        UPDATE match_monsters
+           SET health = $1
+         WHERE match_instance_id = $2 AND monster_instance_id = $3
+    `, newHP, instanceID, monsterInstanceID)
+    return err
+}
 
 
 
@@ -3546,53 +3707,127 @@ func GetItemEffect(itemID int) (map[string]int, error) {
 	return effect, nil
 }
 
-// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
-// Тип позиций здесь определён как struct{ X, Y int }.
+type Position struct {
+    X int `json:"x"`
+    Y int `json:"y"`
+}
 
-func UpdateCellPlayerFlags(instanceID string, oldPos, newPos struct{ X, Y int }) error {
+// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
+// UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
+func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 	// Извлекаем текущую карту матча.
 	var mapJSON []byte
 	query := `SELECT map FROM matches WHERE instance_id = $1;`
-	err := DB.QueryRow(query, instanceID).Scan(&mapJSON)
-	if err != nil {
+	if err := DB.QueryRow(query, instanceID).Scan(&mapJSON); err != nil {
 		return err
 	}
 
+	// Десериализуем в срез FullCell
 	var cells []game.FullCell
 	if err := json.Unmarshal(mapJSON, &cells); err != nil {
 		return err
 	}
 
-	log.Printf("[UpdateCellPlayerFlags] BEFORE update: oldPos: %+v, newPos: %+v", oldPos, newPos)
-	
+	log.Printf("[UpdateCellPlayerFlags] old=%+v new=%+v", oldPos, newPos)
 
-	// Обновляем клетку на старой позиции.
-	for i, cell := range cells {
-		if cell.X == oldPos.X && cell.Y == oldPos.Y {
-			log.Printf("[UpdateCellPlayerFlags] Обновление старой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=false", cell.CellID, cell.X, cell.Y)
+	// Обновляем флаги
+	for i, c := range cells {
+		if c.X == oldPos.X && c.Y == oldPos.Y {
 			cells[i].IsPlayer = false
 		}
-		if cell.X == newPos.X && cell.Y == newPos.Y {
-			log.Printf("[UpdateCellPlayerFlags] Обновление новой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=true", cell.CellID, cell.X, cell.Y)
+		if c.X == newPos.X && c.Y == newPos.Y {
 			cells[i].IsPlayer = true
 		}
 	}
 
-	newMapJSON, err := json.Marshal(cells)
+	// Сериализуем обратно и сохраняем
+	newMap, err := json.Marshal(cells)
 	if err != nil {
 		return err
 	}
-
-	// log.Printf("[UpdateCellPlayerFlags] NEW JSON: %s", string(newMapJSON))
-	updateQuery := `UPDATE matches SET map = $1 WHERE instance_id = $2;`
-	_, err = DB.Exec(updateQuery, string(newMapJSON), instanceID)
-	if err != nil {
-		log.Printf("[UpdateCellPlayerFlags] Ошибка обновления карты: %v", err)
+	if _, err := DB.Exec(`UPDATE matches SET map = $1 WHERE instance_id = $2`, string(newMap), instanceID); err != nil {
+		log.Printf("UpdateCellPlayerFlags error: %v", err)
 		return err
 	}
-	log.Printf("[UpdateCellPlayerFlags] Обновление карты прошло успешно для instanceID=%s", instanceID)
 	return nil
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ===================================
+// /gameservice/repository/monsters.go
+// ===================================
+
+
+package repository
+
+import (
+	"log"
+
+	"gameservice/models"
+)
+
+// GetMonsterByID возвращает монстра по его ID
+func GetMonsterByID(id int) (*models.Monster, error) {
+	const q = `
+		SELECT id, name, type, health, max_health, attack, defense,
+		       speed, maneuverability, vision, image, created_at
+		FROM monsters
+		WHERE id = $1
+	`
+	mon := &models.Monster{}
+	err := DB.QueryRow(q, id).Scan(
+		&mon.ID,
+		&mon.Name,
+		&mon.Type,
+		&mon.Health,
+		&mon.MaxHealth,
+		&mon.Attack,
+		&mon.Defense,
+		&mon.Speed,
+		&mon.Maneuverability,
+		&mon.Vision,
+		&mon.Image,
+		&mon.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return mon, nil
+}
+
+// UpdateMonster сохраняет изменения монстра (например, понижает HP)
+func UpdateMonster(mon *models.Monster) error {
+	const q = `
+		UPDATE monsters
+		SET health = $1
+		WHERE id = $2
+	`
+	if _, err := DB.Exec(q, mon.Health, mon.ID); err != nil {
+		log.Printf("UpdateMonster error: %v", err)
+		return err
+	}
+	return nil
+}
+
+
+
 
 
 
@@ -3789,6 +4024,63 @@ func GetMonstersData() ([]game.MonsterData, error) {
 	}
 	return monsters, nil
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ================================
+// /gameservice/repository/utils.go
+// ================================
+
+
+package repository
+
+
+// CollisionCount возвращает число других игроков в клетке (x,y)
+func CollisionCount(instanceID string, x, y, selfID int) (int, error) {
+	const q = `
+		SELECT COUNT(*) FROM match_players
+		WHERE match_instance_id = $1
+		  AND (position->>'x')::int = $2
+		  AND (position->>'y')::int = $3
+		  AND user_id <> $4
+	`
+	var cnt int
+	err := DB.QueryRow(q, instanceID, x, y, selfID).Scan(&cnt)
+	return cnt, err
+}
+
+// GetOtherPlayerID возвращает user_id другого игрока в клетке (x,y)
+func GetOtherPlayerID(instanceID string, x, y, selfID int) (int, error) {
+	const q = `
+		SELECT user_id FROM match_players
+		WHERE match_instance_id = $1
+		  AND (position->>'x')::int = $2
+		  AND (position->>'y')::int = $3
+		  AND user_id <> $4
+		LIMIT 1
+	`
+	var otherID int
+	err := DB.QueryRow(q, instanceID, x, y, selfID).Scan(&otherID)
+	return otherID, err
+}
+
 
 
 
@@ -4472,13 +4764,12 @@ import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
-import type { PlayerState } from "../types/GameTypes";
+import type { PlayerState, MonsterType} from "../types/GameTypes";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
 import PlayerHUD from "./PlayerHUD";
-
 export default function GameController() {
   const { state, dispatch } = useGame();
   const searchParams = useSearchParams();
@@ -4494,41 +4785,129 @@ export default function GameController() {
   const [showInventory, setShowInventory] = useState(false);
 
   useEffect(() => {
-    console.log("[GameController] myPlayerId:", myPlayerId, "active_user (active):", state.active_user);
+    console.log(
+      "[GameController] myPlayerId:",
+      myPlayerId,
+      "active_user:",
+      state.active_user
+    );
   }, [myPlayerId, state.active_user]);
 
-  // Функция отправки запроса на перемещение игрока
+  // Универсальный обработчик: шаг или удар
+ 
+  async function handleMoveOrAttack(direction: "up" | "down" | "left" | "right") {
+    if (!myPlayer) {
+      console.warn("Мой игрок не найден");
+      return;
+    }
+    if (!isMyTurn) {
+      console.warn("Сейчас не ваш ход");
+      return;
+    }
+
+    // 1) Вычисляем соседнюю клетку
+    const deltas = {
+      up:    { x: 0,  y: -1 },
+      down:  { x: 0,  y:  1 },
+      left:  { x: -1, y:  0 },
+      right: { x: 1,  y:  0 },
+    } as const;
+    const { x: dx, y: dy } = deltas[direction];
+    const targetX = myPlayer.position.x + dx;
+    const targetY = myPlayer.position.y + dy;
+
+    // 2) Находим эту клетку в grid
+    const targetCell = state.grid.find(c => c.x === targetX && c.y === targetY);
+    console.group(`[handleMoveOrAttack] direction=${direction}`);
+    console.log("  myPlayer.position=", myPlayer.position);
+    console.log(`  target coords = (${targetX},${targetY})`);
+    if (!targetCell) {
+      console.warn("  Клетка за пределами карты, ничего не делаем");
+      console.groupEnd();
+      return;
+    }
+    console.log("  targetCell object:", targetCell);
+    if (targetCell.monster) {
+      console.log("  → В клетке есть монстр:", targetCell.monster);
+      console.log("     monster.id =", targetCell.monster.id);
+    }
+    if (targetCell.isPlayer) {
+      const other = state.players.find(p => p.position.x === targetX && p.position.y === targetY);
+      console.log("  → В клетке есть игрок:", other);
+      if (other) console.log("     other.user_id =", other.user_id);
+    }
+    console.groupEnd();
+
+    // 3) Далее — единый запрос
+    console.log(`[handleMoveOrAttack] вызываем movePlayer(${targetX}, ${targetY})`);
+    const updatedPlayer = await movePlayer(targetX, targetY);
+
+    if (!updatedPlayer) {
+      console.error("[handleMoveOrAttack] Не удалось выполнить действие на сервере");
+      return;
+    }
+
+    console.log("[handleMoveOrAttack] server вернул updatedPlayer:", updatedPlayer);
+    dispatch({
+      type: "UPDATE_PLAYER",
+      payload: { player: updatedPlayer },
+    });
+  }
+
+    // 5) По необходимости можно затем подтянуть всю матрицу:
+    // const freshMatch = await fetchMatch(instanceId);
+    // dispatch({ type: "SET_MATCH_DATA", payload: freshMatch });
+  
+
+  // Запрос на ход или атаку
   async function movePlayer(newPosX: number, newPosY: number) {
-    try {
-      const storedUser = localStorage.getItem("user");
-      const token = storedUser ? JSON.parse(storedUser).token : "";
-      if (!token) {
-        console.error("Токен не найден в localStorage");
-        return null;
-      }
-      const response = await fetch(
-        `http://localhost:8001/game/player/${myPlayerId}/move?instance_id=${instanceId}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ new_pos_x: newPosX, new_pos_y: newPosY }),
-        }
-      );
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Ошибка перемещения:", errorText);
-        return null;
-      }
-      const updatedPlayer = await response.json();
-      return updatedPlayer;
-    } catch (error) {
-      console.error("Ошибка запроса перемещения:", error);
+  try {
+    const storedUser = localStorage.getItem("user");
+    const token = storedUser ? JSON.parse(storedUser).token : "";
+    if (!token) {
+      console.error("[movePlayer] Токен не найден");
       return null;
     }
+
+    const url = `http://localhost:8001/games/${instanceId}/player/${myPlayerId}/move`;
+    const body = { new_pos_x: newPosX, new_pos_y: newPosY };
+
+    console.group("[movePlayer]");
+    console.log("  URL:", url);
+    console.log("  Body:", body);
+    console.log("  Авторизация:", token.slice(0, 10) + "...");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    console.log("  Response status:", response.status);
+    const text = await response.text();
+    console.log("  Response body:", text);
+
+    if (!response.ok) {
+      console.error("[movePlayer] Ошибка перемещения:", text);
+      console.groupEnd();
+      return null;
+    }
+
+    const updatedPlayer = JSON.parse(text);
+    console.log("  Parsed updatedPlayer:", updatedPlayer);
+    console.groupEnd();
+    return updatedPlayer as PlayerState;
+  } catch (error) {
+    console.error("[movePlayer] Ошибка запроса:", error);
+    return null;
   }
+}
+
+
+
 
   // Функция для отправки запроса на сбор ресурса
   async function collectResource(cellX: number, cellY: number) {
@@ -4702,13 +5081,13 @@ export default function GameController() {
         e.preventDefault();
       }
       if (e.key === "ArrowUp") {
-        handleMove("up");
+        handleMoveOrAttack("up");
       } else if (e.key === "ArrowDown") {
-        handleMove("down");
+        handleMoveOrAttack("down");
       } else if (e.key === "ArrowLeft") {
-        handleMove("left");
+        handleMoveOrAttack("left");
       } else if (e.key === "ArrowRight") {
-        handleMove("right");
+        handleMoveOrAttack("right");
       } else if (e.key === " ") {
         handleAction();
       } else if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш") {
@@ -6250,3 +6629,6 @@ export type Action =
   | {
       type: "RESET_STATE";
     };
+
+    // Здесь перечисляем возможные направления
+export type Dir = "up" | "down" | "left" | "right";

@@ -134,3 +134,6 @@ export type Action =
   | {
       type: "RESET_STATE";
     };
+
+    // Здесь перечисляем возможные направления
+export type Dir = "up" | "down" | "left" | "right";

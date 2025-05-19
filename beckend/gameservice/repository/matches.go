@@ -292,50 +292,47 @@ func GetItemEffect(itemID int) (map[string]int, error) {
 	return effect, nil
 }
 
-// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
-// Тип позиций здесь определён как struct{ X, Y int }.
+type Position struct {
+    X int `json:"x"`
+    Y int `json:"y"`
+}
 
-func UpdateCellPlayerFlags(instanceID string, oldPos, newPos struct{ X, Y int }) error {
+// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
+// UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
+func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 	// Извлекаем текущую карту матча.
 	var mapJSON []byte
 	query := `SELECT map FROM matches WHERE instance_id = $1;`
-	err := DB.QueryRow(query, instanceID).Scan(&mapJSON)
-	if err != nil {
+	if err := DB.QueryRow(query, instanceID).Scan(&mapJSON); err != nil {
 		return err
 	}
 
+	// Десериализуем в срез FullCell
 	var cells []game.FullCell
 	if err := json.Unmarshal(mapJSON, &cells); err != nil {
 		return err
 	}
 
-	log.Printf("[UpdateCellPlayerFlags] BEFORE update: oldPos: %+v, newPos: %+v", oldPos, newPos)
-	
+	log.Printf("[UpdateCellPlayerFlags] old=%+v new=%+v", oldPos, newPos)
 
-	// Обновляем клетку на старой позиции.
-	for i, cell := range cells {
-		if cell.X == oldPos.X && cell.Y == oldPos.Y {
-			log.Printf("[UpdateCellPlayerFlags] Обновление старой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=false", cell.CellID, cell.X, cell.Y)
+	// Обновляем флаги
+	for i, c := range cells {
+		if c.X == oldPos.X && c.Y == oldPos.Y {
 			cells[i].IsPlayer = false
 		}
-		if cell.X == newPos.X && cell.Y == newPos.Y {
-			log.Printf("[UpdateCellPlayerFlags] Обновление новой позиции: клетка id=%d (%d,%d): устанавливаем isPlayer=true", cell.CellID, cell.X, cell.Y)
+		if c.X == newPos.X && c.Y == newPos.Y {
 			cells[i].IsPlayer = true
 		}
 	}
 
-	newMapJSON, err := json.Marshal(cells)
+	// Сериализуем обратно и сохраняем
+	newMap, err := json.Marshal(cells)
 	if err != nil {
 		return err
 	}
-
-	// log.Printf("[UpdateCellPlayerFlags] NEW JSON: %s", string(newMapJSON))
-	updateQuery := `UPDATE matches SET map = $1 WHERE instance_id = $2;`
-	_, err = DB.Exec(updateQuery, string(newMapJSON), instanceID)
-	if err != nil {
-		log.Printf("[UpdateCellPlayerFlags] Ошибка обновления карты: %v", err)
+	if _, err := DB.Exec(`UPDATE matches SET map = $1 WHERE instance_id = $2`, string(newMap), instanceID); err != nil {
+		log.Printf("UpdateCellPlayerFlags error: %v", err)
 		return err
 	}
-	log.Printf("[UpdateCellPlayerFlags] Обновление карты прошло успешно для instanceID=%s", instanceID)
 	return nil
 }

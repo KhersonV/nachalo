@@ -77,8 +77,6 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Вставляем матч в таблицу matches.
-	// Новый порядок: instance_id, mode, teams_count, total_players, map_width, map_height, map,
-	// active_user_id, turn_order, turn_number, start_positions, portal_position.
 	// turn_number устанавливаем равным 1.
 	_, err = repository.DB.Exec(`
         INSERT INTO matches (
@@ -104,6 +102,35 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка сохранения матча", http.StatusInternalServerError)
 		return
 	}
+
+
+
+	//  вставляем всех монстров в match_monsters
+    for _, cell := range fullMap {
+        if cell.Monster != nil {
+            md := cell.Monster
+            err := repository.InsertMatchMonster(repository.MatchMonster{
+                InstanceID:      req.InstanceID,
+                RefID:           md.ID / 1_000_000,
+                X:               cell.X,
+                Y:               cell.Y,
+                Health:          md.Health,
+                MaxHealth:       md.MaxHealth,
+                Attack:          md.Attack,
+                Defense:         md.Defense,
+                Speed:           md.Speed,
+                Maneuverability: md.Maneuverability,
+                Vision:          md.Vision,
+                Image:           md.Image,
+            })
+            if err != nil {
+                log.Printf("failed to insert match_monster: %v", err)
+                http.Error(w, "internal error", http.StatusInternalServerError)
+                return
+            }
+        }
+    }
+
 
 	// Создаем локальное состояние матча.
 	game.CreateMatchState(req.InstanceID, req.PlayerIDs)

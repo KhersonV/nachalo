@@ -77,8 +77,8 @@ func main() {
 	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
-	router.Handle("/game/player/{id}/move",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHandler))).
+	router.Handle("/games/{instance_id}/player/{id}/move",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveOrAttackHandler))).
 		Methods("POST")
 
 	router.Handle("/game/attack",

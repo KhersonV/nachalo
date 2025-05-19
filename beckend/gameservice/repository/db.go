@@ -17,19 +17,31 @@ import (
 const connStr = "user=admin password=admin dbname=game_db sslmode=disable"
 
 var DB *sql.DB
-
 func InitDB() {
-	var err error
-	DB, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatalf("Ошибка подключения к БД: %v", err)
-	}
-	err = DB.Ping()
-	if err != nil {
-		log.Fatalf("Невозможно подключиться к БД: %v", err)
-	}
-	log.Println("Подключение к БД установлено")
+    var err error
+    DB, err = sql.Open("postgres", connStr)
+    if err != nil {
+        log.Fatalf("Ошибка подключения к БД: %v", err)
+    }
+    if err = DB.Ping(); err != nil {
+        log.Fatalf("Невозможно подключиться к БД: %v", err)
+    }
+    log.Println("Подключение к БД установлено")
+
+    // Существующие таблицы
+    CreatePlayersTable()
+    CreateMatchesTable()
+    CreateMatchPlayersTable()
+    CreateInventoryTable()
+    // Добавляем нашу новую
+    CreateMatchMonstersTable()
+
+    // Восстанавливаем state матчей
+    if err := RestoreMatchStates(); err != nil {
+        log.Fatalf("Ошибка восстановления матчей: %v", err)
+    }
 }
+
 
 func CreatePlayersTable() {
 	query := `
@@ -136,6 +148,31 @@ func CreateInventoryTable() {
 		log.Fatalf("Ошибка создания таблицы inventory_items: %v", err)
 	}
 }
+
+func CreateMatchMonstersTable() {
+  query := `
+  CREATE TABLE IF NOT EXISTS match_monsters (
+    match_instance_id TEXT NOT NULL REFERENCES matches(instance_id) ON DELETE CASCADE,
+    monster_instance_id SERIAL NOT NULL,
+    monster_ref_id      INT  NOT NULL,
+    pos_x               INT  NOT NULL,
+    pos_y               INT  NOT NULL,
+    health              INT  NOT NULL,
+    max_health          INT  NOT NULL,
+    attack              INT  NOT NULL,
+    defense             INT  NOT NULL,
+    speed               INT  NOT NULL,
+    maneuverability     INT  NOT NULL,
+    vision              INT  NOT NULL,
+    image               TEXT NOT NULL,
+    PRIMARY KEY (match_instance_id, monster_instance_id)
+  );
+  `
+  if _, err := DB.Exec(query); err != nil {
+    log.Fatalf("Ошибка создания таблицы match_monsters: %v", err)
+  }
+}
+
 
 func RestoreMatchStates() error {
 	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order FROM matches")
