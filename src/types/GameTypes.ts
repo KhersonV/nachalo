@@ -141,7 +141,14 @@ export type Action =
   | {
     type: "RESET_STATE";
   }
-  | { type: "PLAYER_DEFEATED"; payload: { userId: number } };
+  
+  | { type: "PLAYER_DEFEATED"; payload: { userId: number } }
+  | {
+      type: "TURN_PASSED";
+      payload: {
+        active_user: number;   // новый текущий игрок
+      };
+    };
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";

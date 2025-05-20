@@ -145,6 +145,11 @@ case "PLAYER_DEFEATED": {
   };
 }
 
+case "TURN_PASSED":
+      return {
+        ...state,
+        active_user: action.payload.active_user,
+      };
 
     case "RESET_STATE":
       console.log("[GameReducer][RESET_STATE] Сброс состояния");
@@ -390,6 +395,16 @@ case "PLAYER_DEFEATED": {
   break;
 }
 
+  case "TURN_PASSED": {
+          console.log("[GameProvider] TURN_PASSED:", data.payload);
+          dispatch({
+            type: "TURN_PASSED",
+            payload: {
+              active_user: data.payload.userId,   // на сервере это поле называется userId
+            },
+          });
+          break;
+        }
 
       default:
         // можно логировать непредвидённые типы

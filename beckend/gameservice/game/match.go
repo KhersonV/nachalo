@@ -64,34 +64,44 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 // Если погибший был среди TurnOrder, просто вырезаем его.
 // Если он совпадал с ActiveUserID, передаём ход сразу следующему.
 func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+    m.mu.Lock()
+    defer m.mu.Unlock()
 
-	// Фильтруем очередь
-	newOrder := make([]int, 0, len(m.TurnOrder))
-	for _, id := range m.TurnOrder {
-		if id != userID {
-			newOrder = append(newOrder, id)
-		}
-	}
-	m.TurnOrder = newOrder
+    // Сохраним старый порядок, чтобы знать, на каком месте был умерший
+    oldOrder := append([]int(nil), m.TurnOrder...)
 
-	// Если очередь опустела — ничего больше не делаем
-	if len(m.TurnOrder) == 0 {
-		m.ActiveUserID = 0
-		return
-	}
+    // Фильтруем очередь
+    newOrder := make([]int, 0, len(oldOrder))
+    for _, id := range oldOrder {
+        if id != userID {
+            newOrder = append(newOrder, id)
+        }
+    }
+    m.TurnOrder = newOrder
 
-	// Если погибший был активным, передаём ход следующему в новом списке
-	if m.ActiveUserID == userID {
-		// выбираем новый ActiveUserID из начала TurnOrder
-		m.ActiveUserID = m.TurnOrder[0]
-		m.TurnNumber++
-		log.Printf(
-			"RemovePlayer: %d died, new active %d (turn %d)",
-			userID, m.ActiveUserID, m.TurnNumber,
-		)
-	}
+    if len(newOrder) == 0 {
+        m.ActiveUserID = 0
+        return
+    }
+
+    // Если умерший был активным, выбираем следующего по индексу без инкремента turnNumber
+    if m.ActiveUserID == userID {
+        // Найдём позицию погибшего в oldOrder
+        removedIdx := 0
+        for i, id := range oldOrder {
+            if id == userID {
+                removedIdx = i
+                break
+            }
+        }
+        // Следующий игрок — тот, кто оказался на той же позиции (modulo новый размер)
+        nextIdx := removedIdx % len(newOrder)
+        m.ActiveUserID = newOrder[nextIdx]
+        log.Printf(
+            "RemovePlayer: %d died, new active %d (turn %d)",
+            userID, m.ActiveUserID, m.TurnNumber,
+        )
+    }
 }
 
 // --- Хранилище состояний матчей ---
