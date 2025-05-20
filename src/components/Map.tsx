@@ -16,6 +16,7 @@ export interface MapProps {
   gap: number;
   visionRange: number;
   playerPosition: { x: number; y: number };
+  onCellClick?: (cell: Cell) => void;
 }
 
 export default function Map({
@@ -26,21 +27,17 @@ export default function Map({
   gap,
   visionRange,
   playerPosition,
+  onCellClick,
 }: MapProps) {
-  // Функция для проверки видимости клетки
+  // Проверка видимости клетки
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
-    const visible = dx <= visionRange && dy <= visionRange;
-    // Логируем информацию по каждой клетке (можно ограничить вывод, если их много)
-     //console.log(`Cell [${cell.x},${cell.y}] dx=${dx}, dy=${dy}, visible=${visible}`);
-    return visible;
+    return dx <= visionRange && dy <= visionRange;
   };
 
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
-
- 
 
   return (
     <div
@@ -55,48 +52,53 @@ export default function Map({
         border: "2px solid #333",
       }}
     >
-      {grid.map((cell, index) => (
-  <div
-    key={`${cell.cell_id}-${index}`}
-    style={{
-      width: `${tileSize}px`,
-      height: `${tileSize}px`,
-      backgroundColor: getTileColor(cell),
-      opacity: isCellVisible(cell) ? 1 : 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: "10px",
-      color: "#fff",
-      position: "relative",
-    }}
-  >
-    {renderCellContent(cell)}
-  </div>
-))}
-
+      {grid.map((cell, index) => {
+        const visible = isCellVisible(cell);
+        return (
+          <div
+            key={`${cell.cell_id}-${index}`}
+            style={{
+              width: `${tileSize}px`,
+              height: `${tileSize}px`,
+              backgroundColor: getTileColor(cell),
+              opacity: visible ? 1 : 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "10px",
+              color: "#fff",
+              position: "relative",
+              cursor: visible && onCellClick ? "pointer" : "default",
+              pointerEvents: visible ? "auto" : "none",
+            }}
+            onClick={() => visible && onCellClick?.(cell)}
+          >
+            {renderCellContent(cell)}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
-  case 48: // '0'
-    return "#CCCCCC";
-  case 80: // 'P'
-    return "#0000FF";
-  case 32: // пробел
-    return "#333333";
-  case 77: // 'M'
-    return "#FF0000";
-  case 82: // 'R'
-    return "#00AA00";
-  case 112: // 'p'
-    return "#02FEC0";
-  case 66: // 'B' (BarbelTile)
-    return "#FFA500"; // например, оранжевый для бочки
-  default:
-    return "#952215";
+    case 48: // '0'
+      return "#CCCCCC";
+    case 80: // 'P'
+      return "#0000FF";
+    case 32: // пробел
+      return "#333333";
+    case 77: // 'M'
+      return "#FF0000";
+    case 82: // 'R'
+      return "#00AA00";
+    case 112: // 'p'
+      return "#02FEC0";
+    case 66: // 'B' (BarbelTile)
+      return "#FFA500";
+    default:
+      return "#952215";
   }
 }
 
@@ -124,7 +126,7 @@ function renderCellContent(cell: Cell) {
     return (
       <img
         src={cell.barbel.image}
-        alt="resource"
+        alt="barbel"
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
     );

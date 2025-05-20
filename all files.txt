@@ -4786,6 +4786,7 @@ export default function RootLayout({
       </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
+        <div id="modal-root" />
       </body>
     </html>
   );
@@ -5407,6 +5408,129 @@ export default function GameController() {
 
 
 
+//==============================
+// src/components/InfoModal.tsx
+//==============================
+
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import styles from "../styles/InfoModal.module.css";
+
+// общий тип для всех игровых объектов
+export type GameObject =
+  | { type: "monster"; name: string; hp: number; aggressive: boolean; attack: number; defense: number }
+  | { type: "resource"; name: string; description: string; effects: string[] }
+  | { type: "player"; name: string; defense: number; attack: number; hp: number; }
+  | { type: "portal"; requirement: string }
+  | { type: "cell"; x: number; y: number }
+  | { type: "empty"; x: number; y: number }
+  | { type: "wall"; x: number; y: number };
+
+interface InfoModalProps {
+  object: GameObject | null;
+  onClose: () => void;
+}
+
+
+
+export const InfoModal: React.FC<InfoModalProps> = ({ object, onClose }) => {
+  if (!object) return null;
+
+   const modalRoot = typeof document !== "undefined" && document.getElementById("modal-root");
+  if (!modalRoot) return null;
+
+  // Закрытие по Esc
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // выбираем заголовок
+  let title: string;
+  if ("name" in object) title = object.name;
+  else if (object.type === "portal") title = "Portal";
+  else if (object.type === "cell") title = "Cell";
+  else if (object.type === "empty") title = "Empty";
+  else title = "Wall";
+
+  // контент в зависимости от типа
+  const renderContent = () => {
+    switch (object.type) {
+      case "monster":
+        return (
+          <>
+            <div><strong>HP:</strong> {object.hp}</div>
+            <div><strong>Aggressive:</strong> {object.aggressive ? "Yes" : "No"}</div>
+            <div><strong>Attack:</strong> {object.attack}</div>
+            <div><strong>Defense:</strong> {object.defense}</div>
+          </>
+        );
+      case "resource":
+        return (
+          <>
+            <div>{object.description}</div>
+            <ul>{object.effects.map((e, i) => <li key={i}>{e}</li>)}</ul>
+          </>
+        );
+      case "player":
+        return (
+          <>
+          <div><strong>HP:</strong> {object.hp}</div>
+            <div><strong>defense:</strong> {object.defense}</div>
+            <div><strong>Attack:</strong> {object.attack}</div>
+          </>
+        );
+      case "portal":
+        return <div><strong>Requires:</strong> {object.requirement}</div>;
+      case "cell":
+      case "empty":
+      case "wall":
+        return <div><strong>Coords:</strong> {object.x}, {object.y}</div>;
+    }
+  };
+
+  return createPortal(
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        <header className={styles.header}>
+          <h3 className={styles.title}>{title}</h3>
+          <button onClick={onClose} className={styles.close}>&times;</button>
+        </header>
+        <section className={styles.content}>{renderContent()}</section>
+      </div>
+    </div>,
+    modalRoot
+  );
+};
+
+// хук для управления состоянием модалки
+export function useInfoModal() {
+  const [obj, setObj] = useState<GameObject | null>(null);
+  return {
+    open: (o: GameObject) => setObj(o),
+    close: () => setObj(null),
+    Modal: () => <InfoModal object={obj} onClose={() => setObj(null)} />,  };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5669,6 +5793,7 @@ export interface MapProps {
   gap: number;
   visionRange: number;
   playerPosition: { x: number; y: number };
+  onCellClick?: (cell: Cell) => void;
 }
 
 export default function Map({
@@ -5679,21 +5804,17 @@ export default function Map({
   gap,
   visionRange,
   playerPosition,
+  onCellClick,
 }: MapProps) {
-  // Функция для проверки видимости клетки
+  // Проверка видимости клетки
   const isCellVisible = (cell: Cell): boolean => {
     const dx = Math.abs(cell.x - playerPosition.x);
     const dy = Math.abs(cell.y - playerPosition.y);
-    const visible = dx <= visionRange && dy <= visionRange;
-    // Логируем информацию по каждой клетке (можно ограничить вывод, если их много)
-     //console.log(`Cell [${cell.x},${cell.y}] dx=${dx}, dy=${dy}, visible=${visible}`);
-    return visible;
+    return dx <= visionRange && dy <= visionRange;
   };
 
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
-
- 
 
   return (
     <div
@@ -5708,48 +5829,53 @@ export default function Map({
         border: "2px solid #333",
       }}
     >
-      {grid.map((cell, index) => (
-  <div
-    key={`${cell.cell_id}-${index}`}
-    style={{
-      width: `${tileSize}px`,
-      height: `${tileSize}px`,
-      backgroundColor: getTileColor(cell),
-      opacity: isCellVisible(cell) ? 1 : 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: "10px",
-      color: "#fff",
-      position: "relative",
-    }}
-  >
-    {renderCellContent(cell)}
-  </div>
-))}
-
+      {grid.map((cell, index) => {
+        const visible = isCellVisible(cell);
+        return (
+          <div
+            key={`${cell.cell_id}-${index}`}
+            style={{
+              width: `${tileSize}px`,
+              height: `${tileSize}px`,
+              backgroundColor: getTileColor(cell),
+              opacity: visible ? 1 : 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "10px",
+              color: "#fff",
+              position: "relative",
+              cursor: visible && onCellClick ? "pointer" : "default",
+              pointerEvents: visible ? "auto" : "none",
+            }}
+            onClick={() => visible && onCellClick?.(cell)}
+          >
+            {renderCellContent(cell)}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
-  case 48: // '0'
-    return "#CCCCCC";
-  case 80: // 'P'
-    return "#0000FF";
-  case 32: // пробел
-    return "#333333";
-  case 77: // 'M'
-    return "#FF0000";
-  case 82: // 'R'
-    return "#00AA00";
-  case 112: // 'p'
-    return "#02FEC0";
-  case 66: // 'B' (BarbelTile)
-    return "#FFA500"; // например, оранжевый для бочки
-  default:
-    return "#952215";
+    case 48: // '0'
+      return "#CCCCCC";
+    case 80: // 'P'
+      return "#0000FF";
+    case 32: // пробел
+      return "#333333";
+    case 77: // 'M'
+      return "#FF0000";
+    case 82: // 'R'
+      return "#00AA00";
+    case 112: // 'p'
+      return "#02FEC0";
+    case 66: // 'B' (BarbelTile)
+      return "#FFA500";
+    default:
+      return "#952215";
   }
 }
 
@@ -5777,7 +5903,7 @@ function renderCellContent(cell: Cell) {
     return (
       <img
         src={cell.barbel.image}
-        alt="resource"
+        alt="barbel"
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
     );
@@ -5805,16 +5931,19 @@ function renderCellContent(cell: Cell) {
 
 
 
+
 //==================================
 // src/components/MapWithCamera.tsx
 //==================================
-
+// src/components/MapWithCamera.tsx
 "use client";
 
 import React from "react";
 import { useGame } from "../contexts/GameContextt";
 import Map from "./Map";
 import type { PlayerState } from "../types/GameTypes";
+import { useInfoModal } from "./InfoModal";
+import { cellToGameObject, playerToGameObject } from "../utils/toGameObject";
 
 interface MapWithCameraProps {
   tileSize: number;
@@ -5839,19 +5968,26 @@ export default function MapWithCamera({
   const safeMapHeight = Number(mapHeight) || 15;
   const gap = 1;
 
-  let offsetX = viewportWidth / 2 - (playerPosition.x * (tileSize + gap) + tileSize / 2);
-  let offsetY = viewportHeight / 2 - (playerPosition.y * (tileSize + gap) + tileSize / 2);
+  let offsetX =
+    viewportWidth / 2 -
+    (playerPosition.x * (tileSize + gap) + tileSize / 2);
+  let offsetY =
+    viewportHeight / 2 -
+    (playerPosition.y * (tileSize + gap) + tileSize / 2);
 
-  const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
-  const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
+  const totalWidth =
+    safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
+  const totalHeight =
+    safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
+
   offsetX = Math.min(0, Math.max(viewportWidth - totalWidth, offsetX));
   offsetY = Math.min(0, Math.max(viewportHeight - totalHeight, offsetY));
 
-  console.log("[MapWithCamera] playerPosition:", playerPosition);
-  console.log("[MapWithCamera] offsetX:", offsetX, "offsetY:", offsetY);
-
   const playerImageOffsetX = 2;
   const playerImageOffsetY = 2;
+
+  // хук модалки
+  const { open, Modal } = useInfoModal();
 
   return (
     <div
@@ -5879,6 +6015,7 @@ export default function MapWithCamera({
           gap={gap}
           visionRange={visionRange}
           playerPosition={playerPosition}
+          onCellClick={(cell) => open(cellToGameObject(cell))}
         />
 
         {players.map((player) => {
@@ -5892,13 +6029,21 @@ export default function MapWithCamera({
               src={player.image}
               alt={player.name}
               title={player.name}
+              onClick={() => open(playerToGameObject(player))}
               style={{
                 position: "absolute",
-                left: player.position.x * (tileSize + gap) + playerImageOffsetX,
-                top: player.position.y * (tileSize + gap) + playerImageOffsetY,
+                left:
+                  player.position.x * (tileSize + gap) +
+                  playerImageOffsetX,
+                top:
+                  player.position.y * (tileSize + gap) +
+                  playerImageOffsetY,
                 width: tileSize,
                 height: tileSize,
-                border: player.user_id === active_user ? "2px solid gold" : "none",
+                border:
+                  player.user_id === active_user
+                    ? "2px solid gold"
+                    : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
                 opacity: playerVisible ? 1 : 0,
@@ -5907,9 +6052,11 @@ export default function MapWithCamera({
           );
         })}
       </div>
+      <Modal />
     </div>
   );
 }
+
 
 
 
@@ -7034,3 +7181,80 @@ export type Action =
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";
+
+
+
+
+
+
+
+
+======================================================================================================================================
+==================================src/utils/========================================================================================
+===================================src/utils/=========================================================================================
+===================================src/utils/===========================================================================================
+==================================src/utils/===================================================================================
+======================================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+//==========================
+// src/utils/toGameObject.ts
+//==========================
+
+import { GameObject } from "../components/InfoModal";
+import type { Cell, PlayerState } from "../types/GameTypes";
+
+export function cellToGameObject(cell: Cell): GameObject {
+  if (cell.monster) {
+    return {
+      type: "monster",
+      name: cell.monster.name,
+      hp: cell.monster.health,
+      aggressive: cell.monster.type === "aggressive",
+      attack: cell.monster.attack,
+      defense: cell.monster.defense,
+    };
+  }
+  if (cell.resource || cell.barbel) {
+    const res = cell.resource ?? cell.barbel!;
+    return {
+      type: "resource",
+      name: res.type,
+      description: res.description,
+      effects: Object.entries(res.effect).map(([k, v]) => `${k}: ${v}`),
+    };
+  }
+  if (cell.isPortal) {
+    return {
+      type: "portal",
+      requirement: "Нужен артефакт, чтобы выйти",
+    };
+  }
+  // простая клетка, пустота или стена — передаём координаты
+  return {
+    type: cell.tileCode === 32 ? "empty"
+         : cell.tileCode === 48 ? "cell"
+         : "wall",
+    x: cell.x,
+    y: cell.y,
+  } as GameObject;
+}
+
+export function playerToGameObject(p: PlayerState): GameObject {
+  return {
+    type: "player",
+    name: p.name,
+    defense: p.defense, 
+    attack: p.attack,
+    hp: p.health,
+  };
+}
