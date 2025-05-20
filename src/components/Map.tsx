@@ -40,7 +40,7 @@ export default function Map({
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
 
-  console.log("[Map] Рендер с fullWidth:", fullWidth, "fullHeight:", fullHeight);
+ 
 
   return (
     <div

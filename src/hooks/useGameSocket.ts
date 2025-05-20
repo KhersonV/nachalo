@@ -1,8 +1,11 @@
 //=============================
 // src/hooks/useGameSocket.ts
 //=============================
+// src/hooks/useGameSocket.ts
 
 import { useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../contexts/AuthContext";
 
 interface GameSocketOptions {
   instanceId?: string;
@@ -14,62 +17,73 @@ export function useGameSocket(
 ) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<number | null>(null);
-  // Используем протокол ws://, убедитесь, что сервер запущен и доступен
+  const router = useRouter();
+  const { user } = useAuth();
   const url = "ws://localhost:8001/ws";
 
   const connect = useCallback(() => {
-    // Если уже есть открытое соединение, не создаём новое
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      // console.log("WebSocket уже подключён");
-      return;
-    }
+    // Если уже открытое соединение — не открываем новое
+    if (ws.current?.readyState === WebSocket.OPEN) return;
 
-    // console.log("Попытка установить WebSocket соединение...");
     ws.current = new WebSocket(url);
 
     ws.current.onopen = () => {
-      // console.log("WebSocket соединение установлено");
+      // При подключении сразу посылаем JOIN_MATCH
       if (options?.instanceId) {
-        const joinMsg = {
-          type: "JOIN_MATCH",
-          instanceId: options.instanceId,
-        };
-        ws.current?.send(JSON.stringify(joinMsg));
-        // console.log("Отправлено JOIN_MATCH сообщение:", joinMsg);
+        ws.current?.send(
+          JSON.stringify({
+            type: "JOIN_MATCH",
+            instanceId: options.instanceId,
+          })
+        );
       }
     };
 
     ws.current.onmessage = (event) => {
+      let data: any;
       try {
-        const data = JSON.parse(event.data);
-        // console.log("Получено сообщение по WebSocket:", data);
-        if (options?.instanceId && data.payload && data.payload.instanceId) {
-          if (data.payload.instanceId !== options.instanceId) {
-            console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
-            return;
-          }
-        }
-        onMessage(data);
-      } catch (e) {
-        console.error("Ошибка парсинга сообщения:", e);
+        data = JSON.parse(event.data);
+      } catch {
+        console.error("Ошибка парсинга сообщения:", event.data);
+        return;
       }
+
+      // Игнорируем сообщения не из текущего матча
+      if (
+          options?.instanceId &&
+          data.payload?.instanceId != null &&
+          data.payload.instanceId !== options.instanceId
+        ) {
+        return;
+      }
+
+      // Если собственный игрок погиб — редирект на выбор режима
+      if (
+        data.type === "PLAYER_DEFEATED" &&
+        user?.id != null &&
+        data.payload?.userId === user.id
+      ) {
+        router.push("/mode");
+        return;
+      }
+
+      onMessage(data);
     };
 
-    ws.current.onerror = (error) => {
-      console.error("WebSocket ошибка:", error);
+    ws.current.onerror = (err) => {
+      console.error("WebSocket ошибка:", err);
     };
 
-    ws.current.onclose = (event) => {
-      console.log(`WebSocket соединение закрыто (код: ${event.code}, причина: ${event.reason})`);
-      // Если закрытие произошло не по инициативе клиента (код 1000), пробуем переподключиться
-      if (event.code !== 1000) {
-        // console.log("Попытка переподключения через 3 секунды...");
-        reconnectTimeout.current = window.setTimeout(() => {
-          connect();
-        }, 3000);
+    ws.current.onclose = (e) => {
+      // Попытаться переподключиться, если закрытие неавторизованное
+      if (e.code !== 1000) {
+        reconnectTimeout.current = window.setTimeout(connect, 3000);
       }
     };
-  }, [onMessage, options]);
+  },
+  // Важно: зависимости, включая user?.id и router
+  [onMessage, options?.instanceId, router, user?.id]
+  );
 
   useEffect(() => {
     connect();
@@ -77,7 +91,9 @@ export function useGameSocket(
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
-      ws.current?.close();
+      ws.current?.close(1000);
     };
   }, [connect]);
+
+  // Хуки всегда вызываются в одном и том же порядке
 }

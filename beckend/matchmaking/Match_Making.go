@@ -50,6 +50,8 @@ var (
 	queues = map[string][]QueueEntry{
 		"PVE":  {},
 		"1x1":  {},
+		"1x2":  {},
+		"2x2":  {},
 		"3x3":  {},
 		"5x5":  {},
 	}
@@ -226,7 +228,7 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 
 // checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
-	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "3x3": 6, "5x5": 10}
+	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "1x2": 3, "2x2": 4, "3x3": 6, "5x5": 10}
 	needed, ok := requiredPlayers[mode]
 	if !ok {
 		log.Printf("Unknown mode: %s", mode)
@@ -249,18 +251,27 @@ func createMatch(mode string, group []QueueEntry) {
 	if mode == "PVE" {
 		totalPlayers, teamsCount = 1, 1
 	} else {
-		switch mode {
-		case "1x1":
-			totalPlayers = 2
-		case "3x3":
-			totalPlayers = 6
-		case "5x5":
-			totalPlayers = 10
-		default:
-			totalPlayers = len(group)
-		}
-		teamsCount = 2
-	}
+		 switch mode {
+        case "1x1":
+            totalPlayers = 2
+            teamsCount = 2
+        case "1x2":
+            totalPlayers = 3
+            teamsCount = 3
+        case "2x2":
+            totalPlayers = 4
+            teamsCount = 2
+        case "3x3":
+            totalPlayers = 6
+            teamsCount = 2
+        case "5x5":
+            totalPlayers = 10
+            teamsCount = 2
+        default:
+            totalPlayers = len(group)
+            teamsCount = 2
+        }
+    }
 
 	playerIDs := make([]int, len(group))
 	for i, entry := range group {

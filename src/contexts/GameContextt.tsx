@@ -15,6 +15,7 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
+import { useAuth } from "../contexts/AuthContext";
 import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell } from "../types/GameTypes";
 
 // Начальное состояние
@@ -136,6 +137,14 @@ export function gameReducer(state: GameState, action: Action): GameState {
   }
 }
 
+case "PLAYER_DEFEATED": {
+  console.log("[GameReducer] PLAYER_DEFEATED, удаляем игрока:", action.payload.userId);
+  return {
+    ...state,
+    players: state.players.filter(p => p.user_id !== action.payload.userId),
+  };
+}
+
 
     case "RESET_STATE":
       console.log("[GameReducer][RESET_STATE] Сброс состояния");
@@ -153,6 +162,7 @@ type GameProviderProps = {
 
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
+  const { user } = useAuth();
   const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
@@ -212,21 +222,18 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         const data = await res.json();
         console.log("[GameProvider] Полученные данные матча:", data);
         if (data.instance_id !== instanceId) {
-          console.log("[GameProvider] Актуальный instance_id отличается, обновляем URL:", data.instance_id);
+          
           router.replace(`/game?instance_id=${data.instance_id}`);
           return;
         }
         // Если сервер уже возвращает поле position, используем его без лишних преобразований
         const players = (data.players || []).map((p: any) => {
-          console.log("[GameProvider] Original player data:", p);
           return {
             ...p,
             user_id: p.user_id || p.player_id,
             position: { x: p.position.x, y: p.position.y },
           };
         });
-
-        console.log("[GameProvider] Игроки после конвертации:", players);
         dispatch({
           type: "SET_MATCH_DATA",
           payload: {
@@ -369,6 +376,17 @@ case "UPDATE_CELL": {
       updatedCell: data.payload.updatedCell as Cell
     }
   });
+  break;
+}
+
+case "PLAYER_DEFEATED": {
+  const userId: number = data.payload.userId;
+  // 1) Для себя — редирект (если это наш игрок):
+  if (user?.id != null && userId === user.id) { 
+    router.push("/mode");
+  }
+  // 2) Всегда диспатчим в редьюсер, чтобы удалить из списка:
+  dispatch({ type: "PLAYER_DEFEATED", payload: { userId } });
   break;
 }
 

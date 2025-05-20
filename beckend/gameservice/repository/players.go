@@ -102,3 +102,14 @@ func UpdatePlayer(player *models.PlayerResponse) error {
 	)
 	return err
 }
+
+// DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
+func DeleteMatchPlayer(instanceID string, userID int) error {
+    _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+          AND user_id = $2
+    `, instanceID, userID)
+    return err
+}
+

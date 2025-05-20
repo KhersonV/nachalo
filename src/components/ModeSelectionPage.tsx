@@ -10,7 +10,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
-export type GameMode = "PVE" | "1x1" | "3x3" | "5x5";
+export type GameMode = "PVE" | "1x1" | "1x2" |"2x2" |"3x3" | "5x5";
 type PlayerInfo = { playerId: number; level: number };
 
 const API_MATCH = "http://localhost:8002";
@@ -83,6 +83,8 @@ export default function ModeSelectionPage() {
       <select value={mode} onChange={(e) => setMode(e.target.value as GameMode)}>
         <option value="PVE">PvE (Solo)</option>
         <option value="1x1">PvP 1x1</option>
+         <option value="1x2">PvP 1x2</option>
+          <option value="2x2">PvP 2x2</option>
         <option value="3x3">PvP 3x3</option>
         <option value="5x5">PvP 5x5</option>
       </select>

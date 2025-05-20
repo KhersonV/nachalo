@@ -841,9 +841,9 @@ func OpenBarbel(cell FullCell, resources []ResourceData, artifacts []ResourceDat
 
 
 
-//==========================
+//==================================
 // gameservice/game/match.go
-//==========================
+//==================================
 
 package game
 
@@ -855,50 +855,85 @@ import (
 
 // MatchState инкапсулирует состояние конкретного матча.
 type MatchState struct {
-	InstanceID     string
-	ActiveUserID int   // ID игрока, чей ход
-	TurnOrder      []int // Очередность ходов (список ID игроков)
-	TurnNumber     int   // Номер текущего хода
-	mu             sync.Mutex
+	InstanceID   string
+	ActiveUserID int   // ID игрока, чей сейчас ход
+	TurnOrder    []int // Очередность ходов (список ID игроков)
+	TurnNumber   int   // Номер текущего круга
+	mu           sync.Mutex
 }
 
 var (
-	ErrNotYourTurn    = errors.New("not your turn")
-	ErrPlayerNotFound = errors.New("player not found in turn order")
+	ErrNoPlayers         = errors.New("no players in turn order")
+	ErrNotYourTurn       = errors.New("not your turn")
+	ErrPlayerNotInOrder  = errors.New("player not found in turn order")
 )
 
-// EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+// EndTurn завершает ход: берём следующего живого игрока по кругу.
 func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Проверяем, что запрос отправлен от игрока, у которого и должен быть ход.
-	if currentPlayerID != m.ActiveUserID {
-		log.Printf("Ошибка: currentPlayerID (%d) != ActiveUserID (%d). Невозможно завершить ход.", currentPlayerID, m.ActiveUserID)
-		return 0, ErrNotYourTurn
+	n := len(m.TurnOrder)
+	if n == 0 {
+		return 0, ErrNoPlayers
 	}
 
-	// Находим индекс текущего игрока в TurnOrder.
-	index := -1
-	for i, pid := range m.TurnOrder {
-		if pid == currentPlayerID {
-			index = i
+	// Найти текущий индекс, если есть
+	startIdx := 0
+	for i, id := range m.TurnOrder {
+		if id == currentPlayerID {
+			startIdx = i
 			break
 		}
 	}
-	if index == -1 {
-		log.Printf("Ошибка: Игрок %d не найден в TurnOrder: %v", currentPlayerID, m.TurnOrder)
-		return 0, ErrPlayerNotFound
-	}
 
-	// Определяем следующего игрока циклически.
-	nextIndex := (index + 1) % len(m.TurnOrder)
-	if nextIndex == 0 {
+	// Ищем следующего — всегда берём (startIdx+1)%n
+	nextIdx := (startIdx + 1) % n
+	// Если мы обернулись назад в начало — это новый круг
+	if nextIdx <= startIdx {
 		m.TurnNumber++
 	}
-	m.ActiveUserID = m.TurnOrder[nextIndex]
-	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActiveUserID, m.TurnNumber)
+
+	m.ActiveUserID = m.TurnOrder[nextIdx]
+	log.Printf(
+		"EndTurn: %d → %d (turn %d)",
+		currentPlayerID, m.ActiveUserID, m.TurnNumber,
+	)
 	return m.ActiveUserID, nil
+}
+
+// RemovePlayerFromTurnOrder чистит очередь от погибшего игрока.
+// Если погибший был среди TurnOrder, просто вырезаем его.
+// Если он совпадал с ActiveUserID, передаём ход сразу следующему.
+func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Фильтруем очередь
+	newOrder := make([]int, 0, len(m.TurnOrder))
+	for _, id := range m.TurnOrder {
+		if id != userID {
+			newOrder = append(newOrder, id)
+		}
+	}
+	m.TurnOrder = newOrder
+
+	// Если очередь опустела — ничего больше не делаем
+	if len(m.TurnOrder) == 0 {
+		m.ActiveUserID = 0
+		return
+	}
+
+	// Если погибший был активным, передаём ход следующему в новом списке
+	if m.ActiveUserID == userID {
+		// выбираем новый ActiveUserID из начала TurnOrder
+		m.ActiveUserID = m.TurnOrder[0]
+		m.TurnNumber++
+		log.Printf(
+			"RemovePlayer: %d died, new active %d (turn %d)",
+			userID, m.ActiveUserID, m.TurnNumber,
+		)
+	}
 }
 
 // --- Хранилище состояний матчей ---
@@ -908,31 +943,31 @@ var (
 	MatchStatesMu sync.Mutex
 )
 
-// CreateMatchState создаёт состояние матча и сохраняет его в хранилище.
+// CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
-	matchState := &MatchState{
-		InstanceID:     instanceID,
-		TurnOrder:      playerIDs,
+	ms := &MatchState{
+		InstanceID:   instanceID,
+		TurnOrder:    append([]int(nil), playerIDs...), // копия слайса
+		TurnNumber:   1,
 		ActiveUserID: 0,
-		TurnNumber:     1,
 	}
 	if len(playerIDs) > 0 {
-		matchState.ActiveUserID = playerIDs[0]
+		ms.ActiveUserID = playerIDs[0]
 	}
-
 	MatchStatesMu.Lock()
-	MatchStates[instanceID] = matchState
+	MatchStates[instanceID] = ms
 	MatchStatesMu.Unlock()
-
-	return matchState
+	return ms
 }
 
+// GetMatchState возвращает текущее состояние матча.
 func GetMatchState(instanceID string) (*MatchState, bool) {
 	MatchStatesMu.Lock()
 	defer MatchStatesMu.Unlock()
 	ms, ok := MatchStates[instanceID]
 	return ms, ok
 }
+
 
 
 
@@ -946,7 +981,6 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
  ================================================handlers====================================================================
  ========================================================================================================================
 
-
 // ====================================
 // gameservice/handlers/combat.go
 // ====================================
@@ -959,6 +993,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"log"
 
 	"gameservice/game"
 	"gameservice/middleware"
@@ -1162,6 +1197,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		"payload": map[string]interface{}{
 			"userId":      userID,
 			"newPosition": map[string]int{"x": req.NewPosX, "y": req.NewPosY},
+			"instanceId":  instanceID,
 		},
 	}
 	b2, _ := json.Marshal(moveMsg)
@@ -1235,10 +1271,36 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 5) Сохраняем здоровье цели (игрок или монстр)
 	if req.TargetType == "player" {
-		player, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-		player.Health = newTargetHealth
-		repository.UpdateMatchPlayer(player)
-	} else {
+    player, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+    player.Health = newTargetHealth
+    	if newTargetHealth > 0 {
+        // обычный случай
+        repository.UpdateMatchPlayer(player)
+    	} else {
+        // игрок погиб — удаляем его из матча
+        	if err := repository.DeleteMatchPlayer(req.InstanceID, req.TargetID); err != nil {
+           	 log.Printf("Ошибка удаления погибшего игрока: %v", err)
+        	}
+			gameState, ok := game.GetMatchState(req.InstanceID)
+			if ok {
+				gameState.RemovePlayerFromTurnOrder(req.TargetID)
+			}
+        // обновляем JSON-карту: сброс флага isPlayer
+        oldPos := player.Position
+        _ = repository.UpdateCellPlayerFlags(req.InstanceID, oldPos, oldPos)
+
+        // рассылаем событие о смерти игрока
+        defeatMsg := map[string]interface{}{
+            "type": "PLAYER_DEFEATED",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "userId":     req.TargetID,
+            },
+        }
+        data, _ := json.Marshal(defeatMsg)
+        Broadcast(data)
+	}
+    } else {
 		// Для монстра сначала обновляем здоровье
 		repository.UpdateMatchMonsterHealth(req.InstanceID, req.TargetID, newTargetHealth)
 
@@ -3963,6 +4025,8 @@ func UpdateMonster(mon *models.Monster) error {
 
 
 
+
+
 // ====================================
 // /gameservice/repository/players.go
 // ====================================
@@ -4064,6 +4128,16 @@ func UpdatePlayer(player *models.PlayerResponse) error {
 		player.UserID,
 	)
 	return err
+}
+
+// DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
+func DeleteMatchPlayer(instanceID string, userID int) error {
+    _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+          AND user_id = $2
+    `, instanceID, userID)
+    return err
 }
 
 
@@ -4207,7 +4281,6 @@ func GetOtherPlayerID(instanceID string, x, y, selfID int) (int, error) {
  ====================================================matchmaking=====================================================================
  =====================================================matchmaking====================================================================
  ========================================================================================================================
-
 // ==============================
 // /matchmaking/Match_Making.go
 // ==============================
@@ -4260,6 +4333,8 @@ var (
 	queues = map[string][]QueueEntry{
 		"PVE":  {},
 		"1x1":  {},
+		"1x2":  {},
+		"2x2":  {},
 		"3x3":  {},
 		"5x5":  {},
 	}
@@ -4436,7 +4511,7 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 
 // checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
-	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "3x3": 6, "5x5": 10}
+	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "1x2": 3, "2x2": 4, "3x3": 6, "5x5": 10}
 	needed, ok := requiredPlayers[mode]
 	if !ok {
 		log.Printf("Unknown mode: %s", mode)
@@ -4459,18 +4534,27 @@ func createMatch(mode string, group []QueueEntry) {
 	if mode == "PVE" {
 		totalPlayers, teamsCount = 1, 1
 	} else {
-		switch mode {
-		case "1x1":
-			totalPlayers = 2
-		case "3x3":
-			totalPlayers = 6
-		case "5x5":
-			totalPlayers = 10
-		default:
-			totalPlayers = len(group)
-		}
-		teamsCount = 2
-	}
+		 switch mode {
+        case "1x1":
+            totalPlayers = 2
+            teamsCount = 2
+        case "1x2":
+            totalPlayers = 3
+            teamsCount = 3
+        case "2x2":
+            totalPlayers = 4
+            teamsCount = 2
+        case "3x3":
+            totalPlayers = 6
+            teamsCount = 2
+        case "5x5":
+            totalPlayers = 10
+            teamsCount = 2
+        default:
+            totalPlayers = len(group)
+            teamsCount = 2
+        }
+    }
 
 	playerIDs := make([]int, len(group))
 	for i, entry := range group {
@@ -4868,6 +4952,7 @@ export default EndTurnButton;
 
 
 
+
 //==================================
 // src/components/GameController.tsx
 //==================================
@@ -4886,6 +4971,8 @@ import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
 import PlayerHUD from "./PlayerHUD";
+
+
 export default function GameController() {
   const { state, dispatch } = useGame();
   const searchParams = useSearchParams();
@@ -5274,6 +5361,7 @@ export default function GameController() {
 
 
 
+
 //==================================
 // src/components/Inventory.tsx
 //==================================
@@ -5515,6 +5603,7 @@ export default LoginPage;
 
 
 
+
 //==================================
 // src/components/Map.tsx
 //==================================
@@ -5556,7 +5645,7 @@ export default function Map({
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
 
-  console.log("[Map] Рендер с fullWidth:", fullWidth, "fullHeight:", fullHeight);
+ 
 
   return (
     <div
@@ -5793,6 +5882,7 @@ export default function MapWithCamera({
 
 
 
+
 //=====================================
 // src/components/ModeSelectionPage.tsx
 //=====================================
@@ -5803,7 +5893,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
-export type GameMode = "PVE" | "1x1" | "3x3" | "5x5";
+export type GameMode = "PVE" | "1x1" | "1x2" |"2x2" |"3x3" | "5x5";
 type PlayerInfo = { playerId: number; level: number };
 
 const API_MATCH = "http://localhost:8002";
@@ -5876,6 +5966,8 @@ export default function ModeSelectionPage() {
       <select value={mode} onChange={(e) => setMode(e.target.value as GameMode)}>
         <option value="PVE">PvE (Solo)</option>
         <option value="1x1">PvP 1x1</option>
+         <option value="1x2">PvP 1x2</option>
+          <option value="2x2">PvP 2x2</option>
         <option value="3x3">PvP 3x3</option>
         <option value="5x5">PvP 5x5</option>
       </select>
@@ -6155,372 +6247,432 @@ export function useAuth() {
 
 
 
-// ====================================
-// gameservice/repository/matches.go
-// ====================================
 
 
-package repository
 
-import (
-	"encoding/json"
-	"log"
 
-	"gameservice/game"
-	"gameservice/models"
-)
 
-// InsertMatch – сохраняет матч в таблице matches.
-func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte) (string, error) {
-	query := `
-        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, turn_number)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING instance_id;
-    `
-	var returnedID string
-	// turn_number задаем равным 1 по умолчанию.
-	err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, 1).Scan(&returnedID)
-	if err != nil {
-		return "", err
-	}
-	return returnedID, nil
-}
 
-// GetMatchByID – получает матч по instance_id из таблицы matches.
-func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
-	query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, active_user_id, turn_number
-        FROM matches
-        WHERE instance_id = $1
-    `
-	match := &models.MatchInfo{}
-	err := DB.QueryRow(query, instanceID).Scan(
-		&match.InstanceID,
-		&match.Mode,
-		&match.TeamsCount,
-		&match.TotalPlayers,
-		&match.MapWidth,
-		&match.MapHeight,
-		&match.Map,
-		&match.ActiveUserID,
-		&match.TurnNumber,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return match, nil
-}
 
-// CreateMatchPlayerCopy – создает копию игрока в таблице match_players для конкретного матча.
-func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, startY, groupID int) error {
-	// Формируем JSON для поля position.
-	position, err := json.Marshal(struct {
-		X int `json:"x"`
-		Y int `json:"y"`
-	}{X: startX, Y: startY})
-	if err != nil {
-		return err
-	}
 
-	query := `
-		INSERT INTO match_players (
-			match_instance_id, user_id, name, image, position, inventory,
-			level, energy, max_energy, health, max_health, experience, max_experience,
-			attack, defense, speed, maneuverability, vision, vision_range, balance, group_id
-		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19, $20, $21
-		);
-	`
-	res, err := DB.Exec(query,
-		matchID,
-		p.UserID,
-		p.Name,
-		p.Image,
-		position,
-		p.Inventory,
-		p.Level,
-		p.Energy,
-		p.MaxEnergy,
-		p.Health,
-		p.MaxHealth,
-		p.Experience,
-		p.MaxExperience,
-		p.Attack,
-		p.Defense,
-		p.Speed,
-		p.Maneuverability,
-		p.Vision,
-		p.VisionRange,
-		p.Balance,
-		groupID,
-	)
-	if err != nil {
-		log.Printf("CreateMatchPlayerCopy: ошибка вставки user_id=%d, matchID=%s: %v", p.UserID, matchID, err)
-		return err
-	}
-	affected, _ := res.RowsAffected()
-	log.Printf("CreateMatchPlayerCopy: успешно вставлено %d строк для user_id=%d, matchID=%s", affected, p.UserID, matchID)
-	return nil
-}
+//==================================
+// src/contexts/GameContextt.tsx
+//==================================
 
-// GetMatchPlayerByID – получает данные игрока из match_players по match_instance_id и user_id.
-func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, error) {
-	query := `
-		SELECT 
-			user_id,
-			name, 
-			image, 
-			position, 
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
-			balance
-		FROM match_players
-		WHERE match_instance_id = $1 AND user_id = $2
-		LIMIT 1;
-	`
-	var pr models.PlayerResponse
-	var positionJSON []byte
+"use client";
 
-	err := DB.QueryRow(query, matchID, userID).Scan(
-		&pr.UserID,
-		&pr.Name,
-		&pr.Image,
-		&positionJSON,
-		&pr.Inventory,
-		&pr.Level,
-		&pr.Energy,
-		&pr.MaxEnergy,
-		&pr.Health,
-		&pr.MaxHealth,
-		&pr.Experience,
-		&pr.MaxExperience,
-		&pr.Attack,
-		&pr.Defense,
-		&pr.Speed,
-		&pr.Maneuverability,
-		&pr.Vision,
-		&pr.VisionRange,
-		&pr.Balance,
-	)
-	if err != nil {
-		log.Printf("GetMatchPlayerByID: ошибка получения игрока matchID=%s, user_id=%d: %v", matchID, userID, err)
-		return nil, err
-	}
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  Dispatch,
+  useState,
+  useRef,
+} from "react";
+import { useRouter } from "next/navigation";
+import { useGameSocket } from "../hooks/useGameSocket";
+import { useAuth } from "../contexts/AuthContext";
+import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell } from "../types/GameTypes";
 
-	// Распарсить JSON из поля position в структуру Position модели
-	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
-		return nil, err
-	}
+// Начальное состояние
+const initialState: GameState = {
+  instanceId: "",
+  mode: "",
+  grid: [],
+  mapWidth: 0,
+  mapHeight: 0,
+  players: [],
+  active_user: 0,
+  turnNumber: 1,
+};
 
-	return &pr, nil
-}
+const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
 
-// UpdateMatchPlayer – обновляет данные игрока в таблице match_players для конкретного матча.
-func UpdateMatchPlayer(player *models.PlayerResponse) error {
-	// Формируем JSON для поля position.
-	positionJSON, err := json.Marshal(player.Position)
-	if err != nil {
-		return err
-	}
+export function gameReducer(state: GameState, action: Action): GameState {
+  switch (action.type) {
+    case "SET_MATCH_DATA":
+      console.log("[GameReducer][SET_MATCH_DATA] Получены данные матча:", action.payload);
+      const active_user = action.payload.active_user;
+      console.log("[GameReducer] Устанавливаем active_user:", active_user);
+      return {
+        ...state,
+        instanceId: action.payload.instanceId,
+        mode: action.payload.mode,
+        grid: action.payload.grid,
+        mapWidth: action.payload.mapWidth,
+        mapHeight: action.payload.mapHeight,
+        players: action.payload.players,
+        active_user: active_user,
+        turnNumber: action.payload.turnNumber || state.turnNumber,
+      };
 
-	query := `
-		UPDATE match_players
-		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
-		WHERE user_id = $6
-	`
-	_, err = DB.Exec(query,
-		positionJSON,
-		player.Energy,
-		player.Health,
-		player.Level,
-		player.Experience,
-		player.UserID,
-	)
-	return err
-}
+    case "MOVE_PLAYER":
+      console.log("[GameReducer][MOVE_PLAYER] Перемещение игрока:", action.payload);
+      const playerId = action.payload.userId;
+      return {
+        ...state,
+        players: state.players.map((p) =>
+          p.user_id === playerId
+            ? { ...p, position: action.payload.newPosition }
+            : p
+        ),
+      };
 
-// GetPlayersInMatch – получает список игроков для матча (по match_instance_id) из таблицы match_players.
-func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
-	query := `
-		SELECT 
-			user_id,
-			name,
-			image,
-			position,
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
-			balance
-		FROM match_players
-		WHERE match_instance_id = $1
-	`
-	rows, err := DB.Query(query, matchID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var players []models.PlayerResponse
-	for rows.Next() {
-		var pr models.PlayerResponse
-		var positionJSON []byte
-		err := rows.Scan(
-			&pr.UserID,
-			&pr.Name,
-			&pr.Image,
-			&positionJSON,
-			&pr.Inventory,
-			&pr.Level,
-			&pr.Energy,
-			&pr.MaxEnergy,
-			&pr.Health,
-			&pr.MaxHealth,
-			&pr.Experience,
-			&pr.MaxExperience,
-			&pr.Attack,
-			&pr.Defense,
-			&pr.Speed,
-			&pr.Maneuverability,
-			&pr.Vision,
-			&pr.VisionRange,
-			&pr.Balance,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
-			return nil, err
-		}
-		players = append(players, pr)
-	}
-	return players, nil
-}
-
-// UpdateMatchTurn – обновляет текущий ход матча в таблице matches.
-func UpdateMatchTurn(instanceID string, activeUserID int, turnNumber int) error {
-	query := `
-		UPDATE matches
-		SET active_user_id = $1, turn_number = $2
-		WHERE instance_id = $3
-	`
-	_, err := DB.Exec(query, activeUserID, turnNumber, instanceID)
-	return err
-}
-
-// GetItemEffect – получает эффект предмета из таблицы resources.
-func GetItemEffect(itemID int) (map[string]int, error) {
-	query := `SELECT effect FROM resources WHERE id = $1;`
-	var effectJSON []byte
-	err := DB.QueryRow(query, itemID).Scan(&effectJSON)
-	if err != nil {
-		return nil, err
-	}
-
-	var effect map[string]int
-	if err := json.Unmarshal(effectJSON, &effect); err != nil {
-		return nil, err
-	}
-	return effect, nil
-}
-
-type Position struct {
-    X int `json:"x"`
-    Y int `json:"y"`
-}
-
-// UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
-// UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
-func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
-	// Извлекаем текущую карту матча.
-	var mapJSON []byte
-	query := `SELECT map FROM matches WHERE instance_id = $1;`
-	if err := DB.QueryRow(query, instanceID).Scan(&mapJSON); err != nil {
-		return err
-	}
-
-	// Десериализуем в срез FullCell
-	var cells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &cells); err != nil {
-		return err
-	}
-
-	log.Printf("[UpdateCellPlayerFlags] old=%+v new=%+v", oldPos, newPos)
-
-	// Обновляем флаги
-	for i, c := range cells {
-		if c.X == oldPos.X && c.Y == oldPos.Y {
-			cells[i].IsPlayer = false
-		}
-		if c.X == newPos.X && c.Y == newPos.Y {
-			cells[i].IsPlayer = true
-		}
-	}
-
-	// Сериализуем обратно и сохраняем
-	newMap, err := json.Marshal(cells)
-	if err != nil {
-		return err
-	}
-	if _, err := DB.Exec(`UPDATE matches SET map = $1 WHERE instance_id = $2`, string(newMap), instanceID); err != nil {
-		log.Printf("UpdateCellPlayerFlags error: %v", err)
-		return err
-	}
-	return nil
+      case "COMBAT_EXCHANGE": {
+  const { attacker, target } = action.payload;
+  console.log("[GameReducer][COMBAT_EXCHANGE]", attacker, target);
+  return {
+    ...state,
+    players: state.players.map(p => {
+      if (p.user_id === attacker.id) return { ...p, health: attacker.new_hp };
+      if (p.user_id === target.id)   return { ...p, health: target.new_hp };
+      return p;
+    }),
+  };
 }
 
 
-func LoadMapCells(instanceID string) ([]game.FullCell, error) {
-    var raw []byte
-    err := DB.QueryRow(
-        `SELECT map FROM matches WHERE instance_id=$1`,
-        instanceID,
-    ).Scan(&raw)
-    if err != nil {
-        return nil, err
+   case "SET_ACTIVE_USER": {
+  console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
+  const { active_user, turnNumber, energy } = action.payload;
+  return {
+    ...state,
+    active_user,
+    turnNumber,
+    // обновляем энергию только у того, чей ход закончился
+    players: state.players.map(p =>
+      p.user_id === active_user
+        ? { ...p, energy: energy ?? p.energy }
+        : p
+    ),
+  };
+}
+
+    case "UPDATE_PLAYER":
+      console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
+      const updatedData = action.payload.player;
+      const normalizedPlayer: PlayerState = {
+        ...updatedData,
+        position: { x: updatedData.position?.x, y: updatedData.position?.y },
+        user_id: updatedData.user_id,
+      };
+      if (typeof normalizedPlayer.inventory === "string") {
+        console.log("[GameReducer][UPDATE_PLAYER] Инвентарь как строка:", normalizedPlayer.inventory);
+        try {
+          normalizedPlayer.inventory = JSON.parse(normalizedPlayer.inventory);
+          console.log("[GameReducer][UPDATE_PLAYER] Парсенный инвентарь:", normalizedPlayer.inventory);
+        } catch (e) {
+          console.error("[GameReducer][UPDATE_PLAYER] Ошибка парсинга инвентаря:", e);
+          normalizedPlayer.inventory = { resources: {}, artifacts: {} };
+        }
+      }
+      console.log("[GameReducer][UPDATE_PLAYER] После нормализации:", normalizedPlayer);
+      return {
+        ...state,
+        players: state.players.map((p) =>
+          p.user_id === normalizedPlayer.user_id ? normalizedPlayer : p
+        ),
+      };
+
+    case "UPDATE_CELL": {
+  const { updatedCell } = action.payload
+  return {
+    ...state,
+    grid: state.grid.map(cell => {
+      // если пришёл cell_id и он совпадает — используем его:
+      if (updatedCell.cell_id != null && cell.cell_id === updatedCell.cell_id) {
+        return { ...cell, ...updatedCell }
+      }
+      // иначе, если пришли координаты, матчим по ним:
+      if (updatedCell.x != null && updatedCell.y != null &&
+          cell.x === updatedCell.x && cell.y === updatedCell.y) {
+        return { ...cell, ...updatedCell }
+      }
+      return cell
+    })
+  }
+}
+
+case "PLAYER_DEFEATED": {
+  console.log("[GameReducer] PLAYER_DEFEATED, удаляем игрока:", action.payload.userId);
+  return {
+    ...state,
+    players: state.players.filter(p => p.user_id !== action.payload.userId),
+  };
+}
+
+
+    case "RESET_STATE":
+      console.log("[GameReducer][RESET_STATE] Сброс состояния");
+      return { ...initialState };
+
+    default:
+      return state;
+  }
+}
+
+type GameProviderProps = {
+  instanceId: string;
+  children: React.ReactNode;
+};
+
+export function GameProvider({ instanceId, children }: GameProviderProps) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
+  const [resources, setResources] = useState<ResourceType[]>([]);
+  const [monsters, setMonsters] = useState<MonsterType[]>([]);
+  const prevInstanceIdRef = useRef<string>("");
+
+  useEffect(() => {
+    console.log("[GameProvider] instanceId изменился на:", instanceId);
+    // Сброс состояния, если instanceId изменился
+    if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
+      dispatch({ type: "RESET_STATE" });
     }
-    var cells []game.FullCell
-    if err := json.Unmarshal(raw, &cells); err != nil {
-        return nil, err
+    prevInstanceIdRef.current = instanceId;
+
+    async function fetchResources() {
+      try {
+        const res = await fetch("http://localhost:8001/api/resources", { cache: "no-store" });
+        if (!res.ok) {
+          console.error("[GameProvider] Ошибка загрузки ресурсов", await res.text());
+          return;
+        }
+        const data = await res.json();
+        console.log("[GameProvider] Полученные ресурсы:", data);
+        setResources(data);
+      } catch (err) {
+        console.error("[GameProvider] fetchResources error:", err);
+      }
     }
-    return cells, nil
+
+    async function fetchMonsters() {
+      try {
+        const res = await fetch("http://localhost:8001/api/monsters", { cache: "no-store" });
+        if (!res.ok) {
+          console.error("[GameProvider] Ошибка загрузки монстров", await res.text());
+          return;
+        }
+        const data = await res.json();
+        console.log("[GameProvider] Полученные монстры:", data);
+        setMonsters(data);
+      } catch (err) {
+        console.error("[GameProvider] fetchMonsters error:", err);
+      }
+    }
+
+    fetchResources();
+    fetchMonsters();
+  }, [instanceId]);
+
+  useEffect(() => {
+    async function fetchMatchData() {
+      try {
+        const res = await fetch(`http://localhost:8001/game/match?instance_id=${instanceId}`, { cache: "no-store" });
+        if (!res.ok) {
+          console.error("[GameProvider] Ошибка загрузки данных матча", await res.text());
+          router.replace("/mode");
+          return;
+        }
+        const data = await res.json();
+        console.log("[GameProvider] Полученные данные матча:", data);
+        if (data.instance_id !== instanceId) {
+          
+          router.replace(`/game?instance_id=${data.instance_id}`);
+          return;
+        }
+        // Если сервер уже возвращает поле position, используем его без лишних преобразований
+        const players = (data.players || []).map((p: any) => {
+          return {
+            ...p,
+            user_id: p.user_id || p.player_id,
+            position: { x: p.position.x, y: p.position.y },
+          };
+        });
+        dispatch({
+          type: "SET_MATCH_DATA",
+          payload: {
+            instanceId: data.instance_id,
+            mode: data.mode,
+            grid: data.map,
+            mapWidth: data.map_width,
+            mapHeight: data.map_height,
+            players,
+            active_user: data.active_user,
+            turnNumber: data.turn_number,
+          },
+        });
+      } catch (err) {
+        console.error("[GameProvider] fetchMatchData error:", err);
+      }
+    }
+    if (resources.length > 0 && monsters.length > 0) {
+      fetchMatchData();
+    }
+  }, [instanceId, resources.length, monsters.length, router]);
+
+ useGameSocket(
+  (data) => {
+    // Игнорируем сообщения не для текущего матча
+    if (data.payload?.instanceId && data.payload.instanceId !== state.instanceId) {
+      console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      return;
+    }
+
+    switch (data.type) {
+      case "MATCH_UPDATE":
+        dispatch({
+          type: "SET_MATCH_DATA",
+          payload: {
+            instanceId: data.payload.instanceId,
+            mode: data.payload.mode,
+            grid: data.payload.grid,
+            mapWidth: data.payload.mapWidth,
+            mapHeight: data.payload.mapHeight,
+            players: data.payload.players,
+            active_user: data.payload.active_player, // или active_user
+            turnNumber: data.payload.turn_number,
+          },
+        });
+        break;
+
+      case "MOVE_PLAYER":
+        dispatch({
+          type: "MOVE_PLAYER",
+          payload: {
+            userId: data.payload.playerId || data.payload.userId,
+            newPosition: data.payload.newPosition,
+          },
+        });
+        break;
+
+      case "RESOURCE_COLLECTED": {
+        const { updatedCell, updatedPlayer } = data.payload;
+        dispatch({
+          type: "UPDATE_CELL",
+          payload: { updatedCell },
+        });
+        if (updatedPlayer) {
+          dispatch({
+            type: "UPDATE_PLAYER",
+            payload: { player: updatedPlayer },
+          });
+        }
+        break;
+      }
+
+      case "SET_ACTIVE_USER":
+        console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
+        dispatch({
+          type: "SET_ACTIVE_USER",
+          payload: {
+            active_user: data.payload.active_user,
+            turnNumber: data.payload.turnNumber,
+            energy: data.payload.energy,
+          },
+        });
+        break;
+
+      case "UPDATE_PLAYER": {
+        const { player } = data.payload;
+        dispatch({ type: "UPDATE_PLAYER", payload: { player } });
+        break;
+      }
+      
+     case "COMBAT_EXCHANGE": {
+  // приводим payload к нужному типу
+  const { attacker, target } = data.payload as {
+    attacker: { id: number; new_hp: number; damage: number };
+    target:   { id: number; new_hp: number; damage: number };
+  };
+
+  dispatch({
+    type: "COMBAT_EXCHANGE",
+    payload: {
+      attacker: { id: attacker.id, new_hp: attacker.new_hp },
+      target:   { id: target.id,   new_hp: target.new_hp },
+    },
+  });
+  break;
 }
 
-func SaveMapCells(instanceID string, cells []game.FullCell) error {
-    raw, err := json.Marshal(cells)
-    if err != nil {
-        return err
-    }
-    _, err = DB.Exec(
-        `UPDATE matches SET map=$1 WHERE instance_id=$2`,
-        raw, instanceID,
-    )
-    return err
+case "MONSTER_HIT": {
+  const { monsterInstanceId, newHP, x, y } = data.payload as {
+    monsterInstanceId: number;
+    newHP: number;
+    x: number;
+    y: number;
+  };
+
+  // Обновляем клетку в grid, меняя здоровье монстра
+  dispatch({
+    type: "UPDATE_CELL",
+    payload: {
+      updatedCell: {
+        ...state.grid.find(cell => cell.x === x && cell.y === y)!,
+        monster: state.grid
+          .find(cell => cell.x === x && cell.y === y)!
+          .monster && {
+            ...state.grid.find(cell => cell.x === x && cell.y === y)!.monster!,
+            health: newHP,
+          },
+      },
+    },
+  });
+  break;
 }
+
+
+case "UPDATE_CELL": {
+  console.log("[GameProvider] UPDATE_CELL payload:", data.payload.updatedCell);
+  dispatch({
+    type: "UPDATE_CELL",
+    payload: {
+      updatedCell: data.payload.updatedCell as Cell
+    }
+  });
+  break;
+}
+
+case "PLAYER_DEFEATED": {
+  const userId: number = data.payload.userId;
+  // 1) Для себя — редирект (если это наш игрок):
+  if (user?.id != null && userId === user.id) { 
+    router.push("/mode");
+  }
+  // 2) Всегда диспатчим в редьюсер, чтобы удалить из списка:
+  dispatch({ type: "PLAYER_DEFEATED", payload: { userId } });
+  break;
+}
+
+
+      default:
+        // можно логировать непредвидённые типы
+        console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);
+    }
+  },
+  { instanceId: state.instanceId }
+);
+
+
+  return (
+    <GameContext.Provider value={{ state, dispatch }}>
+      {children}
+    </GameContext.Provider>
+  );
+}
+
+export function useGame() {
+  const context = useContext(GameContext);
+  if (!context) {
+    throw new Error("useGame must be used within a GameProvider");
+  }
+  return context;
+}
+
+
 
 
 
@@ -6548,12 +6700,14 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
 
 
 
-
 //=============================
 // src/hooks/useGameSocket.ts
 //=============================
+// src/hooks/useGameSocket.ts
 
 import { useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../contexts/AuthContext";
 
 interface GameSocketOptions {
   instanceId?: string;
@@ -6565,62 +6719,73 @@ export function useGameSocket(
 ) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<number | null>(null);
-  // Используем протокол ws://, убедитесь, что сервер запущен и доступен
+  const router = useRouter();
+  const { user } = useAuth();
   const url = "ws://localhost:8001/ws";
 
   const connect = useCallback(() => {
-    // Если уже есть открытое соединение, не создаём новое
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      // console.log("WebSocket уже подключён");
-      return;
-    }
+    // Если уже открытое соединение — не открываем новое
+    if (ws.current?.readyState === WebSocket.OPEN) return;
 
-    // console.log("Попытка установить WebSocket соединение...");
     ws.current = new WebSocket(url);
 
     ws.current.onopen = () => {
-      // console.log("WebSocket соединение установлено");
+      // При подключении сразу посылаем JOIN_MATCH
       if (options?.instanceId) {
-        const joinMsg = {
-          type: "JOIN_MATCH",
-          instanceId: options.instanceId,
-        };
-        ws.current?.send(JSON.stringify(joinMsg));
-        // console.log("Отправлено JOIN_MATCH сообщение:", joinMsg);
+        ws.current?.send(
+          JSON.stringify({
+            type: "JOIN_MATCH",
+            instanceId: options.instanceId,
+          })
+        );
       }
     };
 
     ws.current.onmessage = (event) => {
+      let data: any;
       try {
-        const data = JSON.parse(event.data);
-        // console.log("Получено сообщение по WebSocket:", data);
-        if (options?.instanceId && data.payload && data.payload.instanceId) {
-          if (data.payload.instanceId !== options.instanceId) {
-            console.log("Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
-            return;
-          }
-        }
-        onMessage(data);
-      } catch (e) {
-        console.error("Ошибка парсинга сообщения:", e);
+        data = JSON.parse(event.data);
+      } catch {
+        console.error("Ошибка парсинга сообщения:", event.data);
+        return;
       }
+
+      // Игнорируем сообщения не из текущего матча
+      if (
+          options?.instanceId &&
+          data.payload?.instanceId != null &&
+          data.payload.instanceId !== options.instanceId
+        ) {
+        return;
+      }
+
+      // Если собственный игрок погиб — редирект на выбор режима
+      if (
+        data.type === "PLAYER_DEFEATED" &&
+        user?.id != null &&
+        data.payload?.userId === user.id
+      ) {
+        router.push("/mode");
+        return;
+      }
+
+      onMessage(data);
     };
 
-    ws.current.onerror = (error) => {
-      console.error("WebSocket ошибка:", error);
+    ws.current.onerror = (err) => {
+      console.error("WebSocket ошибка:", err);
     };
 
-    ws.current.onclose = (event) => {
-      console.log(`WebSocket соединение закрыто (код: ${event.code}, причина: ${event.reason})`);
-      // Если закрытие произошло не по инициативе клиента (код 1000), пробуем переподключиться
-      if (event.code !== 1000) {
-        // console.log("Попытка переподключения через 3 секунды...");
-        reconnectTimeout.current = window.setTimeout(() => {
-          connect();
-        }, 3000);
+    ws.current.onclose = (e) => {
+      // Попытаться переподключиться, если закрытие неавторизованное
+      if (e.code !== 1000) {
+        reconnectTimeout.current = window.setTimeout(connect, 3000);
       }
     };
-  }, [onMessage, options]);
+  },
+  // Важно: зависимости, включая user?.id и router
+  [onMessage, options?.instanceId, router, user?.id]
+  );
 
   useEffect(() => {
     connect();
@@ -6628,9 +6793,11 @@ export function useGameSocket(
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
-      ws.current?.close();
+      ws.current?.close(1000);
     };
   }, [connect]);
+
+  // Хуки всегда вызываются в одном и том же порядке
 }
 
 
@@ -6799,7 +6966,8 @@ export type Action =
   }
   | {
     type: "RESET_STATE";
-  };
+  }
+  | { type: "PLAYER_DEFEATED"; payload: { userId: number } };
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";

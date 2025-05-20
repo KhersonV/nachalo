@@ -1,7 +1,7 @@
 
-//==========================
+//==================================
 // gameservice/game/match.go
-//==========================
+//==================================
 
 package game
 
@@ -13,50 +13,85 @@ import (
 
 // MatchState инкапсулирует состояние конкретного матча.
 type MatchState struct {
-	InstanceID     string
-	ActiveUserID int   // ID игрока, чей ход
-	TurnOrder      []int // Очередность ходов (список ID игроков)
-	TurnNumber     int   // Номер текущего хода
-	mu             sync.Mutex
+	InstanceID   string
+	ActiveUserID int   // ID игрока, чей сейчас ход
+	TurnOrder    []int // Очередность ходов (список ID игроков)
+	TurnNumber   int   // Номер текущего круга
+	mu           sync.Mutex
 }
 
 var (
-	ErrNotYourTurn    = errors.New("not your turn")
-	ErrPlayerNotFound = errors.New("player not found in turn order")
+	ErrNoPlayers         = errors.New("no players in turn order")
+	ErrNotYourTurn       = errors.New("not your turn")
+	ErrPlayerNotInOrder  = errors.New("player not found in turn order")
 )
 
-// EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+// EndTurn завершает ход: берём следующего живого игрока по кругу.
 func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Проверяем, что запрос отправлен от игрока, у которого и должен быть ход.
-	if currentPlayerID != m.ActiveUserID {
-		log.Printf("Ошибка: currentPlayerID (%d) != ActiveUserID (%d). Невозможно завершить ход.", currentPlayerID, m.ActiveUserID)
-		return 0, ErrNotYourTurn
+	n := len(m.TurnOrder)
+	if n == 0 {
+		return 0, ErrNoPlayers
 	}
 
-	// Находим индекс текущего игрока в TurnOrder.
-	index := -1
-	for i, pid := range m.TurnOrder {
-		if pid == currentPlayerID {
-			index = i
+	// Найти текущий индекс, если есть
+	startIdx := 0
+	for i, id := range m.TurnOrder {
+		if id == currentPlayerID {
+			startIdx = i
 			break
 		}
 	}
-	if index == -1 {
-		log.Printf("Ошибка: Игрок %d не найден в TurnOrder: %v", currentPlayerID, m.TurnOrder)
-		return 0, ErrPlayerNotFound
-	}
 
-	// Определяем следующего игрока циклически.
-	nextIndex := (index + 1) % len(m.TurnOrder)
-	if nextIndex == 0 {
+	// Ищем следующего — всегда берём (startIdx+1)%n
+	nextIdx := (startIdx + 1) % n
+	// Если мы обернулись назад в начало — это новый круг
+	if nextIdx <= startIdx {
 		m.TurnNumber++
 	}
-	m.ActiveUserID = m.TurnOrder[nextIndex]
-	log.Printf("Ход завершён игроком %d, теперь ход у игрока %d, номер хода %d", currentPlayerID, m.ActiveUserID, m.TurnNumber)
+
+	m.ActiveUserID = m.TurnOrder[nextIdx]
+	log.Printf(
+		"EndTurn: %d → %d (turn %d)",
+		currentPlayerID, m.ActiveUserID, m.TurnNumber,
+	)
 	return m.ActiveUserID, nil
+}
+
+// RemovePlayerFromTurnOrder чистит очередь от погибшего игрока.
+// Если погибший был среди TurnOrder, просто вырезаем его.
+// Если он совпадал с ActiveUserID, передаём ход сразу следующему.
+func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Фильтруем очередь
+	newOrder := make([]int, 0, len(m.TurnOrder))
+	for _, id := range m.TurnOrder {
+		if id != userID {
+			newOrder = append(newOrder, id)
+		}
+	}
+	m.TurnOrder = newOrder
+
+	// Если очередь опустела — ничего больше не делаем
+	if len(m.TurnOrder) == 0 {
+		m.ActiveUserID = 0
+		return
+	}
+
+	// Если погибший был активным, передаём ход следующему в новом списке
+	if m.ActiveUserID == userID {
+		// выбираем новый ActiveUserID из начала TurnOrder
+		m.ActiveUserID = m.TurnOrder[0]
+		m.TurnNumber++
+		log.Printf(
+			"RemovePlayer: %d died, new active %d (turn %d)",
+			userID, m.ActiveUserID, m.TurnNumber,
+		)
+	}
 }
 
 // --- Хранилище состояний матчей ---
@@ -66,25 +101,24 @@ var (
 	MatchStatesMu sync.Mutex
 )
 
-// CreateMatchState создаёт состояние матча и сохраняет его в хранилище.
+// CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
-	matchState := &MatchState{
-		InstanceID:     instanceID,
-		TurnOrder:      playerIDs,
+	ms := &MatchState{
+		InstanceID:   instanceID,
+		TurnOrder:    append([]int(nil), playerIDs...), // копия слайса
+		TurnNumber:   1,
 		ActiveUserID: 0,
-		TurnNumber:     1,
 	}
 	if len(playerIDs) > 0 {
-		matchState.ActiveUserID = playerIDs[0]
+		ms.ActiveUserID = playerIDs[0]
 	}
-
 	MatchStatesMu.Lock()
-	MatchStates[instanceID] = matchState
+	MatchStates[instanceID] = ms
 	MatchStatesMu.Unlock()
-
-	return matchState
+	return ms
 }
 
+// GetMatchState возвращает текущее состояние матча.
 func GetMatchState(instanceID string) (*MatchState, bool) {
 	MatchStatesMu.Lock()
 	defer MatchStatesMu.Unlock()

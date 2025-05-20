@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"log"
 
 	"gameservice/game"
 	"gameservice/middleware"
@@ -213,6 +214,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		"payload": map[string]interface{}{
 			"userId":      userID,
 			"newPosition": map[string]int{"x": req.NewPosX, "y": req.NewPosY},
+			"instanceId":  instanceID,
 		},
 	}
 	b2, _ := json.Marshal(moveMsg)
@@ -286,10 +288,36 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 5) Сохраняем здоровье цели (игрок или монстр)
 	if req.TargetType == "player" {
-		player, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
-		player.Health = newTargetHealth
-		repository.UpdateMatchPlayer(player)
-	} else {
+    player, _ := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+    player.Health = newTargetHealth
+    	if newTargetHealth > 0 {
+        // обычный случай
+        repository.UpdateMatchPlayer(player)
+    	} else {
+        // игрок погиб — удаляем его из матча
+        	if err := repository.DeleteMatchPlayer(req.InstanceID, req.TargetID); err != nil {
+           	 log.Printf("Ошибка удаления погибшего игрока: %v", err)
+        	}
+			gameState, ok := game.GetMatchState(req.InstanceID)
+			if ok {
+				gameState.RemovePlayerFromTurnOrder(req.TargetID)
+			}
+        // обновляем JSON-карту: сброс флага isPlayer
+        oldPos := player.Position
+        _ = repository.UpdateCellPlayerFlags(req.InstanceID, oldPos, oldPos)
+
+        // рассылаем событие о смерти игрока
+        defeatMsg := map[string]interface{}{
+            "type": "PLAYER_DEFEATED",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "userId":     req.TargetID,
+            },
+        }
+        data, _ := json.Marshal(defeatMsg)
+        Broadcast(data)
+	}
+    } else {
 		// Для монстра сначала обновляем здоровье
 		repository.UpdateMatchMonsterHealth(req.InstanceID, req.TargetID, newTargetHealth)
 
