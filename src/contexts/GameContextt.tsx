@@ -15,7 +15,7 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
-import type { GameState, Action, ResourceType, MonsterType, PlayerState } from "../types/GameTypes";
+import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell } from "../types/GameTypes";
 
 // Начальное состояние
 const initialState: GameState = {
@@ -61,6 +61,20 @@ export function gameReducer(state: GameState, action: Action): GameState {
         ),
       };
 
+      case "COMBAT_EXCHANGE": {
+  const { attacker, target } = action.payload;
+  console.log("[GameReducer][COMBAT_EXCHANGE]", attacker, target);
+  return {
+    ...state,
+    players: state.players.map(p => {
+      if (p.user_id === attacker.id) return { ...p, health: attacker.new_hp };
+      if (p.user_id === target.id)   return { ...p, health: target.new_hp };
+      return p;
+    }),
+  };
+}
+
+
    case "SET_ACTIVE_USER": {
   console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
   const { active_user, turnNumber, energy } = action.payload;
@@ -103,15 +117,25 @@ export function gameReducer(state: GameState, action: Action): GameState {
         ),
       };
 
-    case "UPDATE_CELL":
-      // Обновляем только ту клетку, id которой совпадает с updatedCell.id
-      const { updatedCell } = action.payload;
-      return {
-        ...state,
-        grid: state.grid.map((cell) =>
-          cell.cell_id === updatedCell.cell_id ? { ...cell, ...updatedCell } : cell
-        ),
-      };
+    case "UPDATE_CELL": {
+  const { updatedCell } = action.payload
+  return {
+    ...state,
+    grid: state.grid.map(cell => {
+      // если пришёл cell_id и он совпадает — используем его:
+      if (updatedCell.cell_id != null && cell.cell_id === updatedCell.cell_id) {
+        return { ...cell, ...updatedCell }
+      }
+      // иначе, если пришли координаты, матчим по ним:
+      if (updatedCell.x != null && updatedCell.y != null &&
+          cell.x === updatedCell.x && cell.y === updatedCell.y) {
+        return { ...cell, ...updatedCell }
+      }
+      return cell
+    })
+  }
+}
+
 
     case "RESET_STATE":
       console.log("[GameReducer][RESET_STATE] Сброс состояния");
@@ -292,6 +316,63 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         dispatch({ type: "UPDATE_PLAYER", payload: { player } });
         break;
       }
+      
+     case "COMBAT_EXCHANGE": {
+  // приводим payload к нужному типу
+  const { attacker, target } = data.payload as {
+    attacker: { id: number; new_hp: number; damage: number };
+    target:   { id: number; new_hp: number; damage: number };
+  };
+
+  dispatch({
+    type: "COMBAT_EXCHANGE",
+    payload: {
+      attacker: { id: attacker.id, new_hp: attacker.new_hp },
+      target:   { id: target.id,   new_hp: target.new_hp },
+    },
+  });
+  break;
+}
+
+case "MONSTER_HIT": {
+  const { monsterInstanceId, newHP, x, y } = data.payload as {
+    monsterInstanceId: number;
+    newHP: number;
+    x: number;
+    y: number;
+  };
+
+  // Обновляем клетку в grid, меняя здоровье монстра
+  dispatch({
+    type: "UPDATE_CELL",
+    payload: {
+      updatedCell: {
+        ...state.grid.find(cell => cell.x === x && cell.y === y)!,
+        monster: state.grid
+          .find(cell => cell.x === x && cell.y === y)!
+          .monster && {
+            ...state.grid.find(cell => cell.x === x && cell.y === y)!.monster!,
+            health: newHP,
+          },
+      },
+    },
+  });
+  break;
+}
+
+
+case "UPDATE_CELL": {
+  console.log("[GameProvider] UPDATE_CELL payload:", data.payload.updatedCell);
+  dispatch({
+    type: "UPDATE_CELL",
+    payload: {
+      updatedCell: data.payload.updatedCell as Cell
+    }
+  });
+  break;
+}
+
+
       default:
         // можно логировать непредвидённые типы
         console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);

@@ -99,41 +99,48 @@ export type GameState = {
 
 export type Action =
   | {
-      type: "SET_MATCH_DATA";
-      payload: {
-        instanceId: string;
-        mode: string;
-        grid: Cell[];
-        mapWidth: number;
-        mapHeight: number;
-        players: PlayerState[];
-        active_user: number;
-        turnNumber: number;
-      };
-    }
-  | {
-      type: "MOVE_PLAYER";
-      payload: { userId: number; newPosition: { x: number; y: number } };
-    }
-  | {
-      type: "SET_ACTIVE_USER";
-      payload: { active_user: number; turnNumber: number; energy?: number};
-    }
-  | {
-      type: "UPDATE_CELL";
-      payload: { updatedCell: Cell };
-    }
-  | {
-      type: "UPDATE_PLAYER";
-      payload: { player: PlayerState };
-    }
-  | {
-      type: "UPDATE_INVENTORY";
-      payload: { userId: number; inventory: Inventory };
-    }
-  | {
-      type: "RESET_STATE";
+    type: "SET_MATCH_DATA";
+    payload: {
+      instanceId: string;
+      mode: string;
+      grid: Cell[];
+      mapWidth: number;
+      mapHeight: number;
+      players: PlayerState[];
+      active_user: number;
+      turnNumber: number;
     };
+  }
+  | {
+    type: "MOVE_PLAYER";
+    payload: { userId: number; newPosition: { x: number; y: number } };
+  }
+  | {
+    type: "SET_ACTIVE_USER";
+    payload: { active_user: number; turnNumber: number; energy?: number };
+  }
+  | {
+    type: "UPDATE_CELL";
+    payload: { updatedCell: Cell };
+  }
+  | {
+    type: "UPDATE_PLAYER";
+    payload: { player: PlayerState };
+  }
+  |
+  {
+    type: "COMBAT_EXCHANGE"; payload: {
+      attacker: { id: number; new_hp: number }
+      target: { id: number; new_hp: number }
+    }
+  }
+  | {
+    type: "UPDATE_INVENTORY";
+    payload: { userId: number; inventory: Inventory };
+  }
+  | {
+    type: "RESET_STATE";
+  };
 
-    // Здесь перечисляем возможные направления
+// Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";

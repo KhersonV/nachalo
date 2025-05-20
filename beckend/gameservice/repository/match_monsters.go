@@ -70,3 +70,35 @@ func UpdateMatchMonsterHealth(instanceID string, monsterInstanceID, newHP int) e
     `, newHP, instanceID, monsterInstanceID)
     return err
 }
+
+
+// GetMatchMonsterByID возвращает монстра по его instance-ID
+func GetMatchMonsterByID(instanceID string, monsterInstanceID int) (*MatchMonster, error) {
+    var m MatchMonster
+    err := DB.QueryRow(`
+        SELECT match_instance_id, monster_instance_id, monster_ref_id,
+               pos_x, pos_y, health, max_health,
+               attack, defense, speed, maneuverability, vision, image
+        FROM match_monsters
+        WHERE match_instance_id=$1 AND monster_instance_id=$2
+    `, instanceID, monsterInstanceID).Scan(
+        &m.InstanceID, &m.MonsterInstanceID, &m.RefID,
+        &m.X, &m.Y, &m.Health, &m.MaxHealth,
+        &m.Attack, &m.Defense,
+        &m.Speed, &m.Maneuverability, &m.Vision, &m.Image,
+    )
+    if err != nil {
+        return nil, err
+    }
+    return &m, nil
+}
+
+
+func DeleteMatchMonster(instanceID string, monsterInstanceID int) error {
+    _, err := DB.Exec(`
+        DELETE FROM match_monsters
+         WHERE match_instance_id = $1
+           AND monster_instance_id = $2
+    `, instanceID, monsterInstanceID)
+    return err
+}

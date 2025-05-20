@@ -336,3 +336,32 @@ func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 	}
 	return nil
 }
+
+
+func LoadMapCells(instanceID string) ([]game.FullCell, error) {
+    var raw []byte
+    err := DB.QueryRow(
+        `SELECT map FROM matches WHERE instance_id=$1`,
+        instanceID,
+    ).Scan(&raw)
+    if err != nil {
+        return nil, err
+    }
+    var cells []game.FullCell
+    if err := json.Unmarshal(raw, &cells); err != nil {
+        return nil, err
+    }
+    return cells, nil
+}
+
+func SaveMapCells(instanceID string, cells []game.FullCell) error {
+    raw, err := json.Marshal(cells)
+    if err != nil {
+        return err
+    }
+    _, err = DB.Exec(
+        `UPDATE matches SET map=$1 WHERE instance_id=$2`,
+        raw, instanceID,
+    )
+    return err
+}
