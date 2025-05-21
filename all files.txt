@@ -1380,18 +1380,10 @@ import (
 )
 
 // вверху файла
-func isResource(r game.ResourceData, resources []game.ResourceData) bool {
-    for _, res := range resources {
-        if res.ID == r.ID {
-            return true
-        }
-    }
-    return false
-}
 
 func isArtifact(res game.ResourceData, artifacts []game.ResourceData) bool {
     for _, a := range artifacts {
-        if a.ID == res.ID {
+        if a.Type == res.Type {
             return true
         }
     }
@@ -1456,10 +1448,11 @@ func HandleOpenBarrel(
         Broadcast(b)
 
     case game.ResourceData:
-         itemType := "artifact"
-        if isResource(v, resources) {
-            itemType = "resource"
+         itemType := "resource"
+        if isArtifact(v, artifacts) {
+            itemType = "artifact"
     }
+     fmt.Printf("DEBUG: AddInventoryItem for ID=%d Name=%q → itemType=%q\n", v.ID, v.Type, itemType)
       
 		// а) кладём в инвентарь
        if err := repository.AddInventoryItem(
@@ -1538,8 +1531,6 @@ func HandleOpenBarrel(
 
     return nil
 }
-
-
 
 
 
@@ -6400,109 +6391,146 @@ export function useInfoModal() {
 
 
 
-
 //==================================
 // src/components/Inventory.tsx
 //==================================
 
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
-import type { Inventory, InventoryItem } from "../types/GameTypes";
+import type { RawInventoryItem } from "../types/GameTypes";
 import styles from "../styles/Inventory.module.css";
-
 const Inventory: React.FC = () => {
-  const { state, dispatch } = useGame();
+  const { state } = useGame();
   const { user } = useAuth();
 
-  // Ищем игрока по user.id (сравниваем числовые значения)
+  // 1) Находим игрока
   const player = state.players.find((p) => p.user_id === user?.id);
+  if (!player) return <div>Инвентарь недоступен</div>;
 
-  if (!player) {
-    return <div>Инвентарь недоступен</div>;
-  }
+  // normalize-функция: из любого «сырого» объекта делаем RawInventoryItem
+  const normalize = (it: any, keyHint?: string): RawInventoryItem => {
+    // если keyHint вида "resource_2", распарсим его
+    let hintType: "resource" | "artifact" | undefined;
+    let hintId: number | undefined;
+    if (keyHint) {
+      const [t, id] = keyHint.split("_");
+      if ((t === "resource" || t === "artifact") && !isNaN(+id)) {
+        hintType = t;
+        hintId = +id;
+      }
+    }
 
-  // Пробуем распарсить инвентарь
-  let inventory: Inventory;
-  try {
-    const parsed =
-      typeof player.inventory === "string"
+    const item_type = (it.item_type || it.type || hintType || "resource") as "resource" | "artifact";
+    const item_id   = it.item_id || it.id || hintId || 0;
+    const name      = it.name || it.item_name || item_type + "_" + item_id;
+    const item_count= it.item_count || it.count || 1;
+    const image     = it.image || it.image_url || "";
+    const description = it.description || it.item_description || "";
+
+    return { item_type, item_id, name, item_count, image, description, bonus: it.bonus, effect: it.effect };
+  };
+
+  // 2) Из разных форматов собираем единый плоский массив
+  const rawItems: RawInventoryItem[] = useMemo(() => {
+    let parsed: any;
+    try {
+      parsed = typeof player.inventory === "string"
         ? JSON.parse(player.inventory)
         : player.inventory;
-    // Если объект не содержит ключей resources и artifacts, оборачиваем его в нужную структуру.
-    if (!("resources" in parsed) || !("artifacts" in parsed)) {
-      inventory = { resources: parsed, artifacts: {} };
-    } else {
-      inventory = parsed;
+    } catch {
+      return [];
     }
-  } catch (e) {
-    console.error("Ошибка парсинга инвентаря:", e);
-    inventory = { resources: {}, artifacts: {} };
-  }
 
-  // Обработчик использования предмета: отправляем запрос на сервер
+    let flat: any[] = [];
+    if (Array.isArray(parsed)) {
+      flat = parsed;
+    } else if (parsed.resources || parsed.artifacts) {
+      flat = [
+        ...(parsed.resources ? Object.entries(parsed.resources) : []),
+        ...(parsed.artifacts ? Object.entries(parsed.artifacts) : []),
+      ].map(
+        ([key, val]) => ({ val, key }) // запомним ключ для normalize
+      );
+    } else {
+      flat = Object.entries(parsed).map(([key, val]) => ({ val, key }));
+    }
+
+    return flat.map(entry => {
+      // entry может быть либо raw объект, либо {val, key}
+      if ((entry as any).val !== undefined) {
+        return normalize((entry as any).val, (entry as any).key);
+      } else {
+        return normalize(entry);
+      }
+    });
+  }, [player.inventory]);
+
+  // 3) Группируем
+  const { resources, artifacts } = useMemo(() => {
+    return rawItems.reduce<{
+      resources: Record<string, RawInventoryItem>;
+      artifacts: Record<string, RawInventoryItem>;
+    }>(
+      (acc, it) => {
+        const key = `${it.item_type}_${it.item_id}`;
+        if (it.item_type === "resource") acc.resources[key] = it;
+        else acc.artifacts[key] = it;
+        return acc;
+      },
+      { resources: {}, artifacts: {} }
+    );
+  }, [rawItems]);
+  
+  // 4) Обработчик использования предмета
   const handleUseItem = async (
     section: "resources" | "artifacts",
     key: string,
-    item: InventoryItem
+    item: RawInventoryItem
   ) => {
     if (item.item_count <= 0 || !user) return;
 
-    console.log(`Отправляем запрос на использование предмета: ${item.name || key}`);
-
-    // Здесь предполагается, что key имеет формат "itemType_itemID".
-    // Разбиваем ключ для получения типа и идентификатора.
-    const [itemType, idStr] = key.split("_");
-    const itemID = parseInt(idStr, 10);
+    const [item_type, idStr] = key.split("_");
+    const item_id = parseInt(idStr, 10);
 
     try {
-      const response = await fetch(`http://localhost:8001/game/player/${user.id}/inventory/use`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          item_type: itemType,
-          item_id: itemID,
-          item_count: 1, // можно изменить, если нужно использовать более одного предмета
-        }),
-      });
-
-      if (!response.ok) {
-        console.error("Ошибка использования предмета", await response.text());
-        return;
+      const res = await fetch(
+        `http://localhost:8001/game/player/${user.id}/inventory/use`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ item_type, item_id, item_count: 1 }),
+        }
+      );
+      if (!res.ok) {
+        console.error("Ошибка использования предмета", await res.text());
       }
-
-      console.log("Предмет успешно использован");
-      
-      // Если сервер возвращает обновлённый инвентарь или информацию об игроке,
-      // можно обновить состояние через dispatch или иным способом.
-      // Например, вызвать fetch для обновления данных игрока.
-      
-    } catch (error) {
-      console.error("Ошибка запроса на использование предмета", error);
+    } catch (err) {
+      console.error("Ошибка запроса на использование предмета", err);
     }
   };
 
-  // Функция для рендера элементов инвентаря (для любого раздела)
+  // 5) Рендер элементов
   const renderItems = (
     section: "resources" | "artifacts",
-    items: Record<string, InventoryItem> | undefined
-  ) => {
-    const safeItems = items ?? {};
-    return Object.entries(safeItems)
+    items: Record<string, RawInventoryItem>
+  ) =>
+    Object.entries(items)
       .filter(([, item]) => item.item_count > 0)
       .map(([key, item]) => (
         <div key={key} className={styles.item}>
           <img
             src={item.image}
-            alt={item.name || key}
+            alt={item.name}
             className={styles.itemImage}
+            loading="lazy"
           />
-          <div className={styles.itemName}>{item.name || key}</div>
-          <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
+          <div className={styles.itemName}>{item.name}</div>
+          {section === "resources" && (
+            <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
+          )}
           <button
             className={styles.useButton}
             onClick={() => handleUseItem(section, key, item)}
@@ -6511,8 +6539,8 @@ const Inventory: React.FC = () => {
           </button>
         </div>
       ));
-  };
 
+  // 6) JSX
   return (
     <div className={styles.inventoryContainer}>
       <h2 className={styles.title}>Инвентарь</h2>
@@ -6520,13 +6548,13 @@ const Inventory: React.FC = () => {
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>Ресурсы</h3>
           <div className={styles.itemsContainer}>
-            {renderItems("resources", inventory.resources)}
+            {renderItems("resources", resources)}
           </div>
         </div>
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>Артефакты</h3>
           <div className={styles.itemsContainer}>
-            {renderItems("artifacts", inventory.artifacts)}
+            {renderItems("artifacts", artifacts)}
           </div>
         </div>
       </div>
@@ -7976,18 +8004,22 @@ export type BonusAttributes = {
   defense?: number;
 };
 
-export type InventoryItem = {
-  name?: string;
+// Определяем, как приходит каждый элемент из бэка
+export type RawInventoryItem = {
+  item_type: "resource" | "artifact";
+  item_id: number;
+  name: string;             // раньше было item_name
   item_count: number;
-  image: string;
-  description: string;
+  image: string;            // соответствует image_url на бэке
+  description: string;      // соответствует item_description на бэке
   bonus?: BonusAttributes;
   effect?: Record<string, number>;
 };
 
+// Типизированный инвентарь уже с разделением
 export type Inventory = {
-  resources: Record<string, InventoryItem>;
-  artifacts: Record<string, InventoryItem>;
+  resources: Record<string, RawInventoryItem>;
+  artifacts: Record<string, RawInventoryItem>;
 };
 
 export type PlayerState = {
@@ -8130,8 +8162,6 @@ export type Action =
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";
-
-
 
 
 

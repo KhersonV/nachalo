@@ -13,18 +13,22 @@ export type BonusAttributes = {
   defense?: number;
 };
 
-export type InventoryItem = {
-  name?: string;
+// Определяем, как приходит каждый элемент из бэка
+export type RawInventoryItem = {
+  item_type: "resource" | "artifact";
+  item_id: number;
+  name: string;             // раньше было item_name
   item_count: number;
-  image: string;
-  description: string;
+  image: string;            // соответствует image_url на бэке
+  description: string;      // соответствует item_description на бэке
   bonus?: BonusAttributes;
   effect?: Record<string, number>;
 };
 
+// Типизированный инвентарь уже с разделением
 export type Inventory = {
-  resources: Record<string, InventoryItem>;
-  artifacts: Record<string, InventoryItem>;
+  resources: Record<string, RawInventoryItem>;
+  artifacts: Record<string, RawInventoryItem>;
 };
 
 export type PlayerState = {

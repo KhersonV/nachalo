@@ -12,18 +12,10 @@ import (
 )
 
 // вверху файла
-func isResource(r game.ResourceData, resources []game.ResourceData) bool {
-    for _, res := range resources {
-        if res.ID == r.ID {
-            return true
-        }
-    }
-    return false
-}
 
 func isArtifact(res game.ResourceData, artifacts []game.ResourceData) bool {
     for _, a := range artifacts {
-        if a.ID == res.ID {
+        if a.Type == res.Type {
             return true
         }
     }
@@ -88,10 +80,11 @@ func HandleOpenBarrel(
         Broadcast(b)
 
     case game.ResourceData:
-         itemType := "artifact"
-        if isResource(v, resources) {
-            itemType = "resource"
+         itemType := "resource"
+        if isArtifact(v, artifacts) {
+            itemType = "artifact"
     }
+     fmt.Printf("DEBUG: AddInventoryItem for ID=%d Name=%q → itemType=%q\n", v.ID, v.Type, itemType)
       
 		// а) кладём в инвентарь
        if err := repository.AddInventoryItem(
