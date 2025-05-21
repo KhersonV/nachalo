@@ -92,9 +92,17 @@ func main() {
 	// === Эндпоинты для ресурсов и монстров ===
 	// В файле gameservice/cmd/main.go, внутри настройки маршрутов:
 	router.HandleFunc("/game/collectResource", handlers.CollectResourceHandler).Methods("POST")
+	router.HandleFunc("/game/openBarrel", handlers.OpenBarrelHandler).Methods("POST")
+	
 
 	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
 	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
+
+	router.HandleFunc("/game/user/{id}/artifacts", handlers.GetUserArtifactsHandler).Methods("GET")
+	router.HandleFunc("/game/artifact/{id}",   handlers.GetArtifactHandler).Methods("GET")
+	router.HandleFunc("/game/artifact/{id}",   handlers.DeleteArtifactHandler).Methods("DELETE")
+	router.HandleFunc("/game/artifact/transfer", handlers.TransferArtifactHandler).Methods("POST")
+	router.HandleFunc("/game/artifact/{id}",   handlers.UpdateArtifactHandler).Methods("PATCH")
 
 	// Подключаем CORS
 	handler := enableCors(router)

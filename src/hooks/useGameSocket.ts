@@ -71,7 +71,7 @@ export function useGameSocket(
     };
 
     ws.current.onerror = (err) => {
-      console.error("WebSocket ошибка:", err);
+      // console.error("WebSocket ошибка:", err);
     };
 
     ws.current.onclose = (e) => {

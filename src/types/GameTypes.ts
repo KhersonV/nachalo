@@ -142,6 +142,21 @@ export type Action =
     type: "RESET_STATE";
   }
   
+  | {
+      type: "BARREL_RESOURCE";
+      payload: {
+        updatedCell: Cell;
+        updatedPlayer: PlayerState;
+      };
+    }
+  | {
+      type: "BARREL_ARTIFACT";
+      payload: {
+        updatedCell: Cell;
+        updatedPlayer: PlayerState;
+      };
+    }
+
   | { type: "PLAYER_DEFEATED"; payload: { userId: number } }
   | {
       type: "TURN_PASSED";

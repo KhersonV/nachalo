@@ -40,11 +40,12 @@ func AddInventoryHandler(w http.ResponseWriter, r *http.Request) {
 
     // Декодируем JSON-запрос
     var req struct {
-        ItemType    string `json:"item_type"`
-        ItemID      int    `json:"item_id"`
-        Count       int    `json:"count"`
-        Image       string `json:"image,omitempty"`
-        Description string `json:"description,omitempty"`
+        InstanceID   string `json:"instance_id"`
+        ItemType     string `json:"item_type"`
+        ItemID       int    `json:"item_id"`
+        Count        int    `json:"count"`
+        Image        string `json:"image,omitempty"`
+        Description  string `json:"description,omitempty"`
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
@@ -53,6 +54,10 @@ func AddInventoryHandler(w http.ResponseWriter, r *http.Request) {
     // Если количество не указано или меньше 1, устанавливаем значение 1
     if req.Count <= 0 {
         req.Count = 1
+    }
+    if req.InstanceID == "" {
+        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+        return
     }
 
     // Вызов функции репозитория для добавления предмета.
@@ -64,12 +69,14 @@ func AddInventoryHandler(w http.ResponseWriter, r *http.Request) {
     // 3. После обновления инвентарь сохраняется через SQL-запрос:
     //      UPDATE match_players SET inventory = $1 WHERE match_instance_id = $2 AND user_id = $3;
     err = repository.AddInventoryItem(
+        req.InstanceID,
         playerID,
         req.ItemType,
         req.ItemID,
+        req.Description,  // itemName
+        req.Image,        // imageURL
+        req.Description,  // description
         req.Count,
-        req.Image,
-        req.Description,
     )
     if err != nil {
         http.Error(w, fmt.Sprintf("Ошибка добавления предмета: %v", err), http.StatusInternalServerError)

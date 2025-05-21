@@ -16,7 +16,7 @@ import React, {
 import { useRouter } from "next/navigation";
 import { useGameSocket } from "../hooks/useGameSocket";
 import { useAuth } from "../contexts/AuthContext";
-import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell } from "../types/GameTypes";
+import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell, Inventory } from "../types/GameTypes";
 
 // Начальное состояние
 const initialState: GameState = {
@@ -35,9 +35,9 @@ const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action>
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "SET_MATCH_DATA":
-      console.log("[GameReducer][SET_MATCH_DATA] Получены данные матча:", action.payload);
+     // console.log("[GameReducer][SET_MATCH_DATA] Получены данные матча:", action.payload);
       const active_user = action.payload.active_user;
-      console.log("[GameReducer] Устанавливаем active_user:", active_user);
+     // console.log("[GameReducer] Устанавливаем active_user:", active_user);
       return {
         ...state,
         instanceId: action.payload.instanceId,
@@ -51,7 +51,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
       };
 
     case "MOVE_PLAYER":
-      console.log("[GameReducer][MOVE_PLAYER] Перемещение игрока:", action.payload);
+     // console.log("[GameReducer][MOVE_PLAYER] Перемещение игрока:", action.payload);
       const playerId = action.payload.userId;
       return {
         ...state,
@@ -64,7 +64,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
 
       case "COMBAT_EXCHANGE": {
   const { attacker, target } = action.payload;
-  console.log("[GameReducer][COMBAT_EXCHANGE]", attacker, target);
+  //console.log("[GameReducer][COMBAT_EXCHANGE]", attacker, target);
   return {
     ...state,
     players: state.players.map(p => {
@@ -76,8 +76,32 @@ export function gameReducer(state: GameState, action: Action): GameState {
 }
 
 
+ case "BARREL_ARTIFACT": {
+  const { updatedPlayer } = action.payload;
+  return {
+    ...state,
+    players: state.players.map(p =>
+      p.user_id === updatedPlayer.user_id ? updatedPlayer : p
+    ),
+  };
+}
+
+    case "UPDATE_INVENTORY": {
+  const { userId, inventory } = action.payload as {
+    userId: number;
+    inventory: Inventory;
+  };
+  // обновляем только у нужного игрока
+  return {
+    ...state,
+    players: state.players.map(p =>
+      p.user_id === userId ? { ...p, inventory } : p
+    ),
+  };
+}
+
    case "SET_ACTIVE_USER": {
-  console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
+ // console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
   const { active_user, turnNumber, energy } = action.payload;
   return {
     ...state,
@@ -93,7 +117,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
 }
 
     case "UPDATE_PLAYER":
-      console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
+    //  console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
       const updatedData = action.payload.player;
       const normalizedPlayer: PlayerState = {
         ...updatedData,
@@ -101,16 +125,16 @@ export function gameReducer(state: GameState, action: Action): GameState {
         user_id: updatedData.user_id,
       };
       if (typeof normalizedPlayer.inventory === "string") {
-        console.log("[GameReducer][UPDATE_PLAYER] Инвентарь как строка:", normalizedPlayer.inventory);
+      //  console.log("[GameReducer][UPDATE_PLAYER] Инвентарь как строка:", normalizedPlayer.inventory);
         try {
           normalizedPlayer.inventory = JSON.parse(normalizedPlayer.inventory);
-          console.log("[GameReducer][UPDATE_PLAYER] Парсенный инвентарь:", normalizedPlayer.inventory);
+       //   console.log("[GameReducer][UPDATE_PLAYER] Парсенный инвентарь:", normalizedPlayer.inventory);
         } catch (e) {
-          console.error("[GameReducer][UPDATE_PLAYER] Ошибка парсинга инвентаря:", e);
+        //  console.error("[GameReducer][UPDATE_PLAYER] Ошибка парсинга инвентаря:", e);
           normalizedPlayer.inventory = { resources: {}, artifacts: {} };
         }
       }
-      console.log("[GameReducer][UPDATE_PLAYER] После нормализации:", normalizedPlayer);
+     // console.log("[GameReducer][UPDATE_PLAYER] После нормализации:", normalizedPlayer);
       return {
         ...state,
         players: state.players.map((p) =>
@@ -138,7 +162,7 @@ export function gameReducer(state: GameState, action: Action): GameState {
 }
 
 case "PLAYER_DEFEATED": {
-  console.log("[GameReducer] PLAYER_DEFEATED, удаляем игрока:", action.payload.userId);
+ // console.log("[GameReducer] PLAYER_DEFEATED, удаляем игрока:", action.payload.userId);
   return {
     ...state,
     players: state.players.filter(p => p.user_id !== action.payload.userId),
@@ -152,7 +176,7 @@ case "TURN_PASSED":
       };
 
     case "RESET_STATE":
-      console.log("[GameReducer][RESET_STATE] Сброс состояния");
+     // console.log("[GameReducer][RESET_STATE] Сброс состояния");
       return { ...initialState };
 
     default:
@@ -174,7 +198,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   const prevInstanceIdRef = useRef<string>("");
 
   useEffect(() => {
-    console.log("[GameProvider] instanceId изменился на:", instanceId);
+    //console.log("[GameProvider] instanceId изменился на:", instanceId);
     // Сброс состояния, если instanceId изменился
     if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
       dispatch({ type: "RESET_STATE" });
@@ -189,7 +213,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           return;
         }
         const data = await res.json();
-        console.log("[GameProvider] Полученные ресурсы:", data);
+       // console.log("[GameProvider] Полученные ресурсы:", data);
         setResources(data);
       } catch (err) {
         console.error("[GameProvider] fetchResources error:", err);
@@ -204,7 +228,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
           return;
         }
         const data = await res.json();
-        console.log("[GameProvider] Полученные монстры:", data);
+       // console.log("[GameProvider] Полученные монстры:", data);
         setMonsters(data);
       } catch (err) {
         console.error("[GameProvider] fetchMonsters error:", err);
@@ -373,13 +397,56 @@ case "MONSTER_HIT": {
 }
 
 
+
+    case "BARREL_DAMAGE": {
+      // payload: { userId, amount, hp }
+      const { userId, amount, hp } = data.payload as {
+        userId: number;
+        amount: number;
+        hp: number;
+      };
+      // обновляем игрока
+      dispatch({
+        type: "UPDATE_PLAYER",
+        payload: {
+          player: {
+            ...state.players.find(p => p.user_id === userId)!,
+            health: hp
+          }
+        }
+      });
+      break;
+    }
+
+    case "BARREL_RESOURCE":
+    case "BARREL_ARTIFACT": {
+      const { updatedCell, updatedPlayer } = data.payload as {
+        updatedCell: Cell;
+        updatedPlayer: PlayerState;
+      };
+      dispatch({ type: "UPDATE_CELL",   payload: { updatedCell } });
+      dispatch({ type: "UPDATE_PLAYER", payload: { player: updatedPlayer } });
+      break;
+    }
+
+
+
+  case "UPDATE_INVENTORY": {
+    const { userId, inventory } = data.payload;
+    dispatch({ type: "UPDATE_INVENTORY", payload: { userId, inventory } });
+    break;
+  }
+
+
+
 case "UPDATE_CELL": {
-  console.log("[GameProvider] UPDATE_CELL payload:", data.payload.updatedCell);
+  console.log("[GameProvider] UPDATE_CELL payload:", data.payload);
+  // data.payload может быть либо { updatedCell: Cell }, либо сразу Cell
+  const raw = data.payload as any;
+  const updatedCell = raw.updatedCell ?? raw;  // берём nested.updatedCell или raw
   dispatch({
     type: "UPDATE_CELL",
-    payload: {
-      updatedCell: data.payload.updatedCell as Cell
-    }
+    payload: { updatedCell: updatedCell as Cell }
   });
   break;
 }

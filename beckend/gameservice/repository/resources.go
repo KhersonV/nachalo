@@ -57,3 +57,31 @@ func GetMonstersData() ([]game.MonsterData, error) {
 	}
 	return monsters, nil
 }
+
+
+func GetArtifactsData() ([]game.ResourceData, error) {
+    rows, err := DB.Query(`SELECT id, name AS type, description, bonus AS effect, image FROM artifacts`)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var arts []game.ResourceData
+    for rows.Next() {
+        var rd game.ResourceData
+        var effectBytes []byte
+        if err := rows.Scan(&rd.ID, &rd.Type, &rd.Description, &effectBytes, &rd.Image); err != nil {
+            return nil, err
+        }
+        // bonus в БД — это JSON-объект вида {"attack":5,...}
+        var effect map[string]int
+        if err := json.Unmarshal(effectBytes, &effect); err != nil {
+            effect = make(map[string]int)
+        }
+        rd.Effect = effect
+        rd.Image = strings.Trim(rd.Image, `"`)
+        arts = append(arts, rd)
+    }
+    return arts, nil
+}
+

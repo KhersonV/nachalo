@@ -7,7 +7,10 @@ gameservice
 │   ├── mapgen.go           // Генерация карты и другие игровые утилиты
 │   └── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
 ├── handlers
+│   ├── artifacts_http.go
 │   ├── auth.go                      // Обработчики для регистрации, логина, профиля (пустой пример)
+│   ├── barrel_http.go
+│   ├── barrel.go
 │   ├── combat.go                    // Обработчики для атаки, перемещения
 │   ├── inventory.go                 // Обработчики для работы с инвентарём
 │   ├── match_player.go
@@ -25,6 +28,7 @@ gameservice
 │   ├── player.go                       // Определения типа Player
 │   └── user.go                        // Определения типа User (пример-заглушка)
 ├── repository
+│   ├── artifacts
 │   ├── db.go                           // Инициализация и функции работы с БД (initDB, создание таблиц и т.п.)
 │   ├── inventory.go                 // Функции доступа к таблице inventory_items
 │   ├── match_monsters.go 

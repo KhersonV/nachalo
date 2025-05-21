@@ -35,6 +35,7 @@ func InitDB() {
     CreateInventoryTable()
     // Добавляем нашу новую
     CreateMatchMonstersTable()
+	CreatePersistedArtifactsTable()
 
     // Восстанавливаем state матчей
     if err := RestoreMatchStates(); err != nil {
@@ -132,22 +133,33 @@ func CreateMatchPlayersTable() {
 func CreateInventoryTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS inventory_items (
-  id SERIAL PRIMARY KEY,
-  instance_id TEXT NOT NULL
-    REFERENCES matches(instance_id)
-    ON DELETE CASCADE,
-  user_id INTEGER NOT NULL,
-  item_type TEXT NOT NULL,
-  item_id INTEGER NOT NULL,
-  item_count INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (instance_id, user_id, item_type, item_id)
-);
+	  id            SERIAL PRIMARY KEY,
+	  instance_id   TEXT NOT NULL
+	                    REFERENCES matches(instance_id)
+	                    ON DELETE CASCADE,
+	  user_id       INTEGER NOT NULL
+	                    REFERENCES players(user_id)
+	                    ON DELETE CASCADE,
+	  item_type     TEXT    NOT NULL,    -- 'resource' или 'artifact'
+	  item_id       INTEGER NOT NULL,    -- ID ресурса или артефакта
+	  item_name     TEXT    NOT NULL,    -- человекочитаемое название
+	  item_count    INTEGER NOT NULL DEFAULT 1,
+	  base_value    NUMERIC(12,2) NOT NULL DEFAULT 0,
+	  npc_price     NUMERIC(12,2) NOT NULL DEFAULT 0,
+	  durability    INTEGER NOT NULL DEFAULT 100,
+	  acquired_at   TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+	  expires_at    TIMESTAMP WITH TIME ZONE,
+	  UNIQUE (instance_id, user_id, item_type, item_id)
+	);
 
+	CREATE INDEX IF NOT EXISTS idx_inventory_user
+	  ON inventory_items(user_id);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы inventory_items: %v", err)
 	}
 }
+
 
 func CreateMatchMonstersTable() {
   query := `
@@ -170,6 +182,31 @@ func CreateMatchMonstersTable() {
   `
   if _, err := DB.Exec(query); err != nil {
     log.Fatalf("Ошибка создания таблицы match_monsters: %v", err)
+  }
+}
+
+// CreatePersistedArtifactsTable создаёт таблицу для «вечных» артефактов, выходящих за рамки инстанса.
+func CreatePersistedArtifactsTable() {
+  query := `
+  CREATE TABLE IF NOT EXISTS persisted_artifacts (
+    id              SERIAL PRIMARY KEY,
+    user_id         INTEGER NOT NULL
+                       REFERENCES players(user_id)
+                       ON DELETE CASCADE,
+    artifact_type   TEXT    NOT NULL,
+    artifact_id     INTEGER NOT NULL,
+    base_value      NUMERIC(12,2) NOT NULL DEFAULT 0,
+    npc_price       NUMERIC(12,2) NOT NULL DEFAULT 0,
+    rarity          TEXT    NOT NULL DEFAULT 'common',
+    durability      INTEGER NOT NULL DEFAULT 100,
+    acquired_at     TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+    expires_at      TIMESTAMP WITH TIME ZONE
+  );
+  CREATE INDEX IF NOT EXISTS idx_persisted_artifacts_user
+    ON persisted_artifacts(user_id);
+  `
+  if _, err := DB.Exec(query); err != nil {
+    log.Fatalf("Ошибка создания persisted_artifacts: %v", err)
   }
 }
 

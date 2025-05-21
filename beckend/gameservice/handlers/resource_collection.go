@@ -14,10 +14,10 @@ import (
 	"gameservice/repository"
 )
 
-// CollectResourceRequest – структура запроса для сбора ресурса.
+// CollectResourceRequest – структура запроса для сбора ресурса
 type CollectResourceRequest struct {
-	InstanceID string `json:"instance_id"` // JSON-тег именно instance_id
-	PlayerID   int    `json:"user_id"`     // идентификатор игрока
+	InstanceID string `json:"instance_id"`
+	PlayerID   int    `json:"user_id"`
 	CellX      int    `json:"cell_x"`
 	CellY      int    `json:"cell_y"`
 }
@@ -28,168 +28,118 @@ type UpdatedCellResponse struct {
 	X        int         `json:"x"`
 	Y        int         `json:"y"`
 	TileCode int         `json:"tileCode"`
-	Resource interface{} `json:"resource"` // можно заменить на конкретный тип, если известно
+	Resource interface{} `json:"resource"`
 	Barbel   interface{} `json:"barbel"`
 	Monster  interface{} `json:"monster"`
 	IsPortal bool        `json:"isPortal"`
 	IsPlayer bool        `json:"isPlayer"`
 }
 
-// CollectResourceHandler обрабатывает запрос на сбор ресурса.
-// Он обновляет карту матча, удаляя ресурс из клетки, добавляет ресурс в инвентарь игрока
-// и возвращает обновлённую клетку с явной структурой ответа.
+// CollectResourceHandler обрабатывает и сбор ресурсов, и открытие бочек.
 func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
-	// Читаем тело запроса для логирования и дальнейшей обработки.
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Не удалось прочитать тело запроса", http.StatusBadRequest)
-		return
-	}
-	fmt.Printf("Получено тело запроса: %s\n", string(bodyBytes))
+	// 1) Чтение и парсинг запроса
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body))
 
-	// Восстанавливаем r.Body.
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-	// Парсинг запроса.
 	var req CollectResourceRequest
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка парсинга запроса: %v", err), http.StatusBadRequest)
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, fmt.Sprintf("парсинг запроса: %v", err), http.StatusBadRequest)
 		return
 	}
-	fmt.Printf("Parsed Request: InstanceID: '%s', PlayerID: %d, CellX: %d, CellY: %d\n",
-		req.InstanceID, req.PlayerID, req.CellX, req.CellY)
-
-	// Проверка обязательных полей.
-	if req.InstanceID == "" {
-		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-		return
-	}
-	if req.PlayerID == 0 {
-		http.Error(w, "user_id обязателен", http.StatusBadRequest)
+	if req.InstanceID == "" || req.PlayerID == 0 {
+		http.Error(w, "instance_id и user_id обязательны", http.StatusBadRequest)
 		return
 	}
 
-	// Получаем карту матча из БД.
-	var mapJSON string
-	query := `SELECT map FROM matches WHERE instance_id = $1;`
-	err = repository.DB.QueryRow(query, req.InstanceID).Scan(&mapJSON)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения карты: %v", err), http.StatusInternalServerError)
+	// 2) Загрузка карты и поиска нужной ячейки
+	mapJSON := ""
+	if err := repository.DB.
+		QueryRow(`SELECT map FROM matches WHERE instance_id=$1`, req.InstanceID).
+		Scan(&mapJSON); err != nil {
+		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	// Десериализуем карту как срез клеток.
 	var cells []map[string]interface{}
 	if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка парсинга карты: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("парсинг карты: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Ищем клетку с указанными координатами.
-	var targetCell map[string]interface{}
-	cellFound := false
-	for i, cell := range cells {
-		// При парсинге JSON числа становятся float64, поэтому приводим.
-		if int(cell["x"].(float64)) == req.CellX && int(cell["y"].(float64)) == req.CellY {
-			targetCell = cells[i]
-			cellFound = true
+	var target map[string]interface{}
+	for _, c := range cells {
+		if int(c["x"].(float64)) == req.CellX && int(c["y"].(float64)) == req.CellY {
+			target = c
 			break
 		}
 	}
-	if !cellFound {
-		http.Error(w, "Клетка не найдена", http.StatusBadRequest)
+	if target == nil {
+		http.Error(w, "клетка не найдена", http.StatusBadRequest)
 		return
 	}
 
-	// Проверяем, что в клетке есть ресурс.
-	if targetCell["resource"] == nil {
-		http.Error(w, "В данной клетке нет ресурса", http.StatusBadRequest)
+	// 4) Иначе — обычный ресурс
+	if target["resource"] == nil {
 		return
 	}
+	// Копируем данные ресурса
+	resMap := target["resource"].(map[string]interface{})
+	// Убираем ресурс из карты
+	target["resource"] = nil
+	target["tileCode"] = float64(48)
+	target["monster"] = nil
+	target["isPortal"] = false
 
-	// Сохраняем данные ресурса для добавления в инвентарь.
-	resDataCopy := targetCell["resource"]
+	// Сохраняем карту
+	newMap, _ := json.Marshal(cells)
+	repository.DB.Exec(`UPDATE matches SET map=$1 WHERE instance_id=$2`, string(newMap), req.InstanceID)
 
-	// Обновляем клетку: удаляем ресурс, устанавливаем tileCode в 48 (проходимая клетка),
-	// сбрасываем монстра и флаг портала.
-	targetCell["resource"] = nil
-	targetCell["tileCode"] = float64(48)
-	targetCell["monster"] = nil
-	targetCell["isPortal"] = false
+	   // Добавляем ресурс в инвентарь
+   itemType := resMap["type"].(string)
+   itemID   := int(resMap["id"].(float64))
+   imageURL := resMap["image"].(string)
+   desc     := resMap["description"].(string)
+   if err := repository.AddInventoryItem(
+       req.InstanceID, // match-instance
+       req.PlayerID,
+       itemType,
+       itemID,
+       desc,     // itemName
+       imageURL, // imageURL
+       desc,     // description
+       1,        // count
+   ); err != nil {
+       http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
+       return
+   }
 
-	// Сериализуем обновлённую карту и сохраняем её в БД.
-	newMapJSONBytes, err := json.Marshal(cells)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка сериализации обновленной карты: %v", err), http.StatusInternalServerError)
-		return
+	// Формируем HTTP-ответ точно как раньше
+	updatedCell := UpdatedCellResponse{
+		CellID:   int(target["cell_id"].(float64)),
+		X:        int(target["x"].(float64)),
+		Y:        int(target["y"].(float64)),
+		TileCode: int(target["tileCode"].(float64)),
+		Resource: nil,
+		Barbel:   target["barbel"],
+		Monster:  target["monster"],
+		IsPortal: target["isPortal"].(bool),
+		IsPlayer: target["isPlayer"].(bool),
 	}
-	newMapJSON := string(newMapJSONBytes)
+	playerResp, _ := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
 
-	updateQuery := `UPDATE matches SET map = $1 WHERE instance_id = $2;`
-	_, err = repository.DB.Exec(updateQuery, newMapJSON, req.InstanceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка обновления карты в БД: %v", err), http.StatusInternalServerError)
-		return
+	wsMsg := map[string]interface{}{
+		"type": "RESOURCE_COLLECTED",
+		"payload": map[string]interface{}{
+			"updatedCell":   updatedCell,
+			"updatedPlayer": playerResp,
+		},
 	}
+	buf, _ := json.Marshal(wsMsg)
+	Broadcast(buf)
 
-	// Добавляем ресурс в инвентарь игрока.
-	resDataMap, ok := resDataCopy.(map[string]interface{})
-	if !ok {
-		http.Error(w, "Данные ресурса недоступны", http.StatusInternalServerError)
-		return
-	}
-	itemType, _ := resDataMap["type"].(string)
-	var itemID int
-	if idVal, exists := resDataMap["id"]; exists {
-		itemID = int(idVal.(float64))
-	}
-	imageStr, _ := resDataMap["image"].(string)
-	descriptionStr, _ := resDataMap["description"].(string)
-	err = repository.AddInventoryItem(req.PlayerID, itemType, itemID, 1, imageStr, descriptionStr)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка добавления ресурса в инвентарь: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Формируем ответ с явной структурой UpdatedCellResponse.
-updatedCell := UpdatedCellResponse{
-    CellID:   int(targetCell["cell_id"].(float64)),
-    X:        int(targetCell["x"].(float64)),
-    Y:        int(targetCell["y"].(float64)),
-    TileCode: int(targetCell["tileCode"].(float64)),
-    Resource: targetCell["resource"], // теперь nil
-    Barbel:   targetCell["barbel"],
-    Monster:  targetCell["monster"],
-    IsPortal: targetCell["isPortal"].(bool),
-    IsPlayer: targetCell["isPlayer"].(bool),
-}
-
-playerResp, err := repository.GetMatchPlayerByUserID(req.PlayerID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-// Создаем сообщение для WS, которое уведомляет всех клиентов о сборе ресурса.
-wsMsg := map[string]interface{}{
-    "type": "RESOURCE_COLLECTED",
-    "payload": map[string]interface{}{
-        "updatedCell": updatedCell,
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":       "успешно",
+		"updatedCell":   updatedCell,
 		"updatedPlayer": playerResp,
-        // Если требуется, можно добавить данные игрока или инвентаря.
-    },
-}
-
-// Отправляем сообщение всем подключенным клиентам.
-wsMsgBytes, _ := json.Marshal(wsMsg)
-Broadcast(wsMsgBytes)
-
-// Затем отправляем ответ клиенту, который инициировал запрос.
-response := map[string]interface{}{
-    "message":     "Ресурс собран",
-    "updatedCell": updatedCell,
-	"updatedPlayer": playerResp,
-}
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(response)
+	})
 }
