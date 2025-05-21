@@ -143,6 +143,8 @@ func CreateInventoryTable() {
 	  item_type     TEXT    NOT NULL,    -- 'resource' или 'artifact'
 	  item_id       INTEGER NOT NULL,    -- ID ресурса или артефакта
 	  item_name     TEXT    NOT NULL,    -- человекочитаемое название
+	  image_url         TEXT,
+	  item_description TEXT NOT NULL,
 	  item_count    INTEGER NOT NULL DEFAULT 1,
 	  base_value    NUMERIC(12,2) NOT NULL DEFAULT 0,
 	  npc_price     NUMERIC(12,2) NOT NULL DEFAULT 0,

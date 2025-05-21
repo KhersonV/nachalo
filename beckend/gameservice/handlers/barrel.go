@@ -11,6 +11,40 @@ import (
     "gameservice/repository"
 )
 
+// вверху файла
+func isResource(r game.ResourceData, resources []game.ResourceData) bool {
+    for _, res := range resources {
+        if res.ID == r.ID {
+            return true
+        }
+    }
+    return false
+}
+
+func isArtifact(res game.ResourceData, artifacts []game.ResourceData) bool {
+    for _, a := range artifacts {
+        if a.ID == res.ID {
+            return true
+        }
+    }
+    return false
+}
+
+func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
+    return UpdatedCellResponse{
+        CellID:   cell.CellID,
+        X:        cell.X,
+        Y:        cell.Y,
+        TileCode: cell.TileCode,
+        Resource: cell.Resource,
+        Barbel:   cell.Barbel,
+        Monster:  cell.Monster,
+        IsPortal: cell.IsPortal,
+        IsPlayer: cell.IsPlayer,
+    }
+}
+
+
 // HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 func HandleOpenBarrel(
     cell game.FullCell,
@@ -54,17 +88,21 @@ func HandleOpenBarrel(
         Broadcast(b)
 
     case game.ResourceData:
+         itemType := "artifact"
+        if isResource(v, resources) {
+            itemType = "resource"
+    }
       
 		// а) кладём в инвентарь
        if err := repository.AddInventoryItem(
-           instanceID,    // match-instance
-           userID,
-           v.Type,        // itemType
-           v.ID,          // itemID
-           v.Description, // itemName (или используйте другое поле, если нужно)
-           v.Image,       // imageURL
-           v.Description, // description
-           1,             // count
+            instanceID,  // string
+            userID,      // int
+            itemType,    // "resource" или "artifact"
+            v.ID,        // int — item_id
+            v.Type,      // string — item_name (для ресурсов и артефактов)
+            v.Image,     // string — image_url
+            v.Description,// string — item_description
+            1,              // count
        ); err != nil {
            return fmt.Errorf("add inventory: %w", err)
        }
@@ -131,29 +169,4 @@ func HandleOpenBarrel(
     Broadcast(fb)
 
     return nil
-}
-
-// вспомогалки
-
-func isArtifact(res game.ResourceData, artifacts []game.ResourceData) bool {
-    for _, a := range artifacts {
-        if a.ID == res.ID {
-            return true
-        }
-    }
-    return false
-}
-
-func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
-    return UpdatedCellResponse{
-        CellID:   cell.CellID,
-        X:        cell.X,
-        Y:        cell.Y,
-        TileCode: cell.TileCode,
-        Resource: cell.Resource,
-        Barbel:   cell.Barbel,
-        Monster:  cell.Monster,
-        IsPortal: cell.IsPortal,
-        IsPlayer: cell.IsPlayer,
-    }
 }

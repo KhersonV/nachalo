@@ -68,9 +68,9 @@ WHERE user_id = $2
     // Запрос для вставки новой записи в inventory_items
         insertInventoryItemQuery = `
     INSERT INTO inventory_items
-    (instance_id, user_id, item_type, item_id, item_name, item_count)
+    (instance_id, user_id, item_type, item_id, item_name, item_description, item_count)
     VALUES
-    ($1,           $2,     $3,        $4,      $5,        $6);`
+    ($1,           $2,     $3,        $4,      $5,           $6,               $7);`
 
 )
 
@@ -144,7 +144,7 @@ func AddInventoryItem(
     }
 
     // 5) Обновляем или вставляем строку в inventory_items
-    res, err := tx.Exec(
+      res, err := tx.Exec(
         updateInventoryItemCountQuery,
         instanceID, // $1
         playerID,   // $2
@@ -167,6 +167,7 @@ func AddInventoryItem(
             itemType,
             itemID,
             itemName,
+            description,
             count,
         ); err != nil {
             return fmt.Errorf("insert inventory_items: %w", err)

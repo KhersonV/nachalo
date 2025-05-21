@@ -1,7 +1,6 @@
 // ============================================
 // gameservice/handlers/resource_collection.go
 // ============================================
-
 package handlers
 
 import (
@@ -51,14 +50,15 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2) Загрузка карты и поиска нужной ячейки
-	mapJSON := ""
+	// 2) Загрузка карты и поиск нужной ячейки
+	var mapJSON string
 	if err := repository.DB.
 		QueryRow(`SELECT map FROM matches WHERE instance_id=$1`, req.InstanceID).
 		Scan(&mapJSON); err != nil {
 		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
 		return
 	}
+
 	var cells []map[string]interface{}
 	if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
 		http.Error(w, fmt.Sprintf("парсинг карты: %v", err), http.StatusInternalServerError)
@@ -77,42 +77,54 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4) Иначе — обычный ресурс
-	if target["resource"] == nil {
+	// 3) Проверяем, есть ли ресурс в этой ячейке
+	resData, ok := target["resource"].(map[string]interface{})
+	if !ok {
+		// нет ресурса — выходим молча
 		return
 	}
-	// Копируем данные ресурса
-	resMap := target["resource"].(map[string]interface{})
-	// Убираем ресурс из карты
+
+	// Сохраняем нужные поля ресурса ДО очистки клетки
+	itemID := int(resData["id"].(float64))
+	itemName := resData["type"].(string)
+	itemDesc := resData["description"].(string)
+	itemImage := resData["image"].(string)        // картинка ресурса
+
+
+	// 4) Очищаем клетку
 	target["resource"] = nil
 	target["tileCode"] = float64(48)
 	target["monster"] = nil
 	target["isPortal"] = false
 
-	// Сохраняем карту
-	newMap, _ := json.Marshal(cells)
-	repository.DB.Exec(`UPDATE matches SET map=$1 WHERE instance_id=$2`, string(newMap), req.InstanceID)
+	// 5) Сохраняем обновлённую карту
+	updatedMap, _ := json.Marshal(cells)
+	if _, err := repository.DB.Exec(
+		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
+		string(updatedMap), req.InstanceID,
+	); err != nil {
+		http.Error(w, fmt.Sprintf("сохранение карты: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-	   // Добавляем ресурс в инвентарь
-   itemType := resMap["type"].(string)
-   itemID   := int(resMap["id"].(float64))
-   imageURL := resMap["image"].(string)
-   desc     := resMap["description"].(string)
-   if err := repository.AddInventoryItem(
-       req.InstanceID, // match-instance
-       req.PlayerID,
-       itemType,
-       itemID,
-       desc,     // itemName
-       imageURL, // imageURL
-       desc,     // description
-       1,        // count
-   ); err != nil {
-       http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
-       return
-   }
+	
 
-	// Формируем HTTP-ответ точно как раньше
+
+
+if err := repository.AddInventoryItem(
+    req.InstanceID,   // string
+    req.PlayerID,     // int
+    "resource",       // string
+    itemID,           // int
+    itemName,         // string
+    itemImage,        // string — imageURL
+    itemDesc,         // string — itemDescription
+    1,                // int — count
+); err != nil {
+    http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
+    return
+}
+	// 7) Формируем и отправляем ответ клиенту
 	updatedCell := UpdatedCellResponse{
 		CellID:   int(target["cell_id"].(float64)),
 		X:        int(target["x"].(float64)),
@@ -133,8 +145,8 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 			"updatedPlayer": playerResp,
 		},
 	}
-	buf, _ := json.Marshal(wsMsg)
-	Broadcast(buf)
+	msgBuf, _ := json.Marshal(wsMsg)
+	Broadcast(msgBuf)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
