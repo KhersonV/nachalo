@@ -333,11 +333,24 @@ func OpenBarbel(
         dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
         return DamageEvent{Amount: dmg}, nil
     }
-    // 40% шанс выпадения ресурса
-    if r < 0.3+0.4 && len(resources) > 0 {
-        chosen := resources[rand.Intn(len(resources))]
-        return chosen, nil
+ // 40% шанс выпадения ресурса
+if r < 0.3+0.4 && len(resources) > 0 {
+    // Собираем всех ресурсов, кроме того, что был в бочке
+    var candidates []ResourceData
+    for _, res := range resources {
+        if cell.Barbel != nil && res.ID == cell.Barbel.ID && res.Type == cell.Barbel.Type {
+            // пропускаем — это сама бочка
+            continue
+        }
+        candidates = append(candidates, res)
     }
+    if len(candidates) == 0 {
+        return nil, nil
+    }
+    chosen := candidates[rand.Intn(len(candidates))]
+    return chosen, nil
+}
+
     // Иначе артефакт
     if len(artifacts) > 0 {
         chosen := artifacts[rand.Intn(len(artifacts))]
