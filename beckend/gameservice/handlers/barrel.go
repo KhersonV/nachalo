@@ -6,9 +6,11 @@ package handlers
 import (
     "encoding/json"
     "fmt"
+    "log"
 
     "gameservice/game"
     "gameservice/repository"
+    "gameservice/models"
 )
 
 // вверху файла
@@ -38,46 +40,124 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 
 
 // HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
+
+func broadcastCellRemoval(instanceID string, cell game.FullCell) error {
+    cell.Barbel = nil
+    cell.TileCode = 48
+    // сохраняем в БД
+    cells, err := repository.LoadMapCells(instanceID)
+    if err != nil {
+        return err
+    }
+    for i := range cells {
+        if cells[i].CellID == cell.CellID {
+            cells[i].Barbel = nil
+            cells[i].TileCode = 48
+        }
+    }
+    if err := repository.SaveMapCells(instanceID, cells); err != nil {
+        return err
+    }
+    // финальный WS-апдейт
+    final := serialiseUpdatedCell(cell)
+   upd := map[string]interface{}{
+        "type": "UPDATE_CELL",
+        "payload": map[string]interface{}{
+            "instanceId": instanceID,
+            "updatedCell": final,
+        },
+    }
+    b, _ := json.Marshal(upd)
+    Broadcast(b)
+    return nil
+}
+
 func HandleOpenBarrel(
     cell game.FullCell,
     instanceID string,
     userID int,
     resources, artifacts []game.ResourceData,
-) error {
+) (game.FullCell, *models.PlayerResponse, bool, error) {
+   
     // 1) Загрузить игрока
     player, err := repository.GetMatchPlayerByID(instanceID, userID)
     if err != nil {
-        return fmt.Errorf("fetch player: %w", err)
+        return cell, nil, false, fmt.Errorf("fetch player: %w", err)
     }
 
-    // 2) Получить outcome
+    // 2) OpenBarbel → outcome
     outcome, err := game.OpenBarbel(cell, resources, artifacts)
     if err != nil {
-        return fmt.Errorf("open barrel: %w", err)
+        return cell, nil, false, fmt.Errorf("open barrel: %w", err)
     }
 
-    // 3) Обработать outcome
+    // 3) Обработка результата
     switch v := outcome.(type) {
+
     case game.DamageEvent:
-        // а) урон
+        // а) вычитаем здоровье
         player.Health -= v.Amount
         if player.Health < 0 {
             player.Health = 0
         }
         if err := repository.UpdateMatchPlayer(player); err != nil {
-            return fmt.Errorf("update player HP: %w", err)
+            return cell, nil, false, fmt.Errorf("update player HP: %w", err)
         }
-        // б) WS-сообщение
-        msg := map[string]interface{}{
+
+        // б) сообщаем о уроне всем
+        dmgMsg := map[string]interface{}{
             "type": "BARREL_DAMAGE",
             "payload": map[string]interface{}{
+                "instanceId": instanceID,
                 "userId": userID,
                 "amount": v.Amount,
                 "hp":     player.Health,
             },
         }
-        b, _ := json.Marshal(msg)
+        b, _ := json.Marshal(dmgMsg)
         Broadcast(b)
+        log.Printf("[broadcastCellRemoval] → %s", string(b))
+
+        // в) если игрок умер
+        if player.Health == 0 {
+            log.Printf("[handleBarrel] player %d died from barrel", player.UserID)
+            handlePlayerDeath(instanceID, player)
+            // передаём ход дальше
+            if ms, ok := game.GetMatchState(instanceID); ok && len(ms.TurnOrder) > 0 {
+                nextUser := ms.TurnOrder[0]
+                ms.ActiveUserID = nextUser
+
+                nextPlayer, err := repository.GetMatchPlayerByID(instanceID, nextUser)
+                if err != nil {
+                    log.Printf("GetMatchPlayerByID вернула ошибку: %v", err)
+                }
+
+                passMsg := map[string]interface{}{
+                    "type": "TURN_PASSED",
+                    "payload": map[string]interface{}{
+                         "instanceId": instanceID,
+                        "active_user": nextUser,
+                        "turnNumber":  ms.TurnNumber,
+                        "energy":      nextPlayer.Energy,
+                    },
+                }
+                pm, _ := json.Marshal(passMsg)
+                Broadcast(pm)
+            }
+
+            // очистка и рассылка UPDATE_CELL
+            if err := broadcastCellRemoval(instanceID, cell); err != nil {
+                return cell, player, true, fmt.Errorf("cleanup cell: %w", err)
+            }
+
+            return cell, player, true, nil
+        }
+
+        // если игрок жив — просто удаляем бочку и уходим
+        if err := broadcastCellRemoval(instanceID, cell); err != nil {
+            return cell, player, false, fmt.Errorf("cleanup cell: %w", err)
+        }
+        return cell, player, false, nil
 
     case game.ResourceData:
          itemType := "resource"
@@ -97,17 +177,19 @@ func HandleOpenBarrel(
             v.Description,// string — item_description
             1,              // count
        ); err != nil {
-           return fmt.Errorf("add inventory: %w", err)
+           return cell, nil, false, fmt.Errorf("add inventory: %w", err)
+        
        }
         // б) перезагружаем игрока
         updatedPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
         if err != nil {
-            return fmt.Errorf("reload player: %w", err)
-        }
+            return cell, nil, false, fmt.Errorf("reload player: %w", err)
+       }
         // в) WS: сначала общий апдейт инвентаря
         invUpd := map[string]interface{}{
             "type": "UPDATE_INVENTORY",
             "payload": map[string]interface{}{
+                "instanceId": instanceID,
                 "userId":    userID,
                 "inventory": updatedPlayer.Inventory,
             },
@@ -125,6 +207,7 @@ func HandleOpenBarrel(
         resMsg := map[string]interface{}{
             "type": evtType,
             "payload": map[string]interface{}{
+                "instanceId": instanceID,
                 "updatedCell":   cellJSON,
                 "updatedPlayer": updatedPlayer,
             },
@@ -132,34 +215,12 @@ func HandleOpenBarrel(
         rb, _ := json.Marshal(resMsg)
         Broadcast(rb)
 
-    default:
-        return fmt.Errorf("unexpected outcome: %T", v)
-    }
-
-    // 4) Удаляем бочку из БД/карты
-    cells, err := repository.LoadMapCells(instanceID)
-    if err != nil {
-        return fmt.Errorf("load map: %w", err)
-    }
-    for i := range cells {
-        if cells[i].CellID == cell.CellID {
-            cells[i].Barbel = nil
-            cells[i].TileCode = 48
-            break
+        if err := broadcastCellRemoval(instanceID, cell); err != nil {
+            return cell, updatedPlayer, false, fmt.Errorf("cleanup cell: %w", err)
         }
-    }
-    if err := repository.SaveMapCells(instanceID, cells); err != nil {
-        return fmt.Errorf("save map: %w", err)
-    }
+        return cell, updatedPlayer, false, nil
 
-    // 5) Финальный WS-апдейт клетки
-    final := serialiseUpdatedCell(cell)
-    upd := map[string]interface{}{
-        "type":    "UPDATE_CELL",
-        "payload": final,
+    default:
+        return cell, nil, false, fmt.Errorf("unexpected outcome: %T", v)
     }
-    fb, _ := json.Marshal(upd)
-    Broadcast(fb)
-
-    return nil
 }

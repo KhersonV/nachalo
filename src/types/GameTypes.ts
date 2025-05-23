@@ -117,30 +117,31 @@ export type Action =
   }
   | {
     type: "MOVE_PLAYER";
-    payload: { userId: number; newPosition: { x: number; y: number } };
+    payload: { instanceId: string; userId: number; newPosition: { x: number; y: number } };
   }
   | {
     type: "SET_ACTIVE_USER";
-    payload: { active_user: number; turnNumber: number; energy?: number };
+    payload: { instanceId: string; active_user: number; turnNumber: number; energy?: number };
   }
   | {
     type: "UPDATE_CELL";
-    payload: { updatedCell: Cell };
+    payload: { instanceId: string; updatedCell: Cell };
   }
   | {
     type: "UPDATE_PLAYER";
-    payload: { player: PlayerState };
+    payload: { instanceId: string; player: PlayerState };
   }
   |
   {
     type: "COMBAT_EXCHANGE"; payload: {
+      instanceId: string;
       attacker: { id: number; new_hp: number }
       target: { id: number; new_hp: number }
     }
   }
   | {
     type: "UPDATE_INVENTORY";
-    payload: { userId: number; inventory: Inventory };
+    payload: {instanceId: string; userId: number; inventory: Inventory };
   }
   | {
     type: "RESET_STATE";
@@ -149,6 +150,7 @@ export type Action =
   | {
       type: "BARREL_RESOURCE";
       payload: {
+        instanceId: string;
         updatedCell: Cell;
         updatedPlayer: PlayerState;
       };
@@ -156,6 +158,7 @@ export type Action =
   | {
       type: "BARREL_ARTIFACT";
       payload: {
+        instanceId: string;
         updatedCell: Cell;
         updatedPlayer: PlayerState;
       };

@@ -141,6 +141,7 @@ if err := repository.AddInventoryItem(
 	wsMsg := map[string]interface{}{
 		"type": "RESOURCE_COLLECTED",
 		"payload": map[string]interface{}{
+			 "instanceId":    req.InstanceID, 
 			"updatedCell":   updatedCell,
 			"updatedPlayer": playerResp,
 		},

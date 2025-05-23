@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"encoding/json"
 
 	"github.com/gorilla/websocket"
 )
@@ -23,7 +24,14 @@ var (
 
 // Client представляет подключённого клиента WebSocket.
 type Client struct {
-	Conn *websocket.Conn
+    Conn       *websocket.Conn
+    instanceID string
+}
+
+type broadcastEnvelope struct {
+    Payload struct {
+        InstanceID string `json:"instanceId"`
+    } `json:"payload"`
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +54,20 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		log.Printf("[WsHandler] Получено сообщение (тип %d): %s", messageType, string(message))
-		// Здесь можно добавить дополнительную обработку входящих сообщений
+		var envelope struct {
+        Type       string `json:"type"`
+        InstanceID string `json:"instanceId"`
+    }
+        if err := json.Unmarshal(message, &envelope); err == nil {
+        if envelope.Type == "JOIN_MATCH" {
+            // логируем и сохраняем только один раз, при первом JOIN
+            if client.instanceID == "" {
+                client.instanceID = envelope.InstanceID
+                log.Printf("[WsHandler] client joined match %s", envelope.InstanceID)
+            }
+            continue
+        }
+    }
 	}
 
 	// Завершаем соединение и удаляем клиента
@@ -58,17 +79,22 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func Broadcast(message []byte) {
+	var env broadcastEnvelope
+    _ = json.Unmarshal(message, &env)  // если невалидный JSON или нет поля – игнорируем
+
 	clientsMu.Lock()
 	defer clientsMu.Unlock()
 	//log.Printf("[Broadcast] Рассылка сообщения: %s", string(message))
 	for client := range clients {
+
+		 if client.instanceID == "" || (env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID) {
+            continue
+        }
 		err := client.Conn.WriteMessage(websocket.TextMessage, message)
 		if err != nil {
 			//log.Printf("[Broadcast] Ошибка при рассылке клиенту: %v", err)
 			client.Conn.Close()
 			delete(clients, client)
-		} else {
-			//log.Printf("[Broadcast] Сообщение успешно отправлено клиенту")
 		}
 	}
 }

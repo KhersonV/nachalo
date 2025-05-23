@@ -2,7 +2,8 @@
 // src/hooks/useGameSocket.ts
 //=============================
 
-import { useEffect, useRef, useCallback } from "react";
+
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -14,89 +15,111 @@ export function useGameSocket(
   onMessage: (data: any) => void,
   options?: GameSocketOptions
 ) {
-  const ws = useRef<WebSocket | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const onMessageRef = useRef(onMessage);
   const reconnectTimeout = useRef<number | null>(null);
   const router = useRouter();
   const { user } = useAuth();
   const url = "ws://localhost:8001/ws";
 
-  const connect = useCallback(() => {
-    // Если уже открытое соединение — не открываем новое
-    if (ws.current?.readyState === WebSocket.OPEN) return;
+  // Держим актуальный onMessage в рефе
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
-    ws.current = new WebSocket(url);
+  useEffect(() => {
+    function connect() {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
 
-    ws.current.onopen = () => {
-      // При подключении сразу посылаем JOIN_MATCH
-      if (options?.instanceId) {
-        ws.current?.send(
-          JSON.stringify({
-            type: "JOIN_MATCH",
-            instanceId: options.instanceId,
-          })
-        );
+    // в src/hooks/useGameSocket.ts, внутри ws.onopen
+ws.onopen = async () => {
+  if (options?.instanceId) {
+    ws.send(JSON.stringify({ type: "JOIN_MATCH", instanceId: options.instanceId }));
+    // <-- вставляем запрос на полные данные матча
+    try {
+      const res = await fetch(`http://localhost:8001/game/match?instance_id=${options.instanceId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json()
+        // передаём наружу специальным событием
+        onMessageRef.current({ type: 'MATCH_UPDATE', payload: {
+          instanceId: data.instance_id,
+          mode: data.mode,
+          grid: data.map,
+          mapWidth: data.map_width,
+          mapHeight: data.map_height,
+          players: data.players.map((p:any) => ({ 
+            ...p, user_id: p.user_id||p.player_id, position: p.position 
+          })),
+          active_player: data.active_user,
+          turn_number: data.turn_number
+        }})
       }
-    };
+    } catch (e) {
+      console.warn("Не удалось подгрузить полный матч после reconnect", e);
+    }
+  }
+};
 
-    ws.current.onmessage = (event) => {
-      let data: any;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        console.error("Ошибка парсинга сообщения:", event.data);
-        return;
-      }
 
-      // Игнорируем сообщения не из текущего матча
-      if (
+      ws.onmessage = (event) => {
+        let data: any;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          console.error("WS parse error:", event.data);
+          return;
+        }
+
+        // Игнорим пакеты не из текущего матча
+        if (
           options?.instanceId &&
           data.payload?.instanceId != null &&
           data.payload.instanceId !== options.instanceId
         ) {
-        return;
-      }
+          return;
+        }
 
-      if(data.type === "MATCH_ENDED") {
-        router.push("/mode");
-        return;
-      }
-      // Если собственный игрок погиб — редирект на выбор режима
-      if (
-        data.type === "PLAYER_DEFEATED" &&
-        user?.id != null &&
-        data.payload?.userId === user.id
-      ) {
-        router.push("/mode");
-        return;
-      }
+        if (data.type === "MATCH_ENDED") {
+          router.push("/mode");
+          return;
+        }
 
-      onMessage(data);
-    };
+        if (
+          data.type === "PLAYER_DEFEATED" &&
+          user?.id != null &&
+          data.payload?.userId === user.id
+        ) {
+          router.push("/mode");
+          return;
+        }
 
-    ws.current.onerror = (err) => {
-      // console.error("WebSocket ошибка:", err);
-    };
+        onMessageRef.current(data);
+      };
 
-    ws.current.onclose = (e) => {
-      // Попытаться переподключиться, если закрытие неавторизованное
-      if (e.code !== 1000) {
-        reconnectTimeout.current = window.setTimeout(connect, 3000);
-      }
-    };
-  },
-  // Важно: зависимости, включая user?.id и router
-  [onMessage, options?.instanceId, router, user?.id]
-  );
+      ws.onerror = (e) => {
+        console.error("WebSocket error", e);
+      };
 
-  useEffect(() => {
+      ws.onclose = (e) => {
+        // если закрытие «по ошибке» — переподключаемся через 3 сек
+        if (e.code !== 1000) {
+          reconnectTimeout.current = window.setTimeout(connect, 3000);
+        } else {
+          reconnectTimeout.current = null;
+        }
+      };
+    }
+
     connect();
+
     return () => {
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }
-      ws.current?.close(1000);
+      wsRef.current?.close(1000);
     };
-  }, [connect]);
+  }, [options?.instanceId, router, user?.id]);
 
-  // Хуки всегда вызываются в одном и том же порядке
+  return wsRef.current;
 }

@@ -30,7 +30,11 @@ const initialState: GameState = {
   turnNumber: 1,
 };
 
-const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action> } | undefined>(undefined);
+const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action>; socket: ReturnType<typeof useGameSocket> } | undefined>(undefined);
+
+
+
+
 
 export function gameReducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -189,6 +193,10 @@ type GameProviderProps = {
   children: React.ReactNode;
 };
 
+
+
+
+
 export function GameProvider({ instanceId, children }: GameProviderProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -219,6 +227,11 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
         console.error("[GameProvider] fetchResources error:", err);
       }
     }
+
+
+
+
+
 
     async function fetchMonsters() {
       try {
@@ -285,7 +298,14 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
   }, [instanceId, resources.length, monsters.length, router]);
 
- useGameSocket(
+
+
+
+
+
+
+
+ const socket = useGameSocket(
   (data) => {
     // Игнорируем сообщения не для текущего матча
     if (data.payload?.instanceId && data.payload.instanceId !== state.instanceId) {
@@ -294,68 +314,91 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
     }
 
     switch (data.type) {
-      case "MATCH_UPDATE":
-        dispatch({
-          type: "SET_MATCH_DATA",
-          payload: {
-            instanceId: data.payload.instanceId,
-            mode: data.payload.mode,
-            grid: data.payload.grid,
-            mapWidth: data.payload.mapWidth,
-            mapHeight: data.payload.mapHeight,
-            players: data.payload.players,
-            active_user: data.payload.active_player, // или active_user
-            turnNumber: data.payload.turn_number,
-          },
-        });
-        break;
+     case "MATCH_UPDATE": {
+  const { instanceId: msgMatch, mode, grid, mapWidth, mapHeight, players, active_player, turn_number } = data.payload;
+  if (msgMatch !== state.instanceId) break;
+  dispatch({
+    type: "SET_MATCH_DATA",
+    payload: {
+      instanceId: state.instanceId,
+      mode,
+      grid,
+      mapWidth,
+      mapHeight,
+      players,
+      active_user: active_player,
+      turnNumber: turn_number,
+    },
+  });
+  break;
+}
 
-      case "MOVE_PLAYER":
-        dispatch({
-          type: "MOVE_PLAYER",
-          payload: {
-            userId: data.payload.playerId || data.payload.userId,
-            newPosition: data.payload.newPosition,
-          },
-        });
-        break;
 
+     case "MOVE_PLAYER": {
+  // 1. Деструктурируем payload
+  const { instanceId: msgMatch, playerId, userId, newPosition } = data.payload;
+  // 2. Фильтруем не-наш матч
+  if (msgMatch !== state.instanceId) break;
+  // 3. Диспатчим, передавая instanceId из state (или msgMatch — они же равны)
+  dispatch({
+    type: "MOVE_PLAYER",
+    payload: {
+      instanceId: state.instanceId,
+      userId: playerId ?? userId,
+      newPosition,
+    },
+  });
+  break;
+}
+
+      // 2) RESOURCE_COLLECTED
       case "RESOURCE_COLLECTED": {
-        const { updatedCell, updatedPlayer } = data.payload;
+        const { instanceId: msgMatch, updatedCell, updatedPlayer } = data.payload;
+        if (msgMatch !== state.instanceId) break;
         dispatch({
           type: "UPDATE_CELL",
-          payload: { updatedCell },
+          payload: {
+            instanceId: state.instanceId,
+            updatedCell,
+          },
         });
         if (updatedPlayer) {
           dispatch({
             type: "UPDATE_PLAYER",
-            payload: { player: updatedPlayer },
+            payload: {
+              instanceId: state.instanceId,
+              player: updatedPlayer,
+            },
           });
         }
         break;
       }
+case "SET_ACTIVE_USER": {
+  const { instanceId: msgMatch, active_user, turnNumber, energy } = data.payload;
+  if (msgMatch !== state.instanceId) break;
+  console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
+  dispatch({
+    type: "SET_ACTIVE_USER",
+    payload: { instanceId: state.instanceId, active_user, turnNumber, energy },
+  });
+  break;
+}
 
-      case "SET_ACTIVE_USER":
-        console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
-        dispatch({
-          type: "SET_ACTIVE_USER",
-          payload: {
-            active_user: data.payload.active_user,
-            turnNumber: data.payload.turnNumber,
-            energy: data.payload.energy,
-          },
-        });
-        break;
+case "UPDATE_PLAYER": {
+  const { instanceId: msgMatch, player } = data.payload;
+  if (msgMatch !== state.instanceId) break;
+  dispatch({
+    type: "UPDATE_PLAYER",
+    payload: { instanceId: state.instanceId, player },
+  });
+  break;
+}
 
-      case "UPDATE_PLAYER": {
-        const { player } = data.payload;
-        dispatch({ type: "UPDATE_PLAYER", payload: { player } });
-        break;
-      }
       
      case "COMBAT_EXCHANGE": {
   // приводим payload к нужному типу
-  const { attacker, target } = data.payload as {
+  const { instanceId, attacker, target } = data.payload as {
+    instanceId: string;
     attacker: { id: number; new_hp: number; damage: number };
     target:   { id: number; new_hp: number; damage: number };
   };
@@ -363,6 +406,7 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
   dispatch({
     type: "COMBAT_EXCHANGE",
     payload: {
+      instanceId,
       attacker: { id: attacker.id, new_hp: attacker.new_hp },
       target:   { id: target.id,   new_hp: target.new_hp },
     },
@@ -371,7 +415,8 @@ export function GameProvider({ instanceId, children }: GameProviderProps) {
 }
 
 case "MONSTER_HIT": {
-  const { monsterInstanceId, newHP, x, y } = data.payload as {
+  const { instanceId, monsterInstanceId, newHP, x, y } = data.payload as {
+    instanceId: string;
     monsterInstanceId: number;
     newHP: number;
     x: number;
@@ -382,6 +427,7 @@ case "MONSTER_HIT": {
   dispatch({
     type: "UPDATE_CELL",
     payload: {
+      instanceId,
       updatedCell: {
         ...state.grid.find(cell => cell.x === x && cell.y === y)!,
         monster: state.grid
@@ -400,7 +446,8 @@ case "MONSTER_HIT": {
 
     case "BARREL_DAMAGE": {
       // payload: { userId, amount, hp }
-      const { userId, amount, hp } = data.payload as {
+      const {instanceId, userId, amount, hp } = data.payload as {
+        instanceId: string;
         userId: number;
         amount: number;
         hp: number;
@@ -409,6 +456,7 @@ case "MONSTER_HIT": {
       dispatch({
         type: "UPDATE_PLAYER",
         payload: {
+          instanceId,
           player: {
             ...state.players.find(p => p.user_id === userId)!,
             health: hp
@@ -418,60 +466,97 @@ case "MONSTER_HIT": {
       break;
     }
 
-    case "BARREL_RESOURCE":
-    case "BARREL_ARTIFACT": {
-      const { updatedCell, updatedPlayer } = data.payload as {
-        updatedCell: Cell;
-        updatedPlayer: PlayerState;
-      };
-      dispatch({ type: "UPDATE_CELL",   payload: { updatedCell } });
-      dispatch({ type: "UPDATE_PLAYER", payload: { player: updatedPlayer } });
-      break;
-    }
+      // 5) BARREL_RESOURCE / BARREL_ARTIFACT
+      case "BARREL_RESOURCE":
+      case "BARREL_ARTIFACT": {
+        const { instanceId: msgMatch, updatedCell, updatedPlayer } = data.payload;
+        if (msgMatch !== state.instanceId) break;
+        dispatch({
+          type: "UPDATE_CELL",
+          payload: {
+            instanceId: state.instanceId,
+            updatedCell,
+          },
+        });
+        dispatch({
+          type: "UPDATE_PLAYER",
+          payload: {
+            instanceId: state.instanceId,
+            player: updatedPlayer,
+          },
+        });
+        break;
+      }
+
+
+   // 3) UPDATE_INVENTORY
+      case "UPDATE_INVENTORY": {
+        const { instanceId: msgMatch, userId, inventory } = data.payload;
+        if (msgMatch !== state.instanceId) break;
+        dispatch({
+          type: "UPDATE_INVENTORY",
+          payload: {
+            instanceId: state.instanceId,
+            userId,
+            inventory,
+          },
+        });
+        break;
+      }
 
 
 
-  case "UPDATE_INVENTORY": {
-    const { userId, inventory } = data.payload;
-    dispatch({ type: "UPDATE_INVENTORY", payload: { userId, inventory } });
-    break;
+  // 4) UPDATE_CELL
+      case "UPDATE_CELL": {
+        const raw = data.payload as any;
+        const msgMatch = raw.instanceId ?? raw.payload?.instanceId;
+        if (msgMatch !== state.instanceId) break;
+        const updatedCell = raw.updatedCell ?? raw;
+        dispatch({
+          type: "UPDATE_CELL",
+          payload: {
+            instanceId: state.instanceId,
+            updatedCell: updatedCell as Cell,
+          },
+        });
+        break;
+      }
+
+case "PLAYER_DEFEATED": {
+  const { instanceId: msgMatch, userId } = data.payload as {
+    instanceId: string;
+    userId: number;
+  };
+  // Фильтруем чужие матчи
+  if (msgMatch !== state.instanceId) break;
+  // Для себя — редирект
+  if (user?.id != null && userId === user.id) {
+    router.push("/mode");
   }
-
-
-
-case "UPDATE_CELL": {
-  console.log("[GameProvider] UPDATE_CELL payload:", data.payload);
-  // data.payload может быть либо { updatedCell: Cell }, либо сразу Cell
-  const raw = data.payload as any;
-  const updatedCell = raw.updatedCell ?? raw;  // берём nested.updatedCell или raw
+  // Удаляем игрока из списка
   dispatch({
-    type: "UPDATE_CELL",
-    payload: { updatedCell: updatedCell as Cell }
+    type: "PLAYER_DEFEATED",
+    payload: { userId },
   });
   break;
 }
 
-case "PLAYER_DEFEATED": {
-  const userId: number = data.payload.userId;
-  // 1) Для себя — редирект (если это наш игрок):
-  if (user?.id != null && userId === user.id) { 
-    router.push("/mode");
-  }
-  // 2) Всегда диспатчим в редьюсер, чтобы удалить из списка:
-  dispatch({ type: "PLAYER_DEFEATED", payload: { userId } });
+  case "TURN_PASSED": {
+  // 1) Деструктурируем из payload и сразу переименовываем
+  const { instanceId: msgMatch, active_user: active_user } = data.payload as {
+    instanceId: string;
+    active_user: number;
+  };
+  // 2) Фильтруем «чужие» матчи
+  if (msgMatch !== state.instanceId) break;
+  // 3) Логируем и диспатчим только для нашего матча
+  console.log("[GameProvider] TURN_PASSED:", data.payload);
+  dispatch({
+    type: "TURN_PASSED",
+    payload: { active_user },
+  });
   break;
 }
-
-  case "TURN_PASSED": {
-          console.log("[GameProvider] TURN_PASSED:", data.payload);
-          dispatch({
-            type: "TURN_PASSED",
-            payload: {
-              active_user: data.payload.userId,   // на сервере это поле называется userId
-            },
-          });
-          break;
-        }
 
       default:
         // можно логировать непредвидённые типы
@@ -482,17 +567,16 @@ case "PLAYER_DEFEATED": {
 );
 
 
-  return (
-    <GameContext.Provider value={{ state, dispatch }}>
-      {children}
-    </GameContext.Provider>
-  );
+ return (
+  <GameContext.Provider value={{ state, dispatch, socket }}>
+    {children}
+  </GameContext.Provider>
+);
+
 }
 
 export function useGame() {
   const context = useContext(GameContext);
-  if (!context) {
-    throw new Error("useGame must be used within a GameProvider");
-  }
-  return context;
+  if (!context) throw new Error("useGame must be used within a GameProvider");
+  return context; // теперь здесь есть state, dispatch и socket
 }

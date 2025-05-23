@@ -26,6 +26,7 @@ type OpenBarrelRequest struct {
 type OpenBarrelResponse struct {
 	UpdatedCell   UpdatedCellResponse `json:"updatedCell"`
 	UpdatedPlayer interface{}         `json:"updatedPlayer"`
+	MatchEnded    bool                 `json:"matchEnded,omitempty"`
 }
 
 // OpenBarrelHandler — HTTP-хендлер для открытия бочки.
@@ -52,8 +53,13 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
 		return
 	}
+
 	var cells []map[string]interface{}
 	json.Unmarshal([]byte(mapJSON), &cells)
+	 if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
+        http.Error(w, fmt.Sprintf("json.Unmarshal карты: %v", err), http.StatusInternalServerError)
+        return
+    }
 
 	var target map[string]interface{}
 	for _, c := range cells {
@@ -79,10 +85,11 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 		IsPlayer: target["isPlayer"].(bool),
 	}
 	bar := target["barbel"].(map[string]interface{})
-	eff := make(map[string]int)
-	for k, v := range bar["effect"].(map[string]interface{}) {
-		eff[k] = int(v.(float64))
-	}
+	eff := make(map[string]int, len(bar["effect"].(map[string]interface{})))
+    for k, v := range bar["effect"].(map[string]interface{}) {
+        eff[k] = int(v.(float64))
+    }
+
 	cell.Barbel = &game.ResourceData{
 		ID:          int(bar["id"].(float64)),
 		Type:        bar["type"].(string),
@@ -103,26 +110,28 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5) вызываем общую логику
-	if err := HandleOpenBarrel(cell, req.InstanceID, req.PlayerID, resList, artList); err != nil {
-		http.Error(w, fmt.Sprintf("открытие бочки: %v", err), http.StatusInternalServerError)
-		return
-	}
+	
+    // 5) ВЫНОСИМ HandleOpenBarrel в отдельную строку
+    updatedCell, updatedPlayer, matchEnded, err := HandleOpenBarrel(
+        cell, req.InstanceID, req.PlayerID, resList, artList,
+    )
+    if err != nil {
+        http.Error(w, fmt.Sprintf("open barrel: %v", err), http.StatusInternalServerError)
+        return
+    }
 
 		cell.Barbel = nil
 		cell.TileCode = 48 
 
-	// 6) подгружаем свежие данные игрока
-	updatedPlayer, _ := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
+	    // 6) Формируем ответ — без повторного GetMatchPlayerByID
+    resp := OpenBarrelResponse{
+        UpdatedCell:   serialiseUpdatedCell(updatedCell),
+        UpdatedPlayer: *updatedPlayer,
+        MatchEnded:    matchEnded,
+    }
 
-	// 7) готовим HTTP-ответ
-	resp := OpenBarrelResponse{
-		UpdatedCell:   serialiseUpdatedCell(cell),
-		UpdatedPlayer: updatedPlayer,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(resp)
 }
 
 
