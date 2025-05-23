@@ -1,7 +1,6 @@
 //=============================
 // src/hooks/useGameSocket.ts
 //=============================
-// src/hooks/useGameSocket.ts
 
 import { useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -57,6 +56,10 @@ export function useGameSocket(
         return;
       }
 
+      if(data.type === "MATCH_ENDED") {
+        router.push("/mode");
+        return;
+      }
       // Если собственный игрок погиб — редирект на выбор режима
       if (
         data.type === "PLAYER_DEFEATED" &&

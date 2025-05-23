@@ -9,6 +9,7 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"fmt"
 
 	"gameservice/models"
 )
@@ -79,28 +80,28 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 }
 
 // UpdatePlayer обновляет данные игрока в таблице players.
-// Обновляются поле position (формируется из player.Position), энергия, здоровье, уровень и опыт.
+// Обновляются поле энергия, здоровье, уровень и опыт.
 func UpdatePlayer(player *models.PlayerResponse) error {
-	// Формируем JSON из структуры Position.
-	positionJSON, err := json.Marshal(player.Position)
-	if err != nil {
-		return err
-	}
-
-	query := `
-		UPDATE players
-		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
-		WHERE user_id = $6
-	`
-	_, err = DB.Exec(query,
-		positionJSON,
-		player.Energy,
-		player.Health,
-		player.Level,
-		player.Experience,
-		player.UserID,
-	)
-	return err
+    query := `
+    UPDATE players
+    SET 
+        energy     = $1,
+        health     = $2,
+        level      = $3,
+        experience = $4
+    WHERE user_id = $5
+    `
+    // Обратите внимание на := для объявления err
+    if _, err := DB.Exec(query,
+        player.Energy,
+        player.Health,
+        player.Level,
+        player.Experience,
+        player.UserID,
+    ); err != nil {
+        return fmt.Errorf("UpdatePlayer: %w", err)
+    }
+    return nil
 }
 
 // DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
@@ -113,3 +114,91 @@ func DeleteMatchPlayer(instanceID string, userID int) error {
     return err
 }
 
+func MarkPlayerDead(instanceID string, userID int) error {
+    _, err := DB.Exec(`
+        UPDATE match_players
+           SET health = 0
+         WHERE match_instance_id = $1
+           AND user_id = $2
+    `, instanceID, userID)
+    return err
+}
+
+// пороги опыта для повышения уровня — дублируют логику из handlers/players.go
+var levelThresholds = map[int]int{
+    1:  500,
+    2:  2000,
+    3:  8000,
+    4:  32000,
+    5:  128000,
+    6:  512000,
+    7:  2048000,
+    8:  8192000,
+    9:  32768000,
+    10: 131072000,
+}
+
+// AddPlayerExperience добавляет опыт перманентному игроку, проверяет и повышает уровень при необходимости.
+func AddPlayerExperience(userID, exp int) error {
+    // 1) Получаем текущего игрока
+    player, err := GetPlayerByUserID(userID)
+    if err != nil {
+        return fmt.Errorf("AddPlayerExperience: fetch player: %w", err)
+    }
+
+    // 2) Увеличиваем опыт
+    player.Experience += exp
+
+    // 3) Проверяем, не перешёл ли через порог для повышения уровня
+    if threshold, ok := levelThresholds[player.Level]; ok && player.Experience >= threshold {
+        player.Level++
+        player.Experience -= threshold
+    }
+
+    // 4) Сохраняем изменения
+    if err := UpdatePlayer(player); err != nil {
+        return fmt.Errorf("AddPlayerExperience: update player: %w", err)
+    }
+    return nil
+}
+
+func AddPlayerRewards(userID int, rewardsData []byte) error {
+    // 1) Распарсим JSON наград
+    var rewards map[string]int
+    if err := json.Unmarshal(rewardsData, &rewards); err != nil {
+        return fmt.Errorf("AddPlayerRewards: unmarshal rewards: %w", err)
+    }
+
+    // 2) Получаем игрока
+    player, err := GetPlayerByUserID(userID)
+    if err != nil {
+        return fmt.Errorf("AddPlayerRewards: fetch player: %w", err)
+    }
+
+    // 3) Применяем каждую награду
+    for key, amount := range rewards {
+        switch key {
+        case "balance":
+            player.Balance += amount
+
+        default:
+            // Обновляем inventory, храня его как JSON-строку
+            var inv map[string]map[string]interface{}
+            if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
+                inv = make(map[string]map[string]interface{})
+            }
+            inv[key] = map[string]interface{}{
+                "name":       key,
+                "item_count": amount,
+            }
+            b, _ := json.Marshal(inv)
+            player.Inventory = string(b)
+        }
+    }
+
+    // 4) Сохраняем изменения
+    if err := UpdatePlayer(player); err != nil {
+        return fmt.Errorf("AddPlayerRewards: update player: %w", err)
+    }
+    return nil
+}

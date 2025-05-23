@@ -22,4 +22,6 @@ type MatchInfo struct {
 	TurnNumber     int             `json:"turn_number"`
 	StartPositions  json.RawMessage `json:"start_positions"`
 	PortalPosition  json.RawMessage `json:"portal_position"`
+	WinnerID		int				`json:"winner_id"`
+	WinnerGroupID	int				`json:"winner_group_id"`		
 }

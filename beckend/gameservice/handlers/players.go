@@ -58,19 +58,19 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.Image = "/player-1.webp"
 	}
 
-	// Запрос с новым полем position (JSONB)
+	
 	query := `
 		INSERT INTO players (
-			user_id, name, image, position, energy, max_energy, 
+			user_id, name, image, energy, max_energy, 
 			health, max_health, level, experience, max_experience, 
 			attack, defense, speed, maneuverability, vision, vision_range, balance, inventory
 		)
 		VALUES (
-			$1, $2, $3, '{"x": 0, "y": 0}', 100, 100,
+			$1, $2, $3, 100, 100,
 			100, 100, 1, 0, 500, 10, 5,
 			3, 2, 2, 2, 0, '{}'
 		)
-		RETURNING user_id, name, image, position, energy, max_energy,
+		RETURNING user_id, name, image, energy, max_energy,
 				  health, max_health, level, experience, max_experience, 
 				  attack, defense, speed, maneuverability, vision, vision_range, balance, inventory
 	`
@@ -80,7 +80,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		&player.UserID,
 		&player.Name,
 		&player.Image,
-		&positionJSON,
 		&player.Energy,
 		&player.MaxEnergy,
 		&player.Health,
@@ -176,3 +175,22 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
+
+// unbindPlayer удаляет игрока из матчинга по HTTP
+func unbindPlayer(playerID int) {
+    url := fmt.Sprintf("http://localhost:8002/matchmaking/player/%d", playerID)
+    req, err := http.NewRequest(http.MethodDelete, url, nil)
+    if err != nil {
+        log.Printf("unbindPlayer: не удалось создать запрос: %v", err)
+        return
+    }
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        log.Printf("unbindPlayer: запрос завершился ошибкой: %v", err)
+        return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        log.Printf("unbindPlayer: unexpected status %s", resp.Status)
+    }
+}

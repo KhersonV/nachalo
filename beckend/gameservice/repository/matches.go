@@ -9,6 +9,9 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"time"
+	"fmt"
+	
 
 	"gameservice/game"
 	"gameservice/models"
@@ -222,6 +225,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			balance
 		FROM match_players
 		WHERE match_instance_id = $1
+		AND health > 0
 	`
 	rows, err := DB.Query(query, matchID)
 	if err != nil {
@@ -297,6 +301,54 @@ type Position struct {
     Y int `json:"y"`
 }
 
+
+
+// ClearCellPlayerFlag снимает флаг IsPlayer в поле map таблицы matches
+// для клетки oldPos, не трогая другие.
+// ClearCellPlayerFlag снимает флаг IsPlayer в поле map для клетки oldPos,
+// не трогая больше никаких позиций.
+func ClearCellPlayerFlag(instanceID string, oldPos Position) error {
+    // 1) Считываем текущее поле map из matches
+    var mapJSON []byte
+    if err := DB.QueryRow(
+        `SELECT map FROM matches WHERE instance_id = $1`,
+        instanceID,
+    ).Scan(&mapJSON); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to load map JSON: %w", err)
+    }
+
+    // 2) Десериализуем в срез клеток
+    var cells []game.FullCell
+    if err := json.Unmarshal(mapJSON, &cells); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to unmarshal: %w", err)
+    }
+
+    // 3) Находим oldPos и снимаем IsPlayer
+    for i, c := range cells {
+        if c.X == oldPos.X && c.Y == oldPos.Y {
+            cells[i].IsPlayer = false
+            break
+        }
+    }
+
+    // 4) Сериализуем обратно
+    newMap, err := json.Marshal(cells)
+    if err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to marshal: %w", err)
+    }
+
+    // 5) Обновляем в БД
+    if _, err := DB.Exec(
+        `UPDATE matches SET map = $1 WHERE instance_id = $2`,
+        newMap, instanceID,
+    ); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to update DB: %w", err)
+    }
+
+    return nil
+}
+
+
 // UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
 // UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
 func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
@@ -363,5 +415,142 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
         `UPDATE matches SET map=$1 WHERE instance_id=$2`,
         raw, instanceID,
     )
+    return err
+}
+
+// repository/match.go
+
+// DeleteMatch удаляет матч и всё по нему в БД
+func DeleteMatch(instanceID string) error {
+    // 1) Удаляем всех игроков
+    if _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match_players: %w", err)
+    }
+
+    // 2) Удаляем связанные детали (если есть table match_player_stats)
+    if _, err := DB.Exec(`
+        DELETE FROM match_player_stats
+        WHERE match_instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match_player_stats: %w", err)
+    }
+
+    // 3) Наконец, удаляем сам матч
+    if _, err := DB.Exec(`
+        DELETE FROM matches
+        WHERE instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match: %w", err)
+    }
+
+    return nil
+}
+
+
+func SaveMatchStats(stats *models.MatchInfo) error {
+    query := `
+        INSERT INTO match_stats (instance_id, winner_id, winner_group_id, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (instance_id) DO UPDATE
+          SET winner_id       = EXCLUDED.winner_id,
+              winner_group_id = EXCLUDED.winner_group_id,
+              created_at      = EXCLUDED.created_at;
+    `
+    // используем NOW(), но чтобы тестировать, передаём время из Go
+    now := time.Now().UTC()
+    if _, err := DB.Exec(query,
+        stats.InstanceID,
+        stats.WinnerID,
+        stats.WinnerGroupID,
+        now,
+    ); err != nil {
+        return fmt.Errorf("SaveMatchStats: exec insert: %w", err)
+    }
+    return nil
+}
+
+
+
+
+
+
+// SaveMatchPlayerStats сохраняет агрегированные результаты по каждому игроку в таблице match_player_stats.
+func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error {
+    log.Printf("[SaveMatchPlayerStats] start for match %s, %d players", instanceID, len(results))
+
+    tx, err := DB.Begin()
+    if err != nil {
+        log.Printf("[SaveMatchPlayerStats] begin tx error: %v", err)
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare(`
+      INSERT INTO match_player_stats (
+        instance_id,
+        user_id,
+        exp_gained,
+        rewards,
+        player_kills,
+        monster_kills,
+        damage_total,
+        damage_to_players,
+        damage_to_monsters
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT (instance_id, user_id) DO UPDATE SET
+        exp_gained         = EXCLUDED.exp_gained,
+        rewards            = EXCLUDED.rewards,
+        player_kills       = EXCLUDED.player_kills,
+        monster_kills      = EXCLUDED.monster_kills,
+        damage_total       = EXCLUDED.damage_total,
+        damage_to_players  = EXCLUDED.damage_to_players,
+        damage_to_monsters = EXCLUDED.damage_to_monsters;
+    `)
+    if err != nil {
+        log.Printf("[SaveMatchPlayerStats] prepare stmt error: %v", err)
+        return fmt.Errorf("prepare: %w", err)
+    }
+    defer stmt.Close()
+
+    for i, pr := range results {
+        log.Printf("[SaveMatchPlayerStats] exec for user %d (%d/%d): exp=%d, pk=%d, mk=%d, dt=%d, dp=%d, dm=%d",
+            pr.UserID, i+1, len(results),
+            pr.ExpGained, pr.PlayerKills, pr.MonsterKills,
+            pr.DamageTotal, pr.DamageToPlayers, pr.DamageToMonsters,
+        )
+        if _, err := stmt.Exec(
+            instanceID,
+            pr.UserID,
+            pr.ExpGained,
+            pr.RewardsData,
+            pr.PlayerKills,
+            pr.MonsterKills,
+            pr.DamageTotal,
+            pr.DamageToPlayers,
+            pr.DamageToMonsters,
+        ); err != nil {
+            log.Printf("[SaveMatchPlayerStats] exec error for user %d: %v", pr.UserID, err)
+            return fmt.Errorf("exec for user %d: %w", pr.UserID, err)
+        }
+        log.Printf("[SaveMatchPlayerStats] exec succeeded for user %d", pr.UserID)
+    }
+
+    if err := tx.Commit(); err != nil {
+        log.Printf("[SaveMatchPlayerStats] commit error: %v", err)
+        return fmt.Errorf("commit: %w", err)
+    }
+    log.Printf("[SaveMatchPlayerStats] commit succeeded for match %s", instanceID)
+    return nil
+}
+
+
+func CleanupMatchPlayers(instanceID string) error {
+    _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+    `, instanceID)
     return err
 }

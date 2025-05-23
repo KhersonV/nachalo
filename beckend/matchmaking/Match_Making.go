@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -64,67 +65,89 @@ var (
 	matchMu       sync.Mutex
 )
 
+
+// RemovePlayerMatch убирает игрока из текущего матча (playerMatches)
+func RemovePlayerMatch(playerID int) {
+    matchMu.Lock()
+    defer matchMu.Unlock()
+    delete(playerMatches, playerID)
+}
+
+// RemoveMatch помечает матч как завершённый — удаляет из currentMatches
+func RemoveMatch(instanceID string) {
+    matchMu.Lock()
+    defer matchMu.Unlock()
+    delete(currentMatches, instanceID)
+}
+
+// DELETE /matchmaking/player/{playerID}
+func removePlayerHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    playerID, _ := strconv.Atoi(vars["playerID"])
+    RemovePlayerMatch(playerID)
+    w.WriteHeader(http.StatusOK)
+}
+
 // joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
 func joinHandler(w http.ResponseWriter, r *http.Request) {
-	var req JoinRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
+    var req JoinRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Bad request", http.StatusBadRequest)
+        return
+    }
 
-	// проверяем в БД через GetPlayersInMatch, не участвует ли уже в каком-то currentMatches ====
-	matchMu.Lock()
-	for instID, match := range currentMatches {
-		players, err := repository.GetPlayersInMatch(instID)
-		if err != nil {
-			log.Printf("joinHandler: не удалось получить игроков для матча %s: %v", instID, err)
-			continue
-		}
-		for _, p := range players {
-			if p.UserID == req.PlayerID {
-				// Уже есть активный матч с этим игроком — сразу возвращаем его
-				matchMu.Unlock()
-				w.Header().Set("Content-Type", "application/json")
-				if err := json.NewEncoder(w).Encode(match); err != nil {
-					log.Printf("joinHandler: ошибка кодирования существующего матча: %v", err)
-				}
-				return
-			}
-		}
-	}
-	matchMu.Unlock()
-	// ==== /конец проверки активного матча ====
+    // 1) Быстрый lookup в памяти
+    matchMu.Lock()
+    instID, hasMatch := playerMatches[req.PlayerID]
+    if hasMatch {
+        // 1a) Матч в currentMatches?
+        if matchInfo, ok := currentMatches[instID]; ok {
+            // 1b) И он ещё содержит этого игрока (DB фильтр health > 0)
+            players, err := repository.GetPlayersInMatch(instID)
+            if err == nil {
+                for _, p := range players {
+                    if p.UserID == req.PlayerID {
+                        matchMu.Unlock()
+                        w.Header().Set("Content-Type", "application/json")
+                        json.NewEncoder(w).Encode(matchInfo)
+                        return
+                    }
+                }
+            }
+        }
+        // иначе отвязываем игрока от этого instID
+        delete(playerMatches, req.PlayerID)
+    }
+    matchMu.Unlock()
 
-	mu.Lock()
-	defer mu.Unlock()
+    // Ни старого матча нет, ни он в нём не активен → стандартная очередь
+    mu.Lock()
+    defer mu.Unlock()
 
-	q, ok := queues[req.Mode]
-	if !ok {
-		http.Error(w, "Unknown mode", http.StatusBadRequest)
-		return
-	}
+    q, ok := queues[req.Mode]
+    if !ok {
+        http.Error(w, "Unknown mode", http.StatusBadRequest)
+        return
+    }
+    for _, entry := range q {
+        if entry.PlayerID == req.PlayerID {
+            http.Error(w, "Player already in queue", http.StatusBadRequest)
+            return
+        }
+    }
 
-	// Если игрок уже в очереди, сообщаем об ошибке
-	for _, entry := range q {
-		if entry.PlayerID == req.PlayerID {
-			http.Error(w, "Player already in queue", http.StatusBadRequest)
-			return
-		}
-	}
+    entry := QueueEntry{
+        PlayerID: req.PlayerID,
+        Rating:   req.Rating,
+        JoinTime: time.Now(),
+    }
+    queues[req.Mode] = append(q, entry)
+    log.Printf("Player %d joined mode %s", req.PlayerID, req.Mode)
 
-	entry := QueueEntry{
-		PlayerID: req.PlayerID,
-		Rating:   req.Rating,
-		JoinTime: time.Now(),
-	}
+    checkAndMakeMatch(req.Mode)
 
-	queues[req.Mode] = append(q, entry)
-	log.Printf("Player %d joined mode %s", req.PlayerID, req.Mode)
-
-	checkAndMakeMatch(req.Mode)
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("You have joined the queue"))
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("You have joined the queue"))
 }
 
 // cancelHandler – удаляет игрока из очереди
@@ -341,6 +364,8 @@ func main() {
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
+
+	r.HandleFunc("/matchmaking/player/{playerID}", removePlayerHandler).Methods("DELETE")
 
 	handler := enableCors(r)
 	srv := &http.Server{Handler: handler, Addr: ":8002"}

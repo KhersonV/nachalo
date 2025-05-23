@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"fmt"
 
 	_ "github.com/lib/pq"
 	"gameservice/models"
@@ -17,6 +18,7 @@ import (
 const connStr = "user=admin password=admin dbname=game_db sslmode=disable"
 
 var DB *sql.DB
+
 func InitDB() {
     var err error
     DB, err = sql.Open("postgres", connStr)
@@ -36,6 +38,8 @@ func InitDB() {
     // Добавляем нашу новую
     CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
+	CreateMatchStatsTable()
+	CreateMatchPlayerStatsTable()
 
     // Восстанавливаем state матчей
     if err := RestoreMatchStates(); err != nil {
@@ -50,7 +54,6 @@ func CreatePlayersTable() {
 		user_id SERIAL PRIMARY KEY,
 		name TEXT DEFAULT 'Unnamed Player',
 		image TEXT DEFAULT '/player-1.webp',
-		position JSONB DEFAULT '{"x": 0, "y": 0}',
 		energy INTEGER DEFAULT 100,
 		max_energy INTEGER DEFAULT 100,
 		health INTEGER DEFAULT 100,
@@ -83,13 +86,15 @@ func CreateMatchesTable() {
 		teams_count INTEGER NOT NULL,
 		total_players INTEGER NOT NULL,
 		active_user_id INTEGER,
+		winner_id INTEGER,
+		winner_group_id INTEGER,
 		turn_order JSONB,
 		turn_number INTEGER DEFAULT 1,
+		start_positions JSONB,
+		portal_position JSONB,
 		map_height INTEGER NOT NULL,
 		map_width INTEGER NOT NULL,
-		map JSONB NOT NULL,
-		start_positions JSONB,
-		portal_position JSONB
+		map JSONB NOT NULL
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
@@ -212,6 +217,46 @@ func CreatePersistedArtifactsTable() {
   }
 }
 
+// CreateMatchStatsTable создаёт таблицу для хранения итогов матчей.
+func CreateMatchStatsTable() {
+    query := `
+    CREATE TABLE IF NOT EXISTS match_stats (
+        instance_id      TEXT PRIMARY KEY
+                           REFERENCES matches(instance_id)
+                           ON DELETE CASCADE,
+        winner_id        INTEGER     NOT NULL,
+        winner_group_id  INTEGER     NOT NULL,
+        created_at       TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    );
+    `
+    if _, err := DB.Exec(query); err != nil {
+        log.Fatalf("Ошибка создания таблицы match_stats: %v", err)
+    }
+}
+
+
+// CreateMatchPlayerStatsTable создаёт таблицу для хранения детальных результатов каждого игрока в матче.
+func CreateMatchPlayerStatsTable() {
+    query := `
+    CREATE TABLE IF NOT EXISTS match_player_stats (
+        instance_id        TEXT     NOT NULL
+                                 REFERENCES match_stats(instance_id)
+                                 ON DELETE CASCADE,
+        user_id            INTEGER  NOT NULL,
+        exp_gained         INTEGER  NOT NULL,
+        rewards            JSONB    NOT NULL,
+        player_kills       INTEGER  NOT NULL,
+        monster_kills      INTEGER  NOT NULL,
+        damage_total       INTEGER  NOT NULL,
+        damage_to_players  INTEGER  NOT NULL,
+        damage_to_monsters INTEGER  NOT NULL,
+        PRIMARY KEY (instance_id, user_id)
+    );
+    `
+    if _, err := DB.Exec(query); err != nil {
+        log.Fatalf("Ошибка создания таблицы match_player_stats: %v", err)
+    }
+}
 
 func RestoreMatchStates() error {
 	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order FROM matches")
@@ -314,3 +359,95 @@ func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 
 	return &pr, nil
 }
+
+
+// GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.
+func GetMatchResults(instanceID string) (*game.MatchResults, error) {
+	log.Printf("[GetMatchResults] fetching for match %s", instanceID)
+
+    var mr game.MatchResults
+
+
+
+	// Предполагаем, что в game.MatchResults поля WinnerID и WinnerGroupID — это plain int,
+    // и отсутствующий победитель будет обозначаться как -1.
+    
+    // 1) Победители из таблицы matches, NULL → -1
+    if err := DB.QueryRow(
+        `SELECT
+            COALESCE(winner_id, -1),
+            COALESCE(winner_group_id, -1)
+         FROM matches
+        WHERE instance_id = $1`,
+        instanceID,
+    ).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
+        return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
+    }
+
+    // // 1) Победители из таблицы matches
+    // if err := DB.QueryRow(
+    //     `SELECT winner_id, winner_group_id
+    //        FROM matches
+    //       WHERE instance_id = $1`,
+    //     instanceID,
+    // ).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
+    //     return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
+    // }
+
+
+
+
+
+    // 2) Список участников
+    rows, err := DB.Query(
+        `SELECT user_id
+           FROM match_players
+          WHERE match_instance_id = $1`,
+        instanceID,
+    )
+    if err != nil {
+        return nil, fmt.Errorf("GetMatchResults: не удалось получить игроков: %w", err)
+    }
+    defer rows.Close()
+
+    // 3) Для каждого игрока — игровая логика CalculateResults
+    for rows.Next() {
+        var userID int
+        if err := rows.Scan(&userID); err != nil {
+            log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
+            continue
+        }
+
+        exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, err := 
+            game.CalculateResults(instanceID, userID)
+        if err != nil {
+            log.Printf("GetMatchResults: CalculateResults для user %d вернул ошибку: %v", userID, err)
+            continue
+        }
+
+        // Сериализуем награды
+        rewardsJSON, err := json.Marshal(rewards)
+        if err != nil {
+            log.Printf("GetMatchResults: ошибка JSON.Marshal для user %d: %v", userID, err)
+            continue
+        }
+
+        mr.PlayerResults = append(mr.PlayerResults, game.PlayerResult{
+            UserID:           userID,
+            ExpGained:        exp,
+            RewardsData:      rewardsJSON,
+            PlayerKills:      killsP,
+            MonsterKills:     killsM,
+            DamageTotal:      dmgTotal,
+            DamageToPlayers:  dmgPlayers,
+            DamageToMonsters: dmgMonsters,
+        })
+    }
+log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
+    if len(mr.PlayerResults) == 0 {
+        return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)
+    }
+
+    return &mr, nil
+}
+

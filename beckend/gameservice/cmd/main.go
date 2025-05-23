@@ -36,7 +36,7 @@ func main() {
 	if jwtSecretKey == "" {
 		log.Fatal("JWT_SECRET_KEY environment variable is not set")
 	}
-	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
+	log.Println("JWT_SECRET_KEY загружен")
 
 	// Инициализация БД
 	repository.InitDB()
@@ -75,6 +75,9 @@ func main() {
 	// === Эндпоинты для матчей ===
 	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
 	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
+	 // Эндпоинт для финализации матча
+    router.HandleFunc("/game/finishMatch", handlers.FinishMatchHandler).Methods("POST")
+
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
 	router.Handle("/games/{instance_id}/player/{id}/move",

@@ -306,16 +306,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 
 
 // OpenBarbel реализует логику открытия бочки.
-// В зависимости от случайного числа, из бочки может выпасть,
-// обычный ресурс или артефакт. а может и урон нанести персонажу.
-// types.go (или в том же файле до OpenBarbel)
-
-type DamageEvent struct {
-    Amount int
-}
-
-// OpenBarbel реализует логику открытия бочки.
-// Раньше выпадал монстр, теперь вместо этого наносится урон персонажу.
 func OpenBarbel(
     cell FullCell,
     resources []ResourceData,

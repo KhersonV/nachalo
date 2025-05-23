@@ -16,7 +16,7 @@ import (
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
-
+    "gameservice/service"
 	"github.com/gorilla/mux"
 )
 
@@ -263,52 +263,102 @@ func applyDamage(att stats, def stats) attackResult {
 }
 
 // --- Обновление HP и обработка смерти цели --------------------------------
-
-func saveTargetHealth(instanceID, targetType string, targetID int, ar attackResult) {
-	if targetType == "player" {
-		p, err := repository.GetMatchPlayerByID(instanceID, targetID)
-		if err != nil {
-			log.Printf("saveTargetHealth load player error: %v", err)
-			return
-		}
-		p.Health = ar.NewHealth
-		if ar.NewHealth > 0 {
-			repository.UpdateMatchPlayer(p)
-		} else {
-			handlePlayerDeath(instanceID, p)
-		}
-	} else {
-		repository.UpdateMatchMonsterHealth(instanceID, targetID, ar.NewHealth)
-		if ar.NewHealth <= 0 {
-			handleMonsterDeath(instanceID, targetID)
-		}
-	}
+// saveTargetHealth сохраняет урон и обрабатывает смерть цели.
+func saveTargetHealth(
+    instanceID  string,
+    targetType  string,
+    targetID    int,
+    attackerID  int,
+    ar          attackResult,
+) {
+    if targetType == "player" {
+        p, err := repository.GetMatchPlayerByID(instanceID, targetID)
+        if err != nil {
+            log.Printf("saveTargetHealth load player error: %v", err)
+            return
+        }
+        p.Health = ar.NewHealth
+        if ar.NewHealth > 0 {
+            repository.UpdateMatchPlayer(p)
+        } else {
+            // Записываем факт убийства игрока
+            if ms, ok := game.GetMatchState(instanceID); ok {
+                ms.RecordKillEvent(attackerID, "player", ar.Damage)
+            }
+            handlePlayerDeath(instanceID, p)
+        }
+    } else {
+        // монстр получает урон
+        repository.UpdateMatchMonsterHealth(instanceID, targetID, ar.NewHealth)
+        if ar.NewHealth <= 0 {
+            // Записываем факт убийства монстра
+            if ms, ok := game.GetMatchState(instanceID); ok {
+                ms.RecordKillEvent(attackerID, "monster", ar.Damage)
+            }
+            handleMonsterDeath(instanceID, targetID)
+        }
+    }
 }
+
 
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
 
 func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
-	userID := p.UserID
-	pos := p.Position
+    log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
+    userID := p.UserID
+    oldPos := p.Position
 
-	if err := repository.DeleteMatchPlayer(instanceID, userID); err != nil {
-		log.Printf("DeleteMatchPlayer error: %v", err)
-	}
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RemovePlayerFromTurnOrder(userID)
-	}
-	_ = repository.UpdateCellPlayerFlags(instanceID, pos, pos)
+    // // Удаляем игрока из match_players
+    // if err := repository.DeleteMatchPlayer(instanceID, userID); err != nil {
+    //     log.Printf("[handlePlayerDeath] DeleteMatchPlayer error: %v", err)
+    // }
 
-	// WS: PLAYER_DEFEATED
-	msg := map[string]interface{}{
-		"type": "PLAYER_DEFEATED",
-		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"userId":     userID,
-		},
-	}
-	b, _ := json.Marshal(msg)
-	Broadcast(b)
+    if err := repository.MarkPlayerDead(instanceID, p.UserID); err != nil {
+        log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
+    }
+    
+
+     unbindPlayer(p.UserID)
+     
+    // Если в памяти есть матч
+    if ms, ok := game.GetMatchState(instanceID); ok {
+        ms.RemovePlayerFromTurnOrder(userID)
+
+        // Если больше нет игроков — завершаем матч
+        if len(ms.TurnOrder) == 0 {
+            log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+            if err := service.FinalizeMatch(instanceID); err != nil {
+                log.Printf("[combat] FinalizeMatch failed: %v", err)
+            } else {
+                log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
+            }
+            // Разошлём WS-уведомление, что матч окончен
+            msg := map[string]interface{}{
+                "type":    "MATCH_ENDED",
+                "payload": map[string]string{"instanceId": instanceID},
+            }
+            b, _ := json.Marshal(msg)
+            Broadcast(b)
+            return
+        }
+    }
+
+    // Обновляем флаги клетки
+       if err := repository.ClearCellPlayerFlag(instanceID, oldPos); err != nil {
+        log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
+    }
+
+
+    // WS: PLAYER_DEFEATED
+    msg := map[string]interface{}{
+        "type": "PLAYER_DEFEATED",
+        "payload": map[string]interface{}{
+            "instanceId": instanceID,
+            "userId":     userID,
+        },
+    }
+    b, _ := json.Marshal(msg)
+    Broadcast(b)
 }
 
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
@@ -438,8 +488,12 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
+      //  Добавляем в состояние матча запись о нанесённом уроне
+   if ms, ok := game.GetMatchState(req.InstanceID); ok {
+       ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
+   }
 	// 5) Сохранение цели + возможная смерть
-	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, targetRes)
+	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
 	counterRes, _ := doCounterattack(

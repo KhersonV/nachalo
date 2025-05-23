@@ -8,17 +8,9 @@ package game
 import (
 	"errors"
 	"log"
-	"sync"
 )
 
-// MatchState инкапсулирует состояние конкретного матча.
-type MatchState struct {
-	InstanceID   string
-	ActiveUserID int   // ID игрока, чей сейчас ход
-	TurnOrder    []int // Очередность ходов (список ID игроков)
-	TurnNumber   int   // Номер текущего круга
-	mu           sync.Mutex
-}
+
 
 var (
 	ErrNoPlayers         = errors.New("no players in turn order")
@@ -104,13 +96,6 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
     }
 }
 
-// --- Хранилище состояний матчей ---
-
-var (
-	MatchStates   = make(map[string]*MatchState)
-	MatchStatesMu sync.Mutex
-)
-
 // CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 	ms := &MatchState{
@@ -134,4 +119,33 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 	defer MatchStatesMu.Unlock()
 	ms, ok := MatchStates[instanceID]
 	return ms, ok
+}
+
+
+func DeleteMatchStateInMemory(instanceID string) {
+    MatchStatesMu.Lock()
+    defer MatchStatesMu.Unlock()
+    delete(MatchStates, instanceID)
+}
+
+// RecordDamageEvent добавляет в память факт нанесённого урона.
+func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, amount int) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.DamageEvents = append(m.DamageEvents, DamageEvent{
+        DealerID:   dealerID,
+        TargetType: targetType,
+        Amount:     amount,
+    })
+}
+
+// RecordKillEvent добавляет в память факт убийства (смерти).
+func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.KillEvents = append(m.KillEvents, KillEvent{
+        KillerID:   killerID,
+        VictimType: victimType,
+        Damage:     damage,
+    })
 }

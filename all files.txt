@@ -13,18 +13,22 @@
 
 
 
+
 gameservice
 ├── cmd
 │   └── main.go                      // Точка входа: настраивает маршруты, CORS и запускает сервер
 ├── game
 │   ├── mapgen.go           // Генерация карты и другие игровые утилиты
-│   └── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+│   ├── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+│   ├── results.go
+│   └── state.go
 ├── handlers
 │   ├── artifacts_http.go
 │   ├── auth.go                      // Обработчики для регистрации, логина, профиля (пустой пример)
 │   ├── barrel_http.go
 │   ├── barrel.go
 │   ├── combat.go                    // Обработчики для атаки, перемещения
+│   ├── finish_match_handler.go
 │   ├── inventory.go                 // Обработчики для работы с инвентарём
 │   ├── match_player.go
 │   ├── match.go                     // Обработчики для создания матчей, получения данных матчей
@@ -50,6 +54,8 @@ gameservice
 │   ├── players.go                   // Функции доступа к таблице players
 │   ├── resources.go
 │   └── utils.go
+├── service
+│   └── match_service.go
 ├── go.mod
 └── go.sum
 
@@ -410,16 +416,6 @@ func main() {
  ========================================================================================================================
 
 
-
-
-
-
-
-
-
-
-
-
 //=======================
 //gameservice/cmd/main.go
 //=======================
@@ -457,7 +453,7 @@ func main() {
 	if jwtSecretKey == "" {
 		log.Fatal("JWT_SECRET_KEY environment variable is not set")
 	}
-	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
+	log.Println("JWT_SECRET_KEY загружен")
 
 	// Инициализация БД
 	repository.InitDB()
@@ -496,6 +492,9 @@ func main() {
 	// === Эндпоинты для матчей ===
 	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
 	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
+	 // Эндпоинт для финализации матча
+    router.HandleFunc("/game/finishMatch", handlers.FinishMatchHandler).Methods("POST")
+
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
 	router.Handle("/games/{instance_id}/player/{id}/move",
@@ -537,23 +536,12 @@ func main() {
 
 
 
-
-
-
-
  ========================================================================================================================
  ===============================================game=====================================================================
  ==============================================game====================================================================
  ===============================================game=====================================================================
  ================================================game====================================================================
  ========================================================================================================================
-
-
-
-
-
-
-
 
 
 // ====================================
@@ -864,16 +852,6 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 
 
 // OpenBarbel реализует логику открытия бочки.
-// В зависимости от случайного числа, из бочки может выпасть,
-// обычный ресурс или артефакт. а может и урон нанести персонажу.
-// types.go (или в том же файле до OpenBarbel)
-
-type DamageEvent struct {
-    Amount int
-}
-
-// OpenBarbel реализует логику открытия бочки.
-// Раньше выпадал монстр, теперь вместо этого наносится урон персонажу.
 func OpenBarbel(
     cell FullCell,
     resources []ResourceData,
@@ -925,15 +903,6 @@ if r < 0.3+0.4 && len(resources) > 0 {
 
 
 
-
-
-
-
-
-
-
-
-
 //==================================
 // gameservice/game/match.go
 //==================================
@@ -943,17 +912,9 @@ package game
 import (
 	"errors"
 	"log"
-	"sync"
 )
 
-// MatchState инкапсулирует состояние конкретного матча.
-type MatchState struct {
-	InstanceID   string
-	ActiveUserID int   // ID игрока, чей сейчас ход
-	TurnOrder    []int // Очередность ходов (список ID игроков)
-	TurnNumber   int   // Номер текущего круга
-	mu           sync.Mutex
-}
+
 
 var (
 	ErrNoPlayers         = errors.New("no players in turn order")
@@ -1039,13 +1000,6 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
     }
 }
 
-// --- Хранилище состояний матчей ---
-
-var (
-	MatchStates   = make(map[string]*MatchState)
-	MatchStatesMu sync.Mutex
-)
-
 // CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 	ms := &MatchState{
@@ -1070,6 +1024,213 @@ func GetMatchState(instanceID string) (*MatchState, bool) {
 	ms, ok := MatchStates[instanceID]
 	return ms, ok
 }
+
+
+func DeleteMatchStateInMemory(instanceID string) {
+    MatchStatesMu.Lock()
+    defer MatchStatesMu.Unlock()
+    delete(MatchStates, instanceID)
+}
+
+// RecordDamageEvent добавляет в память факт нанесённого урона.
+func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, amount int) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.DamageEvents = append(m.DamageEvents, DamageEvent{
+        DealerID:   dealerID,
+        TargetType: targetType,
+        Amount:     amount,
+    })
+}
+
+// RecordKillEvent добавляет в память факт убийства (смерти).
+func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int) {
+    m.mu.Lock()
+    defer m.mu.Unlock()
+    m.KillEvents = append(m.KillEvents, KillEvent{
+        KillerID:   killerID,
+        VictimType: victimType,
+        Damage:     damage,
+    })
+}
+
+
+
+
+
+
+
+
+
+//==================================
+// gameservice/game/results.go
+//==================================
+
+package game
+
+import (
+	"fmt"
+)
+
+
+
+// CalculateResults рассчитывает все метрики для пользователя в матче
+func CalculateResults(
+    instanceID string,
+    userID     int,
+) (
+    exp           int,
+    rewards       []Reward,
+    playerKills   int,
+    monsterKills  int,
+    dmgTotal      int,
+    dmgPlayers    int,
+    dmgMonsters   int,
+    err           error,
+) {
+    // 1) Достаём состояние матча
+    MatchStatesMu.RLock()
+    state, ok := MatchStates[instanceID]
+    MatchStatesMu.RUnlock()
+    if !ok {
+        return 0, nil, 0, 0, 0, 0, 0, fmt.Errorf("no state for match %s", instanceID)
+    }
+
+    // 2) Считаем убийства и урон
+    for _, ke := range state.KillEvents {
+        if ke.KillerID != userID {
+            continue
+        }
+        switch ke.VictimType {
+        case "player":
+            playerKills++
+        case "monster":
+            monsterKills++
+        }
+        dmgTotal += ke.Damage
+    }
+    for _, de := range state.DamageEvents {
+        if de.DealerID != userID {
+            continue
+        }
+        dmgTotal += de.Amount
+        switch de.TargetType {
+        case "player":
+            dmgPlayers += de.Amount
+        case "monster":
+            dmgMonsters += de.Amount
+        }
+    }
+
+    // 3) Вычисляем опыт
+    // — например: 100 XP за каждого игрока, 20 за монстра, плюс 1 XP за каждые 10 единиц урона
+    exp = playerKills*100 + monsterKills*20 + (dmgTotal/10)
+
+    // 4) Генерируем награды
+    // — пример: монеты за фраги, артефакт за много фрагов монстров
+    if playerKills > 0 {
+        rewards = append(rewards, Reward{
+            Type:   "coin",
+            Amount: playerKills * 50, // по 50 монет за каждого убитого игрока
+        })
+    }
+    if monsterKills > 5 {
+        rewards = append(rewards, Reward{
+            Type:   "artifact",
+            Amount: 1, // даём 1 случайный артефакт
+        })
+    }
+
+    return exp, rewards, playerKills, monsterKills, dmgTotal, dmgPlayers, dmgMonsters, nil
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+//==================================
+// gameservice/game/state.go
+//==================================
+
+package game
+
+import(
+	"sync"
+	"encoding/json"
+
+) 
+
+
+
+
+// PlayerResult — результат одного игрока
+type PlayerResult struct {
+    UserID           int             // ID игрока
+    ExpGained        int             // сколько опыта дать
+    RewardsData      json.RawMessage // JSON-представление наград
+    PlayerKills      int             // сколько игроков убил
+    MonsterKills     int             // сколько монстров убил
+    DamageTotal      int             // общий нанесённый урон
+    DamageToPlayers  int             // урон, нанесённый другим игрокам
+    DamageToMonsters int             // урон, нанесённый монстрам
+}
+
+// MatchResults — итоги по всему матчу
+type MatchResults struct {
+    PlayerResults   []PlayerResult
+    WinnerID        int
+    WinnerGroupID   int
+}
+
+
+// Reward — пример структуры для награды
+type Reward struct {
+    Type   string // "coin", "artifact" и т.п.
+    Amount int    // количество или ID артефакта
+}
+
+
+// одно убийство или добивание монстра/игрока
+type KillEvent struct {
+    KillerID   int
+    VictimType string // "player" или "monster"
+    Damage     int    // сколько урона привело к смерти
+}
+
+// одно нанесение урона (не обязательно смертельное)
+type DamageEvent struct {
+    DealerID   int
+    TargetType string // "player" или "monster"
+    Amount     int
+}
+
+// MatchState инкапсулирует состояние конкретного матча.
+type MatchState struct {
+	InstanceID   string
+	ActiveUserID int   // ID игрока, чей сейчас ход
+	TurnOrder    []int // Очередность ходов (список ID игроков)
+	TurnNumber   int   // Номер текущего круга
+	KillEvents   []KillEvent
+    DamageEvents []DamageEvent
+	mu           sync.Mutex
+}
+
+
+// глобальная ма́па: instanceID → MatchState
+var (
+    MatchStates   = make(map[string]*MatchState)
+    MatchStatesMu sync.RWMutex
+)
+
+
 
 
 
@@ -1555,7 +1716,6 @@ func HandleOpenBarrel(
 
 
 
-
 // ====================================
 // gameservice/handlers/combat.go
 // ====================================
@@ -1574,7 +1734,7 @@ import (
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
-
+    "gameservice/service"
 	"github.com/gorilla/mux"
 )
 
@@ -1821,52 +1981,102 @@ func applyDamage(att stats, def stats) attackResult {
 }
 
 // --- Обновление HP и обработка смерти цели --------------------------------
-
-func saveTargetHealth(instanceID, targetType string, targetID int, ar attackResult) {
-	if targetType == "player" {
-		p, err := repository.GetMatchPlayerByID(instanceID, targetID)
-		if err != nil {
-			log.Printf("saveTargetHealth load player error: %v", err)
-			return
-		}
-		p.Health = ar.NewHealth
-		if ar.NewHealth > 0 {
-			repository.UpdateMatchPlayer(p)
-		} else {
-			handlePlayerDeath(instanceID, p)
-		}
-	} else {
-		repository.UpdateMatchMonsterHealth(instanceID, targetID, ar.NewHealth)
-		if ar.NewHealth <= 0 {
-			handleMonsterDeath(instanceID, targetID)
-		}
-	}
+// saveTargetHealth сохраняет урон и обрабатывает смерть цели.
+func saveTargetHealth(
+    instanceID  string,
+    targetType  string,
+    targetID    int,
+    attackerID  int,
+    ar          attackResult,
+) {
+    if targetType == "player" {
+        p, err := repository.GetMatchPlayerByID(instanceID, targetID)
+        if err != nil {
+            log.Printf("saveTargetHealth load player error: %v", err)
+            return
+        }
+        p.Health = ar.NewHealth
+        if ar.NewHealth > 0 {
+            repository.UpdateMatchPlayer(p)
+        } else {
+            // Записываем факт убийства игрока
+            if ms, ok := game.GetMatchState(instanceID); ok {
+                ms.RecordKillEvent(attackerID, "player", ar.Damage)
+            }
+            handlePlayerDeath(instanceID, p)
+        }
+    } else {
+        // монстр получает урон
+        repository.UpdateMatchMonsterHealth(instanceID, targetID, ar.NewHealth)
+        if ar.NewHealth <= 0 {
+            // Записываем факт убийства монстра
+            if ms, ok := game.GetMatchState(instanceID); ok {
+                ms.RecordKillEvent(attackerID, "monster", ar.Damage)
+            }
+            handleMonsterDeath(instanceID, targetID)
+        }
+    }
 }
+
 
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
 
 func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
-	userID := p.UserID
-	pos := p.Position
+    log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
+    userID := p.UserID
+    oldPos := p.Position
 
-	if err := repository.DeleteMatchPlayer(instanceID, userID); err != nil {
-		log.Printf("DeleteMatchPlayer error: %v", err)
-	}
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RemovePlayerFromTurnOrder(userID)
-	}
-	_ = repository.UpdateCellPlayerFlags(instanceID, pos, pos)
+    // // Удаляем игрока из match_players
+    // if err := repository.DeleteMatchPlayer(instanceID, userID); err != nil {
+    //     log.Printf("[handlePlayerDeath] DeleteMatchPlayer error: %v", err)
+    // }
 
-	// WS: PLAYER_DEFEATED
-	msg := map[string]interface{}{
-		"type": "PLAYER_DEFEATED",
-		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"userId":     userID,
-		},
-	}
-	b, _ := json.Marshal(msg)
-	Broadcast(b)
+    if err := repository.MarkPlayerDead(instanceID, p.UserID); err != nil {
+        log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
+    }
+    
+
+     unbindPlayer(p.UserID)
+     
+    // Если в памяти есть матч
+    if ms, ok := game.GetMatchState(instanceID); ok {
+        ms.RemovePlayerFromTurnOrder(userID)
+
+        // Если больше нет игроков — завершаем матч
+        if len(ms.TurnOrder) == 0 {
+            log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+            if err := service.FinalizeMatch(instanceID); err != nil {
+                log.Printf("[combat] FinalizeMatch failed: %v", err)
+            } else {
+                log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
+            }
+            // Разошлём WS-уведомление, что матч окончен
+            msg := map[string]interface{}{
+                "type":    "MATCH_ENDED",
+                "payload": map[string]string{"instanceId": instanceID},
+            }
+            b, _ := json.Marshal(msg)
+            Broadcast(b)
+            return
+        }
+    }
+
+    // Обновляем флаги клетки
+       if err := repository.ClearCellPlayerFlag(instanceID, oldPos); err != nil {
+        log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
+    }
+
+
+    // WS: PLAYER_DEFEATED
+    msg := map[string]interface{}{
+        "type": "PLAYER_DEFEATED",
+        "payload": map[string]interface{}{
+            "instanceId": instanceID,
+            "userId":     userID,
+        },
+    }
+    b, _ := json.Marshal(msg)
+    Broadcast(b)
 }
 
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
@@ -1996,8 +2206,12 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
+      //  Добавляем в состояние матча запись о нанесённом уроне
+   if ms, ok := game.GetMatchState(req.InstanceID); ok {
+       ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
+   }
 	// 5) Сохранение цели + возможная смерть
-	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, targetRes)
+	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
 	counterRes, _ := doCounterattack(
@@ -2039,6 +2253,55 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+// ============================================
+// gameservice/handlers/finish_match_handler.go
+// ============================================
+
+package handlers
+
+import (
+	"log"
+	"net/http"
+	"encoding/json"
+	"gameservice/service"
+)
+
+func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
+    // 1. Метод
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    // 2. Декодирование
+    defer r.Body.Close()
+    var req struct {
+        InstanceID string `json:"instanceId"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+        return
+    }
+    // 3. Вызов финализации
+    if err := service.FinalizeMatch(req.InstanceID); err != nil {
+        log.Printf("FinalizeMatch error for %s: %v", req.InstanceID, err)
+        http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+        return
+    }
+    // 4. Ответ
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status":"ok"}`))
+}
 
 
 
@@ -2549,7 +2812,6 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 //====================================
 // gameservice/handlers/players.go
 //====================================
@@ -2610,19 +2872,19 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.Image = "/player-1.webp"
 	}
 
-	// Запрос с новым полем position (JSONB)
+	
 	query := `
 		INSERT INTO players (
-			user_id, name, image, position, energy, max_energy, 
+			user_id, name, image, energy, max_energy, 
 			health, max_health, level, experience, max_experience, 
 			attack, defense, speed, maneuverability, vision, vision_range, balance, inventory
 		)
 		VALUES (
-			$1, $2, $3, '{"x": 0, "y": 0}', 100, 100,
+			$1, $2, $3, 100, 100,
 			100, 100, 1, 0, 500, 10, 5,
 			3, 2, 2, 2, 0, '{}'
 		)
-		RETURNING user_id, name, image, position, energy, max_energy,
+		RETURNING user_id, name, image, energy, max_energy,
 				  health, max_health, level, experience, max_experience, 
 				  attack, defense, speed, maneuverability, vision, vision_range, balance, inventory
 	`
@@ -2632,7 +2894,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		&player.UserID,
 		&player.Name,
 		&player.Image,
-		&positionJSON,
 		&player.Energy,
 		&player.MaxEnergy,
 		&player.Health,
@@ -2728,6 +2989,25 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
+
+// unbindPlayer удаляет игрока из матчинга по HTTP
+func unbindPlayer(playerID int) {
+    url := fmt.Sprintf("http://localhost:8002/matchmaking/player/%d", playerID)
+    req, err := http.NewRequest(http.MethodDelete, url, nil)
+    if err != nil {
+        log.Printf("unbindPlayer: не удалось создать запрос: %v", err)
+        return
+    }
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        log.Printf("unbindPlayer: запрос завершился ошибкой: %v", err)
+        return
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusOK {
+        log.Printf("unbindPlayer: unexpected status %s", resp.Status)
+    }
+}
 
 
 
@@ -3348,6 +3628,7 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 
 
 
+
 // ==============================
 // /gameservice/models/match.go
 // ==============================
@@ -3370,6 +3651,8 @@ type MatchInfo struct {
 	TurnNumber     int             `json:"turn_number"`
 	StartPositions  json.RawMessage `json:"start_positions"`
 	PortalPosition  json.RawMessage `json:"portal_position"`
+	WinnerID		int				`json:"winner_id"`
+	WinnerGroupID	int				`json:"winner_group_id"`		
 }
 
 
@@ -3677,7 +3960,6 @@ func UpdatePersistedArtifact(a PersistedArtifact) error {
 
 
 
-
 // ==============================
 // /gameservice/repository/db.go
 // ==============================
@@ -3688,6 +3970,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"fmt"
 
 	_ "github.com/lib/pq"
 	"gameservice/models"
@@ -3697,6 +3980,7 @@ import (
 const connStr = "user=admin password=admin dbname=game_db sslmode=disable"
 
 var DB *sql.DB
+
 func InitDB() {
     var err error
     DB, err = sql.Open("postgres", connStr)
@@ -3716,6 +4000,8 @@ func InitDB() {
     // Добавляем нашу новую
     CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
+	CreateMatchStatsTable()
+	CreateMatchPlayerStatsTable()
 
     // Восстанавливаем state матчей
     if err := RestoreMatchStates(); err != nil {
@@ -3730,7 +4016,6 @@ func CreatePlayersTable() {
 		user_id SERIAL PRIMARY KEY,
 		name TEXT DEFAULT 'Unnamed Player',
 		image TEXT DEFAULT '/player-1.webp',
-		position JSONB DEFAULT '{"x": 0, "y": 0}',
 		energy INTEGER DEFAULT 100,
 		max_energy INTEGER DEFAULT 100,
 		health INTEGER DEFAULT 100,
@@ -3763,13 +4048,15 @@ func CreateMatchesTable() {
 		teams_count INTEGER NOT NULL,
 		total_players INTEGER NOT NULL,
 		active_user_id INTEGER,
+		winner_id INTEGER,
+		winner_group_id INTEGER,
 		turn_order JSONB,
 		turn_number INTEGER DEFAULT 1,
+		start_positions JSONB,
+		portal_position JSONB,
 		map_height INTEGER NOT NULL,
 		map_width INTEGER NOT NULL,
-		map JSONB NOT NULL,
-		start_positions JSONB,
-		portal_position JSONB
+		map JSONB NOT NULL
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
@@ -3892,6 +4179,46 @@ func CreatePersistedArtifactsTable() {
   }
 }
 
+// CreateMatchStatsTable создаёт таблицу для хранения итогов матчей.
+func CreateMatchStatsTable() {
+    query := `
+    CREATE TABLE IF NOT EXISTS match_stats (
+        instance_id      TEXT PRIMARY KEY
+                           REFERENCES matches(instance_id)
+                           ON DELETE CASCADE,
+        winner_id        INTEGER     NOT NULL,
+        winner_group_id  INTEGER     NOT NULL,
+        created_at       TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    );
+    `
+    if _, err := DB.Exec(query); err != nil {
+        log.Fatalf("Ошибка создания таблицы match_stats: %v", err)
+    }
+}
+
+
+// CreateMatchPlayerStatsTable создаёт таблицу для хранения детальных результатов каждого игрока в матче.
+func CreateMatchPlayerStatsTable() {
+    query := `
+    CREATE TABLE IF NOT EXISTS match_player_stats (
+        instance_id        TEXT     NOT NULL
+                                 REFERENCES match_stats(instance_id)
+                                 ON DELETE CASCADE,
+        user_id            INTEGER  NOT NULL,
+        exp_gained         INTEGER  NOT NULL,
+        rewards            JSONB    NOT NULL,
+        player_kills       INTEGER  NOT NULL,
+        monster_kills      INTEGER  NOT NULL,
+        damage_total       INTEGER  NOT NULL,
+        damage_to_players  INTEGER  NOT NULL,
+        damage_to_monsters INTEGER  NOT NULL,
+        PRIMARY KEY (instance_id, user_id)
+    );
+    `
+    if _, err := DB.Exec(query); err != nil {
+        log.Fatalf("Ошибка создания таблицы match_player_stats: %v", err)
+    }
+}
 
 func RestoreMatchStates() error {
 	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order FROM matches")
@@ -3994,6 +4321,99 @@ func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 
 	return &pr, nil
 }
+
+
+// GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.
+func GetMatchResults(instanceID string) (*game.MatchResults, error) {
+	log.Printf("[GetMatchResults] fetching for match %s", instanceID)
+
+    var mr game.MatchResults
+
+
+
+	// Предполагаем, что в game.MatchResults поля WinnerID и WinnerGroupID — это plain int,
+    // и отсутствующий победитель будет обозначаться как -1.
+    
+    // 1) Победители из таблицы matches, NULL → -1
+    if err := DB.QueryRow(
+        `SELECT
+            COALESCE(winner_id, -1),
+            COALESCE(winner_group_id, -1)
+         FROM matches
+        WHERE instance_id = $1`,
+        instanceID,
+    ).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
+        return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
+    }
+
+    // // 1) Победители из таблицы matches
+    // if err := DB.QueryRow(
+    //     `SELECT winner_id, winner_group_id
+    //        FROM matches
+    //       WHERE instance_id = $1`,
+    //     instanceID,
+    // ).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
+    //     return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
+    // }
+
+
+
+
+
+    // 2) Список участников
+    rows, err := DB.Query(
+        `SELECT user_id
+           FROM match_players
+          WHERE match_instance_id = $1`,
+        instanceID,
+    )
+    if err != nil {
+        return nil, fmt.Errorf("GetMatchResults: не удалось получить игроков: %w", err)
+    }
+    defer rows.Close()
+
+    // 3) Для каждого игрока — игровая логика CalculateResults
+    for rows.Next() {
+        var userID int
+        if err := rows.Scan(&userID); err != nil {
+            log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
+            continue
+        }
+
+        exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, err := 
+            game.CalculateResults(instanceID, userID)
+        if err != nil {
+            log.Printf("GetMatchResults: CalculateResults для user %d вернул ошибку: %v", userID, err)
+            continue
+        }
+
+        // Сериализуем награды
+        rewardsJSON, err := json.Marshal(rewards)
+        if err != nil {
+            log.Printf("GetMatchResults: ошибка JSON.Marshal для user %d: %v", userID, err)
+            continue
+        }
+
+        mr.PlayerResults = append(mr.PlayerResults, game.PlayerResult{
+            UserID:           userID,
+            ExpGained:        exp,
+            RewardsData:      rewardsJSON,
+            PlayerKills:      killsP,
+            MonsterKills:     killsM,
+            DamageTotal:      dmgTotal,
+            DamageToPlayers:  dmgPlayers,
+            DamageToMonsters: dmgMonsters,
+        })
+    }
+log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
+    if len(mr.PlayerResults) == 0 {
+        return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)
+    }
+
+    return &mr, nil
+}
+
+
 
 
 
@@ -4430,6 +4850,9 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"time"
+	"fmt"
+	
 
 	"gameservice/game"
 	"gameservice/models"
@@ -4643,6 +5066,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			balance
 		FROM match_players
 		WHERE match_instance_id = $1
+		AND health > 0
 	`
 	rows, err := DB.Query(query, matchID)
 	if err != nil {
@@ -4718,6 +5142,54 @@ type Position struct {
     Y int `json:"y"`
 }
 
+
+
+// ClearCellPlayerFlag снимает флаг IsPlayer в поле map таблицы matches
+// для клетки oldPos, не трогая другие.
+// ClearCellPlayerFlag снимает флаг IsPlayer в поле map для клетки oldPos,
+// не трогая больше никаких позиций.
+func ClearCellPlayerFlag(instanceID string, oldPos Position) error {
+    // 1) Считываем текущее поле map из matches
+    var mapJSON []byte
+    if err := DB.QueryRow(
+        `SELECT map FROM matches WHERE instance_id = $1`,
+        instanceID,
+    ).Scan(&mapJSON); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to load map JSON: %w", err)
+    }
+
+    // 2) Десериализуем в срез клеток
+    var cells []game.FullCell
+    if err := json.Unmarshal(mapJSON, &cells); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to unmarshal: %w", err)
+    }
+
+    // 3) Находим oldPos и снимаем IsPlayer
+    for i, c := range cells {
+        if c.X == oldPos.X && c.Y == oldPos.Y {
+            cells[i].IsPlayer = false
+            break
+        }
+    }
+
+    // 4) Сериализуем обратно
+    newMap, err := json.Marshal(cells)
+    if err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to marshal: %w", err)
+    }
+
+    // 5) Обновляем в БД
+    if _, err := DB.Exec(
+        `UPDATE matches SET map = $1 WHERE instance_id = $2`,
+        newMap, instanceID,
+    ); err != nil {
+        return fmt.Errorf("ClearCellPlayerFlag: failed to update DB: %w", err)
+    }
+
+    return nil
+}
+
+
 // UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
 // UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
 func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
@@ -4784,6 +5256,143 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
         `UPDATE matches SET map=$1 WHERE instance_id=$2`,
         raw, instanceID,
     )
+    return err
+}
+
+// repository/match.go
+
+// DeleteMatch удаляет матч и всё по нему в БД
+func DeleteMatch(instanceID string) error {
+    // 1) Удаляем всех игроков
+    if _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match_players: %w", err)
+    }
+
+    // 2) Удаляем связанные детали (если есть table match_player_stats)
+    if _, err := DB.Exec(`
+        DELETE FROM match_player_stats
+        WHERE match_instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match_player_stats: %w", err)
+    }
+
+    // 3) Наконец, удаляем сам матч
+    if _, err := DB.Exec(`
+        DELETE FROM matches
+        WHERE instance_id = $1
+    `, instanceID); err != nil {
+        return fmt.Errorf("DeleteMatch: failed to delete match: %w", err)
+    }
+
+    return nil
+}
+
+
+func SaveMatchStats(stats *models.MatchInfo) error {
+    query := `
+        INSERT INTO match_stats (instance_id, winner_id, winner_group_id, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (instance_id) DO UPDATE
+          SET winner_id       = EXCLUDED.winner_id,
+              winner_group_id = EXCLUDED.winner_group_id,
+              created_at      = EXCLUDED.created_at;
+    `
+    // используем NOW(), но чтобы тестировать, передаём время из Go
+    now := time.Now().UTC()
+    if _, err := DB.Exec(query,
+        stats.InstanceID,
+        stats.WinnerID,
+        stats.WinnerGroupID,
+        now,
+    ); err != nil {
+        return fmt.Errorf("SaveMatchStats: exec insert: %w", err)
+    }
+    return nil
+}
+
+
+
+
+
+
+// SaveMatchPlayerStats сохраняет агрегированные результаты по каждому игроку в таблице match_player_stats.
+func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error {
+    log.Printf("[SaveMatchPlayerStats] start for match %s, %d players", instanceID, len(results))
+
+    tx, err := DB.Begin()
+    if err != nil {
+        log.Printf("[SaveMatchPlayerStats] begin tx error: %v", err)
+        return fmt.Errorf("begin tx: %w", err)
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare(`
+      INSERT INTO match_player_stats (
+        instance_id,
+        user_id,
+        exp_gained,
+        rewards,
+        player_kills,
+        monster_kills,
+        damage_total,
+        damage_to_players,
+        damage_to_monsters
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT (instance_id, user_id) DO UPDATE SET
+        exp_gained         = EXCLUDED.exp_gained,
+        rewards            = EXCLUDED.rewards,
+        player_kills       = EXCLUDED.player_kills,
+        monster_kills      = EXCLUDED.monster_kills,
+        damage_total       = EXCLUDED.damage_total,
+        damage_to_players  = EXCLUDED.damage_to_players,
+        damage_to_monsters = EXCLUDED.damage_to_monsters;
+    `)
+    if err != nil {
+        log.Printf("[SaveMatchPlayerStats] prepare stmt error: %v", err)
+        return fmt.Errorf("prepare: %w", err)
+    }
+    defer stmt.Close()
+
+    for i, pr := range results {
+        log.Printf("[SaveMatchPlayerStats] exec for user %d (%d/%d): exp=%d, pk=%d, mk=%d, dt=%d, dp=%d, dm=%d",
+            pr.UserID, i+1, len(results),
+            pr.ExpGained, pr.PlayerKills, pr.MonsterKills,
+            pr.DamageTotal, pr.DamageToPlayers, pr.DamageToMonsters,
+        )
+        if _, err := stmt.Exec(
+            instanceID,
+            pr.UserID,
+            pr.ExpGained,
+            pr.RewardsData,
+            pr.PlayerKills,
+            pr.MonsterKills,
+            pr.DamageTotal,
+            pr.DamageToPlayers,
+            pr.DamageToMonsters,
+        ); err != nil {
+            log.Printf("[SaveMatchPlayerStats] exec error for user %d: %v", pr.UserID, err)
+            return fmt.Errorf("exec for user %d: %w", pr.UserID, err)
+        }
+        log.Printf("[SaveMatchPlayerStats] exec succeeded for user %d", pr.UserID)
+    }
+
+    if err := tx.Commit(); err != nil {
+        log.Printf("[SaveMatchPlayerStats] commit error: %v", err)
+        return fmt.Errorf("commit: %w", err)
+    }
+    log.Printf("[SaveMatchPlayerStats] commit succeeded for match %s", instanceID)
+    return nil
+}
+
+
+func CleanupMatchPlayers(instanceID string) error {
+    _, err := DB.Exec(`
+        DELETE FROM match_players
+        WHERE match_instance_id = $1
+    `, instanceID)
     return err
 }
 
@@ -4885,6 +5494,7 @@ func UpdateMonster(mon *models.Monster) error {
 
 
 
+
 // ====================================
 // /gameservice/repository/players.go
 // ====================================
@@ -4894,6 +5504,7 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"fmt"
 
 	"gameservice/models"
 )
@@ -4964,28 +5575,28 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 }
 
 // UpdatePlayer обновляет данные игрока в таблице players.
-// Обновляются поле position (формируется из player.Position), энергия, здоровье, уровень и опыт.
+// Обновляются поле энергия, здоровье, уровень и опыт.
 func UpdatePlayer(player *models.PlayerResponse) error {
-	// Формируем JSON из структуры Position.
-	positionJSON, err := json.Marshal(player.Position)
-	if err != nil {
-		return err
-	}
-
-	query := `
-		UPDATE players
-		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
-		WHERE user_id = $6
-	`
-	_, err = DB.Exec(query,
-		positionJSON,
-		player.Energy,
-		player.Health,
-		player.Level,
-		player.Experience,
-		player.UserID,
-	)
-	return err
+    query := `
+    UPDATE players
+    SET 
+        energy     = $1,
+        health     = $2,
+        level      = $3,
+        experience = $4
+    WHERE user_id = $5
+    `
+    // Обратите внимание на := для объявления err
+    if _, err := DB.Exec(query,
+        player.Energy,
+        player.Health,
+        player.Level,
+        player.Experience,
+        player.UserID,
+    ); err != nil {
+        return fmt.Errorf("UpdatePlayer: %w", err)
+    }
+    return nil
 }
 
 // DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
@@ -4997,6 +5608,96 @@ func DeleteMatchPlayer(instanceID string, userID int) error {
     `, instanceID, userID)
     return err
 }
+
+func MarkPlayerDead(instanceID string, userID int) error {
+    _, err := DB.Exec(`
+        UPDATE match_players
+           SET health = 0
+         WHERE match_instance_id = $1
+           AND user_id = $2
+    `, instanceID, userID)
+    return err
+}
+
+// пороги опыта для повышения уровня — дублируют логику из handlers/players.go
+var levelThresholds = map[int]int{
+    1:  500,
+    2:  2000,
+    3:  8000,
+    4:  32000,
+    5:  128000,
+    6:  512000,
+    7:  2048000,
+    8:  8192000,
+    9:  32768000,
+    10: 131072000,
+}
+
+// AddPlayerExperience добавляет опыт перманентному игроку, проверяет и повышает уровень при необходимости.
+func AddPlayerExperience(userID, exp int) error {
+    // 1) Получаем текущего игрока
+    player, err := GetPlayerByUserID(userID)
+    if err != nil {
+        return fmt.Errorf("AddPlayerExperience: fetch player: %w", err)
+    }
+
+    // 2) Увеличиваем опыт
+    player.Experience += exp
+
+    // 3) Проверяем, не перешёл ли через порог для повышения уровня
+    if threshold, ok := levelThresholds[player.Level]; ok && player.Experience >= threshold {
+        player.Level++
+        player.Experience -= threshold
+    }
+
+    // 4) Сохраняем изменения
+    if err := UpdatePlayer(player); err != nil {
+        return fmt.Errorf("AddPlayerExperience: update player: %w", err)
+    }
+    return nil
+}
+
+func AddPlayerRewards(userID int, rewardsData []byte) error {
+    // 1) Распарсим JSON наград
+    var rewards map[string]int
+    if err := json.Unmarshal(rewardsData, &rewards); err != nil {
+        return fmt.Errorf("AddPlayerRewards: unmarshal rewards: %w", err)
+    }
+
+    // 2) Получаем игрока
+    player, err := GetPlayerByUserID(userID)
+    if err != nil {
+        return fmt.Errorf("AddPlayerRewards: fetch player: %w", err)
+    }
+
+    // 3) Применяем каждую награду
+    for key, amount := range rewards {
+        switch key {
+        case "balance":
+            player.Balance += amount
+
+        default:
+            // Обновляем inventory, храня его как JSON-строку
+            var inv map[string]map[string]interface{}
+            if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
+                inv = make(map[string]map[string]interface{})
+            }
+            inv[key] = map[string]interface{}{
+                "name":       key,
+                "item_count": amount,
+            }
+            b, _ := json.Marshal(inv)
+            player.Inventory = string(b)
+        }
+    }
+
+    // 4) Сохраняем изменения
+    if err := UpdatePlayer(player); err != nil {
+        return fmt.Errorf("AddPlayerRewards: update player: %w", err)
+    }
+    return nil
+}
+
 
 
 
@@ -5160,6 +5861,106 @@ func GetOtherPlayerID(instanceID string, x, y, selfID int) (int, error) {
 
 
 
+ ========================================================================================================================
+ ===================================================service============================================================
+ ====================================================service====================================================================
+ ====================================================service=====================================================================
+ =====================================================service====================================================================
+ ========================================================================================================================
+
+
+
+
+
+
+// =====================================
+// /gameservice/service/match_service.go
+// =====================================
+
+
+package service
+
+import (
+    "encoding/json"
+    "log"
+	
+    "gameservice/models"
+	
+	"gameservice/repository"
+    
+)
+
+
+// FinalizeMatch завершает матч: сохраняет результаты, начисляет опыт/награды и удаляет матч.
+func FinalizeMatch(instanceID string) error {
+	log.Printf("[FinalizeMatch] start for match %s", instanceID)
+
+    // 1) Получить финальные данные по матчу
+    results, err := repository.GetMatchResults(instanceID)
+    if err != nil {
+        return err
+    }
+
+    // 2) Начислить опыт и награды каждому игроку
+    for _, r := range results.PlayerResults {
+        if err := repository.AddPlayerExperience(r.UserID, r.ExpGained); err != nil {
+            log.Printf("AddPlayerExperience failed for user %d: %v", r.UserID, err)
+        }
+        if err := repository.AddPlayerRewards(r.UserID, r.RewardsData); err != nil {
+            log.Printf("AddPlayerRewards failed for user %d: %v", r.UserID, err)
+        }
+    }
+
+    // 3) Сохранить общую статистику матча
+    stats := models.MatchInfo{
+        InstanceID:    instanceID,
+        WinnerID:      results.WinnerID,
+        WinnerGroupID: results.WinnerGroupID,
+    }
+    if err := repository.SaveMatchStats(&stats); err != nil {
+        log.Printf("SaveMatchStats failed: %v", err)
+    }
+
+    // 4) **Сохранить детальную статистику по каждому игроку**
+     log.Printf("[FinalizeMatch] will save %d player stats for match %s", len(results.PlayerResults), instanceID)
+    if err := repository.SaveMatchPlayerStats(instanceID, results.PlayerResults); err != nil {
+        log.Printf("[FinalizeMatch] SaveMatchPlayerStats failed for match %s: %v", instanceID, err)
+    } else {
+        log.Printf("[FinalizeMatch] SaveMatchPlayerStats succeeded for match %s", instanceID)
+    }
+
+    // 5) Удалить (или пометить завершённым) сам матч и все связанные данные
+    if err := repository.DeleteMatch(instanceID); err != nil {
+        return err
+    }
+	log.Printf("[FinalizeMatch] match %s deleted", instanceID)
+    return nil
+}
+
+// Payload, который пошлём в WS после успешной финализации
+func BuildMatchEndedPayload(instanceID string) []byte {
+    msg := struct {
+        Type    string `json:"type"`
+        Payload struct {
+            InstanceID string `json:"instanceId"`
+        } `json:"payload"`
+    }{
+        Type: "MATCH_ENDED",
+    }
+    msg.Payload.InstanceID = instanceID
+    b, _ := json.Marshal(msg)
+    return b
+}
+
+
+
+
+
+
+
+
+
+
 
  ========================================================================================================================
  ===================================================matchmaking============================================================
@@ -5181,6 +5982,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -5233,67 +6035,89 @@ var (
 	matchMu       sync.Mutex
 )
 
+
+// RemovePlayerMatch убирает игрока из текущего матча (playerMatches)
+func RemovePlayerMatch(playerID int) {
+    matchMu.Lock()
+    defer matchMu.Unlock()
+    delete(playerMatches, playerID)
+}
+
+// RemoveMatch помечает матч как завершённый — удаляет из currentMatches
+func RemoveMatch(instanceID string) {
+    matchMu.Lock()
+    defer matchMu.Unlock()
+    delete(currentMatches, instanceID)
+}
+
+// DELETE /matchmaking/player/{playerID}
+func removePlayerHandler(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    playerID, _ := strconv.Atoi(vars["playerID"])
+    RemovePlayerMatch(playerID)
+    w.WriteHeader(http.StatusOK)
+}
+
 // joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
 func joinHandler(w http.ResponseWriter, r *http.Request) {
-	var req JoinRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
+    var req JoinRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Bad request", http.StatusBadRequest)
+        return
+    }
 
-	// проверяем в БД через GetPlayersInMatch, не участвует ли уже в каком-то currentMatches ====
-	matchMu.Lock()
-	for instID, match := range currentMatches {
-		players, err := repository.GetPlayersInMatch(instID)
-		if err != nil {
-			log.Printf("joinHandler: не удалось получить игроков для матча %s: %v", instID, err)
-			continue
-		}
-		for _, p := range players {
-			if p.UserID == req.PlayerID {
-				// Уже есть активный матч с этим игроком — сразу возвращаем его
-				matchMu.Unlock()
-				w.Header().Set("Content-Type", "application/json")
-				if err := json.NewEncoder(w).Encode(match); err != nil {
-					log.Printf("joinHandler: ошибка кодирования существующего матча: %v", err)
-				}
-				return
-			}
-		}
-	}
-	matchMu.Unlock()
-	// ==== /конец проверки активного матча ====
+    // 1) Быстрый lookup в памяти
+    matchMu.Lock()
+    instID, hasMatch := playerMatches[req.PlayerID]
+    if hasMatch {
+        // 1a) Матч в currentMatches?
+        if matchInfo, ok := currentMatches[instID]; ok {
+            // 1b) И он ещё содержит этого игрока (DB фильтр health > 0)
+            players, err := repository.GetPlayersInMatch(instID)
+            if err == nil {
+                for _, p := range players {
+                    if p.UserID == req.PlayerID {
+                        matchMu.Unlock()
+                        w.Header().Set("Content-Type", "application/json")
+                        json.NewEncoder(w).Encode(matchInfo)
+                        return
+                    }
+                }
+            }
+        }
+        // иначе отвязываем игрока от этого instID
+        delete(playerMatches, req.PlayerID)
+    }
+    matchMu.Unlock()
 
-	mu.Lock()
-	defer mu.Unlock()
+    // Ни старого матча нет, ни он в нём не активен → стандартная очередь
+    mu.Lock()
+    defer mu.Unlock()
 
-	q, ok := queues[req.Mode]
-	if !ok {
-		http.Error(w, "Unknown mode", http.StatusBadRequest)
-		return
-	}
+    q, ok := queues[req.Mode]
+    if !ok {
+        http.Error(w, "Unknown mode", http.StatusBadRequest)
+        return
+    }
+    for _, entry := range q {
+        if entry.PlayerID == req.PlayerID {
+            http.Error(w, "Player already in queue", http.StatusBadRequest)
+            return
+        }
+    }
 
-	// Если игрок уже в очереди, сообщаем об ошибке
-	for _, entry := range q {
-		if entry.PlayerID == req.PlayerID {
-			http.Error(w, "Player already in queue", http.StatusBadRequest)
-			return
-		}
-	}
+    entry := QueueEntry{
+        PlayerID: req.PlayerID,
+        Rating:   req.Rating,
+        JoinTime: time.Now(),
+    }
+    queues[req.Mode] = append(q, entry)
+    log.Printf("Player %d joined mode %s", req.PlayerID, req.Mode)
 
-	entry := QueueEntry{
-		PlayerID: req.PlayerID,
-		Rating:   req.Rating,
-		JoinTime: time.Now(),
-	}
+    checkAndMakeMatch(req.Mode)
 
-	queues[req.Mode] = append(q, entry)
-	log.Printf("Player %d joined mode %s", req.PlayerID, req.Mode)
-
-	checkAndMakeMatch(req.Mode)
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("You have joined the queue"))
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("You have joined the queue"))
 }
 
 // cancelHandler – удаляет игрока из очереди
@@ -5511,22 +6335,14 @@ func main() {
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 
+	r.HandleFunc("/matchmaking/player/{playerID}", removePlayerHandler).Methods("DELETE")
+
 	handler := enableCors(r)
 	srv := &http.Server{Handler: handler, Addr: ":8002"}
 
 	log.Println("Matchmaking-сервис запущен на порту 8002")
 	log.Fatal(srv.ListenAndServe())
 }
-
-
-
-
-
-
-
-
-
-
 
 
 ======================================================================================================================================
@@ -7917,11 +8733,9 @@ export function useGame() {
 
 
 
-
 //=============================
 // src/hooks/useGameSocket.ts
 //=============================
-// src/hooks/useGameSocket.ts
 
 import { useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -7977,6 +8791,10 @@ export function useGameSocket(
         return;
       }
 
+      if(data.type === "MATCH_ENDED") {
+        router.push("/mode");
+        return;
+      }
       // Если собственный игрок погиб — редирект на выбор режима
       if (
         data.type === "PLAYER_DEFEATED" &&
