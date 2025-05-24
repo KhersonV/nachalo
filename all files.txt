@@ -7318,8 +7318,6 @@ export function useInfoModal() {
 
 
 
-
-
 //==================================
 // src/components/Inventory.tsx
 //==================================
@@ -7329,11 +7327,12 @@ export function useInfoModal() {
 import React, { useMemo } from "react";
 import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
-import type { RawInventoryItem } from "../types/GameTypes";
+import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
 import styles from "../styles/Inventory.module.css";
 const Inventory: React.FC = () => {
-  const { state } = useGame();
+  const { state, dispatch} = useGame();
   const { user } = useAuth();
+  const { instanceId } = state;
 
   // 1) Находим игрока
   const player = state.players.find((p) => p.user_id === user?.id);
@@ -7436,6 +7435,14 @@ const Inventory: React.FC = () => {
       if (!res.ok) {
         console.error("Ошибка использования предмета", await res.text());
       }
+      const updatedPlayer = await res.json() as PlayerState;
+       dispatch({
+        type: "UPDATE_PLAYER",
+        payload: {
+          instanceId,
+          player: updatedPlayer,
+        },
+      });
     } catch (err) {
       console.error("Ошибка запроса на использование предмета", err);
     }
@@ -7458,16 +7465,18 @@ const Inventory: React.FC = () => {
           />
           <div className={styles.itemName}>{item.name}</div>
           {section === "resources" && (
+            <>
             <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
-          )}
-          <button
-            className={styles.useButton}
-            onClick={() => handleUseItem(section, key, item)}
-          >
-            Использовать
-          </button>
-        </div>
-      ));
+            <button
+              className={styles.useButton}
+              onClick={() => handleUseItem(section, key, item)}
+            >
+              Использовать
+            </button>
+          </>
+        )}
+      </div>
+    ));
 
   // 6) JSX
   return (
