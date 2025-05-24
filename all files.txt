@@ -2387,7 +2387,6 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 //====================================
 // gameservice/handlers/inventory.go
 //====================================
@@ -2534,7 +2533,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 				player.Energy = player.MaxEnergy
 			}
 		}
-		if add, ok := effect["health"]; ok {
+		if add, ok := effect["hp"]; ok {
 			player.Health += add
 			if player.Health > player.MaxHealth {
 				player.Health = player.MaxHealth
@@ -7317,7 +7316,6 @@ export function useInfoModal() {
 
 
 
-
 //==================================
 // src/components/Inventory.tsx
 //==================================
@@ -7436,6 +7434,7 @@ const Inventory: React.FC = () => {
         console.error("Ошибка использования предмета", await res.text());
       }
       const updatedPlayer = await res.json() as PlayerState;
+      console.log("⚕️ after useItem, updatedPlayer.health =", updatedPlayer.health);
        dispatch({
         type: "UPDATE_PLAYER",
         payload: {
@@ -7911,20 +7910,39 @@ export default function MapWithCamera({
 
 
 
+
 //=====================================
 // src/components/ModeSelectionPage.tsx
 //=====================================
 
+// src/components/ModeSelectionPage.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import styles from "../styles/ModeSelectionPage.module.css";
 
-export type GameMode = "PVE" | "1x1" | "1x2" |"2x2" |"3x3" | "5x5";
+export type GameMode = "PVE" | "1x1" | "1x2" | "2x2" | "3x3" | "5x5";
 type PlayerInfo = { playerId: number; level: number };
 
+const REQUIRED_SIZE: Record<GameMode, number> = {
+  PVE: 1,
+  "1x1": 2,
+  "1x2": 3,
+  "2x2": 4,
+  "3x3": 6,
+  "5x5": 10,
+};
+
 const API_MATCH = "http://localhost:8002";
+
+async function fetchQueueSize(mode: GameMode): Promise<number> {
+  const res = await fetch(`${API_MATCH}/matchmaking/status?mode=${mode}`);
+  if (!res.ok) throw new Error("Не удалось получить размер очереди");
+  const queue: any[] = await res.json();
+  return queue.length;
+}
 
 async function joinQueue(mode: GameMode, player: PlayerInfo): Promise<void> {
   const response = await fetch(`${API_MATCH}/matchmaking/join`, {
@@ -7942,34 +7960,75 @@ async function joinQueue(mode: GameMode, player: PlayerInfo): Promise<void> {
   }
 }
 
-
-// Функция для опроса эндпоинта currentMatch, пока не получим instance_id
 async function pollCurrentMatch(playerId: number): Promise<string> {
   while (true) {
-    const res = await fetch(`${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`);
+    const res = await fetch(
+      `${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`
+    );
     const data = await res.json();
-    // Если в ответе есть поле instance_id, значит матч сформирован
     if (data.instance_id) {
       return data.instance_id;
     }
-    // Ждём 3 секунды и опрашиваем снова
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
 
-// Функция для старта матчмейкинга
-export async function startMatchmaking(mode: GameMode, player: PlayerInfo): Promise<string> {
+export async function startMatchmaking(
+  mode: GameMode,
+  player: PlayerInfo
+): Promise<string> {
   await joinQueue(mode, player);
-  const instanceId = await pollCurrentMatch(player.playerId);
-  return instanceId;
+  return pollCurrentMatch(player.playerId);
 }
+
+const MODES: { value: GameMode; label: string }[] = [
+  { value: "PVE", label: "PvE (Solo)" },
+  { value: "1x1", label: "PvP 1x1" },
+  { value: "1x2", label: "PvP 1x2" },
+  { value: "2x2", label: "PvP 2x2" },
+  { value: "3x3", label: "PvP 3x3" },
+  { value: "5x5", label: "PvP 5x5" },
+];
 
 export default function ModeSelectionPage() {
   const [mode, setMode] = useState<GameMode>("PVE");
+  const [queueSizes, setQueueSizes] = useState<Record<GameMode, number>>({
+    PVE: 0,
+    "1x1": 0,
+    "1x2": 0,
+    "2x2": 0,
+    "3x3": 0,
+    "5x5": 0,
+  });
   const router = useRouter();
   const { user } = useAuth();
+  const [isMatching, setIsMatching] = useState(false);
 
-  // Если пользователь не авторизован, перенаправляем на страницу входа
+  useEffect(() => {
+    let mounted = true;
+    async function updateAll() {
+      try {
+        const entries = await Promise.all(
+          (Object.keys(REQUIRED_SIZE) as GameMode[]).map(async (m) => {
+            const size = await fetchQueueSize(m);
+            return [m, size] as [GameMode, number];
+          })
+        );
+        if (!mounted) return;
+         const sizes = Object.fromEntries(entries) as Record<GameMode, number>;
+    setQueueSizes(sizes);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    updateAll();
+    const timer = setInterval(updateAll, 5000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     if (!user) {
       router.push("/login");
@@ -7978,31 +8037,85 @@ export default function ModeSelectionPage() {
 
   async function handleStart() {
     try {
-      // Здесь можно использовать данные пользователя (например, user.id, user.level)
-      const playerInfo: PlayerInfo = { playerId: user!.id, level: 1 }; // пример, замените на реальные данные
+      setIsMatching(true);
+      const playerInfo: PlayerInfo = { playerId: user!.id, level: 1 };
       const instanceId = await startMatchmaking(mode, playerInfo);
       router.push(`/game?instance_id=${instanceId}`);
     } catch (error) {
       console.error(error);
+      setIsMatching(false);
       alert("Ошибка при подборе игроков");
+    }
+  }
+
+   async function handleCancel() {
+    try {
+      // сразу сбрасываем локальный флаг, чтобы UI сразу отреагировал
+      setIsMatching(false);
+
+      // отправляем запрос на отмену в очередь
+      const res = await fetch(`${API_MATCH}/matchmaking/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          player_id: user!.id,
+          mode: mode,
+        }),
+      });
+
+      if (!res.ok) {
+        // если сервер вернул ошибку — поднимем флаг обратно
+        setIsMatching(true);
+        const text = await res.text();
+        throw new Error(text || "Не удалось выйти из очереди");
+      }
+    } catch (error) {
+      console.error(error);
+      alert(`Ошибка при выходе из очереди: ${error}`);
     }
   }
 
   return (
     <div style={{ padding: "2rem" }}>
       <h2>Выберите режим:</h2>
-      <select value={mode} onChange={(e) => setMode(e.target.value as GameMode)}>
-        <option value="PVE">PvE (Solo)</option>
-        <option value="1x1">PvP 1x1</option>
-         <option value="1x2">PvP 1x2</option>
-          <option value="2x2">PvP 2x2</option>
-        <option value="3x3">PvP 3x3</option>
-        <option value="5x5">PvP 5x5</option>
-      </select>
-      <button onClick={handleStart}>Начать подбор игроков</button>
+      <div className={styles.modeContainer}>
+        {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => (
+          <div
+            key={m}
+            className={`${styles.modeBlock} ${
+              mode === m ? styles.modeBlockSelected : ""
+            }`}
+            onClick={() => setMode(m)}
+          >
+            <div>{m === "PVE" ? "PvE (Solo)" : `PvP ${m}`}</div>
+            <div style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>
+              {queueSizes[m]} / {REQUIRED_SIZE[m]}
+            </div>
+          </div>
+        ))}
+      </div>
+     
+    <div className={styles.buttonGroup}>
+      <button
+        className={styles.queueButton}
+        onClick={handleStart}
+        disabled={isMatching}
+      >
+        Вступить в очередь
+      </button>
+      <button
+        className={styles.queueButton}
+        onClick={handleCancel}
+        disabled={!isMatching}
+      >
+        Выйти из очереди
+      </button>
+    </div>
+     
     </div>
   );
 }
+
 
 
 

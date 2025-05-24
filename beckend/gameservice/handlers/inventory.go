@@ -144,7 +144,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 				player.Energy = player.MaxEnergy
 			}
 		}
-		if add, ok := effect["health"]; ok {
+		if add, ok := effect["hp"]; ok {
 			player.Health += add
 			if player.Health > player.MaxHealth {
 				player.Health = player.MaxHealth

@@ -116,6 +116,7 @@ const Inventory: React.FC = () => {
         console.error("Ошибка использования предмета", await res.text());
       }
       const updatedPlayer = await res.json() as PlayerState;
+      console.log("⚕️ after useItem, updatedPlayer.health =", updatedPlayer.health);
        dispatch({
         type: "UPDATE_PLAYER",
         payload: {
