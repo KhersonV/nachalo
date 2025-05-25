@@ -305,6 +305,18 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 
 
 
+var rnd = rand.Float64
+
+// SetRnd позволяет установить свою функцию генерации [0,1)
+func SetRnd(f func() float64) {
+    if f == nil {
+        rnd = rand.Float64
+    } else {
+        rnd = f
+    }
+}
+
+
 // OpenBarbel реализует логику открытия бочки.
 func OpenBarbel(
     cell FullCell,
@@ -312,19 +324,19 @@ func OpenBarbel(
     artifacts []ResourceData,
 
 ) (interface{}, error) {
-    r := rand.Float64()
+    r := rnd()
     // Параметры урона (можно вынести в константы или Config)
     const minDamage = 3
     const maxDamage = 5
 
     // 30% шанс получить урон
-    if r < 0.9 {
+    if r < 0.3 {
         // Рассчитываем случайный урон в диапазоне [minDamage, maxDamage]
         dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
         return DamageEvent{Amount: dmg}, nil
     }
  // 40% шанс выпадения ресурса
-if r < 0.03+0.04 && len(resources) > 0 {
+if r < 0.3+0.4 && len(resources) > 0 {
     // Собираем всех ресурсов, кроме того, что был в бочке
     var candidates []ResourceData
     for _, res := range resources {

@@ -14,6 +14,7 @@ gameservice
 │   ├── barrel_http.go
 │   ├── barrel.go
 │   ├── combat.go                    // Обработчики для атаки, перемещения
+│   ├── deps.go                      // структуры для тестов
 │   ├── finish_match_handler.go
 │   ├── inventory.go                 // Обработчики для работы с инвентарём
 │   ├── match_player.go

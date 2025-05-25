@@ -9,9 +9,12 @@ import (
     "log"
 
     "gameservice/game"
-    "gameservice/repository"
+    
     "gameservice/models"
 )
+
+
+
 
 // вверху файла
 
@@ -45,7 +48,7 @@ func broadcastCellRemoval(instanceID string, cell game.FullCell) error {
     cell.Barbel = nil
     cell.TileCode = 48
     // сохраняем в БД
-    cells, err := repository.LoadMapCells(instanceID)
+    cells, err := Barrel.LoadMap(instanceID)
     if err != nil {
         return err
     }
@@ -55,7 +58,7 @@ func broadcastCellRemoval(instanceID string, cell game.FullCell) error {
             cells[i].TileCode = 48
         }
     }
-    if err := repository.SaveMapCells(instanceID, cells); err != nil {
+    if err := Barrel.SaveMap(instanceID, cells); err != nil {
         return err
     }
     // финальный WS-апдейт
@@ -80,7 +83,7 @@ func HandleOpenBarrel(
 ) (game.FullCell, *models.PlayerResponse, bool, error) {
    
     // 1) Загрузить игрока
-    player, err := repository.GetMatchPlayerByID(instanceID, userID)
+    player, err := Barrel.GetPlayer(instanceID, userID)
     if err != nil {
         return cell, nil, false, fmt.Errorf("fetch player: %w", err)
     }
@@ -100,7 +103,7 @@ func HandleOpenBarrel(
         if player.Health < 0 {
             player.Health = 0
         }
-        if err := repository.UpdateMatchPlayer(player); err != nil {
+        if err := Barrel.UpdatePlayer(player); err != nil {
             return cell, nil, false, fmt.Errorf("update player HP: %w", err)
         }
 
@@ -127,7 +130,7 @@ func HandleOpenBarrel(
                 nextUser := ms.TurnOrder[0]
                 ms.ActiveUserID = nextUser
 
-                nextPlayer, err := repository.GetMatchPlayerByID(instanceID, nextUser)
+                nextPlayer, err := Barrel.GetPlayer(instanceID, nextUser)
                 if err != nil {
                     log.Printf("GetMatchPlayerByID вернула ошибку: %v", err)
                 }
@@ -167,7 +170,7 @@ func HandleOpenBarrel(
      fmt.Printf("DEBUG: AddInventoryItem for ID=%d Name=%q → itemType=%q\n", v.ID, v.Type, itemType)
       
 		// а) кладём в инвентарь
-       if err := repository.AddInventoryItem(
+       if err := Barrel.AddItem(
             instanceID,  // string
             userID,      // int
             itemType,    // "resource" или "artifact"
@@ -181,7 +184,7 @@ func HandleOpenBarrel(
         
        }
         // б) перезагружаем игрока
-        updatedPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
+        updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
         if err != nil {
             return cell, nil, false, fmt.Errorf("reload player: %w", err)
        }

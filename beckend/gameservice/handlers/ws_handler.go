@@ -78,7 +78,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	//log.Println("[WsHandler] Клиент удалён из списка подключённых")
 }
 
-func Broadcast(message []byte) {
+var broadcastFn = func(message []byte) {
 	var env broadcastEnvelope
     _ = json.Unmarshal(message, &env)  // если невалидный JSON или нет поля – игнорируем
 
@@ -97,4 +97,8 @@ func Broadcast(message []byte) {
 			delete(clients, client)
 		}
 	}
+}
+
+func Broadcast(msg []byte) {
+    broadcastFn(msg)
 }

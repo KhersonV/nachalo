@@ -16,9 +16,9 @@ import (
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
-    "gameservice/service"
 	"github.com/gorilla/mux"
 )
+
 
 // Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
@@ -235,13 +235,13 @@ type attackResult struct {
 
 func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 	if entityType == "player" {
-		p, err := repository.GetMatchPlayerByID(instanceID, entityID)
+		p, err := Combat.GetPlayer(instanceID, entityID)
 		if err != nil {
 			return stats{}, err
 		}
 		return stats{p.Attack, p.Defense, p.Health}, nil
 	}
-	m, err := repository.GetMatchMonsterByID(instanceID, entityID)
+	m, err := Combat.GetMonster(instanceID, entityID)
 	if err != nil {
 		return stats{}, err
 	}
@@ -272,14 +272,14 @@ func saveTargetHealth(
     ar          attackResult,
 ) {
     if targetType == "player" {
-        p, err := repository.GetMatchPlayerByID(instanceID, targetID)
+        p, err := Combat.GetPlayer(instanceID, targetID)
         if err != nil {
             log.Printf("saveTargetHealth load player error: %v", err)
             return
         }
         p.Health = ar.NewHealth
         if ar.NewHealth > 0 {
-            repository.UpdateMatchPlayer(p)
+             Combat.UpdatePlayer(p)
         } else {
             // Записываем факт убийства игрока
             if ms, ok := game.GetMatchState(instanceID); ok {
@@ -289,7 +289,7 @@ func saveTargetHealth(
         }
     } else {
         // монстр получает урон
-        repository.UpdateMatchMonsterHealth(instanceID, targetID, ar.NewHealth)
+        Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
         if ar.NewHealth <= 0 {
             // Записываем факт убийства монстра
             if ms, ok := game.GetMatchState(instanceID); ok {
@@ -313,7 +313,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
     //     log.Printf("[handlePlayerDeath] DeleteMatchPlayer error: %v", err)
     // }
 
-    if err := repository.MarkPlayerDead(instanceID, p.UserID); err != nil {
+    if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
         log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
     }
     
@@ -327,7 +327,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
         // Если больше нет игроков — завершаем матч
         if len(ms.TurnOrder) == 0 {
             log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
-            if err := service.FinalizeMatch(instanceID); err != nil {
+            if err := Combat.Finalize(instanceID); err != nil {
                 log.Printf("[combat] FinalizeMatch failed: %v", err)
             } else {
                 log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
@@ -344,7 +344,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
     }
 
     // Обновляем флаги клетки
-       if err := repository.ClearCellPlayerFlag(instanceID, oldPos); err != nil {
+       if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
         log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
     }
 
@@ -364,14 +364,14 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
 
 func handleMonsterDeath(instanceID string, monsterID int) {
-	m, err := repository.GetMatchMonsterByID(instanceID, monsterID)
+	m, err := Combat.GetMonster(instanceID, monsterID)
 	if err != nil {
 		return
 	}
 	x, y := m.X, m.Y
-	_ = repository.DeleteMatchMonster(instanceID, monsterID)
+	_ = Combat.DeleteMonster(instanceID, monsterID)
 
-	cells, err := repository.LoadMapCells(instanceID)
+	cells, err := Combat.LoadMap(instanceID)
 	if err == nil {
 		for i := range cells {
 			if cells[i].X == x && cells[i].Y == y {
@@ -380,7 +380,7 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 				break
 			}
 		}
-		_ = repository.SaveMapCells(instanceID, cells)
+		_ = Combat.SaveMap(instanceID, cells)
 	}
 
 	update := map[string]interface{}{
@@ -413,14 +413,14 @@ func doCounterattack(
 	ar := applyDamage(defStats, attStats)
 
 	if attackerType == "player" {
-		p, err := repository.GetMatchPlayerByID(instanceID, attackerID)
+		p, err :=  Combat.GetPlayer(instanceID, attackerID)
 		if err != nil {
 			log.Printf("doCounterattack load player error: %v", err)
 			return ar, err
 		}
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
-			repository.UpdateMatchPlayer(p)
+			Combat.UpdatePlayer(p)
 		} else {
 			// игрок погиб в контратаке
 			handlePlayerDeath(instanceID, p)
@@ -430,7 +430,7 @@ func doCounterattack(
 				nextID := ms.ActiveUserID
 				if nextID != 0 {
 					// сохранить новый ход в БД
-					if err := repository.UpdateMatchTurn(instanceID, nextID, ms.TurnNumber); err != nil {
+					if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
 						log.Printf("UpdateMatchTurn error: %v", err)
 					}
 					// WS: TURN_PASSED
@@ -449,7 +449,7 @@ func doCounterattack(
 		}
 	} else {
 		// монстр получает урон
-		repository.UpdateMatchMonsterHealth(instanceID, attackerID, ar.NewHealth)
+		Combat.UpdateMonsterHealth(instanceID, attackerID, ar.NewHealth)
 		if ar.NewHealth <= 0 {
 			handleMonsterDeath(instanceID, attackerID)
 		}
