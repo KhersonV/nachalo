@@ -19,11 +19,12 @@ import (
 // Ожидаемый JSON в теле запроса:
 //
 //	{
-//	   "item_type": "food",
-//	   "item_id": 1,
-//	   "count": 2,
-//	   "image": "/path/to/image.webp",         // опционально
-//	   "description": "Описание предмета"        // опционально
+//	   "instance_id": "match-123",             // ID текущей игры (обязательно)
+//	   "item_type":   "food",                  // тип предмета
+//	   "item_id":     1,                       // уникальный идентификатор ресурса/артефакта
+//	   "count":       2,                       // сколько штук добавить (по умолчанию 1)
+//	   "image":       "/path/to/image.webp",   // опционально, URL иконки
+//	   "description": "Описание предмета"      // опционально, текстовое описание
 //	}
 //
 // Выполняется SQL-запрос для получения текущего инвентаря (SELECT inventory, instance_id ...),
@@ -110,10 +111,10 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Парсим тело запроса
 	var req struct {
-		// instanceId: string; ???????
-		ItemType string `json:"item_type"`
-		ItemID   int    `json:"item_id"`
-		Count    int    `json:"count"`
+		InstanceID string `json:"instance_id"`
+		ItemType   string `json:"item_type"`
+		ItemID     int    `json:"item_id"`
+		Count      int    `json:"count"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Неверный формат JSON", http.StatusBadRequest)
@@ -124,13 +125,13 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Снижаем количество в normalized таблице и синхронизируем JSON
-	if err := repository.RemoveInventoryItemAndSyncJSON(playerID, req.ItemType, req.ItemID, req.Count); err != nil {
+	if err := repository.RemoveInventoryItemAndSyncJSON(req.InstanceID, playerID, req.ItemType, req.ItemID, req.Count); err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка использования предмета: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// 4. Получаем свежие данные игрока
-	player, err := repository.GetMatchPlayerByUserID(playerID)
+	player, err := repository.GetMatchPlayer(req.InstanceID, playerID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения данных игрока: %v", err), http.StatusInternalServerError)
 		return
@@ -150,7 +151,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 				player.Health = player.MaxHealth
 			}
 		}
-		_ = repository.UpdateMatchPlayer(player)
+		_ = repository.UpdateMatchPlayer(req.InstanceID, player)
 	}
 
 	// 6. Рассылаем по WebSocket событие UPDATE_PLAYER с новым состоянием игрока

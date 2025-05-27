@@ -21,11 +21,35 @@ export default React.memo(function PlayerHUD({
   energy,
   maxEnergy,
 }: PlayerHUDProps) {
+
+  const healthPercent = Math.round((health / maxHealth) * 100);
+  const energyPercent = Math.round((energy / maxEnergy) * 100);
+
+
   return (
     <div className={styles.hud}>
-      <p>HP: {health} / {maxHealth}</p>
-      <p>Energy: {energy} / {maxEnergy}</p>
+      <div className={styles.hudRow}>
+        <span>HP:</span>
+        <div className={styles.progressBar}>
+          <div
+            className={styles.progressFill}
+            style={{ width: `${healthPercent}%` }}
+          />
+        </div>
+        <span>{health} / {maxHealth}</span>
+      </div>
+      <div className={styles.hudRow}>
+        <span>Energy:</span>
+        <div className={styles.progressBar}>
+          <div
+            className={styles.progressFill}
+            style={{ width: `${energyPercent}%` }}
+          />
+        </div>
+        <span>{energy} / {maxEnergy}</span>
+      </div>
     </div>
   );
 });
+
 

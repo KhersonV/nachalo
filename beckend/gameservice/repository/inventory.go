@@ -14,7 +14,8 @@ const (
 	selectInventoryQuery = `
         SELECT inventory, instance_id
         FROM match_players
-        WHERE user_id = $1
+		WHERE instance_id = $1
+        AND user_id = $2
         LIMIT 1;
     `
 
@@ -95,7 +96,7 @@ func AddInventoryItem(
 	// 1) Получаем текущий JSON-инвентарь и matchInstanceID
 	var inventoryJSON, matchInstanceID string
 	if err := tx.
-		QueryRow(selectInventoryQuery, playerID).
+		QueryRow(selectInventoryQuery, instanceID, playerID).
 		Scan(&inventoryJSON, &matchInstanceID); err != nil {
 		return fmt.Errorf("fetch inventory: %w", err)
 	}
@@ -182,7 +183,7 @@ func AddInventoryItem(
 // 1) Считывает JSON-инвентарь и instance_id.
 // 2) Пытается UPDATE или DELETE в inventory_items.
 // 3) Пересчитывает JSON и обновляет поле inventory.
-func RemoveInventoryItemAndSyncJSON(playerID int, itemType string, itemID int, count int) error {
+func RemoveInventoryItemAndSyncJSON(instanceID string, playerID int, itemType string, itemID int, count int) error {
 	tx, err := DB.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -191,7 +192,7 @@ func RemoveInventoryItemAndSyncJSON(playerID int, itemType string, itemID int, c
 
 	// 1) Получаем текущий JSON-инвентарь и matchInstanceID
 	var inventoryJSON, matchInstanceID string
-	if err := tx.QueryRow(selectInventoryQuery, playerID).Scan(&inventoryJSON, &matchInstanceID); err != nil {
+	if err := tx.QueryRow(selectInventoryQuery, instanceID, playerID).Scan(&inventoryJSON, &matchInstanceID); err != nil {
 		return fmt.Errorf("fetch inventory: %w", err)
 	}
 

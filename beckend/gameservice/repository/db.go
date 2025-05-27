@@ -290,8 +290,8 @@ func RestoreMatchStates() error {
 
 // Пример обновлённой функции получения данных игрока из match_players,
 // которая формирует структуру PlayerResponse.
-
-func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
+// GetMatchPlayer возвращает данные игрока по паре (instance_id, user_id)
+func GetMatchPlayer(instanceID string, userID int) (*models.PlayerResponse, error) {
 	query := `
 		SELECT 
 			user_id,
@@ -315,13 +315,14 @@ func GetMatchPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 			group_id,
 			balance
 		FROM match_players
-		WHERE user_id = $1
+		WHERE instance_id = $1
+		AND user_id     = $2
 		LIMIT 1;
 	`
 	var pr models.PlayerResponse
 	var positionJSON []byte
 
-	err := DB.QueryRow(query, userID).Scan(
+	err := DB.QueryRow(query, instanceID, userID).Scan(
 		&pr.UserID,          // user_id
 		&pr.Name,            // name
 		&pr.Image,           // image

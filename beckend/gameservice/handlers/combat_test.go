@@ -18,7 +18,7 @@ import (
 func TestUniversalAttackHandler(t *testing.T) {
 	// 1) Подменяем все зависимости через Combat
 	Combat = CombatDeps{
-		UpdatePlayer:        func(*models.PlayerResponse) error { return nil },
+		UpdatePlayer: func(_ string, _ *models.PlayerResponse) error { return nil },
 		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
 			return &models.PlayerResponse{
 				UserID: userID, Attack: 5, Defense: 1, Health: 10,
@@ -30,8 +30,8 @@ func TestUniversalAttackHandler(t *testing.T) {
 			}, nil
 		},
 		UpdateMonsterHealth: func(_ string, _, _ int) error { return nil },
-		DeleteMonster:       func(_ string,  _ int) error { return nil },
-		MarkPlayerDead:      func(_ string,  _ int) error { return nil },
+		DeleteMonster:       func(_ string, _ int) error { return nil },
+		MarkPlayerDead:      func(_ string, _ int) error { return nil },
 		ClearPlayerFlag:     func(_ string, _ repository.Position) error { return nil },
 		UpdateTurn:          func(_ string, _, _ int) error { return nil },
 		Finalize:            func(_ string) error { return nil },
@@ -43,12 +43,12 @@ func TestUniversalAttackHandler(t *testing.T) {
 				TurnNumber:   1,
 			}, true
 		},
-		 LoadMap: func(_ string) ([]game.FullCell, error) {
-            return []game.FullCell{{X:1,Y:1,TileCode:48}}, nil
-        },
-        SaveMap: func(_ string, _ []game.FullCell) error {
-            return nil
-        },
+		LoadMap: func(_ string) ([]game.FullCell, error) {
+			return []game.FullCell{{X: 1, Y: 1, TileCode: 48}}, nil
+		},
+		SaveMap: func(_ string, _ []game.FullCell) error {
+			return nil
+		},
 	}
 	defer RestoreDefaults()
 

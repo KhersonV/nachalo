@@ -11,9 +11,9 @@ import styles from "../styles/InfoModal.module.css";
 
 // общий тип для всех игровых объектов
 export type GameObject =
-  | { type: "monster"; name: string; hp: number; aggressive: boolean; attack: number; defense: number }
+  | { type: "monster"; name: string; hp?: number; health?: number; aggressive: boolean; attack: number; defense: number }
   | { type: "resource"; name: string; description: string; effects: string[] }
-  | { type: "player"; name: string; defense: number; attack: number; hp: number; }
+  | { type: "player"; name: string; hp?: number; health?: number; defense: number; attack: number }
   | { type: "portal"; requirement: string }
   | { type: "cell"; x: number; y: number }
   | { type: "empty"; x: number; y: number }
@@ -24,12 +24,18 @@ interface InfoModalProps {
   onClose: () => void;
 }
 
+const getHP = (obj: GameObject): number => {
+  if ("hp" in obj && obj.hp !== undefined) return obj.hp;
+  if ("health" in obj && obj.health !== undefined) return obj.health;
+  return 0;
+};
+
 
 
 export const InfoModal: React.FC<InfoModalProps> = ({ object, onClose }) => {
   if (!object) return null;
 
-   const modalRoot = typeof document !== "undefined" && document.getElementById("modal-root");
+  const modalRoot = typeof document !== "undefined" && document.getElementById("modal-root");
   if (!modalRoot) return null;
 
   // Закрытие по Esc
@@ -50,15 +56,6 @@ export const InfoModal: React.FC<InfoModalProps> = ({ object, onClose }) => {
   // контент в зависимости от типа
   const renderContent = () => {
     switch (object.type) {
-      case "monster":
-        return (
-          <>
-            <div><strong>HP:</strong> {object.hp}</div>
-            <div><strong>Aggressive:</strong> {object.aggressive ? "Yes" : "No"}</div>
-            <div><strong>Attack:</strong> {object.attack}</div>
-            <div><strong>Defense:</strong> {object.defense}</div>
-          </>
-        );
       case "resource":
         return (
           <>
@@ -66,11 +63,20 @@ export const InfoModal: React.FC<InfoModalProps> = ({ object, onClose }) => {
             <ul>{object.effects.map((e, i) => <li key={i}>{e}</li>)}</ul>
           </>
         );
+      case "monster":
+        return (
+          <>
+            <div><strong>HP:</strong> {getHP(object)}</div>
+            <div><strong>Aggressive:</strong> {object.aggressive ? "Yes" : "No"}</div>
+            <div><strong>Attack:</strong> {object.attack}</div>
+            <div><strong>Defense:</strong> {object.defense}</div>
+          </>
+        );
       case "player":
         return (
           <>
-          <div><strong>HP:</strong> {object.hp}</div>
-            <div><strong>defense:</strong> {object.defense}</div>
+            <div><strong>HP:</strong> {getHP(object)}</div>
+            <div><strong>Defense:</strong> {object.defense}</div>
             <div><strong>Attack:</strong> {object.attack}</div>
           </>
         );
@@ -103,5 +109,6 @@ export function useInfoModal() {
   return {
     open: (o: GameObject) => setObj(o),
     close: () => setObj(null),
-    Modal: () => <InfoModal object={obj} onClose={() => setObj(null)} />,  };
+    Modal: () => <InfoModal object={obj} onClose={() => setObj(null)} />,
+  };
 }

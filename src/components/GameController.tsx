@@ -6,24 +6,40 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { useGame } from "../contexts/GameContextt";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
-import type { PlayerState, Cell} from "../types/GameTypes";
+import type { PlayerState, Cell } from "../types/GameTypes";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import styles from "../styles/GameController.module.css";
 import PlayerHUD from "./PlayerHUD";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
+interface CollectResponse {
+  updatedCell: {
+    cell_id: number;
+    x: number;
+    y: number;
+    tileCode: string;
+    resource: any | null;
+    barbel: any | null;
+    monster: any | null;
+    isPortal: boolean;
+    isPlayer: boolean;
+  };
+}
+
 
 export default function GameController() {
-  const { state, dispatch, socket } = useGame();
-  const searchParams = useSearchParams();
-  const instanceId = searchParams.get("instance_id") || "";
+  const { state, dispatch } = useGame();
+
   const { user } = useAuth();
+  const { state: { instanceId } } = useGame(); // предполагаем, что в контексте есть instanceId
+
 
   const myPlayerId = user?.id;
   const myPlayer: PlayerState | undefined = state.players.find(
@@ -43,7 +59,7 @@ export default function GameController() {
   }, [myPlayerId, state.active_user]);
 
   // Универсальный обработчик: шаг или удар
- 
+
   async function handleMoveOrAttack(direction: "up" | "down" | "left" | "right") {
     if (!myPlayer) {
       console.warn("Мой игрок не найден");
@@ -56,10 +72,10 @@ export default function GameController() {
 
     // 1) Вычисляем соседнюю клетку
     const deltas = {
-      up:    { x: 0,  y: -1 },
-      down:  { x: 0,  y:  1 },
-      left:  { x: -1, y:  0 },
-      right: { x: 1,  y:  0 },
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 },
     } as const;
     const { x: dx, y: dy } = deltas[direction];
     const targetX = myPlayer.position.x + dx;
@@ -69,12 +85,12 @@ export default function GameController() {
     const targetCell = state.grid.find(c => c.x === targetX && c.y === targetY);
 
     if (!targetCell) {
-   
+
       return;
     }
 
     if (targetCell.monster) {
-   }
+    }
 
     // 3) Далее — единый запрос
 
@@ -87,155 +103,78 @@ export default function GameController() {
 
     dispatch({
       type: "UPDATE_PLAYER",
-      payload: {instanceId, player: updatedPlayer },
+      payload: { instanceId, player: updatedPlayer },
     });
   }
 
-    // 5) По необходимости можно затем подтянуть всю матрицу:
-    // const freshMatch = await fetchMatch(instanceId);
-    // dispatch({ type: "SET_MATCH_DATA", payload: freshMatch });
-  
+  // 5) По необходимости можно затем подтянуть всю матрицу:
+  // const freshMatch = await fetchMatch(instanceId);
+  // dispatch({ type: "SET_MATCH_DATA", payload: freshMatch });
+
 
   // Запрос на ход или атаку
   async function movePlayer(newPosX: number, newPosY: number) {
-  try {
-    const storedUser = localStorage.getItem("user");
-    const token = storedUser ? JSON.parse(storedUser).token : "";
-    if (!token) {
-      console.error("[movePlayer] Токен не найден");
-      return null;
-    }
-
-    const url = `http://localhost:8001/games/${instanceId}/player/${myPlayerId}/move`;
-    const body = { new_pos_x: newPosX, new_pos_y: newPosY };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    const text = await response.text();
-
-    if (!response.ok) {
-      console.error("[movePlayer] Ошибка перемещения:", text);
-      return null;
-    }
-
-    const updatedPlayer = JSON.parse(text);
-    return updatedPlayer as PlayerState;
-  } catch (error) {
-    console.error("[movePlayer] Ошибка запроса:", error);
-    return null;
-  }
-}
-
-
-
-
-
-
-// Функция для открытия бочки
-async function openBarrel(
-  cellX: number,
-  cellY: number
-): Promise<
-  | { updatedCell: Cell; updatedPlayer: PlayerState; matchEnded: true }
-  | { updatedCell: Cell; updatedPlayer: PlayerState }
-  | null
-> {
-  console.log("Открываем бочку в клетке:", cellX, cellY);
-  try {
-    // 1. Получаем токен
-    const stored = localStorage.getItem("user");
-    const token = stored ? JSON.parse(stored).token : "";
-    if (!token) {
-      console.error("Токен не найден");
-      return null;
-    }
-
-    // 2. Посылаем запрос
-    const res = await fetch("http://localhost:8001/game/openBarrel", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        instance_id: instanceId,
-        user_id:    myPlayerId,
-        cell_x:     cellX,
-        cell_y:     cellY,
-      }),
-    });
-
-    if (!res.ok) {
-      console.error("Ошибка открытия бочки:", await res.text());
-      return null;
-    }
-
-    // 3. Парсим ответ
-    const data = (await res.json()) as {
-      updatedCell?: any;
-      updatedPlayer?: any;
-      matchEnded?: boolean;
-    };
-    console.log("Бочка открыта, данные:", data);
-
-    if (!data.updatedCell || !data.updatedPlayer) {
-      console.warn("openBarrel: сервер вернул некорректные данные", data);
-      return null;
-    }
-
-    // 4. Мапим клетку
-    const mappedCell: Cell = {
-      cell_id:  data.updatedCell.cell_id,
-      x:        data.updatedCell.x,
-      y:        data.updatedCell.y,
-      tileCode: data.updatedCell.tileCode,
-      resource: data.updatedCell.resource ?? null,
-      barbel:   data.updatedCell.barbel   ?? null,
-      monster:  data.updatedCell.monster  ?? null,
-      isPortal: data.updatedCell.isPortal,
-      isPlayer: data.updatedCell.isPlayer ?? false,
-    };
-
-    // 5. Мапим игрока — здесь position не меняется, просто приводим к типу
-    const mappedPlayer: PlayerState = data.updatedPlayer as PlayerState;
-
-    // 6. Возвращаем результат
-    if (data.matchEnded) {
-      return { updatedCell: mappedCell, updatedPlayer: mappedPlayer, matchEnded: true };
-    }
-    return { updatedCell: mappedCell, updatedPlayer: mappedPlayer };
-  } catch (e) {
-    console.error("Ошибка запроса открытия бочки:", e);
-    return null;
-  }
-}
-
-
-
-
-
-
-
-
-
-  // Функция для отправки запроса на сбор ресурса
-  async function collectResource(cellX: number, cellY: number) {
-    console.log("Начало сбора ресурса для клетки:", cellX, cellY);
     try {
       const storedUser = localStorage.getItem("user");
       const token = storedUser ? JSON.parse(storedUser).token : "";
       if (!token) {
-        console.error("Токен не найден в localStorage");
-        return;
+        console.error("[movePlayer] Токен не найден");
+        return null;
       }
-      const response = await fetch("http://localhost:8001/game/collectResource", {
+
+      const url = `http://localhost:8001/game/${instanceId}/player/${myPlayerId}/move`;
+      const body = { new_pos_x: newPosX, new_pos_y: newPosY };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const text = await response.text();
+
+      if (!response.ok) {
+        console.error("[movePlayer] Ошибка перемещения:", text);
+        return null;
+      }
+
+      const updatedPlayer = JSON.parse(text);
+      return updatedPlayer as PlayerState;
+    } catch (error) {
+      console.error("[movePlayer] Ошибка запроса:", error);
+      return null;
+    }
+  }
+
+
+
+
+
+
+  // Функция для открытия бочки
+  async function openBarrel(
+    cellX: number,
+    cellY: number
+  ): Promise<
+    | { updatedCell: Cell; updatedPlayer: PlayerState; matchEnded: true }
+    | { updatedCell: Cell; updatedPlayer: PlayerState }
+    | null
+  > {
+    console.log("Открываем бочку в клетке:", cellX, cellY);
+    try {
+      // 1. Получаем токен
+      const stored = localStorage.getItem("user");
+      const token = stored ? JSON.parse(stored).token : "";
+      if (!token) {
+        console.error("Токен не найден");
+        return null;
+      }
+
+      // 2. Посылаем запрос
+      const res = await fetch("http://localhost:8001/game/openBarrel", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -248,51 +187,152 @@ async function openBarrel(
           cell_y: cellY,
         }),
       });
+
+      if (!res.ok) {
+        console.error("Ошибка открытия бочки:", await res.text());
+        return null;
+      }
+
+      // 3. Парсим ответ
+      const data = (await res.json()) as {
+        updatedCell?: any;
+        updatedPlayer?: any;
+        matchEnded?: boolean;
+      };
+      console.log("Бочка открыта, данные:", data);
+
+      if (!data.updatedCell || !data.updatedPlayer) {
+        console.warn("openBarrel: сервер вернул некорректные данные", data);
+        return null;
+      }
+
+      // 4. Мапим клетку
+      const mappedCell: Cell = {
+        cell_id: data.updatedCell.cell_id,
+        x: data.updatedCell.x,
+        y: data.updatedCell.y,
+        tileCode: data.updatedCell.tileCode,
+        resource: data.updatedCell.resource ?? null,
+        barbel: data.updatedCell.barbel ?? null,
+        monster: data.updatedCell.monster ?? null,
+        isPortal: data.updatedCell.isPortal,
+        isPlayer: data.updatedCell.isPlayer ?? false,
+      };
+
+      // 5. Мапим игрока — здесь position не меняется, просто приводим к типу
+      const mappedPlayer: PlayerState = data.updatedPlayer as PlayerState;
+
+      // 6. Возвращаем результат
+      if (data.matchEnded) {
+        return { updatedCell: mappedCell, updatedPlayer: mappedPlayer, matchEnded: true };
+      }
+      return { updatedCell: mappedCell, updatedPlayer: mappedPlayer };
+    } catch (e) {
+      console.error("Ошибка запроса открытия бочки:", e);
+      return null;
+    }
+  }
+
+
+
+
+
+
+
+
+
+  // Функция сбора ресурсов
+  async function collectResource(cellX: number, cellY: number) {
+    console.log("Начало сбора ресурса для клетки:", cellX, cellY);
+
+    // 1) Базовые проверки
+    if (!instanceId) {
+      console.error("collectResource: instanceId не задан");
+      return;
+    }
+    if (!user) {
+      console.error("collectResource: пользователь не авторизован");
+      return;
+    }
+
+    const token = user.token;
+    const myPlayerId = user.id;
+
+    if (!token) {
+      console.error("collectResource: токен пользователя отсутствует");
+      return;
+    }
+
+    try {
+      // 2) POST на сбор ресурса
+      const response = await fetch("http://localhost:8001/game/collectResource", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          instance_id: instanceId,
+          user_id: myPlayerId,
+          cell_x: cellX,
+          cell_y: cellY,
+        }),
+      });
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error("Ошибка сбора ресурса:", errorText);
         return;
       }
-      const data = await response.json();
-      console.log("Ресурс успешно собран. Полученные данные клетки:", data.updatedCell);
 
-      // Обновляем данные клетки
-      const updatedCell = {
-        cell_id: data.updatedCell.cell_id,
-        x: data.updatedCell.x,
-        y: data.updatedCell.y,
-        tileCode: data.updatedCell.tileCode,
-        resource: data.updatedCell.resource || null,
-        barbel: data.updatedCell.barbel || null,
-        monster: data.updatedCell.monster || null,
-        isPortal: data.updatedCell.isPortal,
-        isPlayer: data.updatedCell.isPlayer ?? false,
+      const { updatedCell } = await response.json();
+      console.log("Ресурс успешно собран. Полученные данные клетки:", updatedCell);
+
+      // 3) Обновляем локальное состояние клетки (пример)
+      const newCell = {
+        cell_id: updatedCell.cell_id,
+        x: updatedCell.x,
+        y: updatedCell.y,
+        tileCode: updatedCell.tileCode,
+        resource: updatedCell.resource || null,
+        barbel: updatedCell.barbel || null,
+        monster: updatedCell.monster || null,
+        isPortal: updatedCell.isPortal,
+        isPlayer: updatedCell.isPlayer ?? false,
       };
+      // dispatch({ type: "UPDATE_CELL", payload: newCell });  // если используете редьюсер
 
-     
-
-      // Запрашиваем обновленные данные игрока
-      const playerResponse = await fetch(
-        `http://localhost:8001/game/matchPlayer/${myPlayerId}`,
+      // 4) GET для получения обновлённых данных игрока
+      const playerRes = await fetch(
+        `http://localhost:8001/game/matches/${instanceId}/players/${myPlayerId}`,
         {
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            "Authorization": `Bearer ${token}`,
           },
         }
       );
 
-      if (playerResponse.ok) {
-        const updatedPlayer = await playerResponse.json();
-
-        console.log("Полученные обновлённые данные игрока:", updatedPlayer);
-       
-      } else {
-        const errorText = await playerResponse.text();
-        console.error("Ошибка запроса обновлённого игрока:", errorText);
+      if (!playerRes.ok) {
+        const err = await playerRes.text();
+        console.error("Ошибка запроса обновлённого игрока:", err);
+        return;
       }
-    } catch (error) {
-      console.error("Ошибка запроса сбора ресурса:", error);
+
+
+      const updatedPlayer = await playerRes.json();
+      console.log("Получили обновлённого игрока:", updatedPlayer);
+
+      // 5) диспатчим обновлённого игрока
+      dispatch({
+        type: "UPDATE_PLAYER",
+        payload: {
+          instanceId: state.instanceId,
+          player: updatedPlayer,
+        },
+      });
+    } catch (e) {
+      console.error("collectResource: запрос завершился с ошибкой", e);
     }
   }
 
@@ -374,11 +414,11 @@ async function openBarrel(
         .finally(() => setIsCollecting(false));
       return;
     }
-  if (currentCell.barbel) {
-  openBarrel(currentCell.x, currentCell.y)
-    .finally(() => setIsCollecting(false));
-  return;
-}
+    if (currentCell.barbel) {
+      openBarrel(currentCell.x, currentCell.y)
+        .finally(() => setIsCollecting(false));
+      return;
+    }
 
     if (currentCell.isPortal) {
       console.log("Пытаемся выйти через портал");
@@ -392,7 +432,7 @@ async function openBarrel(
   const handleTurnEnded = (data: { active_user: number; turnNumber: number; energy: number }) => {
     dispatch({
       type: "SET_ACTIVE_USER",
-      payload: {instanceId, active_user: data.active_user, turnNumber: data.turnNumber, energy: data.energy, },
+      payload: { instanceId, active_user: data.active_user, turnNumber: data.turnNumber, energy: data.energy, },
     });
   };
 

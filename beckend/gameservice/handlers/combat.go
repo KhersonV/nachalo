@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-
 // Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
 
@@ -197,7 +196,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	player.Position.X = req.NewPosX
 	player.Position.Y = req.NewPosY
 
-	if err := repository.UpdateMatchPlayer(player); err != nil {
+	if err := repository.UpdateMatchPlayer(instanceID, player); err != nil {
 		http.Error(w, "Ошибка обновления игрока", http.StatusInternalServerError)
 		return
 	}
@@ -265,100 +264,115 @@ func applyDamage(att stats, def stats) attackResult {
 // --- Обновление HP и обработка смерти цели --------------------------------
 // saveTargetHealth сохраняет урон и обрабатывает смерть цели.
 func saveTargetHealth(
-    instanceID  string,
-    targetType  string,
-    targetID    int,
-    attackerID  int,
-    ar          attackResult,
+	instanceID string,
+	targetType string,
+	targetID int,
+	attackerID int,
+	ar attackResult,
 ) {
-    if targetType == "player" {
-        p, err := Combat.GetPlayer(instanceID, targetID)
-        if err != nil {
-            log.Printf("saveTargetHealth load player error: %v", err)
-            return
-        }
-        p.Health = ar.NewHealth
-        if ar.NewHealth > 0 {
-             Combat.UpdatePlayer(p)
-        } else {
-            // Записываем факт убийства игрока
-            if ms, ok := game.GetMatchState(instanceID); ok {
-                ms.RecordKillEvent(attackerID, "player", ar.Damage)
-            }
-            handlePlayerDeath(instanceID, p)
-        }
-    } else {
-        // монстр получает урон
-        Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
-        if ar.NewHealth <= 0 {
-            // Записываем факт убийства монстра
-            if ms, ok := game.GetMatchState(instanceID); ok {
-                ms.RecordKillEvent(attackerID, "monster", ar.Damage)
-            }
-            handleMonsterDeath(instanceID, targetID)
-        }
-    }
+	if targetType == "player" {
+		p, err := Combat.GetPlayer(instanceID, targetID)
+		if err != nil {
+			log.Printf("saveTargetHealth load player error: %v", err)
+			return
+		}
+		p.Health = ar.NewHealth
+		if ar.NewHealth > 0 {
+			Combat.UpdatePlayer(instanceID, p)
+		} else {
+			// Записываем факт убийства игрока
+			if ms, ok := game.GetMatchState(instanceID); ok {
+				ms.RecordKillEvent(attackerID, "player", ar.Damage)
+			}
+			handlePlayerDeath(instanceID, p)
+		}
+	} else {
+		// монстр получает урон
+		Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
+		if ar.NewHealth <= 0 {
+			// Записываем факт убийства монстра
+			if ms, ok := game.GetMatchState(instanceID); ok {
+				ms.RecordKillEvent(attackerID, "monster", ar.Damage)
+			}
+			handleMonsterDeath(instanceID, targetID)
+		}
+	}
 }
-
 
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
 
 func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
-    log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
-    userID := p.UserID
-    oldPos := p.Position
+	log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
+	userID := p.UserID
+	oldPos := p.Position
 
-    // // Удаляем игрока из match_players
-    // if err := repository.DeleteMatchPlayer(instanceID, userID); err != nil {
-    //     log.Printf("[handlePlayerDeath] DeleteMatchPlayer error: %v", err)
-    // }
+	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
+		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
+	}
 
-    if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
-        log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
-    }
-    
+	unbindPlayer(p.UserID)
 
-     unbindPlayer(p.UserID)
-     
-    // Если в памяти есть матч
-    if ms, ok := game.GetMatchState(instanceID); ok {
-        ms.RemovePlayerFromTurnOrder(userID)
+	// 2 Если в памяти есть матч
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		ms.RemovePlayerFromTurnOrder(userID)
 
-        // Если больше нет игроков — завершаем матч
-        if len(ms.TurnOrder) == 0 {
-            log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
-            if err := Combat.Finalize(instanceID); err != nil {
-                log.Printf("[combat] FinalizeMatch failed: %v", err)
-            } else {
-                log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
-            }
-            // Разошлём WS-уведомление, что матч окончен
-            msg := map[string]interface{}{
-                "type":    "MATCH_ENDED",
-                "payload": map[string]string{"instanceId": instanceID},
-            }
-            b, _ := json.Marshal(msg)
-            Broadcast(b)
-            return
-        }
-    }
+		// 2а Если больше нет игроков — завершаем матч
+		if len(ms.TurnOrder) == 0 {
+			log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+			if err := Combat.Finalize(instanceID); err != nil {
+				log.Printf("[combat] FinalizeMatch failed: %v", err)
+			} else {
+				log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
+			}
+			// Разошлём WS-уведомление, что матч окончен
+			msg := map[string]interface{}{
+				"type":    "MATCH_ENDED",
+				"payload": map[string]string{"instanceId": instanceID},
+			}
+			b, _ := json.Marshal(msg)
+			Broadcast(b)
 
-    // Обновляем флаги клетки
-       if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
-        log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
-    }
+			// Важно: после MATCH_ENDED мы уходим из функции и больше ничего не шлём
+			return
+		}
 
+		// 2б теперь передаём ход дальше
 
-    // WS: PLAYER_DEFEATED
-    msg := map[string]interface{}{
-        "type": "PLAYER_DEFEATED",
-        "payload": map[string]interface{}{
-            "instanceId": instanceID,
-            "userId":     userID,
-        },
-    }
-    b, _ := json.Marshal(msg)
-    Broadcast(b)
+		nextID := ms.ActiveUserID // после .RemovePlayerFromTurnOrder это следующий игрок
+		if nextID != 0 {
+			// обновляем в БД
+			if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
+				log.Printf("UpdateMatchTurn error: %v", err)
+			}
+			// шлём событие TURN_PASSED
+			turnMsg := map[string]interface{}{
+				"type": "TURN_PASSED",
+				"payload": map[string]interface{}{
+					"instanceId": instanceID,
+					"userId":     nextID,
+					"turnNumber": ms.TurnNumber,
+				},
+			}
+			buf, _ := json.Marshal(turnMsg)
+			Broadcast(buf)
+		}
+	}
+
+	// 3 Обновляем флаги клетки
+	if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
+		log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
+	}
+
+	// 4 WS: PLAYER_DEFEATED
+	msg := map[string]interface{}{
+		"type": "PLAYER_DEFEATED",
+		"payload": map[string]interface{}{
+			"instanceId": instanceID,
+			"userId":     userID,
+		},
+	}
+	b, _ := json.Marshal(msg)
+	Broadcast(b)
 }
 
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
@@ -386,6 +400,7 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 	update := map[string]interface{}{
 		"type": "UPDATE_CELL",
 		"payload": map[string]interface{}{
+			"instanceId": instanceID,
 			"updatedCell": map[string]interface{}{
 				"x":        x,
 				"y":        y,
@@ -413,14 +428,14 @@ func doCounterattack(
 	ar := applyDamage(defStats, attStats)
 
 	if attackerType == "player" {
-		p, err :=  Combat.GetPlayer(instanceID, attackerID)
+		p, err := Combat.GetPlayer(instanceID, attackerID)
 		if err != nil {
 			log.Printf("doCounterattack load player error: %v", err)
 			return ar, err
 		}
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
-			Combat.UpdatePlayer(p)
+			Combat.UpdatePlayer(instanceID, p)
 		} else {
 			// игрок погиб в контратаке
 			handlePlayerDeath(instanceID, p)
@@ -488,10 +503,10 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
-      //  Добавляем в состояние матча запись о нанесённом уроне
-   if ms, ok := game.GetMatchState(req.InstanceID); ok {
-       ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
-   }
+	//  Добавляем в состояние матча запись о нанесённом уроне
+	if ms, ok := game.GetMatchState(req.InstanceID); ok {
+		ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
+	}
 	// 5) Сохранение цели + возможная смерть
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 

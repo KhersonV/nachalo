@@ -1,4 +1,3 @@
-
 //=======================
 //gameservice/cmd/main.go
 //=======================
@@ -63,8 +62,7 @@ func main() {
 
 	router.HandleFunc("/game/player/{id}", handlers.GetPlayerHandler).Methods("GET")
 
-	router.HandleFunc("/game/matchPlayer/{id}", handlers.GetMatchPlayerHandler).Methods("GET")
-
+	router.HandleFunc("/game/matches/{instance_id}/players/{id}", handlers.GetMatchPlayerHandler).Methods("GET")
 
 	router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
 
@@ -74,13 +72,16 @@ func main() {
 
 	// === Эндпоинты для матчей ===
 	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
-	router.HandleFunc("/game/match", handlers.GetMatchHandler).Methods("GET")
-	 // Эндпоинт для финализации матча
-    router.HandleFunc("/game/finishMatch", handlers.FinishMatchHandler).Methods("POST")
+	router.Handle(
+		"/game/match",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMatchHandler)),
+	).Methods("GET")
 
+	// Эндпоинт для финализации матча
+	router.HandleFunc("/game/finishMatch", handlers.FinishMatchHandler).Methods("POST")
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
-	router.Handle("/games/{instance_id}/player/{id}/move",
+	router.Handle("/game/{instance_id}/player/{id}/move",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveOrAttackHandler))).
 		Methods("POST")
 
@@ -96,16 +97,15 @@ func main() {
 	// В файле gameservice/cmd/main.go, внутри настройки маршрутов:
 	router.HandleFunc("/game/collectResource", handlers.CollectResourceHandler).Methods("POST")
 	router.HandleFunc("/game/openBarrel", handlers.OpenBarrelHandler).Methods("POST")
-	
 
 	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
 	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
 
 	router.HandleFunc("/game/user/{id}/artifacts", handlers.GetUserArtifactsHandler).Methods("GET")
-	router.HandleFunc("/game/artifact/{id}",   handlers.GetArtifactHandler).Methods("GET")
-	router.HandleFunc("/game/artifact/{id}",   handlers.DeleteArtifactHandler).Methods("DELETE")
+	router.HandleFunc("/game/artifact/{id}", handlers.GetArtifactHandler).Methods("GET")
+	router.HandleFunc("/game/artifact/{id}", handlers.DeleteArtifactHandler).Methods("DELETE")
 	router.HandleFunc("/game/artifact/transfer", handlers.TransferArtifactHandler).Methods("POST")
-	router.HandleFunc("/game/artifact/{id}",   handlers.UpdateArtifactHandler).Methods("PATCH")
+	router.HandleFunc("/game/artifact/{id}", handlers.UpdateArtifactHandler).Methods("PATCH")
 
 	// Подключаем CORS
 	handler := enableCors(router)

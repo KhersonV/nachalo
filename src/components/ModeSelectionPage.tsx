@@ -4,7 +4,6 @@
 // src/components/ModeSelectionPage.tsx
 //=====================================
 
-// src/components/ModeSelectionPage.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -15,6 +14,10 @@ import styles from "../styles/ModeSelectionPage.module.css";
 export type GameMode = "PVE" | "1x1" | "1x2" | "2x2" | "3x3" | "5x5";
 type PlayerInfo = { playerId: number; level: number };
 
+// URL Game-сервиса
+const API_MATCH = "http://localhost:8002";
+const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
 const REQUIRED_SIZE: Record<GameMode, number> = {
   PVE: 1,
   "1x1": 2,
@@ -24,7 +27,6 @@ const REQUIRED_SIZE: Record<GameMode, number> = {
   "5x5": 10,
 };
 
-const API_MATCH = "http://localhost:8002";
 
 async function fetchQueueSize(mode: GameMode): Promise<number> {
   const res = await fetch(`${API_MATCH}/matchmaking/status?mode=${mode}`);
@@ -33,42 +35,59 @@ async function fetchQueueSize(mode: GameMode): Promise<number> {
   return queue.length;
 }
 
-async function joinQueue(mode: GameMode, player: PlayerInfo): Promise<void> {
-  const response = await fetch(`${API_MATCH}/matchmaking/join`, {
+
+async function joinQueue(
+  mode: GameMode,
+  player: PlayerInfo,
+  token: string
+): Promise<void> {
+  const res = await fetch(`${API_MATCH}/matchmaking/join`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
       player_id: player.playerId,
-      mode: mode,
+      mode,
       rating: player.level * 100,
     }),
   });
-
-  if (!response.ok) {
-    throw new Error("Ошибка при вступлении в очередь");
+  if (!res.ok) {
+    throw new Error(await res.text() || "Ошибка при вступлении в очередь");
   }
 }
 
-async function pollCurrentMatch(playerId: number): Promise<string> {
+async function pollCurrentMatch(
+  playerId: number,
+  token: string
+): Promise<string> {
   while (true) {
     const res = await fetch(
-      `${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`
+      `${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`,
+      {
+        headers: { "Authorization": `Bearer ${token}` },
+      }
     );
     const data = await res.json();
     if (data.instance_id) {
       return data.instance_id;
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((r) => setTimeout(r, 3000));
   }
 }
 
+
+
 export async function startMatchmaking(
   mode: GameMode,
-  player: PlayerInfo
+  player: PlayerInfo,
+  token: string
 ): Promise<string> {
-  await joinQueue(mode, player);
-  return pollCurrentMatch(player.playerId);
+  await joinQueue(mode, player, token);
+  return pollCurrentMatch(player.playerId, token);
 }
+
 
 const MODES: { value: GameMode; label: string }[] = [
   { value: "PVE", label: "PvE (Solo)" },
@@ -104,8 +123,8 @@ export default function ModeSelectionPage() {
           })
         );
         if (!mounted) return;
-         const sizes = Object.fromEntries(entries) as Record<GameMode, number>;
-    setQueueSizes(sizes);
+        const sizes = Object.fromEntries(entries) as Record<GameMode, number>;
+        setQueueSizes(sizes);
       } catch (e) {
         console.error(e);
       }
@@ -124,36 +143,65 @@ export default function ModeSelectionPage() {
     }
   }, [user, router]);
 
+
+
+
+
   async function handleStart() {
+    const stored = localStorage.getItem("user");
+    const userData = stored ? JSON.parse(stored) : null;
+    const token = userData?.token;
+    if (!token) {
+      alert("Сначала выполните вход");
+      router.push("/login");
+      return;
+    }
     try {
       setIsMatching(true);
-      const playerInfo: PlayerInfo = { playerId: user!.id, level: 1 };
-      const instanceId = await startMatchmaking(mode, playerInfo);
+      const playerInfo: PlayerInfo = { playerId: user!.id, level: user!.level };
+      // передаём токен
+      const instanceId = await startMatchmaking(mode, playerInfo, token);
+
       router.push(`/game?instance_id=${instanceId}`);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       setIsMatching(false);
       alert("Ошибка при подборе игроков");
     }
   }
 
-   async function handleCancel() {
+
+
+
+
+
+
+  async function handleCancel() {
+    const stored = localStorage.getItem("user");
+    const userData = stored ? JSON.parse(stored) : null;
+    const token = userData?.token;
+    if (!token) {
+      alert("Сначала выполните вход");
+      router.push("/login");
+      return;
+    }
+
     try {
-      // сразу сбрасываем локальный флаг, чтобы UI сразу отреагировал
       setIsMatching(false);
 
-      // отправляем запрос на отмену в очередь
       const res = await fetch(`${API_MATCH}/matchmaking/cancel`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          player_id: user!.id,
+          player_id: userData.id,
           mode: mode,
         }),
       });
 
       if (!res.ok) {
-        // если сервер вернул ошибку — поднимем флаг обратно
         setIsMatching(true);
         const text = await res.text();
         throw new Error(text || "Не удалось выйти из очереди");
@@ -171,9 +219,8 @@ export default function ModeSelectionPage() {
         {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => (
           <div
             key={m}
-            className={`${styles.modeBlock} ${
-              mode === m ? styles.modeBlockSelected : ""
-            }`}
+            className={`${styles.modeBlock} ${mode === m ? styles.modeBlockSelected : ""
+              }`}
             onClick={() => setMode(m)}
           >
             <div>{m === "PVE" ? "PvE (Solo)" : `PvP ${m}`}</div>
@@ -183,24 +230,24 @@ export default function ModeSelectionPage() {
           </div>
         ))}
       </div>
-     
-    <div className={styles.buttonGroup}>
-      <button
-        className={styles.queueButton}
-        onClick={handleStart}
-        disabled={isMatching}
-      >
-        Вступить в очередь
-      </button>
-      <button
-        className={styles.queueButton}
-        onClick={handleCancel}
-        disabled={!isMatching}
-      >
-        Выйти из очереди
-      </button>
-    </div>
-     
+
+      <div className={styles.buttonGroup}>
+        <button
+          className={styles.queueButton}
+          onClick={handleStart}
+          disabled={isMatching}
+        >
+          Вступить в очередь
+        </button>
+        <button
+          className={styles.queueButton}
+          onClick={handleCancel}
+          disabled={!isMatching}
+        >
+          Выйти из очереди
+        </button>
+      </div>
+
     </div>
   );
 }

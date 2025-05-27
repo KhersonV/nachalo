@@ -1,4 +1,3 @@
-
 //==============================
 //gameservice/middleware/auth.go
 //==============================
@@ -21,6 +20,7 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			log.Println("GameAuthMiddleware: отсутствует Authorization header")
 			http.Error(w, "Отсутствует токен", http.StatusUnauthorized)
 			return
 		}

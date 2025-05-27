@@ -1,6 +1,6 @@
-//==============================
+// ==============================
 // gameservice/handlers/turn.go
-//==============================
+// ==============================
 package handlers
 
 import (
@@ -15,15 +15,15 @@ import (
 // EndTurnRequest представляет запрос на завершение хода.
 // Теперь содержит instance_id для идентификации матча.
 type EndTurnRequest struct {
-	UserID   int    `json:"user_id"`
+	UserID     int    `json:"user_id"`
 	InstanceID string `json:"instance_id"`
 }
 
 // EndTurnResponse возвращает статус матча, включая активного игрока, энергию и номер хода.
 type EndTurnResponse struct {
 	ActiveUser int `json:"active_user"`
-	Energy       int `json:"energy"`
-	TurnNumber   int `json:"turn_number"`
+	Energy     int `json:"energy"`
+	TurnNumber int `json:"turn_number"`
 }
 
 // Константа пополнения энергии при получении хода
@@ -70,11 +70,11 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Обновляем данные матча в БД
-if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.TurnNumber); err != nil {
-    log.Printf("Ошибка обновления матча в БД: %v", err)
-    http.Error(w, "Internal server error", http.StatusInternalServerError)
-    return
-}
+	if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.TurnNumber); err != nil {
+		log.Printf("Ошибка обновления матча в БД: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	// Пополняем энергию нового активного игрока
 	newEnergy := nextUser.Energy + energyRegen
@@ -84,7 +84,7 @@ if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.Turn
 	nextUser.Energy = newEnergy
 
 	// Обновляем данные игрока в БД (энергия и прочее обновление состояния)
-	if err = repository.UpdateMatchPlayer( nextUser); err != nil {
+	if err = repository.UpdateMatchPlayer(matchState.InstanceID, nextUser); err != nil {
 		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -94,10 +94,10 @@ if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.Turn
 	updateMsg := map[string]interface{}{
 		"type": "SET_ACTIVE_USER",
 		"payload": map[string]interface{}{
-			"instanceId": req.InstanceID, 
+			"instanceId":  req.InstanceID,
 			"active_user": nextUserID,
-			"energy":       newEnergy,
-			"turnNumber":   matchState.TurnNumber,
+			"energy":      newEnergy,
+			"turnNumber":  matchState.TurnNumber,
 		},
 	}
 	updateJSON, _ := json.Marshal(updateMsg)
@@ -106,8 +106,8 @@ if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.Turn
 	// Отправляем ответ клиенту
 	response := EndTurnResponse{
 		ActiveUser: nextUserID,
-		Energy:       newEnergy,
-		TurnNumber:   matchState.TurnNumber,
+		Energy:     newEnergy,
+		TurnNumber: matchState.TurnNumber,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)

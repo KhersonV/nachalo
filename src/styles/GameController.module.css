@@ -1,41 +1,67 @@
 .container {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    width: 800px;
-    margin: 0 auto;
-    
-    margin-left: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 800px;
+  margin: 0 auto;
+
+  margin-left: 500;
 }
-  
-  .mapContainer {
-    margin-left: -400;
-    width: 800px;
-    height: 600px;
-    margin-bottom: 20px; /* Отступ между картой и панелью управления */
-   
-  }
-  
-  .controlsContainer {
-    margin-left: -500;
-    width: 800px;
-    display: flex;
-    justify-content: flex-start; /* Выравнивание панели по левому краю */
-    padding-left: 10px;         /* Отступ слева для панели управления */
-  }
-  
-  .hud {
+
+.mapContainer {
+  margin-left: -400;
+  width: 800px;
+  height: 600px;
+  margin-bottom: 20px;
+  /* Отступ между картой и панелью управления */
+
+}
+
+.controlsContainer {
+  margin-left: -500;
+  width: 800px;
+  display: flex;
+  justify-content: flex-start;
+  /* Выравнивание панели по левому краю */
+  padding-left: 10px;
+  /* Отступ слева для панели управления */
+}
+
+.hud {
   position: absolute;
   top: 1rem;
   left: 1rem;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(141, 103, 103, 0.6);
   color: #fff;
   padding: 0.5rem 1rem;
   border-radius: 4px;
   font-size: 0.9rem;
   z-index: 20;
 }
+
 .hud p {
   margin: 0;
   line-height: 1.2;
+}
+
+.hudRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.progressBar {
+  flex: 1;
+  height: 8px;
+  background: #444;
+  border-radius: 4px;
+  margin: 0 0.5rem;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: #0f0;
+  /* по умолчанию зелёный, можно заменить переменной */
+  transition: width 0.2s ease;
 }

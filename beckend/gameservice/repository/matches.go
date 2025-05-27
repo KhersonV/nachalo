@@ -15,25 +15,88 @@ import (
 )
 
 // InsertMatch – сохраняет матч в таблице matches.
-func InsertMatch(instanceID, mode string, teamsCount, totalPlayers, mapWidth, mapHeight int, mapJSON []byte) (string, error) {
+// InsertMatch – сохраняет или обновляет матч в таблице matches.
+func InsertMatch(
+	instanceID string,
+	mode string,
+	teamsCount, totalPlayers int,
+	activeUserID int,
+	turnOrder []int,
+	turnNumber int,
+	startPositions [][2]int,
+	portalPosition [2]int,
+	mapHeight, mapWidth int,
+	mapJSON []byte,
+) error {
+	// Сериализуем JSON-поля
+	turnOrderJSON, _ := json.Marshal(turnOrder)
+	startPosJSON, _ := json.Marshal(startPositions)
+	portalPosJSON, _ := json.Marshal(portalPosition)
+
 	query := `
-        INSERT INTO matches (instance_id, mode, teams_count, total_players, map_width, map_height, map, turn_number)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING instance_id;
+    INSERT INTO matches (
+        instance_id,
+        mode,
+        teams_count,
+        total_players,
+        active_user_id,
+        turn_order,
+        turn_number,
+        start_positions,
+        portal_position,
+        map_height,
+        map_width,
+        map
+    ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+    )
+    ON CONFLICT (instance_id) DO UPDATE
+      SET
+        mode            = EXCLUDED.mode,
+        teams_count     = EXCLUDED.teams_count,
+        total_players   = EXCLUDED.total_players,
+        active_user_id  = EXCLUDED.active_user_id,
+        turn_order      = EXCLUDED.turn_order,
+        turn_number     = EXCLUDED.turn_number,
+        start_positions = EXCLUDED.start_positions,
+        portal_position = EXCLUDED.portal_position,
+        map_height      = EXCLUDED.map_height,
+        map_width       = EXCLUDED.map_width,
+        map             = EXCLUDED.map;
     `
-	var returnedID string
-	// turn_number задаем равным 1 по умолчанию.
-	err := DB.QueryRow(query, instanceID, mode, teamsCount, totalPlayers, mapWidth, mapHeight, mapJSON, 1).Scan(&returnedID)
-	if err != nil {
-		return "", err
-	}
-	return returnedID, nil
+	_, err := DB.Exec(
+		query,
+		instanceID,
+		mode,
+		teamsCount,
+		totalPlayers,
+		activeUserID,
+		turnOrderJSON,
+		turnNumber,
+		startPosJSON,
+		portalPosJSON,
+		mapHeight,
+		mapWidth,
+		mapJSON,
+	)
+	return err
 }
 
 // GetMatchByID – получает матч по instance_id из таблицы matches.
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 	query := `
-        SELECT instance_id, mode, teams_count, total_players, map_width, map_height, map, active_user_id, turn_number
+        SELECT
+            instance_id,
+            mode,
+            teams_count,
+            total_players,
+            map_width,
+            map_height,
+            map,
+            active_user_id,
+            turn_number,
+            start_positions,
+            portal_position
         FROM matches
         WHERE instance_id = $1
     `
@@ -48,6 +111,8 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 		&match.Map,
 		&match.ActiveUserID,
 		&match.TurnNumber,
+		&match.StartPositions, // <-- raw JSONB
+		&match.PortalPosition, // <-- raw JSONB
 	)
 	if err != nil {
 		return nil, err
@@ -174,7 +239,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 }
 
 // UpdateMatchPlayer – обновляет данные игрока в таблице match_players для конкретного матча.
-func UpdateMatchPlayer(player *models.PlayerResponse) error {
+func UpdateMatchPlayer(instanceID string, player *models.PlayerResponse) error {
 	// Формируем JSON для поля position.
 	positionJSON, err := json.Marshal(player.Position)
 	if err != nil {
@@ -184,7 +249,8 @@ func UpdateMatchPlayer(player *models.PlayerResponse) error {
 	query := `
 		UPDATE match_players
 		SET position = $1, energy = $2, health = $3, level = $4, experience = $5
-		WHERE user_id = $6
+		WHERE instance_id = $6
+		AND user_id     = $7
 	`
 	_, err = DB.Exec(query,
 		positionJSON,
@@ -192,6 +258,7 @@ func UpdateMatchPlayer(player *models.PlayerResponse) error {
 		player.Health,
 		player.Level,
 		player.Experience,
+		instanceID,
 		player.UserID,
 	)
 	return err
@@ -539,4 +606,79 @@ func CleanupMatchPlayers(instanceID string) error {
         WHERE instance_id = $1
     `, instanceID)
 	return err
+}
+
+// LoadMatchStats загружает из БД информацию о режиме и победителе матча
+func LoadMatchStats(instanceID string) (*models.MatchInfo, error) {
+	var mi models.MatchInfo
+
+	// Джоиним match_stats и matches, чтобы достать mode из matches
+	query := `
+    SELECT 
+      ms.instance_id,
+      m.mode,
+      ms.winner_id,
+      ms.winner_group_id
+    FROM match_stats ms
+    JOIN matches m ON m.instance_id = ms.instance_id
+    WHERE ms.instance_id = $1
+    `
+	row := DB.QueryRow(query, instanceID)
+	if err := row.Scan(
+		&mi.InstanceID,
+		&mi.Mode,
+		&mi.WinnerID,
+		&mi.WinnerGroupID,
+	); err != nil {
+		return nil, fmt.Errorf("LoadMatchStats: scan error: %w", err)
+	}
+
+	return &mi, nil
+}
+
+// LoadMatchPlayerStats возвращает все записи из match_player_stats для данного матча
+func LoadMatchPlayerStats(instanceID string) ([]models.PlayerMatchStat, error) {
+	query := `
+    SELECT 
+      instance_id,
+      user_id,
+      exp_gained,
+      rewards,
+      player_kills,
+      monster_kills,
+      damage_total,
+      damage_to_players,
+      damage_to_monsters
+    FROM match_player_stats
+    WHERE instance_id = $1
+    ORDER BY user_id
+  `
+	rows, err := DB.Query(query, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("LoadMatchPlayerStats: query error: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []models.PlayerMatchStat
+	for rows.Next() {
+		var s models.PlayerMatchStat
+		if err := rows.Scan(
+			&s.InstanceID,
+			&s.UserID,
+			&s.ExpGained,
+			&s.Rewards,
+			&s.PlayerKills,
+			&s.MonsterKills,
+			&s.DamageTotal,
+			&s.DamageToPlayers,
+			&s.DamageToMonsters,
+		); err != nil {
+			return nil, fmt.Errorf("LoadMatchPlayerStats: scan error: %w", err)
+		}
+		stats = append(stats, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("LoadMatchPlayerStats: rows error: %w", err)
+	}
+	return stats, nil
 }

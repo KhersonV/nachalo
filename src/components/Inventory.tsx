@@ -10,7 +10,7 @@ import { useAuth } from "../contexts/AuthContext";
 import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
 import styles from "../styles/Inventory.module.css";
 const Inventory: React.FC = () => {
-  const { state, dispatch} = useGame();
+  const { state, dispatch } = useGame();
   const { user } = useAuth();
   const { instanceId } = state;
 
@@ -32,10 +32,10 @@ const Inventory: React.FC = () => {
     }
 
     const item_type = (it.item_type || it.type || hintType || "resource") as "resource" | "artifact";
-    const item_id   = it.item_id || it.id || hintId || 0;
-    const name      = it.name || it.item_name || item_type + "_" + item_id;
-    const item_count= it.item_count || it.count || 1;
-    const image     = it.image || it.image_url || "";
+    const item_id = it.item_id || it.id || hintId || 0;
+    const name = it.name || it.item_name || item_type + "_" + item_id;
+    const item_count = it.item_count || it.count || 1;
+    const image = it.image || it.image_url || "";
     const description = it.description || it.item_description || "";
 
     return { item_type, item_id, name, item_count, image, description, bonus: it.bonus, effect: it.effect };
@@ -91,7 +91,7 @@ const Inventory: React.FC = () => {
       { resources: {}, artifacts: {} }
     );
   }, [rawItems]);
-  
+
   // 4) Обработчик использования предмета
   const handleUseItem = async (
     section: "resources" | "artifacts",
@@ -104,12 +104,23 @@ const Inventory: React.FC = () => {
     const item_id = parseInt(idStr, 10);
 
     try {
+
+      const stored = localStorage.getItem("user");
+      const token = stored ? JSON.parse(stored).token : "";
+      if (!token) {
+        console.error("Токен не найден");
+        return;
+      }
+
       const res = await fetch(
         `http://localhost:8001/game/player/${user.id}/inventory/use`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ item_type, item_id, item_count: 1 }),
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify({ instance_id: instanceId, item_type, item_id, item_count: 1 }),
         }
       );
       if (!res.ok) {
@@ -117,7 +128,7 @@ const Inventory: React.FC = () => {
       }
       const updatedPlayer = await res.json() as PlayerState;
       console.log("⚕️ after useItem, updatedPlayer.health =", updatedPlayer.health);
-       dispatch({
+      dispatch({
         type: "UPDATE_PLAYER",
         payload: {
           instanceId,
@@ -147,17 +158,17 @@ const Inventory: React.FC = () => {
           <div className={styles.itemName}>{item.name}</div>
           {section === "resources" && (
             <>
-            <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
-            <button
-              className={styles.useButton}
-              onClick={() => handleUseItem(section, key, item)}
-            >
-              Использовать
-            </button>
-          </>
-        )}
-      </div>
-    ));
+              <div className={styles.itemCount}>Кол-во: {item.item_count}</div>
+              <button
+                className={styles.useButton}
+                onClick={() => handleUseItem(section, key, item)}
+              >
+                Использовать
+              </button>
+            </>
+          )}
+        </div>
+      ));
 
   // 6) JSX
   return (

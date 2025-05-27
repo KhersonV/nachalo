@@ -1,16 +1,20 @@
-
 // ==============================
 // /gameservice/models/player.go
 // ==============================
 
 package models
 
+type WinnerInfo struct {
+	Type string `json:"type"`
+	ID   int    `json:"id"`
+}
+
 // PlayerResponse – структура для ответа, приведённая к единому виду (как у клиента)
 type PlayerResponse struct {
-	UserID     int    `json:"user_id"`
-	Name       string `json:"name"`
-	Image      string `json:"image"`
-	Position   struct {
+	UserID   int    `json:"user_id"`
+	Name     string `json:"name"`
+	Image    string `json:"image"`
+	Position struct {
 		X int `json:"x"`
 		Y int `json:"y"`
 	} `json:"position"`
@@ -28,6 +32,6 @@ type PlayerResponse struct {
 	Vision          int    `json:"vision"`
 	VisionRange     int    `json:"visionRange"`
 	Balance         int    `json:"balance"`
-	GroupID			int		`json:"group_id"`
+	GroupID         int    `json:"group_id"`
 	Inventory       string `json:"inventory"`
 }

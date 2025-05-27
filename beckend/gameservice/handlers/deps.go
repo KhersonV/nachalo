@@ -1,4 +1,3 @@
-
 //=====================================
 // /gameservice/handlers/deps.go
 //=====================================
@@ -14,27 +13,27 @@ import (
 
 // BarrelDeps — все зависимости, используемые в barrel.go
 type BarrelDeps struct {
-	GetPlayer       func(instanceID string, userID int) (*models.PlayerResponse, error)
-	UpdatePlayer    func(*models.PlayerResponse) error
-	AddItem         func(instanceID string, userID int, itemType string, id int, name, image, desc string, count int) error
-	LoadMap         func(instanceID string) ([]game.FullCell, error)
-	SaveMap         func(instanceID string, cells []game.FullCell) error
+	GetPlayer    func(instanceID string, userID int) (*models.PlayerResponse, error)
+	UpdatePlayer func(instanceID string, p *models.PlayerResponse) error
+	AddItem      func(instanceID string, userID int, itemType string, id int, name, image, desc string, count int) error
+	LoadMap      func(instanceID string) ([]game.FullCell, error)
+	SaveMap      func(instanceID string, cells []game.FullCell) error
 }
 
 // CombatDeps — все зависимости, используемые в combat.go
 type CombatDeps struct {
-	LoadMap              func(instanceID string) ([]game.FullCell, error)
-    SaveMap              func(instanceID string, cells []game.FullCell) error
-	UpdatePlayer         func(*models.PlayerResponse) error 
-	GetPlayer            func(instanceID string, userID int) (*models.PlayerResponse, error)
-	GetMonster           func(instanceID string, monsterID int) (*repository.MatchMonster, error)
-	UpdateMonsterHealth  func(instanceID string, monsterID, hp int) error
-	DeleteMonster        func(instanceID string, monsterID int) error
-	MarkPlayerDead       func(instanceID string, userID int) error
-	ClearPlayerFlag      func(instanceID string, pos repository.Position) error
-	UpdateTurn           func(instanceID string, nextUserID, turnNum int) error
-	Finalize             func(instanceID string) error
-	LoadGameState        func(instanceID string) (*game.MatchState, bool)
+	LoadMap             func(instanceID string) ([]game.FullCell, error)
+	SaveMap             func(instanceID string, cells []game.FullCell) error
+	UpdatePlayer        func(instanceID string, p *models.PlayerResponse) error
+	GetPlayer           func(instanceID string, userID int) (*models.PlayerResponse, error)
+	GetMonster          func(instanceID string, monsterID int) (*repository.MatchMonster, error)
+	UpdateMonsterHealth func(instanceID string, monsterID, hp int) error
+	DeleteMonster       func(instanceID string, monsterID int) error
+	MarkPlayerDead      func(instanceID string, userID int) error
+	ClearPlayerFlag     func(instanceID string, pos repository.Position) error
+	UpdateTurn          func(instanceID string, nextUserID, turnNum int) error
+	Finalize            func(instanceID string) error
+	LoadGameState       func(instanceID string) (*game.MatchState, bool)
 }
 
 // defaultDeps содержит реальные реализации
@@ -48,9 +47,9 @@ var (
 	}
 
 	defaultCombatDeps = CombatDeps{
-		LoadMap:			 repository.LoadMapCells,
-		SaveMap:			 repository.SaveMapCells,
-		UpdatePlayer: 		 repository.UpdateMatchPlayer,
+		LoadMap:             repository.LoadMapCells,
+		SaveMap:             repository.SaveMapCells,
+		UpdatePlayer:        repository.UpdateMatchPlayer,
 		GetPlayer:           repository.GetMatchPlayerByID,
 		GetMonster:          repository.GetMatchMonsterByID,
 		UpdateMonsterHealth: repository.UpdateMatchMonsterHealth,
@@ -78,22 +77,22 @@ func RestoreDefaults() {
 
 // Стабы для barrel.go
 
-func stubGetMatchPlayerByID(instanceID string, userID int) (*models.PlayerResponse, error) {
-	return &models.PlayerResponse{
-		UserID: userID,
-		Health: 100,
-	}, nil
-}
-func stubUpdateMatchPlayer(_ *models.PlayerResponse) error { return nil }
-func stubAddInventoryItem(_ string, _ int, _ string, _ int, _ string, _ string, _ string, _ int) error {
-	return nil
-}
-func stubLoadMapCells(_ string) ([]game.FullCell, error) {
-	// Именно этот CellID ищет broadcastCellRemoval
-	return []game.FullCell{
-		{CellID: 42, Barbel: &game.ResourceData{ID: 6}, TileCode: 'B'},
-	}, nil
-}
-func stubSaveMapCells(_ string, _ []game.FullCell) error { return nil }
+// func stubGetMatchPlayerByID(instanceID string, userID int) (*models.PlayerResponse, error) {
+// 	return &models.PlayerResponse{
+// 		UserID: userID,
+// 		Health: 100,
+// 	}, nil
+// }
+// func stubUpdateMatchPlayer(_ string, _ *models.PlayerResponse) error { return nil }
+// func stubAddInventoryItem(_ string, _ int, _ string, _ int, _ string, _ string, _ string, _ int) error {
+// 	return nil
+// }
+// func stubLoadMapCells(_ string) ([]game.FullCell, error) {
+// 	// Именно этот CellID ищет broadcastCellRemoval
+// 	return []game.FullCell{
+// 		{CellID: 42, Barbel: &game.ResourceData{ID: 6}, TileCode: 'B'},
+// 	}, nil
+// }
+// func stubSaveMapCells(_ string, _ []game.FullCell) error { return nil }
 
 // Функция для восстановления оригинальных зависимостей (barrel)
