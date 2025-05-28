@@ -77,29 +77,34 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 	return player, nil
 }
 
-// UpdatePlayer обновляет данные игрока в таблице players.
-// Обновляются поле энергия, здоровье, уровень и опыт.
+// UpdatePlayer обновляет данные игрока в таблице players,
+// включая баланс и инвентарь (JSON-строку).
 func UpdatePlayer(player *models.PlayerResponse) error {
-	query := `
+    query := `
     UPDATE players
-    SET 
-        energy     = $1,
-        health     = $2,
-        level      = $3,
-        experience = $4
-    WHERE user_id = $5
+    SET
+        energy         = $1,
+        health         = $2,
+        level          = $3,
+        experience     = $4,
+        max_experience = $5,
+        balance        = $6,
+        inventory      = $7
+    WHERE user_id = $8
     `
-	// Обратите внимание на := для объявления err
-	if _, err := DB.Exec(query,
-		player.Energy,
-		player.Health,
-		player.Level,
-		player.Experience,
-		player.UserID,
-	); err != nil {
-		return fmt.Errorf("UpdatePlayer: %w", err)
-	}
-	return nil
+    if _, err := DB.Exec(query,
+        player.Energy,
+        player.Health,
+        player.Level,
+        player.Experience,
+        player.MaxExperience,
+        player.Balance,
+        player.Inventory,
+        player.UserID,
+    ); err != nil {
+        return fmt.Errorf("UpdatePlayer: %w", err)
+    }
+    return nil
 }
 
 // DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
@@ -151,6 +156,8 @@ func AddPlayerExperience(userID, exp int) error {
 	if threshold, ok := levelThresholds[player.Level]; ok && player.Experience >= threshold {
 		player.Level++
 		player.Experience -= threshold
+		player.MaxExperience = levelThresholds[player.Level]
+		log.Printf("GetPlayerByUserID: MaxExperience = %d", player.MaxExperience)
 	}
 
 	// 4) Сохраняем изменения
@@ -161,6 +168,7 @@ func AddPlayerExperience(userID, exp int) error {
 }
 
 func AddPlayerRewards(userID int, rewardsData []byte) error {
+	log.Printf("Raw rewardsData for user %d: %s", userID, string(rewardsData))
 	// 1) Распарсим JSON наград
 	var rewards map[string]int
 	if err := json.Unmarshal(rewardsData, &rewards); err != nil {

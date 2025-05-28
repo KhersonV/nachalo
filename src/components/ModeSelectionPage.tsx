@@ -144,18 +144,40 @@ export default function ModeSelectionPage() {
   }, [user, router]);
 
 
+   const stored = localStorage.getItem("user");
+    const userData = stored ? JSON.parse(stored) : null;
+    const token = userData?.token;
 
+function isTokenExpired(token:string) {
+  try {
+    // JWT = header.payload.signature
+    const [, payload] = token.split('.');
+    if (!payload) return true;
+    // В браузере atob декодирует Base64
+    const decoded = JSON.parse(atob(payload));
+    // exp — время в секундах с эпохи Unix
+    return decoded.exp * 1000 < Date.now();
+  } catch (e) {
+    // Если не получилось распарсить — считаем, что токен невалиден/просрочен
+    return true;
+  }
+}
 
 
   async function handleStart() {
-    const stored = localStorage.getItem("user");
-    const userData = stored ? JSON.parse(stored) : null;
-    const token = userData?.token;
+   
     if (!token) {
       alert("Сначала выполните вход");
       router.push("/login");
       return;
     }
+    // Проверка по времени
+  if (isTokenExpired(token)) {
+    alert("Сессия истекла, пожалуйста, войдите снова");
+    localStorage.removeItem("user");        // Очистим устаревшие данные
+    router.push("/login");
+    return;
+  }
     try {
       setIsMatching(true);
       const playerInfo: PlayerInfo = { playerId: user!.id, level: user!.level };
