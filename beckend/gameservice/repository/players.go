@@ -202,7 +202,7 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 		}
 	}
 
-	// 4) Сохраняем изменения
+	// 4) Сохраняем изменени
 	if err := UpdatePlayer(player); err != nil {
 		return fmt.Errorf("AddPlayerRewards: update player: %w", err)
 	}
