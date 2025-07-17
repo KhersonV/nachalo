@@ -240,7 +240,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			log.Printf("Claims токена: %+v", claims)
+			
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)

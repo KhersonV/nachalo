@@ -1,3 +1,4 @@
+
 //=======================
 // src/app/mode/page.tsx
 //=======================
@@ -6,7 +7,12 @@
 
 import React from "react";
 import ModeSelectionPage from "../../components/ModeSelectionPage";
+import RequireAuth from "../../components/RequireAuth";
 
 export default function ModePage() {
-  return <ModeSelectionPage />;
+  return (
+      <RequireAuth>
+        <ModeSelectionPage />
+      </RequireAuth>
+  );
 }

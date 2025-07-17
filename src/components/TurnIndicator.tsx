@@ -6,14 +6,15 @@
 "use client";
 
 import React from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useSelector } from "react-redux";
+import type { RootState } from "../store";
 
 const TurnIndicator = () => {
-  const { state } = useGame();
+  const turnNumber = useSelector((state: RootState) => state.game.turnNumber);
 
   return (
     <div style={{ padding: "0.5rem", backgroundColor: "#222", color: "#fff", borderRadius: "4px", width: 100 }}>
-      <p>Turn: {state.turnNumber}</p>
+      <p>Turn: {turnNumber}</p>
     </div>
   );
 };

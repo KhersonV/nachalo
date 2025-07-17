@@ -9,9 +9,11 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "15.0.4",
+    "@reduxjs/toolkit": "^2.8.2",
+    "next": "^15.3.5",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-redux": "^9.2.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

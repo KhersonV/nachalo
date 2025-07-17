@@ -5,22 +5,23 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useDispatch, useSelector } from "react-redux";
 import { useAuth } from "../contexts/AuthContext";
+import type { RootState } from "../store";
 import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
+import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
-const Inventory: React.FC = () => {
-  const { state, dispatch } = useGame();
-  const { user } = useAuth();
-  const { instanceId } = state;
 
-  // 1) Находим игрока
+const Inventory: React.FC = () => {
+  const dispatch = useDispatch();
+  const state = useSelector((state: RootState) => state.game);
+  const { user } = useAuth();
+  const instanceId = state.instanceId;
+
   const player = state.players.find((p) => p.user_id === user?.id);
   if (!player) return <div>Инвентарь недоступен</div>;
 
-  // normalize-функция: из любого «сырого» объекта делаем RawInventoryItem
   const normalize = (it: any, keyHint?: string): RawInventoryItem => {
-    // если keyHint вида "resource_2", распарсим его
     let hintType: "resource" | "artifact" | undefined;
     let hintId: number | undefined;
     if (keyHint) {
@@ -41,7 +42,6 @@ const Inventory: React.FC = () => {
     return { item_type, item_id, name, item_count, image, description, bonus: it.bonus, effect: it.effect };
   };
 
-  // 2) Из разных форматов собираем единый плоский массив
   const rawItems: RawInventoryItem[] = useMemo(() => {
     let parsed: any;
     try {
@@ -59,15 +59,12 @@ const Inventory: React.FC = () => {
       flat = [
         ...(parsed.resources ? Object.entries(parsed.resources) : []),
         ...(parsed.artifacts ? Object.entries(parsed.artifacts) : []),
-      ].map(
-        ([key, val]) => ({ val, key }) // запомним ключ для normalize
-      );
+      ].map(([key, val]) => ({ val, key }));
     } else {
       flat = Object.entries(parsed).map(([key, val]) => ({ val, key }));
     }
 
     return flat.map(entry => {
-      // entry может быть либо raw объект, либо {val, key}
       if ((entry as any).val !== undefined) {
         return normalize((entry as any).val, (entry as any).key);
       } else {
@@ -76,7 +73,6 @@ const Inventory: React.FC = () => {
     });
   }, [player.inventory]);
 
-  // 3) Группируем
   const { resources, artifacts } = useMemo(() => {
     return rawItems.reduce<{
       resources: Record<string, RawInventoryItem>;
@@ -92,7 +88,6 @@ const Inventory: React.FC = () => {
     );
   }, [rawItems]);
 
-  // 4) Обработчик использования предмета
   const handleUseItem = async (
     section: "resources" | "artifacts",
     key: string,
@@ -104,7 +99,6 @@ const Inventory: React.FC = () => {
     const item_id = parseInt(idStr, 10);
 
     try {
-
       const stored = localStorage.getItem("user");
       const token = stored ? JSON.parse(stored).token : "";
       if (!token) {
@@ -127,20 +121,12 @@ const Inventory: React.FC = () => {
         console.error("Ошибка использования предмета", await res.text());
       }
       const updatedPlayer = await res.json() as PlayerState;
-      console.log("⚕️ after useItem, updatedPlayer.health =", updatedPlayer.health);
-      dispatch({
-        type: "UPDATE_PLAYER",
-        payload: {
-          instanceId,
-          player: updatedPlayer,
-        },
-      });
+      dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
     } catch (err) {
       console.error("Ошибка запроса на использование предмета", err);
     }
   };
 
-  // 5) Рендер элементов
   const renderItems = (
     section: "resources" | "artifacts",
     items: Record<string, RawInventoryItem>
@@ -170,7 +156,6 @@ const Inventory: React.FC = () => {
         </div>
       ));
 
-  // 6) JSX
   return (
     <div className={styles.inventoryContainer}>
       <h2 className={styles.title}>Инвентарь</h2>

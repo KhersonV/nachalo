@@ -249,6 +249,41 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 	currentMatchHandler(w, r)
 }
 
+// GET /matchmaking/inQueue?player_id=NN
+func inQueueHandler(w http.ResponseWriter, r *http.Request) {
+    playerIDStr := r.URL.Query().Get("player_id")
+    if playerIDStr == "" {
+        http.Error(w, "player_id обязателен", http.StatusBadRequest)
+        return
+    }
+    var playerID int
+    if _, err := fmt.Sscanf(playerIDStr, "%d", &playerID); err != nil {
+        http.Error(w, "Некорректный player_id", http.StatusBadRequest)
+        return
+    }
+
+    mu.Lock()
+    defer mu.Unlock()
+    for mode, q := range queues {
+        for _, entry := range q {
+            if entry.PlayerID == playerID {
+                // возвращаем флаг и режим
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(map[string]interface{}{
+                    "inQueue": true,
+                    "mode": mode,
+                })
+                return
+            }
+        }
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "inQueue": false,
+    })
+}
+
+
 // checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
 	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "1x2": 3, "2x2": 4, "3x3": 6, "5x5": 10}
@@ -364,6 +399,9 @@ func main() {
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
+
+	r.HandleFunc("/matchmaking/inQueue", inQueueHandler).Methods("GET")
+
 
 	r.HandleFunc("/matchmaking/player/{playerID}", removePlayerHandler).Methods("DELETE")
 

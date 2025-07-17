@@ -47,7 +47,8 @@ type ResourceData struct {
 
 // MonsterData – структура для хранения данных монстра.
 type MonsterData struct {
-	ID              int    `json:"id"`
+	ID              int    `json:"id"`				// виртуальный id (оставь для совместимости)
+	DBInstanceID    int    `json:"db_instance_id"`  // реальный id из match_monsters!
 	Name            string `json:"name"`            // имя монстра (например, "Goblin")
 	Type            string `json:"type"`            // тип монстра (например, "aggressive")
 	Health          int    `json:"health"`          // текущее здоровье

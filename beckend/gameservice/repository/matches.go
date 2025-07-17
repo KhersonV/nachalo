@@ -426,7 +426,7 @@ func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 		return err
 	}
 
-	log.Printf("[UpdateCellPlayerFlags] old=%+v new=%+v", oldPos, newPos)
+	
 
 	// Обновляем флаги
 	for i, c := range cells {
@@ -478,7 +478,6 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
 	return err
 }
 
-// repository/match.go
 
 // DeleteMatch удаляет матч и всё по нему в БД
 func DeleteMatch(instanceID string) error {
@@ -533,11 +532,8 @@ func SaveMatchStats(stats *models.MatchInfo) error {
 
 // SaveMatchPlayerStats сохраняет агрегированные результаты по каждому игроку в таблице match_player_stats.
 func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error {
-	log.Printf("[SaveMatchPlayerStats] start for match %s, %d players", instanceID, len(results))
-
 	tx, err := DB.Begin()
 	if err != nil {
-		log.Printf("[SaveMatchPlayerStats] begin tx error: %v", err)
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
@@ -564,17 +560,11 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
         damage_to_monsters = EXCLUDED.damage_to_monsters;
     `)
 	if err != nil {
-		log.Printf("[SaveMatchPlayerStats] prepare stmt error: %v", err)
 		return fmt.Errorf("prepare: %w", err)
 	}
 	defer stmt.Close()
 
-	for i, pr := range results {
-		log.Printf("[SaveMatchPlayerStats] exec for user %d (%d/%d): exp=%d, pk=%d, mk=%d, dt=%d, dp=%d, dm=%d",
-			pr.UserID, i+1, len(results),
-			pr.ExpGained, pr.PlayerKills, pr.MonsterKills,
-			pr.DamageTotal, pr.DamageToPlayers, pr.DamageToMonsters,
-		)
+	for _, pr := range results {
 		if _, err := stmt.Exec(
 			instanceID,
 			pr.UserID,
@@ -586,19 +576,17 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
 			pr.DamageToPlayers,
 			pr.DamageToMonsters,
 		); err != nil {
-			log.Printf("[SaveMatchPlayerStats] exec error for user %d: %v", pr.UserID, err)
 			return fmt.Errorf("exec for user %d: %w", pr.UserID, err)
 		}
-		log.Printf("[SaveMatchPlayerStats] exec succeeded for user %d", pr.UserID)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("[SaveMatchPlayerStats] commit error: %v", err)
 		return fmt.Errorf("commit: %w", err)
 	}
-	log.Printf("[SaveMatchPlayerStats] commit succeeded for match %s", instanceID)
+	
 	return nil
 }
+
 
 func CleanupMatchPlayers(instanceID string) error {
 	_, err := DB.Exec(`

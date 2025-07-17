@@ -1,5 +1,3 @@
-
-
 //=====================================
 // src/components/ModeSelectionPage.tsx
 //=====================================
@@ -9,6 +7,9 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import { useDispatch } from "react-redux";
+import { resetState } from "../store/slices/gameSlice";
+
 import styles from "../styles/ModeSelectionPage.module.css";
 
 export type GameMode = "PVE" | "1x1" | "1x2" | "2x2" | "3x3" | "5x5";
@@ -27,14 +28,12 @@ const REQUIRED_SIZE: Record<GameMode, number> = {
   "5x5": 10,
 };
 
-
 async function fetchQueueSize(mode: GameMode): Promise<number> {
   const res = await fetch(`${API_MATCH}/matchmaking/status?mode=${mode}`);
   if (!res.ok) throw new Error("Не удалось получить размер очереди");
   const queue: any[] = await res.json();
   return queue.length;
 }
-
 
 async function joinQueue(
   mode: GameMode,
@@ -45,7 +44,7 @@ async function joinQueue(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       player_id: player.playerId,
@@ -54,7 +53,7 @@ async function joinQueue(
     }),
   });
   if (!res.ok) {
-    throw new Error(await res.text() || "Ошибка при вступлении в очередь");
+    throw new Error((await res.text()) || "Ошибка при вступлении в очередь");
   }
 }
 
@@ -66,7 +65,7 @@ async function pollCurrentMatch(
     const res = await fetch(
       `${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`,
       {
-        headers: { "Authorization": `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }
     );
     const data = await res.json();
@@ -77,8 +76,6 @@ async function pollCurrentMatch(
   }
 }
 
-
-
 export async function startMatchmaking(
   mode: GameMode,
   player: PlayerInfo,
@@ -87,7 +84,6 @@ export async function startMatchmaking(
   await joinQueue(mode, player, token);
   return pollCurrentMatch(player.playerId, token);
 }
-
 
 const MODES: { value: GameMode; label: string }[] = [
   { value: "PVE", label: "PvE (Solo)" },
@@ -109,8 +105,16 @@ export default function ModeSelectionPage() {
     "5x5": 0,
   });
   const router = useRouter();
-  const { user } = useAuth();
+   const { user, isLoading } = useAuth();
   const [isMatching, setIsMatching] = useState(false);
+    const dispatch = useDispatch();
+
+  useEffect(() => {
+     if (window.location.pathname === "/mode") {
+    dispatch(resetState());
+  }
+  }, [dispatch]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -143,41 +147,68 @@ export default function ModeSelectionPage() {
     }
   }, [user, router]);
 
+  useEffect(() => {
+  if (!user) return;
+  async function checkQueueStatus() {
+    // 1. Проверяем, есть ли уже матч (уже есть эта логика)
+    if (!user) return;
+    const matchRes = await fetch(
+      `${API_MATCH}/matchmaking/currentMatch?player_id=${user.id}`,
+      { headers: { Authorization: `Bearer ${user.token}` } }
+    );
+    const matchData = await matchRes.json();
+    if (matchData.instance_id) {
+      router.push(`/game?instance_id=${matchData.instance_id}`);
+      return;
+    }
 
-   const stored = localStorage.getItem("user");
-    const userData = stored ? JSON.parse(stored) : null;
-    const token = userData?.token;
-
-function isTokenExpired(token:string) {
-  try {
-    // JWT = header.payload.signature
-    const [, payload] = token.split('.');
-    if (!payload) return true;
-    // В браузере atob декодирует Base64
-    const decoded = JSON.parse(atob(payload));
-    // exp — время в секундах с эпохи Unix
-    return decoded.exp * 1000 < Date.now();
-  } catch (e) {
-    // Если не получилось распарсить — считаем, что токен невалиден/просрочен
-    return true;
+    // 2. Проверяем, стоит ли пользователь в очереди
+    const queueRes = await fetch(
+      `${API_MATCH}/matchmaking/inQueue?player_id=${user.id}`
+    );
+    const queueData = await queueRes.json();
+    if (queueData.inQueue && queueData.mode) {
+      setIsMatching(true);
+      setMode(queueData.mode); // чтобы подсветить режим
+    } else {
+      setIsMatching(false);
+    }
   }
-}
 
+  checkQueueStatus();
+}, [user]);
+
+
+  const token = user?.token;
+
+  function isTokenExpired(token: string) {
+    try {
+      // JWT = header.payload.signature
+      const [, payload] = token.split(".");
+      if (!payload) return true;
+      // В браузере atob декодирует Base64
+      const decoded = JSON.parse(atob(payload));
+      // exp — время в секундах с эпохи Unix
+      return decoded.exp * 1000 < Date.now();
+    } catch (e) {
+      // Если не получилось распарсить — считаем, что токен невалиден/просрочен
+      return true;
+    }
+  }
 
   async function handleStart() {
-   
     if (!token) {
       alert("Сначала выполните вход");
       router.push("/login");
       return;
     }
     // Проверка по времени
-  if (isTokenExpired(token)) {
-    alert("Сессия истекла, пожалуйста, войдите снова");
-    localStorage.removeItem("user");        // Очистим устаревшие данные
-    router.push("/login");
-    return;
-  }
+    if (isTokenExpired(token)) {
+      alert("Сессия истекла, пожалуйста, войдите снова");
+      localStorage.removeItem("user"); // Очистим устаревшие данные
+      router.push("/login");
+      return;
+    }
     try {
       setIsMatching(true);
       const playerInfo: PlayerInfo = { playerId: user!.id, level: user!.level };
@@ -192,17 +223,10 @@ function isTokenExpired(token:string) {
     }
   }
 
-
-
-
-
-
-
   async function handleCancel() {
-    const stored = localStorage.getItem("user");
-    const userData = stored ? JSON.parse(stored) : null;
-    const token = userData?.token;
-    if (!token) {
+    const token = user?.token;
+    const playerId = user?.id;
+    if (!token || !playerId) {
       alert("Сначала выполните вход");
       router.push("/login");
       return;
@@ -215,10 +239,10 @@ function isTokenExpired(token:string) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          player_id: userData.id,
+          player_id: playerId,
           mode: mode,
         }),
       });
@@ -241,8 +265,9 @@ function isTokenExpired(token:string) {
         {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => (
           <div
             key={m}
-            className={`${styles.modeBlock} ${mode === m ? styles.modeBlockSelected : ""
-              }`}
+            className={`${styles.modeBlock} ${
+              mode === m ? styles.modeBlockSelected : ""
+            }`}
             onClick={() => setMode(m)}
           >
             <div>{m === "PVE" ? "PvE (Solo)" : `PvP ${m}`}</div>
@@ -269,7 +294,6 @@ function isTokenExpired(token:string) {
           Выйти из очереди
         </button>
       </div>
-
     </div>
   );
 }

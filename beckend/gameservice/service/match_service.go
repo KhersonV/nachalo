@@ -15,7 +15,7 @@ import (
 
 // FinalizeMatch завершает матч: сохраняет результаты, начисляет опыт/награды и удаляет матч.
 func FinalizeMatch(instanceID string) error {
-	log.Printf("[FinalizeMatch] start for match %s", instanceID)
+	
 
 	// 1) Получить финальные данные по матчу
 	results, err := repository.GetMatchResults(instanceID)
@@ -44,7 +44,7 @@ func FinalizeMatch(instanceID string) error {
 	}
 
 	// 4) **Сохранить детальную статистику по каждому игроку**
-	log.Printf("[FinalizeMatch] will save %d player stats for match %s", len(results.PlayerResults), instanceID)
+	
 	if err := repository.SaveMatchPlayerStats(instanceID, results.PlayerResults); err != nil {
 		log.Printf("[FinalizeMatch] SaveMatchPlayerStats failed for match %s: %v", instanceID, err)
 	} else {
@@ -55,7 +55,7 @@ func FinalizeMatch(instanceID string) error {
 	if err := repository.DeleteMatch(instanceID); err != nil {
 		return err
 	}
-	log.Printf("[FinalizeMatch] match %s deleted", instanceID)
+	
 	return nil
 }
 

@@ -217,6 +217,19 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	b2, _ := json.Marshal(moveMsg)
 	Broadcast(b2)
 
+	// WS: UPDATE_PLAYER (для изменения энергии)
+playerForWS, _ := repository.GetMatchPlayerByID(instanceID, userID)
+updatePlayerMsg := map[string]interface{}{
+    "type": "UPDATE_PLAYER",
+    "payload": map[string]interface{}{
+        "instanceId": instanceID,
+        "player":     playerForWS, // тут hp, energy и все статы игрока!
+    },
+}
+buf, _ := json.Marshal(updatePlayerMsg)
+Broadcast(buf)
+
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(player)
 }
@@ -234,18 +247,22 @@ type attackResult struct {
 
 func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 	if entityType == "player" {
-		p, err := Combat.GetPlayer(instanceID, entityID)
+		p, err := repository.GetMatchPlayerByID(instanceID, entityID)
 		if err != nil {
 			return stats{}, err
 		}
 		return stats{p.Attack, p.Defense, p.Health}, nil
 	}
-	m, err := Combat.GetMonster(instanceID, entityID)
+
+	// monster
+	
+	mm, err := repository.GetMatchMonsterByID(instanceID, entityID)
 	if err != nil {
 		return stats{}, err
 	}
-	return stats{m.Attack, m.Defense, m.Health}, nil
+	return stats{mm.Attack, mm.Defense, mm.Health}, nil
 }
+
 
 // --- Расчёт урона и оставшегося HP ----------------------------------------
 
@@ -263,6 +280,7 @@ func applyDamage(att stats, def stats) attackResult {
 
 // --- Обновление HP и обработка смерти цели --------------------------------
 // saveTargetHealth сохраняет урон и обрабатывает смерть цели.
+
 func saveTargetHealth(
 	instanceID string,
 	targetType string,
@@ -270,27 +288,71 @@ func saveTargetHealth(
 	attackerID int,
 	ar attackResult,
 ) {
+	log.Printf("[saveTargetHealth] Called for %s #%d (new hp: %d), attacker: %d", targetType, targetID, ar.NewHealth, attackerID)
+
 	if targetType == "player" {
 		p, err := Combat.GetPlayer(instanceID, targetID)
 		if err != nil {
-			log.Printf("saveTargetHealth load player error: %v", err)
+			log.Printf("[saveTargetHealth] load player error: %v", err)
 			return
 		}
+		log.Printf("[saveTargetHealth] player %d HP before: %d, after: %d", targetID, p.Health, ar.NewHealth)
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
+			log.Printf("[saveTargetHealth] player %d survives, updating HP.", targetID)
 			Combat.UpdatePlayer(instanceID, p)
 		} else {
-			// Записываем факт убийства игрока
+			log.Printf("[saveTargetHealth] player %d died, calling handlePlayerDeath.", targetID)
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordKillEvent(attackerID, "player", ar.Damage)
 			}
 			handlePlayerDeath(instanceID, p)
+			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
 		}
 	} else {
-		// монстр получает урон
-		Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
+		// 1. Сохраняем HP в БД
+		log.Printf("[saveTargetHealth] monster %d HP before update: new: %d", targetID, ar.NewHealth)
+		err := Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
+		if err != nil {
+			log.Printf("[saveTargetHealth] UpdateMonsterHealth error: %v", err)
+			return
+		}
+
+		// 2. Грузим монстра из БД (HP теперь актуален)
+		m, err := Combat.GetMonster(instanceID, targetID)
+		if err != nil || m == nil {
+			log.Printf("[saveTargetHealth] GetMonster error: %v", err)
+			return
+		}
+
+		// 3. Грузим карту
+		cells, err := Combat.LoadMap(instanceID)
+		if err != nil {
+			log.Printf("[saveTargetHealth] LoadMap error: %v", err)
+			return
+		}
+		for i := range cells {
+			if cells[i].X == m.X && cells[i].Y == m.Y {
+				if cells[i].Monster != nil {
+					log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
+					cells[i].Monster.Health = m.Health
+				}
+				_ = Combat.SaveMap(instanceID, cells)
+				update := map[string]interface{}{
+					"type": "UPDATE_CELL",
+					"payload": map[string]interface{}{
+						"instanceId": instanceID,
+						"updatedCell": serialiseUpdatedCell(cells[i]),
+					},
+				}
+				buf, _ := json.Marshal(update)
+				Broadcast(buf)
+				break
+			}
+		}
+
 		if ar.NewHealth <= 0 {
-			// Записываем факт убийства монстра
+			log.Printf("[saveTargetHealth] monster %d died, calling handleMonsterDeath.", targetID)
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordKillEvent(attackerID, "monster", ar.Damage)
 			}
@@ -299,81 +361,94 @@ func saveTargetHealth(
 	}
 }
 
+
+
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
-
 func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
-	log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
-	userID := p.UserID
-	oldPos := p.Position
+    userID := p.UserID
+    oldPos := p.Position
 
-	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
-		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
-	}
+	log.Printf("[handlePlayerDeath] start, userID=%d, pos=%+v", userID, oldPos)
 
-	unbindPlayer(p.UserID)
+    if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
+        log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
+    }
 
-	// 2 Если в памяти есть матч
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RemovePlayerFromTurnOrder(userID)
+    unbindPlayer(p.UserID)
 
-		// 2а Если больше нет игроков — завершаем матч
-		if len(ms.TurnOrder) == 0 {
-			log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
-			if err := Combat.Finalize(instanceID); err != nil {
-				log.Printf("[combat] FinalizeMatch failed: %v", err)
-			} else {
-				log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
-			}
-			// Разошлём WS-уведомление, что матч окончен
-			msg := map[string]interface{}{
-				"type":    "MATCH_ENDED",
-				"payload": map[string]string{"instanceId": instanceID},
-			}
-			b, _ := json.Marshal(msg)
-			Broadcast(b)
+    // 2 Если в памяти есть матч
+    if ms, ok := game.GetMatchState(instanceID); ok {
+        ms.RemovePlayerFromTurnOrder(userID)
 
-			// Важно: после MATCH_ENDED мы уходим из функции и больше ничего не шлём
-			return
-		}
+        // 2а Если больше нет игроков — завершаем матч
+        if len(ms.TurnOrder) == 0 {
+            log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+            if err := Combat.Finalize(instanceID); err != nil {
+                log.Printf("[combat] FinalizeMatch failed: %v", err)
+            } else {
+                log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
+            }
+            msg := map[string]interface{}{
+                "type":    "MATCH_ENDED",
+                "payload": map[string]string{"instanceId": instanceID},
+            }
+            b, _ := json.Marshal(msg)
+            Broadcast(b)
+            return
+        }
 
-		// 2б теперь передаём ход дальше
+        nextID := ms.ActiveUserID
+        if nextID != 0 {
+            if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
+                log.Printf("UpdateMatchTurn error: %v", err)
+            }
+            turnMsg := map[string]interface{}{
+                "type": "TURN_PASSED",
+                "payload": map[string]interface{}{
+                    "instanceId": instanceID,
+                    "userId":     nextID,
+                    "turnNumber": ms.TurnNumber,
+                },
+            }
+            buf, _ := json.Marshal(turnMsg)
+            Broadcast(buf)
+        }
+    }
 
-		nextID := ms.ActiveUserID // после .RemovePlayerFromTurnOrder это следующий игрок
-		if nextID != 0 {
-			// обновляем в БД
-			if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
-				log.Printf("UpdateMatchTurn error: %v", err)
-			}
-			// шлём событие TURN_PASSED
-			turnMsg := map[string]interface{}{
-				"type": "TURN_PASSED",
-				"payload": map[string]interface{}{
-					"instanceId": instanceID,
-					"userId":     nextID,
-					"turnNumber": ms.TurnNumber,
-				},
-			}
-			buf, _ := json.Marshal(turnMsg)
-			Broadcast(buf)
-		}
-	}
+    // 3 Обновляем флаги клетки И шлём только один WS: PLAYER_DEFEATED
+    if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
+        log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
+    } else {
+        cells, err := Combat.LoadMap(instanceID)
+        if err == nil {
+            for i := range cells {
+                if cells[i].X == oldPos.X && cells[i].Y == oldPos.Y {
+                    updatedCell := serialiseUpdatedCell(cells[i])
 
-	// 3 Обновляем флаги клетки
-	if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
-		log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
-	}
+                    // --- 1. Можно удалить UPDATE_CELL, если фронт ждёт только PLAYER_DEFEATED ---
 
-	// 4 WS: PLAYER_DEFEATED
-	msg := map[string]interface{}{
-		"type": "PLAYER_DEFEATED",
-		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"userId":     userID,
-		},
-	}
-	b, _ := json.Marshal(msg)
-	Broadcast(b)
+                    // --- 2. PLAYER_DEFEATED с updatedCell ---
+                    msg := map[string]interface{}{
+                        "type": "PLAYER_DEFEATED",
+                        "payload": map[string]interface{}{
+                            "instanceId": instanceID,
+                            "userId":     userID,
+                            "updatedCell": updatedCell,
+                        },
+                    }
+                    b, _ := json.Marshal(msg)
+					log.Printf("!!! Broadcast PLAYER_DEFEATED for user %d, cell %+v", userID, updatedCell)
+					log.Printf("!!! Broadcast PLAYER_DEFEATED JSON: %s", string(b))
+
+					
+                    Broadcast(b)
+                    break
+                }
+            }
+        }
+    }
 }
+
 
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
 
@@ -484,22 +559,26 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		TargetType   string `json:"target_type"`
 		TargetID     int    `json:"target_id"`
 	}
+	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
+    log.Printf("[DEBUG] UniversalAttackHandler: decode error: %v", err)
+    http.Error(w, "invalid request body", http.StatusBadRequest)
+    return
+}
 
-	// 2+3) Загружаем статы
-	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
-	if err != nil {
-		http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
-		return
-	}
-	defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
-	if err != nil {
-		http.Error(w, "failed to load target stats", http.StatusInternalServerError)
-		return
-	}
+atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
+if err != nil {
+    log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
+    http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
+    return
+}
+defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
+if err != nil {
+    log.Printf("[DEBUG] UniversalAttackHandler: loadStats target error: %v", err)
+    http.Error(w, "failed to load target stats", http.StatusInternalServerError)
+    return
+}
+
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
@@ -508,6 +587,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
 	}
 	// 5) Сохранение цели + возможная смерть
+
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
@@ -542,4 +622,35 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)
+
+	// 10) WS: MATCH_UPDATE — обновим статы игроков (HP, energy и т.п.)
+
+if req.AttackerType == "player" {
+    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID); err == nil {
+        updatePlayerMsg := map[string]interface{}{
+            "type": "UPDATE_PLAYER",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "player":     p,
+            },
+        }
+        buf, _ := json.Marshal(updatePlayerMsg)
+        Broadcast(buf)
+    }
+}
+if req.TargetType == "player" {
+    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID); err == nil {
+        updatePlayerMsg := map[string]interface{}{
+            "type": "UPDATE_PLAYER",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "player":     p,
+            },
+        }
+        buf, _ := json.Marshal(updatePlayerMsg)
+        Broadcast(buf)
+    }
+}
+
+
 }

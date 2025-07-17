@@ -2,11 +2,13 @@
 //==================================
 // src/components/MapWithCamera.tsx
 //==================================
-// src/components/MapWithCamera.tsx
+
 "use client";
 
 import React from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useSelector } from "react-redux";
+import { shallowEqual } from "react-redux";
+import type { RootState } from "@/store";
 import Map from "./Map";
 import type { PlayerState } from "../types/GameTypes";
 import { useInfoModal } from "./InfoModal";
@@ -25,8 +27,18 @@ export default function MapWithCamera({
   viewportHeight,
   myPlayer,
 }: MapWithCameraProps) {
-  const { state } = useGame();
-  const { grid, mapWidth, mapHeight, players, active_user } = state;
+  // console.log("🔄 MapWithCamera rerendered");
+  
+const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
+  (state: RootState) => ({
+    grid: state.game.grid,
+    mapWidth: state.game.mapWidth,
+    mapHeight: state.game.mapHeight,
+    players: state.game.players,
+    active_user: state.game.active_user,
+  }),
+  shallowEqual
+);
 
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
   const visionRange = myPlayer?.vision ?? 3;
@@ -53,7 +65,6 @@ export default function MapWithCamera({
   const playerImageOffsetX = 2;
   const playerImageOffsetY = 2;
 
-  // хук модалки
   const { open, Modal } = useInfoModal();
 
   return (
@@ -82,7 +93,9 @@ export default function MapWithCamera({
           gap={gap}
           visionRange={visionRange}
           playerPosition={playerPosition}
-          onCellClick={(cell) => open(cellToGameObject(cell))}
+          onCellClick={(cell) => {
+    console.log("Клик по клетке для перемещения:", cell);
+  }}
         />
 
         {players.map((player) => {
@@ -99,18 +112,11 @@ export default function MapWithCamera({
               onClick={() => open(playerToGameObject(player))}
               style={{
                 position: "absolute",
-                left:
-                  player.position.x * (tileSize + gap) +
-                  playerImageOffsetX,
-                top:
-                  player.position.y * (tileSize + gap) +
-                  playerImageOffsetY,
+                left: player.position.x * (tileSize + gap) + playerImageOffsetX,
+                top: player.position.y * (tileSize + gap) + playerImageOffsetY,
                 width: tileSize,
                 height: tileSize,
-                border:
-                  player.user_id === active_user
-                    ? "2px solid gold"
-                    : "none",
+                border: player.user_id === active_user ? "2px solid gold" : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
                 opacity: playerVisible ? 1 : 0,
@@ -120,7 +126,6 @@ export default function MapWithCamera({
         })}
       </div>
 
-      {/* Рендерим модалку один раз */}
       <Modal />
     </div>
   );

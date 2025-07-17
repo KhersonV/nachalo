@@ -5,8 +5,13 @@
 
 "use client";
 
-import React from "react";
-import { Cell } from "../types/GameTypes";
+import React, { useMemo } from "react";
+import { useSelector } from "react-redux";
+import { Cell } from "@/types/GameTypes";
+import { RootState } from "@/store";
+import { buildPlayerMap } from "@/utils/buildPlayerMap";
+import MapCell from "./MapCell";
+import { PlayerState } from "@/types/GameTypes";
 
 export interface MapProps {
   grid: Cell[];
@@ -19,7 +24,7 @@ export interface MapProps {
   onCellClick?: (cell: Cell) => void;
 }
 
-export default function Map({
+function Map({
   grid,
   mapWidth,
   mapHeight,
@@ -29,15 +34,34 @@ export default function Map({
   playerPosition,
   onCellClick,
 }: MapProps) {
-  // Проверка видимости клетки
-  const isCellVisible = (cell: Cell): boolean => {
-    const dx = Math.abs(cell.x - playerPosition.x);
-    const dy = Math.abs(cell.y - playerPosition.y);
-    return dx <= visionRange && dy <= visionRange;
-  };
+  const players = useSelector((state: RootState) => state.game.players);
 
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
+
+  // ✅ Мемоизированный playerMap
+  const playerMap = useMemo(() => buildPlayerMap(players), [players]);
+
+  // ✅ Мемоизированные видимые клетки с игроком
+const cellsWithVisibility = useMemo(() => {
+  if (!Array.isArray(grid) || grid.length === 0) return [];
+
+  const result: { cell: Cell; visible: boolean; player: PlayerState | null }[] = [];
+
+  for (const cell of grid) {
+    const dx = Math.abs(cell.x - playerPosition.x);
+    const dy = Math.abs(cell.y - playerPosition.y);
+    const visible = dx <= visionRange && dy <= visionRange;
+
+    const key = `${cell.x}-${cell.y}`;
+    const player = visible ? playerMap.get(key) || null : null;
+
+    result.push({ cell, visible, player });
+  }
+
+  return result;
+}, [grid, playerPosition.x, playerPosition.y, visionRange, playerMap]);
+
 
   return (
     <div
@@ -52,84 +76,18 @@ export default function Map({
         border: "2px solid #333",
       }}
     >
-      {grid.map((cell, index) => {
-        const visible = isCellVisible(cell);
-        return (
-          <div
-            key={`${cell.cell_id}-${index}`}
-            style={{
-              width: `${tileSize}px`,
-              height: `${tileSize}px`,
-              backgroundColor: getTileColor(cell),
-              opacity: visible ? 1 : 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "10px",
-              color: "#fff",
-              position: "relative",
-              cursor: visible && onCellClick ? "pointer" : "default",
-              pointerEvents: visible ? "auto" : "none",
-            }}
-            onClick={() => visible && onCellClick?.(cell)}
-          >
-            {renderCellContent(cell)}
-          </div>
-        );
-      })}
+      {cellsWithVisibility.map(({ cell, visible, player }) => (
+        <MapCell
+          key={`${cell.x}-${cell.y}`}
+          cell={cell}
+          visible={visible}
+          playerInCell={player}
+          tileSize={tileSize}
+          onClick={onCellClick}
+        />
+      ))}
     </div>
   );
 }
 
-function getTileColor(cell: Cell): string {
-  switch (cell.tileCode) {
-    case 48: // '0'
-      return "#CCCCCC";
-    case 80: // 'P'
-      return "#0000FF";
-    case 32: // пробел
-      return "#333333";
-    case 77: // 'M'
-      return "#FF0000";
-    case 82: // 'R'
-      return "#00AA00";
-    case 112: // 'p'
-      return "#02FEC0";
-    case 66: // 'B' (BarbelTile)
-      return "#FFA500";
-    default:
-      return "#952215";
-  }
-}
-
-function renderCellContent(cell: Cell) {
-  if (cell.monster && cell.monster.image) {
-    return (
-      <img
-        src={cell.monster.image}
-        alt="monster"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-  if (cell.resource && cell.resource.image) {
-    return (
-      <img
-        src={cell.resource.image}
-        alt="resource"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-
-  if (cell.barbel && cell.barbel.image) {
-    return (
-      <img
-        src={cell.barbel.image}
-        alt="barbel"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-  return null;
-}
+export default React.memo(Map);

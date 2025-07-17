@@ -8,7 +8,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-type User = {
+export type User = {
   id: number;
   email: string;
   name: string;
@@ -22,6 +22,7 @@ type AuthContextType = {
   user: User | null;
   login: (userData: User) => void;
   logout: () => void;
+  isLoading: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,16 +40,21 @@ function parseJwt(token: string): { exp?: number } {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
+     async function restoreUser() {
     let stored: string | null = null;
     try {
       stored = localStorage.getItem("user");
     } catch (e) {
       console.warn("Не удалось прочитать localStorage:", e);
     }
-    if (!stored) return;
+    if (!stored){
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const u: User = JSON.parse(stored);
@@ -57,14 +63,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (exp && Date.now() >= exp * 1000) {
         // просрочен
         console.log("Токен истёк, вынужденный logout");
-        logout();
+        localStorage.removeItem("user");
+          setUser(null);
+        // logout();
       } else {
         setUser(u);
       }
     } catch (e) {
       console.warn("Не удалось распарсить user из localStorage:", e);
-      logout();
-    }
+       localStorage.removeItem("user");
+          setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+  }
+    restoreUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -89,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading}}>
       {children}
     </AuthContext.Provider>
   );

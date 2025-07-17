@@ -6,6 +6,7 @@ gameservice
 ├── game
 │   ├── mapgen.go           // Генерация карты и другие игровые утилиты
 │   ├── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+│   ├── monsters.go
 │   ├── results.go
 │   └── state.go
 ├── handlers

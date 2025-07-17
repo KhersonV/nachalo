@@ -2,7 +2,6 @@
 // src/hooks/useGameSocket.ts
 //=============================
 
-
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
@@ -18,10 +17,11 @@ interface GameSocketOptions {
 }
 
 // Тип WS-сообщения
-interface WSMessage<Payload = any> {
+export interface WSMessage<Payload = any> {
   type: string;
   payload?: Payload;
 }
+
 
 interface MatchResponse {
   instance_id: string;
@@ -47,7 +47,7 @@ async function fetchFullMatch(
         cache: "no-store",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       }
     );
@@ -86,6 +86,11 @@ export function useGameSocket(
   const router = useRouter();
   const { user } = useAuth();
 
+  useEffect(() => {
+  console.log("[useGameSocket] MOUNTED for", options?.instanceId, user?.token);
+  return () => console.log("[useGameSocket] UNMOUNT for", options?.instanceId);
+}, [options?.instanceId, user?.token]);
+
   // Всегда актуальный обработчик
   useEffect(() => {
     onMessageRef.current = onMessage;
@@ -98,7 +103,12 @@ export function useGameSocket(
     const { instanceId } = options;
 
     const connect = () => {
-      const ws = new WebSocket(`${WS_URL}?token=${user?.token}&instanceId=${instanceId}`);
+      console.log("Connecting to WS with:", { token: user?.token, instanceId });
+      if (!user?.token || !instanceId) return;
+
+      const ws = new WebSocket(
+        `${WS_URL}?token=${user?.token}&instanceId=${instanceId}`
+      );
 
       wsRef.current = ws;
 
@@ -106,7 +116,6 @@ export function useGameSocket(
         ws.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
         fetchFullMatch(instanceId, onMessageRef.current, user?.token);
       };
-
       ws.onmessage = (e) => {
         let msg: WSMessage;
         try {
@@ -116,7 +125,6 @@ export function useGameSocket(
           return;
         }
 
-        // Фильтруем чужие матчи
         if (
           msg.payload?.instanceId != null &&
           msg.payload.instanceId !== instanceId
@@ -126,37 +134,59 @@ export function useGameSocket(
 
         switch (msg.type) {
           case "MATCH_ENDED":
-            // матч завершён
+            wsRef.current?.close(1000);
             router.replace("/mode");
             return;
 
           case "PLAYER_DEFEATED":
-            // если это моя смерть — выходим
             if (msg.payload.userId === user?.id) {
+              wsRef.current?.close(1000); 
               router.replace("/mode");
+                 }
+               onMessageRef.current(msg);
               return;
-            }
-            // чужая смерть — просто прокидываем дальше, чтобы context мог обновить, например, список игроков
-            break;
+         
+          
 
           case "TURN_PASSED":
-            // смена хода — диспатчим в контекст
             onMessageRef.current({
               type: "SET_ACTIVE_USER",
               payload: {
                 instanceId: msg.payload.instanceId,
                 active_user: msg.payload.userId,
                 turnNumber: msg.payload.turnNumber,
-                energy: msg.payload.energy, // если сервер шлёт energy
+                energy: msg.payload.energy,
               },
             });
             return;
 
-          // можно добавить другие кейсы событий WS здесь…
-        }
+          case "MOVE_PLAYER":
+            onMessageRef.current({
+              type: "UPDATE_PLAYER_POSITION",
+              payload: {
+                instanceId: msg.payload.instanceId,
+                userId: msg.payload.userId,
+                newPosition: msg.payload.newPosition,
+              },
+            });
+            return;
 
-        // по умолчанию — прокидываем все остальные события в контекст
-        onMessageRef.current(msg);
+          case "UPDATE_CELL":
+          case "UPDATE_PLAYER":
+          case "MATCH_UPDATE":
+          case "COMBAT_EXCHANGE":
+          case "SET_ACTIVE_USER":
+          case "UPDATE_INVENTORY":
+          case "RESOURCE_COLLECTED":
+          case "BARREL_RESOURCE":
+          case "BARREL_ARTIFACT":
+            onMessageRef.current(msg);
+            return;
+
+          default:
+            console.warn("[WS] Unknown event type:", msg.type, msg);
+            onMessageRef.current(msg);
+        }
       };
 
       ws.onerror = (err) => {
@@ -164,11 +194,11 @@ export function useGameSocket(
       };
 
       ws.onclose = (e) => {
-        // 1000 — нормальное закрытие
-        if (e.code !== 1000) {
-          reconnectRef.current = window.setTimeout(connect, 3000);
-        }
-      };
+  if (e.code !== 1000) {
+    reconnectRef.current = window.setTimeout(connect, 3000);
+  };
+};
+
     };
 
     connect();

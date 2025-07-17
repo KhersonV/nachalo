@@ -1,10 +1,10 @@
-
 //=======================
 // src/app/layout.tsx
 //=======================
 
 import "../styles/globals.css";
 import { AuthProvider } from "../contexts/AuthContext";
+import ReduxProvider from "@/providers/ReduxProvider";
 
 export default function RootLayout({
   children,
@@ -18,7 +18,9 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ReduxProvider>{children}</ReduxProvider>
+        </AuthProvider>
         <div id="modal-root" />
       </body>
     </html>

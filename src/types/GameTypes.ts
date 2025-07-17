@@ -57,6 +57,7 @@ export type PlayerState = {
 
 export type MonsterType = {
   id: number;
+  db_instance_id: number;  
   name: string;
   type: string;
   health: number;
@@ -99,78 +100,8 @@ export type GameState = {
   players: PlayerState[];
   active_user: number;
   turnNumber: number;
+  isMapLoaded: boolean;
 };
-
-export type Action =
-  | {
-    type: "SET_MATCH_DATA";
-    payload: {
-      instanceId: string;
-      mode: string;
-      grid: Cell[];
-      mapWidth: number;
-      mapHeight: number;
-      players: PlayerState[];
-      active_user: number;
-      turnNumber: number;
-    };
-  }
-  | {
-    type: "MOVE_PLAYER";
-    payload: { instanceId: string; userId: number; newPosition: { x: number; y: number } };
-  }
-  | {
-    type: "SET_ACTIVE_USER";
-    payload: { instanceId: string; active_user: number; turnNumber: number; energy?: number };
-  }
-  | {
-    type: "UPDATE_CELL";
-    payload: { instanceId: string; updatedCell: Cell };
-  }
-  | {
-    type: "UPDATE_PLAYER";
-    payload: { instanceId: string; player: PlayerState };
-  }
-  |
-  {
-    type: "COMBAT_EXCHANGE"; payload: {
-      instanceId: string;
-      attacker: { id: number; new_hp: number }
-      target: { id: number; new_hp: number }
-    }
-  }
-  | {
-    type: "UPDATE_INVENTORY";
-    payload: {instanceId: string; userId: number; inventory: Inventory };
-  }
-  | {
-    type: "RESET_STATE";
-  }
-  
-  | {
-      type: "BARREL_RESOURCE";
-      payload: {
-        instanceId: string;
-        updatedCell: Cell;
-        updatedPlayer: PlayerState;
-      };
-    }
-  | {
-      type: "BARREL_ARTIFACT";
-      payload: {
-        instanceId: string;
-        updatedCell: Cell;
-        updatedPlayer: PlayerState;
-      };
-    }
-
-  | { type: "PLAYER_DEFEATED"; payload: { userId: number } }
-  | {
-      type: "TURN_PASSED";
-      payload: {
-        active_user: number;   // новый текущий игрок
-      };
-    };
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";

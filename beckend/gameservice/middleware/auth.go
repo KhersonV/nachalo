@@ -47,7 +47,7 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			log.Printf("Claims токена: %+v", claims)
+			
 			var uid int
 			switch v := claims["user_id"].(type) {
 			case float64:
@@ -71,7 +71,6 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 // GetUserIDFromContext извлекает user_id из контекста.
 func GetUserIDFromContext(ctx context.Context) (int, bool) {
 	uid := ctx.Value(common.UserIDKey)
-	log.Printf("GetUserIDFromContext: найдено значение: %#v", uid)
 	intUid, ok := uid.(int)
 	return intUid, ok
 }

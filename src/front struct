@@ -1,0 +1,52 @@
+
+
+src
+├── app
+│   ├── game
+│   │   └── page.tsx             // Страница игры
+│   ├── login
+│   │   └── page.tsx             // Страница логина
+│   ├── mode
+│   │   └── page.tsx             // Страница выбора режима
+│   ├── register
+│   │   └── page.tsx             // Страница регистрации
+│   ├── layout.tsx               // Главный layout приложения
+│   └── page.tsx                 // Корневая страница (landing, если есть)
+├── components
+│   ├── Controls.tsx
+│   ├── EndTurnButton.tsx
+│   ├── GameController.tsx
+│   ├── InfoModal.tsx
+│   ├── Inventory.tsx
+│   ├── LoginPage.tsx
+│   ├── Map.tsx
+│   ├── MapCell.tsx
+│   ├── MapWithCamera.tsx
+│   ├── ModeSelectionPage.tsx
+│   ├── PlayerHUD.tsx
+│   ├── RegisterPage.tsx
+│   ├── RequireAuth.tsx
+│   └── TurnIndicator.tsx
+├── contexts
+│   └── AuthContext.tsx           // Контекст авторизации (useAuth, login, logout)
+├── features
+│   └── game
+│       ├── createWsHandlers.ts   // Обработчики событий WebSocket
+│       └── GameWrapper.tsx       // Обёртка логики загрузки/сокетов
+├── hooks
+│   ├── useGameKeyboard.ts        // Хук для управления с клавиатуры
+│   ├── useGameSocket.ts          // Хук для работы с WebSocket
+│   ├── usePlayerActions.ts       // Хук: действия игрока (move, attack, collect и т.д.)
+│   └── usePlayerInCell.ts        // Хук: найти игрока в клетке (по координатам)
+├── providers
+│   └── ReduxProvider.tsx         // Провайдер Redux-стора
+├── store
+│   ├── index.ts                  // Настройка redux-store
+│   └── slices
+│       └── gameSlice.ts          // Redux slice для состояния игры
+├── types
+│   └── GameTypes.ts              // Типы сущностей (PlayerState, Cell, Monster и т.д.)
+└── utils
+    ├── buildPlayerMap.ts      // Быстрое создание Map<"x-y", PlayerState>
+    ├── getPlayerInCell.ts     // Функция для поиска игрока в клетке (по координатам)
+    └── toGameObject.ts        // Утилиты преобразования данных для InfoModal и т.д.

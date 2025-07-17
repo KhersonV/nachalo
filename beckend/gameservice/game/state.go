@@ -34,6 +34,19 @@ type MatchResults struct {
     WinnerGroupID   int
 }
 
+type MonsterState struct {
+	ID               int
+	MonsterInstanceID int
+	Health           int
+	MaxHealth        int
+	Attack           int
+	Defense          int
+	Speed            int
+	Maneuverability  int
+	Vision           int
+	Image            string
+}
+
 
 // Reward — пример структуры для награды
 type Reward struct {
@@ -64,6 +77,7 @@ type MatchState struct {
 	TurnNumber   int   // Номер текущего круга
 	KillEvents   []KillEvent
     DamageEvents []DamageEvent
+    Monsters     map[int]*MonsterState
 	mu           sync.Mutex
 }
 

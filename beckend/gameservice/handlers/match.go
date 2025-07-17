@@ -71,12 +71,62 @@ func insertMatchMonsters(instanceID string, cells []game.FullCell) error {
 			Vision:          md.Vision,
 			Image:           md.Image,
 		}
-		if err := repository.InsertMatchMonster(mm); err != nil {
-			return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
-		}
+	dbID, err := repository.InsertMatchMonsterReturningID(mm)
+if err != nil {
+    return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
+}
+cell.Monster.DBInstanceID = dbID // <- запишем id в клетку!
 	}
 	return nil
 }
+
+
+
+// Сборка полного MatchResponse по instanceID. Возвращает структуру и ошибку.
+func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
+	match, err := repository.GetMatchByID(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	players, err := repository.GetPlayersInMatch(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var fullMap []game.FullCell
+	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
+		return nil, err
+	}
+	var startPositions [][2]int
+	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
+		return nil, err
+	}
+	var portalPos [2]int
+	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
+		return nil, err
+	}
+	activeUser := match.ActiveUserID
+	if activeUser == 0 && len(players) > 0 {
+		activeUser = players[0].UserID
+	}
+	resp := &MatchResponse{
+		InstanceID:     match.InstanceID,
+		Mode:           match.Mode,
+		TeamsCount:     match.TeamsCount,
+		TotalPlayers:   match.TotalPlayers,
+		MapWidth:       match.MapWidth,
+		MapHeight:      match.MapHeight,
+		Map:            fullMap,
+		Players:        players,
+		ActiveUser:     activeUser,
+		TurnNumber:     match.TurnNumber,
+		StartPositions: startPositions,
+		PortalPosition: portalPos,
+	}
+	return resp, nil
+}
+
+
 
 // assignMatchPlayers создаёт копии игроков в матче с их стартовыми позициями.
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
@@ -108,23 +158,127 @@ func assignMatchPlayers(instanceID string, playerIDs []int, starts [][2]int) {
 	}
 }
 
+func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
+	return &game.MonsterState{
+		ID:                md.ID,
+		MonsterInstanceID: id,
+		Health:            md.Health,
+		MaxHealth:         md.MaxHealth,
+		Attack:            md.Attack,
+		Defense:           md.Defense,
+		Speed:             md.Speed,
+		Maneuverability:   md.Maneuverability,
+		Vision:            md.Vision,
+		Image:             md.Image,
+	}
+}
+
+
+
+
+
+
+// func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
+// 	instanceID := r.URL.Query().Get("instance_id")
+// 	if instanceID == "" {
+// 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	// 1) Забираем из БД
+// 	match, err := repository.GetMatchByID(instanceID)
+// 	if err != nil {
+// 		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
+// 		return
+// 	}
+// 	players, err := repository.GetPlayersInMatch(instanceID)
+// 	if err != nil {
+// 		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	// 2) Распарсим JSON-поля
+// 	var fullMap []game.FullCell
+// 	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
+// 		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	var startPositions [][2]int
+// 	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
+// 		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	var portalPos [2]int
+// 	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
+// 		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	// 3) Вычисляем active_user
+// 	activeUser := match.ActiveUserID
+// 	if activeUser == 0 && len(players) > 0 {
+// 		activeUser = players[0].UserID
+// 	}
+
+// 	// 4) Собираем ответ
+// 	resp := MatchResponse{
+// 		InstanceID:     match.InstanceID,
+// 		Mode:           match.Mode,
+// 		TeamsCount:     match.TeamsCount,
+// 		TotalPlayers:   match.TotalPlayers,
+// 		MapWidth:       match.MapWidth,
+// 		MapHeight:      match.MapHeight,
+// 		Map:            fullMap,
+// 		Players:        players,
+// 		ActiveUser:     activeUser,
+// 		TurnNumber:     match.TurnNumber,
+// 		StartPositions: startPositions,
+// 		PortalPosition: portalPos,
+// 		// Winner оставим nil — он нужен только после финализации
+// 	}
+
+// 	// 5) Отвечаем
+// 	w.Header().Set("Content-Type", "application/json")
+// 	if err := json.NewEncoder(w).Encode(resp); err != nil {
+// 		log.Printf("[GetMatch] Encode response failed: %v", err)
+// 	}
+// }
+
+
+func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
+    instanceID := r.URL.Query().Get("instance_id")
+    if instanceID == "" {
+        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+        return
+    }
+    resp, err := BuildMatchResponse(instanceID)
+    if err != nil {
+        http.Error(w, fmt.Sprintf("Ошибка: %v", err), http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(resp)
+}
+
+
+
+
 func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// 2) Всегда JSON
 	w.Header().Set("Content-Type", "application/json")
 
-	// 3) Распарсим тело
+	// 1. Распарсим тело
 	var req RequestMatch
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	// 4) Валидация
+	// 2. Валидация
 	if req.InstanceID == "" || req.Mode == "" {
 		http.Error(w, "instance_id и mode обязательны", http.StatusBadRequest)
 		return
@@ -143,34 +297,32 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		MonsterProb:  0.05,
 	}
 
-	// Получаем ресурсы и монстров из БД
-	resourcesFromDB, err := repository.GetResourcesData() // []game.ResourceData
+	// 3. Получаем ресурсы и монстров из БД
+	resourcesFromDB, err := repository.GetResourcesData()
 	if err != nil {
 		handleError(w, "[CreateMatch] Ошибка загрузки ресурсов", err)
 		return
 	}
-	monstersFromDB, err := repository.GetMonstersData() // []game.MonsterData
+	monstersFromDB, err := repository.GetMonstersData()
 	if err != nil {
 		handleError(w, "[CreateMatch] GetMonstersData failed", err)
 		return
 	}
 
-	// Генерируем полную карту
+	// 4. Генерируем полную карту
 	fullMap, mapWidth, mapHeight, startPositions, portalPos, err := game.GenerateFullMap(cfg, resourcesFromDB, monstersFromDB)
 	if err != nil {
 		handleError(w, "[CreateMatch] Ошибка генерации карты", err)
 		return
 	}
 
-	// Преобразуем стартовые позиции и позицию портала в JSON
+	// 5. Теперь сразу сериализуем карту — пока без db_instance_id монстров!
 	mapJSON := toJSON(fullMap)
-	turnOrderJSON := toJSON(req.PlayerIDs[:1]) // первый игрок в очереди
+	turnOrderJSON := toJSON(req.PlayerIDs[:1])
 	startPosJSON := toJSON(startPositions)
 	portalPosJSON := toJSON(portalPos)
 
-	// Вставляем матч в таблицу matches.
-	// turn_number устанавливаем равным 1.
-
+	// 6. Сначала вставляем матч — он нужен для внешнего ключа монстров!
 	_, err = repository.DB.Exec(`
 		INSERT INTO matches (
 			instance_id, mode, teams_count, total_players,
@@ -189,125 +341,67 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		req.TotalPlayers,
 		mapWidth,
 		mapHeight,
-		mapJSON, // []byte JSON
+		mapJSON, // Пока без db_instance_id
 		req.PlayerIDs[0],
-		turnOrderJSON, // []byte JSON
-		startPosJSON,  // []byte JSON
-		portalPosJSON, // []byte JSON
+		turnOrderJSON,
+		startPosJSON,
+		portalPosJSON,
 	)
 	if err != nil {
 		handleError(w, "[CreateMatch] Insert match failed", err)
 		return
 	}
 
-	//  вставляем всех монстров в match_monsters
+	// 7. Теперь можем вставить монстров и уже записать db_instance_id для каждого в fullMap!
 	if err := insertMatchMonsters(req.InstanceID, fullMap); err != nil {
 		handleError(w, "[CreateMatch] failed to insert match_monsters", err)
 		return
 	}
 
-	// Создаем локальное состояние матча.
-
-	assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
-
-	playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+	// 8. Теперь пересохраняем map уже с заполненными db_instance_id монстров
+	mapJSON = toJSON(fullMap)
+	_, err = repository.DB.Exec(
+		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
+		mapJSON, req.InstanceID,
+	)
 	if err != nil {
-		handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
+		handleError(w, "[CreateMatch] failed to update map with monster db_instance_id", err)
 		return
 	}
+// 9. Копируем игроков в матч
+assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
 
-	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
-	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
-	if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
-		log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
-	}
-
-	// Собираем ответ
-	resp := MatchResponse{
-		InstanceID:     req.InstanceID,
-		Mode:           req.Mode,
-		TeamsCount:     req.TeamsCount,
-		TotalPlayers:   req.TotalPlayers,
-		MapWidth:       mapWidth,
-		MapHeight:      mapHeight,
-		Map:            fullMap,
-		Players:        playersInMatch,
-		ActiveUser:     req.PlayerIDs[0],
-		TurnNumber:     1,
-		StartPositions: startPositions,
-		PortalPosition: portalPos,
-		// Winner остаётся nil при создании
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated) // 201 Created
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("[CreateMatch] Encode response failed: %v", err)
-	}
+// 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
+if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
+	log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
 }
 
-func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-	instanceID := r.URL.Query().Get("instance_id")
-	if instanceID == "" {
-		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-		return
-	}
-
-	// 1) Забираем из БД
-	match, err := repository.GetMatchByID(instanceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
-		return
-	}
-	players, err := repository.GetPlayersInMatch(instanceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// 2) Распарсим JSON-поля
-	var fullMap []game.FullCell
-	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
-		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
-		return
-	}
-	var startPositions [][2]int
-	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
-		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
-		return
-	}
-	var portalPos [2]int
-	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
-		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
-		return
-	}
-
-	// 3) Вычисляем active_user
-	activeUser := match.ActiveUserID
-	if activeUser == 0 && len(players) > 0 {
-		activeUser = players[0].UserID
-	}
-
-	// 4) Собираем ответ
-	resp := MatchResponse{
-		InstanceID:     match.InstanceID,
-		Mode:           match.Mode,
-		TeamsCount:     match.TeamsCount,
-		TotalPlayers:   match.TotalPlayers,
-		MapWidth:       match.MapWidth,
-		MapHeight:      match.MapHeight,
-		Map:            fullMap,
-		Players:        players,
-		ActiveUser:     activeUser,
-		TurnNumber:     match.TurnNumber,
-		StartPositions: startPositions,
-		PortalPosition: portalPos,
-		// Winner оставим nil — он нужен только после финализации
-	}
-
-	// 5) Отвечаем
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("[GetMatch] Encode response failed: %v", err)
-	}
+// 11. Теперь получаем список игроков для ответа (они уже точно есть!)
+playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+if err != nil {
+	handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
+	return
 }
+
+// 12. Собираем и отдаём JSON-ответ
+resp := MatchResponse{
+	InstanceID:     req.InstanceID,
+	Mode:           req.Mode,
+	TeamsCount:     req.TeamsCount,
+	TotalPlayers:   req.TotalPlayers,
+	MapWidth:       mapWidth,
+	MapHeight:      mapHeight,
+	Map:            fullMap,
+	Players:        playersInMatch, // <-- теперь не пусто!
+	ActiveUser:     req.PlayerIDs[0],
+	TurnNumber:     1,
+	StartPositions: startPositions,
+	PortalPosition: portalPos,
+}
+w.WriteHeader(http.StatusCreated)
+if err := json.NewEncoder(w).Encode(resp); err != nil {
+	log.Printf("[CreateMatch] Encode response failed: %v", err)
+}
+}
+
+

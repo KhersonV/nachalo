@@ -9,7 +9,7 @@ import (
 	"log"
 
 	"gameservice/game"
-
+	"gameservice/repository"
 	"gameservice/models"
 )
 
@@ -38,39 +38,23 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 	}
 }
 
-// HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 
-func broadcastCellRemoval(instanceID string, cell game.FullCell) error {
-	cell.Barbel = nil
-	cell.TileCode = 48
-	// сохраняем в БД
-	cells, err := Barrel.LoadMap(instanceID)
-	if err != nil {
-		return err
-	}
-	for i := range cells {
-		if cells[i].CellID == cell.CellID {
-			cells[i].Barbel = nil
-			cells[i].TileCode = 48
-		}
-	}
-	if err := Barrel.SaveMap(instanceID, cells); err != nil {
-		return err
-	}
-	// финальный WS-апдейт
-	final := serialiseUpdatedCell(cell)
-	upd := map[string]interface{}{
-		"type": "UPDATE_CELL",
-		"payload": map[string]interface{}{
-			"instanceId":  instanceID,
-			"updatedCell": final,
-		},
-	}
-	b, _ := json.Marshal(upd)
-	Broadcast(b)
-	return nil
+
+func updateCellInMap(instanceID string, cell game.FullCell) {
+    cells, err := repository.LoadMapCells(instanceID)
+    if err == nil {
+        for i := range cells {
+            if cells[i].X == cell.X && cells[i].Y == cell.Y {
+                cells[i] = cell
+                break
+            }
+        }
+        _ = repository.SaveMapCells(instanceID, cells)
+    }
 }
 
+
+// HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 func HandleOpenBarrel(
 	cell game.FullCell,
 	instanceID string,
@@ -103,7 +87,12 @@ func HandleOpenBarrel(
 			return cell, nil, false, fmt.Errorf("update player HP: %w", err)
 		}
 
-		// б) сообщаем о уроне всем
+		// б) всегда удаляем бочку сразу!
+		cell.Barbel = nil
+		cell.TileCode = 48
+		updateCellInMap(instanceID, cell)
+
+		// в) Отправляем BARREL_DAMAGE всем
 		dmgMsg := map[string]interface{}{
 			"type": "BARREL_DAMAGE",
 			"payload": map[string]interface{}{
@@ -115,9 +104,21 @@ func HandleOpenBarrel(
 		}
 		b, _ := json.Marshal(dmgMsg)
 		Broadcast(b)
-		log.Printf("[broadcastCellRemoval] → %s", string(b))
+		log.Printf("[BARREL_DAMAGE] → %s", string(b))
 
-		// в) если игрок умер
+		// г) Отправляем ОБНОВЛЁННУЮ клетку (уже без бочки!)
+		cellJSON := serialiseUpdatedCell(cell)
+		upd := map[string]interface{}{
+			"type": "UPDATE_CELL",
+			"payload": map[string]interface{}{
+				"instanceId":  instanceID,
+				"updatedCell": cellJSON,
+			},
+		}
+		updBytes, _ := json.Marshal(upd)
+		Broadcast(updBytes)
+
+		// д) Если игрок умер — передать ход и т.д. (как у тебя)
 		if player.Health == 0 {
 			log.Printf("[handleBarrel] player %d died from barrel", player.UserID)
 			handlePlayerDeath(instanceID, player)
@@ -143,20 +144,9 @@ func HandleOpenBarrel(
 				pm, _ := json.Marshal(passMsg)
 				Broadcast(pm)
 			}
-
-			// очистка и рассылка UPDATE_CELL
-			if err := broadcastCellRemoval(instanceID, cell); err != nil {
-				return cell, player, true, fmt.Errorf("cleanup cell: %w", err)
-			}
-
-			return cell, player, true, nil
 		}
 
-		// если игрок жив — просто удаляем бочку и уходим
-		if err := broadcastCellRemoval(instanceID, cell); err != nil {
-			return cell, player, false, fmt.Errorf("cleanup cell: %w", err)
-		}
-		return cell, player, false, nil
+		return cell, player, player.Health == 0, nil
 
 	case game.ResourceData:
 		itemType := "resource"
@@ -177,14 +167,15 @@ func HandleOpenBarrel(
 			1,             // count
 		); err != nil {
 			return cell, nil, false, fmt.Errorf("add inventory: %w", err)
-
 		}
+
 		// б) перезагружаем игрока
 		updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
 		if err != nil {
 			return cell, nil, false, fmt.Errorf("reload player: %w", err)
 		}
-		// в) WS: сначала общий апдейт инвентаря
+
+		// в) WS: общий апдейт инвентаря
 		invUpd := map[string]interface{}{
 			"type": "UPDATE_INVENTORY",
 			"payload": map[string]interface{}{
@@ -195,14 +186,17 @@ func HandleOpenBarrel(
 		}
 		ib, _ := json.Marshal(invUpd)
 		Broadcast(ib)
-		// затем BARREL_RESOURCE или BARREL_ARTIFACT
+
+		// г) ОЧИЩАЕМ БОЧКУ И ФОРМИРУЕМ СОБЫТИЕ!
+		cell.Barbel = nil
+		cell.TileCode = 48
+		updateCellInMap(instanceID, cell)
+		
+		cellJSON := serialiseUpdatedCell(cell)
 		evtType := "BARREL_RESOURCE"
 		if isArtifact(v, artifacts) {
 			evtType = "BARREL_ARTIFACT"
 		}
-		cell.Barbel = nil // убираем бочку из отправляемой клетки
-		cell.TileCode = 48
-		cellJSON := serialiseUpdatedCell(cell)
 		resMsg := map[string]interface{}{
 			"type": evtType,
 			"payload": map[string]interface{}{
@@ -214,9 +208,6 @@ func HandleOpenBarrel(
 		rb, _ := json.Marshal(resMsg)
 		Broadcast(rb)
 
-		if err := broadcastCellRemoval(instanceID, cell); err != nil {
-			return cell, updatedPlayer, false, fmt.Errorf("cleanup cell: %w", err)
-		}
 		return cell, updatedPlayer, false, nil
 
 	default:

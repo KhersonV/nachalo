@@ -20,6 +20,7 @@ gameservice
 ├── game
 │   ├── mapgen.go           // Генерация карты и другие игровые утилиты
 │   ├── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+│   ├── monsters.go
 │   ├── results.go
 │   └── state.go
 ├── handlers
@@ -59,6 +60,61 @@ gameservice
 │   └── match_service.go
 ├── go.mod
 └── go.sum
+
+
+
+а так же папки src
+src
+├── app
+│   ├── game
+│   │   └── page.tsx             // Страница игры
+│   ├── login
+│   │   └── page.tsx             // Страница логина
+│   ├── mode
+│   │   └── page.tsx             // Страница выбора режима
+│   ├── register
+│   │   └── page.tsx             // Страница регистрации
+│   ├── layout.tsx               // Главный layout приложения
+│   └── page.tsx                 // Корневая страница (landing, если есть)
+├── components
+│   ├── Controls.tsx
+│   ├── EndTurnButton.tsx
+│   ├── GameController.tsx
+│   ├── InfoModal.tsx
+│   ├── Inventory.tsx
+│   ├── LoginPage.tsx
+│   ├── Map.tsx
+│   ├── MapCell.tsx
+│   ├── MapWithCamera.tsx
+│   ├── ModeSelectionPage.tsx
+│   ├── PlayerHUD.tsx
+│   ├── RegisterPage.tsx
+│   ├── RequireAuth.tsx
+│   └── TurnIndicator.tsx
+├── contexts
+│   └── AuthContext.tsx           // Контекст авторизации (useAuth, login, logout)
+├── features
+│   └── game
+│       ├── createWsHandlers.ts   // Обработчики событий WebSocket
+│       └── GameWrapper.tsx       // Обёртка логики загрузки/сокетов
+├── hooks
+│   ├── useGameKeyboard.ts        // Хук для управления с клавиатуры
+│   ├── useGameSocket.ts          // Хук для работы с WebSocket
+│   ├── usePlayerActions.ts       // Хук: действия игрока (move, attack, collect и т.д.)
+│   └── usePlayerInCell.ts        // Хук: найти игрока в клетке (по координатам)
+├── providers
+│   └── ReduxProvider.tsx         // Провайдер Redux-стора
+├── store
+│   ├── index.ts                  // Настройка redux-store
+│   └── slices
+│       └── gameSlice.ts          // Redux slice для состояния игры
+├── types
+│   └── GameTypes.ts              // Типы сущностей (PlayerState, Cell, Monster и т.д.)
+└── utils
+    ├── buildPlayerMap.ts      // Быстрое создание Map<"x-y", PlayerState>
+    ├── getPlayerInCell.ts     // Функция для поиска игрока в клетке (по координатам)
+    └── toGameObject.ts        // Утилиты преобразования данных для InfoModal и т.д.
+
 
 
 
@@ -333,7 +389,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			log.Printf("Claims токена: %+v", claims)
+			
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
@@ -543,7 +599,7 @@ func main() {
  ===============================================game=====================================================================
  ================================================game====================================================================
  ========================================================================================================================
-// ====================================
+ // ====================================
 // gameservice/game/mapgen.go
 // ====================================
 
@@ -592,7 +648,8 @@ type ResourceData struct {
 
 // MonsterData – структура для хранения данных монстра.
 type MonsterData struct {
-	ID              int    `json:"id"`
+	ID              int    `json:"id"`				// виртуальный id (оставь для совместимости)
+	DBInstanceID    int    `json:"db_instance_id"`  // реальный id из match_monsters!
 	Name            string `json:"name"`            // имя монстра (например, "Goblin")
 	Type            string `json:"type"`            // тип монстра (например, "aggressive")
 	Health          int    `json:"health"`          // текущее здоровье
@@ -1072,6 +1129,48 @@ func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int
 
 
 
+
+// =============================
+// gameservice/game/monsters.go
+// =============================
+
+
+
+package game
+
+// Вызывается при создании матча, после InsertMatchMonster для всех монстров БД.
+
+func (ms *MatchState) InitMonstersFromCells(cells []FullCell) {
+    ms.Monsters = make(map[int]*MonsterState)
+    for _, c := range cells {
+        if c.Monster != nil && c.Monster.DBInstanceID != 0 {
+            ms.Monsters[c.Monster.DBInstanceID] = &MonsterState{
+                ID:                c.Monster.DBInstanceID,
+                MonsterInstanceID: c.Monster.DBInstanceID,
+                Health:            c.Monster.Health,
+                MaxHealth:         c.Monster.MaxHealth,
+                Attack:            c.Monster.Attack,
+                Defense:           c.Monster.Defense,
+                Speed:             c.Monster.Speed,
+                Maneuverability:   c.Monster.Maneuverability,
+                Vision:            c.Monster.Vision,
+                Image:             c.Monster.Image,
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 //==================================
 // gameservice/game/results.go
 //==================================
@@ -1166,6 +1265,7 @@ func CalculateResults(
 
 
 
+
 //==================================
 // gameservice/game/state.go
 //==================================
@@ -1200,6 +1300,19 @@ type MatchResults struct {
     WinnerGroupID   int
 }
 
+type MonsterState struct {
+	ID               int
+	MonsterInstanceID int
+	Health           int
+	MaxHealth        int
+	Attack           int
+	Defense          int
+	Speed            int
+	Maneuverability  int
+	Vision           int
+	Image            string
+}
+
 
 // Reward — пример структуры для награды
 type Reward struct {
@@ -1230,6 +1343,7 @@ type MatchState struct {
 	TurnNumber   int   // Номер текущего круга
 	KillEvents   []KillEvent
     DamageEvents []DamageEvent
+    Monsters     map[int]*MonsterState
 	mu           sync.Mutex
 }
 
@@ -1556,7 +1670,6 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 // ================================
 // gameservice/handlers/barrel.go
 // ================================
@@ -1568,7 +1681,7 @@ import (
 	"log"
 
 	"gameservice/game"
-
+	"gameservice/repository"
 	"gameservice/models"
 )
 
@@ -1597,39 +1710,23 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 	}
 }
 
-// HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 
-func broadcastCellRemoval(instanceID string, cell game.FullCell) error {
-	cell.Barbel = nil
-	cell.TileCode = 48
-	// сохраняем в БД
-	cells, err := Barrel.LoadMap(instanceID)
-	if err != nil {
-		return err
-	}
-	for i := range cells {
-		if cells[i].CellID == cell.CellID {
-			cells[i].Barbel = nil
-			cells[i].TileCode = 48
-		}
-	}
-	if err := Barrel.SaveMap(instanceID, cells); err != nil {
-		return err
-	}
-	// финальный WS-апдейт
-	final := serialiseUpdatedCell(cell)
-	upd := map[string]interface{}{
-		"type": "UPDATE_CELL",
-		"payload": map[string]interface{}{
-			"instanceId":  instanceID,
-			"updatedCell": final,
-		},
-	}
-	b, _ := json.Marshal(upd)
-	Broadcast(b)
-	return nil
+
+func updateCellInMap(instanceID string, cell game.FullCell) {
+    cells, err := repository.LoadMapCells(instanceID)
+    if err == nil {
+        for i := range cells {
+            if cells[i].X == cell.X && cells[i].Y == cell.Y {
+                cells[i] = cell
+                break
+            }
+        }
+        _ = repository.SaveMapCells(instanceID, cells)
+    }
 }
 
+
+// HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 func HandleOpenBarrel(
 	cell game.FullCell,
 	instanceID string,
@@ -1662,7 +1759,12 @@ func HandleOpenBarrel(
 			return cell, nil, false, fmt.Errorf("update player HP: %w", err)
 		}
 
-		// б) сообщаем о уроне всем
+		// б) всегда удаляем бочку сразу!
+		cell.Barbel = nil
+		cell.TileCode = 48
+		updateCellInMap(instanceID, cell)
+
+		// в) Отправляем BARREL_DAMAGE всем
 		dmgMsg := map[string]interface{}{
 			"type": "BARREL_DAMAGE",
 			"payload": map[string]interface{}{
@@ -1674,9 +1776,21 @@ func HandleOpenBarrel(
 		}
 		b, _ := json.Marshal(dmgMsg)
 		Broadcast(b)
-		log.Printf("[broadcastCellRemoval] → %s", string(b))
+		log.Printf("[BARREL_DAMAGE] → %s", string(b))
 
-		// в) если игрок умер
+		// г) Отправляем ОБНОВЛЁННУЮ клетку (уже без бочки!)
+		cellJSON := serialiseUpdatedCell(cell)
+		upd := map[string]interface{}{
+			"type": "UPDATE_CELL",
+			"payload": map[string]interface{}{
+				"instanceId":  instanceID,
+				"updatedCell": cellJSON,
+			},
+		}
+		updBytes, _ := json.Marshal(upd)
+		Broadcast(updBytes)
+
+		// д) Если игрок умер — передать ход и т.д. (как у тебя)
 		if player.Health == 0 {
 			log.Printf("[handleBarrel] player %d died from barrel", player.UserID)
 			handlePlayerDeath(instanceID, player)
@@ -1702,20 +1816,9 @@ func HandleOpenBarrel(
 				pm, _ := json.Marshal(passMsg)
 				Broadcast(pm)
 			}
-
-			// очистка и рассылка UPDATE_CELL
-			if err := broadcastCellRemoval(instanceID, cell); err != nil {
-				return cell, player, true, fmt.Errorf("cleanup cell: %w", err)
-			}
-
-			return cell, player, true, nil
 		}
 
-		// если игрок жив — просто удаляем бочку и уходим
-		if err := broadcastCellRemoval(instanceID, cell); err != nil {
-			return cell, player, false, fmt.Errorf("cleanup cell: %w", err)
-		}
-		return cell, player, false, nil
+		return cell, player, player.Health == 0, nil
 
 	case game.ResourceData:
 		itemType := "resource"
@@ -1736,14 +1839,15 @@ func HandleOpenBarrel(
 			1,             // count
 		); err != nil {
 			return cell, nil, false, fmt.Errorf("add inventory: %w", err)
-
 		}
+
 		// б) перезагружаем игрока
 		updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
 		if err != nil {
 			return cell, nil, false, fmt.Errorf("reload player: %w", err)
 		}
-		// в) WS: сначала общий апдейт инвентаря
+
+		// в) WS: общий апдейт инвентаря
 		invUpd := map[string]interface{}{
 			"type": "UPDATE_INVENTORY",
 			"payload": map[string]interface{}{
@@ -1754,14 +1858,17 @@ func HandleOpenBarrel(
 		}
 		ib, _ := json.Marshal(invUpd)
 		Broadcast(ib)
-		// затем BARREL_RESOURCE или BARREL_ARTIFACT
+
+		// г) ОЧИЩАЕМ БОЧКУ И ФОРМИРУЕМ СОБЫТИЕ!
+		cell.Barbel = nil
+		cell.TileCode = 48
+		updateCellInMap(instanceID, cell)
+		
+		cellJSON := serialiseUpdatedCell(cell)
 		evtType := "BARREL_RESOURCE"
 		if isArtifact(v, artifacts) {
 			evtType = "BARREL_ARTIFACT"
 		}
-		cell.Barbel = nil // убираем бочку из отправляемой клетки
-		cell.TileCode = 48
-		cellJSON := serialiseUpdatedCell(cell)
 		resMsg := map[string]interface{}{
 			"type": evtType,
 			"payload": map[string]interface{}{
@@ -1773,9 +1880,6 @@ func HandleOpenBarrel(
 		rb, _ := json.Marshal(resMsg)
 		Broadcast(rb)
 
-		if err := broadcastCellRemoval(instanceID, cell); err != nil {
-			return cell, updatedPlayer, false, fmt.Errorf("cleanup cell: %w", err)
-		}
 		return cell, updatedPlayer, false, nil
 
 	default:
@@ -1788,6 +1892,14 @@ func HandleOpenBarrel(
 
 
 
+
+
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -2012,6 +2124,19 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	b2, _ := json.Marshal(moveMsg)
 	Broadcast(b2)
 
+	// WS: UPDATE_PLAYER (для изменения энергии)
+playerForWS, _ := repository.GetMatchPlayerByID(instanceID, userID)
+updatePlayerMsg := map[string]interface{}{
+    "type": "UPDATE_PLAYER",
+    "payload": map[string]interface{}{
+        "instanceId": instanceID,
+        "player":     playerForWS, // тут hp, energy и все статы игрока!
+    },
+}
+buf, _ := json.Marshal(updatePlayerMsg)
+Broadcast(buf)
+
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(player)
 }
@@ -2029,18 +2154,22 @@ type attackResult struct {
 
 func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 	if entityType == "player" {
-		p, err := Combat.GetPlayer(instanceID, entityID)
+		p, err := repository.GetMatchPlayerByID(instanceID, entityID)
 		if err != nil {
 			return stats{}, err
 		}
 		return stats{p.Attack, p.Defense, p.Health}, nil
 	}
-	m, err := Combat.GetMonster(instanceID, entityID)
+
+	// monster
+	
+	mm, err := repository.GetMatchMonsterByID(instanceID, entityID)
 	if err != nil {
 		return stats{}, err
 	}
-	return stats{m.Attack, m.Defense, m.Health}, nil
+	return stats{mm.Attack, mm.Defense, mm.Health}, nil
 }
+
 
 // --- Расчёт урона и оставшегося HP ----------------------------------------
 
@@ -2058,6 +2187,7 @@ func applyDamage(att stats, def stats) attackResult {
 
 // --- Обновление HP и обработка смерти цели --------------------------------
 // saveTargetHealth сохраняет урон и обрабатывает смерть цели.
+
 func saveTargetHealth(
 	instanceID string,
 	targetType string,
@@ -2065,27 +2195,71 @@ func saveTargetHealth(
 	attackerID int,
 	ar attackResult,
 ) {
+	log.Printf("[saveTargetHealth] Called for %s #%d (new hp: %d), attacker: %d", targetType, targetID, ar.NewHealth, attackerID)
+
 	if targetType == "player" {
 		p, err := Combat.GetPlayer(instanceID, targetID)
 		if err != nil {
-			log.Printf("saveTargetHealth load player error: %v", err)
+			log.Printf("[saveTargetHealth] load player error: %v", err)
 			return
 		}
+		log.Printf("[saveTargetHealth] player %d HP before: %d, after: %d", targetID, p.Health, ar.NewHealth)
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
+			log.Printf("[saveTargetHealth] player %d survives, updating HP.", targetID)
 			Combat.UpdatePlayer(instanceID, p)
 		} else {
-			// Записываем факт убийства игрока
+			log.Printf("[saveTargetHealth] player %d died, calling handlePlayerDeath.", targetID)
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordKillEvent(attackerID, "player", ar.Damage)
 			}
 			handlePlayerDeath(instanceID, p)
+			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
 		}
 	} else {
-		// монстр получает урон
-		Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
+		// 1. Сохраняем HP в БД
+		log.Printf("[saveTargetHealth] monster %d HP before update: new: %d", targetID, ar.NewHealth)
+		err := Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
+		if err != nil {
+			log.Printf("[saveTargetHealth] UpdateMonsterHealth error: %v", err)
+			return
+		}
+
+		// 2. Грузим монстра из БД (HP теперь актуален)
+		m, err := Combat.GetMonster(instanceID, targetID)
+		if err != nil || m == nil {
+			log.Printf("[saveTargetHealth] GetMonster error: %v", err)
+			return
+		}
+
+		// 3. Грузим карту
+		cells, err := Combat.LoadMap(instanceID)
+		if err != nil {
+			log.Printf("[saveTargetHealth] LoadMap error: %v", err)
+			return
+		}
+		for i := range cells {
+			if cells[i].X == m.X && cells[i].Y == m.Y {
+				if cells[i].Monster != nil {
+					log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
+					cells[i].Monster.Health = m.Health
+				}
+				_ = Combat.SaveMap(instanceID, cells)
+				update := map[string]interface{}{
+					"type": "UPDATE_CELL",
+					"payload": map[string]interface{}{
+						"instanceId": instanceID,
+						"updatedCell": serialiseUpdatedCell(cells[i]),
+					},
+				}
+				buf, _ := json.Marshal(update)
+				Broadcast(buf)
+				break
+			}
+		}
+
 		if ar.NewHealth <= 0 {
-			// Записываем факт убийства монстра
+			log.Printf("[saveTargetHealth] monster %d died, calling handleMonsterDeath.", targetID)
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordKillEvent(attackerID, "monster", ar.Damage)
 			}
@@ -2094,81 +2268,94 @@ func saveTargetHealth(
 	}
 }
 
+
+
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
-
 func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
-	log.Printf("[handlePlayerDeath] called for user %d in match %s (health now %d)", p.UserID, instanceID, p.Health)
-	userID := p.UserID
-	oldPos := p.Position
+    userID := p.UserID
+    oldPos := p.Position
 
-	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
-		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
-	}
+	log.Printf("[handlePlayerDeath] start, userID=%d, pos=%+v", userID, oldPos)
 
-	unbindPlayer(p.UserID)
+    if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
+        log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
+    }
 
-	// 2 Если в памяти есть матч
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RemovePlayerFromTurnOrder(userID)
+    unbindPlayer(p.UserID)
 
-		// 2а Если больше нет игроков — завершаем матч
-		if len(ms.TurnOrder) == 0 {
-			log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
-			if err := Combat.Finalize(instanceID); err != nil {
-				log.Printf("[combat] FinalizeMatch failed: %v", err)
-			} else {
-				log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
-			}
-			// Разошлём WS-уведомление, что матч окончен
-			msg := map[string]interface{}{
-				"type":    "MATCH_ENDED",
-				"payload": map[string]string{"instanceId": instanceID},
-			}
-			b, _ := json.Marshal(msg)
-			Broadcast(b)
+    // 2 Если в памяти есть матч
+    if ms, ok := game.GetMatchState(instanceID); ok {
+        ms.RemovePlayerFromTurnOrder(userID)
 
-			// Важно: после MATCH_ENDED мы уходим из функции и больше ничего не шлём
-			return
-		}
+        // 2а Если больше нет игроков — завершаем матч
+        if len(ms.TurnOrder) == 0 {
+            log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+            if err := Combat.Finalize(instanceID); err != nil {
+                log.Printf("[combat] FinalizeMatch failed: %v", err)
+            } else {
+                log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
+            }
+            msg := map[string]interface{}{
+                "type":    "MATCH_ENDED",
+                "payload": map[string]string{"instanceId": instanceID},
+            }
+            b, _ := json.Marshal(msg)
+            Broadcast(b)
+            return
+        }
 
-		// 2б теперь передаём ход дальше
+        nextID := ms.ActiveUserID
+        if nextID != 0 {
+            if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
+                log.Printf("UpdateMatchTurn error: %v", err)
+            }
+            turnMsg := map[string]interface{}{
+                "type": "TURN_PASSED",
+                "payload": map[string]interface{}{
+                    "instanceId": instanceID,
+                    "userId":     nextID,
+                    "turnNumber": ms.TurnNumber,
+                },
+            }
+            buf, _ := json.Marshal(turnMsg)
+            Broadcast(buf)
+        }
+    }
 
-		nextID := ms.ActiveUserID // после .RemovePlayerFromTurnOrder это следующий игрок
-		if nextID != 0 {
-			// обновляем в БД
-			if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
-				log.Printf("UpdateMatchTurn error: %v", err)
-			}
-			// шлём событие TURN_PASSED
-			turnMsg := map[string]interface{}{
-				"type": "TURN_PASSED",
-				"payload": map[string]interface{}{
-					"instanceId": instanceID,
-					"userId":     nextID,
-					"turnNumber": ms.TurnNumber,
-				},
-			}
-			buf, _ := json.Marshal(turnMsg)
-			Broadcast(buf)
-		}
-	}
+    // 3 Обновляем флаги клетки И шлём только один WS: PLAYER_DEFEATED
+    if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
+        log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
+    } else {
+        cells, err := Combat.LoadMap(instanceID)
+        if err == nil {
+            for i := range cells {
+                if cells[i].X == oldPos.X && cells[i].Y == oldPos.Y {
+                    updatedCell := serialiseUpdatedCell(cells[i])
 
-	// 3 Обновляем флаги клетки
-	if err := Combat.ClearPlayerFlag(instanceID, oldPos); err != nil {
-		log.Printf("[handlePlayerDeath] ClearCellPlayerFlag error: %v", err)
-	}
+                    // --- 1. Можно удалить UPDATE_CELL, если фронт ждёт только PLAYER_DEFEATED ---
 
-	// 4 WS: PLAYER_DEFEATED
-	msg := map[string]interface{}{
-		"type": "PLAYER_DEFEATED",
-		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"userId":     userID,
-		},
-	}
-	b, _ := json.Marshal(msg)
-	Broadcast(b)
+                    // --- 2. PLAYER_DEFEATED с updatedCell ---
+                    msg := map[string]interface{}{
+                        "type": "PLAYER_DEFEATED",
+                        "payload": map[string]interface{}{
+                            "instanceId": instanceID,
+                            "userId":     userID,
+                            "updatedCell": updatedCell,
+                        },
+                    }
+                    b, _ := json.Marshal(msg)
+					log.Printf("!!! Broadcast PLAYER_DEFEATED for user %d, cell %+v", userID, updatedCell)
+					log.Printf("!!! Broadcast PLAYER_DEFEATED JSON: %s", string(b))
+
+					
+                    Broadcast(b)
+                    break
+                }
+            }
+        }
+    }
 }
+
 
 // --- Смерть монстра (удаление, очистка клетки, WS: UPDATE_CELL) -------------
 
@@ -2279,22 +2466,26 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		TargetType   string `json:"target_type"`
 		TargetID     int    `json:"target_id"`
 	}
+	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
+    log.Printf("[DEBUG] UniversalAttackHandler: decode error: %v", err)
+    http.Error(w, "invalid request body", http.StatusBadRequest)
+    return
+}
 
-	// 2+3) Загружаем статы
-	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
-	if err != nil {
-		http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
-		return
-	}
-	defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
-	if err != nil {
-		http.Error(w, "failed to load target stats", http.StatusInternalServerError)
-		return
-	}
+atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
+if err != nil {
+    log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
+    http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
+    return
+}
+defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
+if err != nil {
+    log.Printf("[DEBUG] UniversalAttackHandler: loadStats target error: %v", err)
+    http.Error(w, "failed to load target stats", http.StatusInternalServerError)
+    return
+}
+
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
@@ -2303,6 +2494,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
 	}
 	// 5) Сохранение цели + возможная смерть
+
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
@@ -2337,8 +2529,48 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)
+
+	// 10) WS: MATCH_UPDATE — обновим статы игроков (HP, energy и т.п.)
+
+if req.AttackerType == "player" {
+    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID); err == nil {
+        updatePlayerMsg := map[string]interface{}{
+            "type": "UPDATE_PLAYER",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "player":     p,
+            },
+        }
+        buf, _ := json.Marshal(updatePlayerMsg)
+        Broadcast(buf)
+    }
+}
+if req.TargetType == "player" {
+    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID); err == nil {
+        updatePlayerMsg := map[string]interface{}{
+            "type": "UPDATE_PLAYER",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "player":     p,
+            },
+        }
+        buf, _ := json.Marshal(updatePlayerMsg)
+        Broadcast(buf)
+    }
 }
 
+
+}
+
+
+
+
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -2466,6 +2698,12 @@ func RestoreDefaults() {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
+
 
 
 
@@ -2517,6 +2755,12 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -2712,6 +2956,12 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
+
 
 
 
@@ -2771,10 +3021,10 @@ func GetMatchPlayerHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
-
-
-
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -2852,12 +3102,62 @@ func insertMatchMonsters(instanceID string, cells []game.FullCell) error {
 			Vision:          md.Vision,
 			Image:           md.Image,
 		}
-		if err := repository.InsertMatchMonster(mm); err != nil {
-			return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
-		}
+	dbID, err := repository.InsertMatchMonsterReturningID(mm)
+if err != nil {
+    return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
+}
+cell.Monster.DBInstanceID = dbID // <- запишем id в клетку!
 	}
 	return nil
 }
+
+
+
+// Сборка полного MatchResponse по instanceID. Возвращает структуру и ошибку.
+func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
+	match, err := repository.GetMatchByID(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	players, err := repository.GetPlayersInMatch(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var fullMap []game.FullCell
+	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
+		return nil, err
+	}
+	var startPositions [][2]int
+	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
+		return nil, err
+	}
+	var portalPos [2]int
+	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
+		return nil, err
+	}
+	activeUser := match.ActiveUserID
+	if activeUser == 0 && len(players) > 0 {
+		activeUser = players[0].UserID
+	}
+	resp := &MatchResponse{
+		InstanceID:     match.InstanceID,
+		Mode:           match.Mode,
+		TeamsCount:     match.TeamsCount,
+		TotalPlayers:   match.TotalPlayers,
+		MapWidth:       match.MapWidth,
+		MapHeight:      match.MapHeight,
+		Map:            fullMap,
+		Players:        players,
+		ActiveUser:     activeUser,
+		TurnNumber:     match.TurnNumber,
+		StartPositions: startPositions,
+		PortalPosition: portalPos,
+	}
+	return resp, nil
+}
+
+
 
 // assignMatchPlayers создаёт копии игроков в матче с их стартовыми позициями.
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
@@ -2889,23 +3189,127 @@ func assignMatchPlayers(instanceID string, playerIDs []int, starts [][2]int) {
 	}
 }
 
+func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
+	return &game.MonsterState{
+		ID:                md.ID,
+		MonsterInstanceID: id,
+		Health:            md.Health,
+		MaxHealth:         md.MaxHealth,
+		Attack:            md.Attack,
+		Defense:           md.Defense,
+		Speed:             md.Speed,
+		Maneuverability:   md.Maneuverability,
+		Vision:            md.Vision,
+		Image:             md.Image,
+	}
+}
+
+
+
+
+
+
+// func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
+// 	instanceID := r.URL.Query().Get("instance_id")
+// 	if instanceID == "" {
+// 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	// 1) Забираем из БД
+// 	match, err := repository.GetMatchByID(instanceID)
+// 	if err != nil {
+// 		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
+// 		return
+// 	}
+// 	players, err := repository.GetPlayersInMatch(instanceID)
+// 	if err != nil {
+// 		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	// 2) Распарсим JSON-поля
+// 	var fullMap []game.FullCell
+// 	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
+// 		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	var startPositions [][2]int
+// 	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
+// 		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
+// 		return
+// 	}
+// 	var portalPos [2]int
+// 	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
+// 		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
+// 		return
+// 	}
+
+// 	// 3) Вычисляем active_user
+// 	activeUser := match.ActiveUserID
+// 	if activeUser == 0 && len(players) > 0 {
+// 		activeUser = players[0].UserID
+// 	}
+
+// 	// 4) Собираем ответ
+// 	resp := MatchResponse{
+// 		InstanceID:     match.InstanceID,
+// 		Mode:           match.Mode,
+// 		TeamsCount:     match.TeamsCount,
+// 		TotalPlayers:   match.TotalPlayers,
+// 		MapWidth:       match.MapWidth,
+// 		MapHeight:      match.MapHeight,
+// 		Map:            fullMap,
+// 		Players:        players,
+// 		ActiveUser:     activeUser,
+// 		TurnNumber:     match.TurnNumber,
+// 		StartPositions: startPositions,
+// 		PortalPosition: portalPos,
+// 		// Winner оставим nil — он нужен только после финализации
+// 	}
+
+// 	// 5) Отвечаем
+// 	w.Header().Set("Content-Type", "application/json")
+// 	if err := json.NewEncoder(w).Encode(resp); err != nil {
+// 		log.Printf("[GetMatch] Encode response failed: %v", err)
+// 	}
+// }
+
+
+func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
+    instanceID := r.URL.Query().Get("instance_id")
+    if instanceID == "" {
+        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+        return
+    }
+    resp, err := BuildMatchResponse(instanceID)
+    if err != nil {
+        http.Error(w, fmt.Sprintf("Ошибка: %v", err), http.StatusInternalServerError)
+        return
+    }
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(resp)
+}
+
+
+
+
 func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// 2) Всегда JSON
 	w.Header().Set("Content-Type", "application/json")
 
-	// 3) Распарсим тело
+	// 1. Распарсим тело
 	var req RequestMatch
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	// 4) Валидация
+	// 2. Валидация
 	if req.InstanceID == "" || req.Mode == "" {
 		http.Error(w, "instance_id и mode обязательны", http.StatusBadRequest)
 		return
@@ -2924,34 +3328,32 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		MonsterProb:  0.05,
 	}
 
-	// Получаем ресурсы и монстров из БД
-	resourcesFromDB, err := repository.GetResourcesData() // []game.ResourceData
+	// 3. Получаем ресурсы и монстров из БД
+	resourcesFromDB, err := repository.GetResourcesData()
 	if err != nil {
 		handleError(w, "[CreateMatch] Ошибка загрузки ресурсов", err)
 		return
 	}
-	monstersFromDB, err := repository.GetMonstersData() // []game.MonsterData
+	monstersFromDB, err := repository.GetMonstersData()
 	if err != nil {
 		handleError(w, "[CreateMatch] GetMonstersData failed", err)
 		return
 	}
 
-	// Генерируем полную карту
+	// 4. Генерируем полную карту
 	fullMap, mapWidth, mapHeight, startPositions, portalPos, err := game.GenerateFullMap(cfg, resourcesFromDB, monstersFromDB)
 	if err != nil {
 		handleError(w, "[CreateMatch] Ошибка генерации карты", err)
 		return
 	}
 
-	// Преобразуем стартовые позиции и позицию портала в JSON
+	// 5. Теперь сразу сериализуем карту — пока без db_instance_id монстров!
 	mapJSON := toJSON(fullMap)
-	turnOrderJSON := toJSON(req.PlayerIDs[:1]) // первый игрок в очереди
+	turnOrderJSON := toJSON(req.PlayerIDs[:1])
 	startPosJSON := toJSON(startPositions)
 	portalPosJSON := toJSON(portalPos)
 
-	// Вставляем матч в таблицу matches.
-	// turn_number устанавливаем равным 1.
-
+	// 6. Сначала вставляем матч — он нужен для внешнего ключа монстров!
 	_, err = repository.DB.Exec(`
 		INSERT INTO matches (
 			instance_id, mode, teams_count, total_players,
@@ -2970,128 +3372,81 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		req.TotalPlayers,
 		mapWidth,
 		mapHeight,
-		mapJSON, // []byte JSON
+		mapJSON, // Пока без db_instance_id
 		req.PlayerIDs[0],
-		turnOrderJSON, // []byte JSON
-		startPosJSON,  // []byte JSON
-		portalPosJSON, // []byte JSON
+		turnOrderJSON,
+		startPosJSON,
+		portalPosJSON,
 	)
 	if err != nil {
 		handleError(w, "[CreateMatch] Insert match failed", err)
 		return
 	}
 
-	//  вставляем всех монстров в match_monsters
+	// 7. Теперь можем вставить монстров и уже записать db_instance_id для каждого в fullMap!
 	if err := insertMatchMonsters(req.InstanceID, fullMap); err != nil {
 		handleError(w, "[CreateMatch] failed to insert match_monsters", err)
 		return
 	}
 
-	// Создаем локальное состояние матча.
-
-	assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
-
-	playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+	// 8. Теперь пересохраняем map уже с заполненными db_instance_id монстров
+	mapJSON = toJSON(fullMap)
+	_, err = repository.DB.Exec(
+		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
+		mapJSON, req.InstanceID,
+	)
 	if err != nil {
-		handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
+		handleError(w, "[CreateMatch] failed to update map with monster db_instance_id", err)
 		return
 	}
+// 9. Копируем игроков в матч
+assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
 
-	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
-	// Обновляем состояние матча: активный игрок – первый игрок, turn_number = 1.
-	if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
-		log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
-	}
-
-	// Собираем ответ
-	resp := MatchResponse{
-		InstanceID:     req.InstanceID,
-		Mode:           req.Mode,
-		TeamsCount:     req.TeamsCount,
-		TotalPlayers:   req.TotalPlayers,
-		MapWidth:       mapWidth,
-		MapHeight:      mapHeight,
-		Map:            fullMap,
-		Players:        playersInMatch,
-		ActiveUser:     req.PlayerIDs[0],
-		TurnNumber:     1,
-		StartPositions: startPositions,
-		PortalPosition: portalPos,
-		// Winner остаётся nil при создании
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated) // 201 Created
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("[CreateMatch] Encode response failed: %v", err)
-	}
+// 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
+if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
+	log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
 }
 
-func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-	instanceID := r.URL.Query().Get("instance_id")
-	if instanceID == "" {
-		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-		return
-	}
-
-	// 1) Забираем из БД
-	match, err := repository.GetMatchByID(instanceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
-		return
-	}
-	players, err := repository.GetPlayersInMatch(instanceID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// 2) Распарсим JSON-поля
-	var fullMap []game.FullCell
-	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
-		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
-		return
-	}
-	var startPositions [][2]int
-	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
-		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
-		return
-	}
-	var portalPos [2]int
-	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
-		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
-		return
-	}
-
-	// 3) Вычисляем active_user
-	activeUser := match.ActiveUserID
-	if activeUser == 0 && len(players) > 0 {
-		activeUser = players[0].UserID
-	}
-
-	// 4) Собираем ответ
-	resp := MatchResponse{
-		InstanceID:     match.InstanceID,
-		Mode:           match.Mode,
-		TeamsCount:     match.TeamsCount,
-		TotalPlayers:   match.TotalPlayers,
-		MapWidth:       match.MapWidth,
-		MapHeight:      match.MapHeight,
-		Map:            fullMap,
-		Players:        players,
-		ActiveUser:     activeUser,
-		TurnNumber:     match.TurnNumber,
-		StartPositions: startPositions,
-		PortalPosition: portalPos,
-		// Winner оставим nil — он нужен только после финализации
-	}
-
-	// 5) Отвечаем
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("[GetMatch] Encode response failed: %v", err)
-	}
+// 11. Теперь получаем список игроков для ответа (они уже точно есть!)
+playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+if err != nil {
+	handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
+	return
 }
+
+// 12. Собираем и отдаём JSON-ответ
+resp := MatchResponse{
+	InstanceID:     req.InstanceID,
+	Mode:           req.Mode,
+	TeamsCount:     req.TeamsCount,
+	TotalPlayers:   req.TotalPlayers,
+	MapWidth:       mapWidth,
+	MapHeight:      mapHeight,
+	Map:            fullMap,
+	Players:        playersInMatch, // <-- теперь не пусто!
+	ActiveUser:     req.PlayerIDs[0],
+	TurnNumber:     1,
+	StartPositions: startPositions,
+	PortalPosition: portalPos,
+}
+w.WriteHeader(http.StatusCreated)
+if err := json.NewEncoder(w).Encode(resp); err != nil {
+	log.Printf("[CreateMatch] Encode response failed: %v", err)
+}
+}
+
+
+
+
+
+
+
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -3311,6 +3666,11 @@ func unbindPlayer(playerID int) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
 
 
 
@@ -3488,6 +3848,11 @@ if err := repository.AddInventoryItem(
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
 
 
 
@@ -3588,6 +3953,11 @@ func GetMonstersHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -3717,6 +4087,11 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
 
 
 
@@ -3729,104 +4104,162 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
-	"encoding/json"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
 )
 
 var (
 	upgrader = websocket.Upgrader{
-		// Разрешаем все запросы (для разработки)
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
-	clients   = make(map[*Client]bool)
+	clients   = make(map[int]*Client)
 	clientsMu sync.Mutex
 )
 
 // Client представляет подключённого клиента WebSocket.
 type Client struct {
-    Conn       *websocket.Conn
-    instanceID string
+	Conn       *websocket.Conn
+	instanceID string
+	userID     int
 }
 
 type broadcastEnvelope struct {
-    Payload struct {
-        InstanceID string `json:"instanceId"`
-    } `json:"payload"`
+	Payload struct {
+		InstanceID string `json:"instanceId"`
+	} `json:"payload"`
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		//log.Println("[WsHandler] Ошибка апгрейда:", err)
+	// 1. Получаем токен из query-параметра
+	tokenString := r.URL.Query().Get("token")
+	if tokenString == "" {
+		http.Error(w, "Missing token", http.StatusUnauthorized)
 		return
 	}
-	client := &Client{Conn: ws}
-	clientsMu.Lock()
-	clients[client] = true
-	clientsMu.Unlock()
-	//log.Println("[WsHandler] Новый клиент подключён.")
 
-	// Чтение сообщений от клиента
-	for {
-		messageType, message, err := ws.ReadMessage()
-		if err != nil {
-			//log.Printf("[WsHandler] Клиент отключился: %v", err)
-			break
+	// 2. Проверяем JWT токен и достаем user_id
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		log.Printf("[WsHandler] Получено сообщение (тип %d): %s", messageType, string(message))
-		var envelope struct {
+		return []byte(os.Getenv("JWT_SECRET_KEY")), nil
+	})
+	if err != nil || !token.Valid {
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		return
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+	userID, ok := claims["user_id"].(float64)
+	if !ok {
+		http.Error(w, "user_id not found in token", http.StatusUnauthorized)
+		return
+	}
+
+	// 3. Апгрейдим соединение, если всё ок
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	client := &Client{Conn: ws, userID: int(userID)}
+
+	clientsMu.Lock()
+	if oldClient, ok := clients[client.userID]; ok {
+		log.Printf("[WsHandler] Закрываем старый сокет для userID=%d, old instance=%s", oldClient.userID, oldClient.instanceID)
+		oldClient.Conn.Close()
+		delete(clients, client.userID)
+	}
+	clients[client.userID] = client
+	clientsMu.Unlock()
+	log.Printf("[WsHandler] Новый клиент userID=%d подключён.", client.userID)
+
+	// 4. Читаем сообщения клиента
+	for {
+    messageType, message, err := ws.ReadMessage()
+    if err != nil {
+        break
+    }
+    log.Printf("[WsHandler] Получено сообщение (тип %d): %s", messageType, string(message))
+    var envelope struct {
         Type       string `json:"type"`
         InstanceID string `json:"instanceId"`
     }
-        if err := json.Unmarshal(message, &envelope); err == nil {
+    if err := json.Unmarshal(message, &envelope); err == nil {
         if envelope.Type == "JOIN_MATCH" {
-            // логируем и сохраняем только один раз, при первом JOIN
             if client.instanceID == "" {
                 client.instanceID = envelope.InstanceID
-                log.Printf("[WsHandler] client joined match %s", envelope.InstanceID)
+                log.Printf("[WsHandler] client %d joined match %s", client.userID, envelope.InstanceID)
+                // >>> Отправить MATCH_UPDATE <<<
+
+                matchResp, err := BuildMatchResponse(client.instanceID)
+                if err == nil {
+                    wsMsg := struct {
+                        Type    string         `json:"type"`
+                        Payload *MatchResponse `json:"payload"`
+                    }{
+                        Type:    "MATCH_UPDATE",
+                        Payload: matchResp,
+                    }
+                    if b, err := json.Marshal(wsMsg); err == nil {
+                        client.Conn.WriteMessage(websocket.TextMessage, b)
+                    }
+                } else {
+                    log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
+                }
             }
-            continue
-        }
-    }
-	}
-
-	// Завершаем соединение и удаляем клиента
-	ws.Close()
-	clientsMu.Lock()
-	delete(clients, client)
-	clientsMu.Unlock()
-	//log.Println("[WsHandler] Клиент удалён из списка подключённых")
-}
-
-var broadcastFn = func(message []byte) {
-	var env broadcastEnvelope
-    _ = json.Unmarshal(message, &env)  // если невалидный JSON или нет поля – игнорируем
-
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	//log.Printf("[Broadcast] Рассылка сообщения: %s", string(message))
-	for client := range clients {
-
-		 if client.instanceID == "" || (env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID) {
-            continue
-        }
-		err := client.Conn.WriteMessage(websocket.TextMessage, message)
-		if err != nil {
-			//log.Printf("[Broadcast] Ошибка при рассылке клиенту: %v", err)
-			client.Conn.Close()
-			delete(clients, client)
+				continue
+			}
 		}
 	}
+
+	ws.Close()
+	clientsMu.Lock()
+	delete(clients, client.userID)
+	clientsMu.Unlock()
 }
+
+
+var broadcastFn = func(message []byte) {
+    var env broadcastEnvelope
+    _ = json.Unmarshal(message, &env)
+
+    clientsMu.Lock()
+    var targets []*Client
+    for _, client := range clients {
+        if client.instanceID == "" || (env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID) {
+            continue
+        }
+        targets = append(targets, client)
+    }
+    clientsMu.Unlock()
+
+    // Теперь рассылка без lock!
+    for _, client := range targets {
+        err := client.Conn.WriteMessage(websocket.TextMessage, message)
+        if err != nil {
+            // Если ошибка — безопасно удалить клиента (требуется ещё один lock)
+            clientsMu.Lock()
+            client.Conn.Close()
+            delete(clients, client.userID)
+            clientsMu.Unlock()
+        }
+    }
+}
+
 
 func Broadcast(msg []byte) {
-    broadcastFn(msg)
+	broadcastFn(msg)
 }
-
 
 
 
@@ -3844,7 +4277,6 @@ func Broadcast(msg []byte) {
  ===============================================middleware=====================================================================
  ================================================middleware====================================================================
  ========================================================================================================================
-
 
 
 //==============================
@@ -3896,7 +4328,7 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			log.Printf("Claims токена: %+v", claims)
+			
 			var uid int
 			switch v := claims["user_id"].(type) {
 			case float64:
@@ -3920,7 +4352,6 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 // GetUserIDFromContext извлекает user_id из контекста.
 func GetUserIDFromContext(ctx context.Context) (int, bool) {
 	uid := ctx.Value(common.UserIDKey)
-	log.Printf("GetUserIDFromContext: найдено значение: %#v", uid)
 	intUid, ok := uid.(int)
 	return intUid, ok
 }
@@ -3989,6 +4420,12 @@ type PlayerMatchStat struct {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
+
 
 
 
@@ -4025,6 +4462,12 @@ type Monster struct {
 
 
 
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -4073,6 +4516,12 @@ type PlayerResponse struct {
 
 
 
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -4284,6 +4733,12 @@ func UpdatePersistedArtifact(a PersistedArtifact) error {
 
 
 
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -4739,6 +5194,12 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
+
 
 
 
@@ -5029,10 +5490,10 @@ func RemoveInventoryItemAndSyncJSON(instanceID string, playerID int, itemType st
 
 
 
-
-
-
-
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -5136,6 +5597,30 @@ func DeleteMatchMonster(instanceID string, monsterInstanceID int) error {
 	return err
 }
 
+func InsertMatchMonsterReturningID(m MatchMonster) (int, error) {
+    var id int
+    err := DB.QueryRow(`
+        INSERT INTO match_monsters
+            (instance_id, monster_ref_id, pos_x, pos_y,
+             health, max_health, attack, defense, speed, maneuverability, vision, image)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        RETURNING monster_instance_id
+    `,
+        m.InstanceID, m.RefID, m.X, m.Y,
+        m.Health, m.MaxHealth, m.Attack, m.Defense,
+        m.Speed, m.Maneuverability, m.Vision, m.Image,
+    ).Scan(&id)
+    return id, err
+}
+
+
+
+
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -5579,7 +6064,7 @@ func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 		return err
 	}
 
-	log.Printf("[UpdateCellPlayerFlags] old=%+v new=%+v", oldPos, newPos)
+	
 
 	// Обновляем флаги
 	for i, c := range cells {
@@ -5631,7 +6116,6 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
 	return err
 }
 
-// repository/match.go
 
 // DeleteMatch удаляет матч и всё по нему в БД
 func DeleteMatch(instanceID string) error {
@@ -5686,11 +6170,8 @@ func SaveMatchStats(stats *models.MatchInfo) error {
 
 // SaveMatchPlayerStats сохраняет агрегированные результаты по каждому игроку в таблице match_player_stats.
 func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error {
-	log.Printf("[SaveMatchPlayerStats] start for match %s, %d players", instanceID, len(results))
-
 	tx, err := DB.Begin()
 	if err != nil {
-		log.Printf("[SaveMatchPlayerStats] begin tx error: %v", err)
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
@@ -5717,17 +6198,11 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
         damage_to_monsters = EXCLUDED.damage_to_monsters;
     `)
 	if err != nil {
-		log.Printf("[SaveMatchPlayerStats] prepare stmt error: %v", err)
 		return fmt.Errorf("prepare: %w", err)
 	}
 	defer stmt.Close()
 
-	for i, pr := range results {
-		log.Printf("[SaveMatchPlayerStats] exec for user %d (%d/%d): exp=%d, pk=%d, mk=%d, dt=%d, dp=%d, dm=%d",
-			pr.UserID, i+1, len(results),
-			pr.ExpGained, pr.PlayerKills, pr.MonsterKills,
-			pr.DamageTotal, pr.DamageToPlayers, pr.DamageToMonsters,
-		)
+	for _, pr := range results {
 		if _, err := stmt.Exec(
 			instanceID,
 			pr.UserID,
@@ -5739,19 +6214,17 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
 			pr.DamageToPlayers,
 			pr.DamageToMonsters,
 		); err != nil {
-			log.Printf("[SaveMatchPlayerStats] exec error for user %d: %v", pr.UserID, err)
 			return fmt.Errorf("exec for user %d: %w", pr.UserID, err)
 		}
-		log.Printf("[SaveMatchPlayerStats] exec succeeded for user %d", pr.UserID)
 	}
 
 	if err := tx.Commit(); err != nil {
-		log.Printf("[SaveMatchPlayerStats] commit error: %v", err)
 		return fmt.Errorf("commit: %w", err)
 	}
-	log.Printf("[SaveMatchPlayerStats] commit succeeded for match %s", instanceID)
+	
 	return nil
 }
+
 
 func CleanupMatchPlayers(instanceID string) error {
 	_, err := DB.Exec(`
@@ -5842,6 +6315,13 @@ func LoadMatchPlayerStats(instanceID string) ([]models.PlayerMatchStat, error) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
+
+
 
 
 
@@ -5928,6 +6408,11 @@ func UpdateMonster(mon *models.Monster) error {
 
 
 
+
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
 
 
 
@@ -6153,6 +6638,11 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
 
 
 
@@ -6257,6 +6747,11 @@ func GetArtifactsData() ([]game.ResourceData, error) {
 
 
 
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+// ================================================================================================================================================
+
 
 
 
@@ -6306,12 +6801,25 @@ func GetOtherPlayerID(instanceID string, x, y, selfID int) (int, error) {
 
 
 
+
+
+
+
+
+
+
+
  ========================================================================================================================
  ===================================================service============================================================
  ====================================================service====================================================================
  ====================================================service=====================================================================
  =====================================================service====================================================================
  ========================================================================================================================
+
+
+
+
+
 
 
 
@@ -6334,7 +6842,7 @@ import (
 
 // FinalizeMatch завершает матч: сохраняет результаты, начисляет опыт/награды и удаляет матч.
 func FinalizeMatch(instanceID string) error {
-	log.Printf("[FinalizeMatch] start for match %s", instanceID)
+	
 
 	// 1) Получить финальные данные по матчу
 	results, err := repository.GetMatchResults(instanceID)
@@ -6363,7 +6871,7 @@ func FinalizeMatch(instanceID string) error {
 	}
 
 	// 4) **Сохранить детальную статистику по каждому игроку**
-	log.Printf("[FinalizeMatch] will save %d player stats for match %s", len(results.PlayerResults), instanceID)
+	
 	if err := repository.SaveMatchPlayerStats(instanceID, results.PlayerResults); err != nil {
 		log.Printf("[FinalizeMatch] SaveMatchPlayerStats failed for match %s: %v", instanceID, err)
 	} else {
@@ -6374,7 +6882,7 @@ func FinalizeMatch(instanceID string) error {
 	if err := repository.DeleteMatch(instanceID); err != nil {
 		return err
 	}
-	log.Printf("[FinalizeMatch] match %s deleted", instanceID)
+	
 	return nil
 }
 
@@ -6442,7 +6950,8 @@ func BuildMatchEndedPayload(instanceID string) ([]byte, error) {
  ====================================================matchmaking=====================================================================
  =====================================================matchmaking====================================================================
  ========================================================================================================================
-// ==============================
+
+ // ==============================
 // /matchmaking/Match_Making.go
 // ==============================
 
@@ -6693,6 +7202,41 @@ func matchHandler(w http.ResponseWriter, r *http.Request) {
 	currentMatchHandler(w, r)
 }
 
+// GET /matchmaking/inQueue?player_id=NN
+func inQueueHandler(w http.ResponseWriter, r *http.Request) {
+    playerIDStr := r.URL.Query().Get("player_id")
+    if playerIDStr == "" {
+        http.Error(w, "player_id обязателен", http.StatusBadRequest)
+        return
+    }
+    var playerID int
+    if _, err := fmt.Sscanf(playerIDStr, "%d", &playerID); err != nil {
+        http.Error(w, "Некорректный player_id", http.StatusBadRequest)
+        return
+    }
+
+    mu.Lock()
+    defer mu.Unlock()
+    for mode, q := range queues {
+        for _, entry := range q {
+            if entry.PlayerID == playerID {
+                // возвращаем флаг и режим
+                w.Header().Set("Content-Type", "application/json")
+                json.NewEncoder(w).Encode(map[string]interface{}{
+                    "inQueue": true,
+                    "mode": mode,
+                })
+                return
+            }
+        }
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "inQueue": false,
+    })
+}
+
+
 // checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
 	requiredPlayers := map[string]int{"PVE": 1, "1x1": 2, "1x2": 3, "2x2": 4, "3x3": 6, "5x5": 10}
@@ -6809,6 +7353,9 @@ func main() {
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 
+	r.HandleFunc("/matchmaking/inQueue", inQueueHandler).Methods("GET")
+
+
 	r.HandleFunc("/matchmaking/player/{playerID}", removePlayerHandler).Methods("DELETE")
 
 	handler := enableCors(r)
@@ -6819,13 +7366,33 @@ func main() {
 }
 
 
+
+
+
+
+
+
+
+
+
 ======================================================================================================================================
 ==================================src/app/========================================================================================
 ===================================src/app/=========================================================================================
 ===================================src/app/===========================================================================================
 ==================================src/app/===================================================================================
 ======================================================================================================================================
+======================================================================================================================================
+======================================================================================================================================
+======================================================================================================================================
 
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 //=======================
@@ -6836,7 +7403,9 @@ func main() {
 
 import React from "react";
 import { useSearchParams } from "next/navigation";
-import { GameProvider } from "../../contexts/GameContextt";
+import { Provider } from "react-redux";
+import { store } from "../../store"; // путь зависит от структуры
+import GameWrapper from "../../features/game/GameWrapper";
 import GameController from "../../components/GameController";
 
 export default function GamePage() {
@@ -6848,9 +7417,11 @@ export default function GamePage() {
   }
 
   return (
-    <GameProvider instanceId={instanceId}>
-      <GameController />
-    </GameProvider>
+    <Provider store={store}>
+      <GameWrapper instanceId={instanceId}>
+        <GameController instanceId={instanceId} />
+      </GameWrapper>
+    </Provider>
   );
 }
 
@@ -6876,10 +7447,16 @@ export default function Login() {
 
 import React from "react";
 import ModeSelectionPage from "../../components/ModeSelectionPage";
+import RequireAuth from "../../components/RequireAuth";
 
 export default function ModePage() {
-  return <ModeSelectionPage />;
+  return (
+      <RequireAuth>
+        <ModeSelectionPage />
+      </RequireAuth>
+  );
 }
+
 
 //=======================
 // src/app/register/page.tsx
@@ -6893,13 +7470,13 @@ export default function Register() {
   return <RegisterPage />;
 }
 
-
 //=======================
 // src/app/layout.tsx
 //=======================
 
 import "../styles/globals.css";
 import { AuthProvider } from "../contexts/AuthContext";
+import ReduxProvider from "@/providers/ReduxProvider";
 
 export default function RootLayout({
   children,
@@ -6913,12 +7490,15 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ReduxProvider>{children}</ReduxProvider>
+        </AuthProvider>
         <div id="modal-root" />
       </body>
     </html>
   );
 }
+
 
 
 //=======================
@@ -7045,6 +7625,10 @@ export default function Controls({ onMove, onAction }: ControlsProps) {
 
 
 
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -7118,10 +7702,10 @@ export default EndTurnButton;
 
 
 
-
-
-
-
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -7134,462 +7718,80 @@ export default EndTurnButton;
 // src/components/GameController.tsx
 //==================================
 
-"use client";
-
-import React, { useEffect, useState } from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useSelector, useDispatch } from "react-redux";
+import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
-import type { PlayerState, Cell } from "../types/GameTypes";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
-import styles from "../styles/GameController.module.css";
 import PlayerHUD from "./PlayerHUD";
+import styles from "../styles/GameController.module.css";
+import type { RootState } from "../store";
+import { setInstanceId, setActiveUser } from "../store/slices/gameSlice";
+import { usePlayerActions } from "../hooks/usePlayerActions";
+import { useGameKeyboard } from "../hooks/useGameKeyboard";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
-
-interface CollectResponse {
-  updatedCell: {
-    cell_id: number;
-    x: number;
-    y: number;
-    tileCode: string;
-    resource: any | null;
-    barbel: any | null;
-    monster: any | null;
-    isPortal: boolean;
-    isPlayer: boolean;
-  };
+interface GameControllerProps {
+  instanceId: string;
 }
 
-
-export default function GameController() {
-  const { state, dispatch } = useGame();
-
+export default function GameController({ instanceId }: GameControllerProps) {
+  const dispatch = useDispatch();
+  const state = useSelector((state: RootState) => state.game);
   const { user } = useAuth();
-  const { state: { instanceId } } = useGame(); // предполагаем, что в контексте есть instanceId
 
 
-  const myPlayerId = user?.id;
-  const myPlayer: PlayerState | undefined = state.players.find(
-    (p) => p.user_id === myPlayerId
-  );
-  const isMyTurn = myPlayerId === state.active_user;
+  useEffect(() => {
+    if (state.instanceId !== instanceId) {
+      dispatch(setInstanceId(instanceId));
+    }
+  }, [instanceId, dispatch, state.instanceId]);
 
   const [showInventory, setShowInventory] = useState(false);
 
-  useEffect(() => {
-    // console.log(
-    //   "[GameController] myPlayerId:",
-    //   myPlayerId,
-    //   "active_user:",
-    //   state.active_user
-    // );
-  }, [myPlayerId, state.active_user]);
-
-  // Универсальный обработчик: шаг или удар
-
-  async function handleMoveOrAttack(direction: "up" | "down" | "left" | "right") {
-    if (!myPlayer) {
-      console.warn("Мой игрок не найден");
-      return;
-    }
-    if (!isMyTurn) {
-      console.warn("Сейчас не ваш ход");
-      return;
-    }
-
-    // 1) Вычисляем соседнюю клетку
-    const deltas = {
-      up: { x: 0, y: -1 },
-      down: { x: 0, y: 1 },
-      left: { x: -1, y: 0 },
-      right: { x: 1, y: 0 },
-    } as const;
-    const { x: dx, y: dy } = deltas[direction];
-    const targetX = myPlayer.position.x + dx;
-    const targetY = myPlayer.position.y + dy;
-
-    // 2) Находим эту клетку в grid
-    const targetCell = state.grid.find(c => c.x === targetX && c.y === targetY);
-
-    if (!targetCell) {
-
-      return;
-    }
-
-    if (targetCell.monster) {
-    }
-
-    // 3) Далее — единый запрос
-
-    const updatedPlayer = await movePlayer(targetX, targetY);
-
-    if (!updatedPlayer) {
-      console.error("[handleMoveOrAttack] Не удалось выполнить действие на сервере");
-      return;
-    }
-
-    dispatch({
-      type: "UPDATE_PLAYER",
-      payload: { instanceId, player: updatedPlayer },
-    });
-  }
-
-  // 5) По необходимости можно затем подтянуть всю матрицу:
-  // const freshMatch = await fetchMatch(instanceId);
-  // dispatch({ type: "SET_MATCH_DATA", payload: freshMatch });
-
-
-  // Запрос на ход или атаку
-  async function movePlayer(newPosX: number, newPosY: number) {
-    try {
-      const storedUser = localStorage.getItem("user");
-      const token = storedUser ? JSON.parse(storedUser).token : "";
-      if (!token) {
-        console.error("[movePlayer] Токен не найден");
-        return null;
-      }
-
-      const url = `http://localhost:8001/game/${instanceId}/player/${myPlayerId}/move`;
-      const body = { new_pos_x: newPosX, new_pos_y: newPosY };
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const text = await response.text();
-
-      if (!response.ok) {
-        console.error("[movePlayer] Ошибка перемещения:", text);
-        return null;
-      }
-
-      const updatedPlayer = JSON.parse(text);
-      return updatedPlayer as PlayerState;
-    } catch (error) {
-      console.error("[movePlayer] Ошибка запроса:", error);
-      return null;
-    }
-  }
-
-
-
-
-
-
-  // Функция для открытия бочки
-  async function openBarrel(
-    cellX: number,
-    cellY: number
-  ): Promise<
-    | { updatedCell: Cell; updatedPlayer: PlayerState; matchEnded: true }
-    | { updatedCell: Cell; updatedPlayer: PlayerState }
-    | null
-  > {
-    console.log("Открываем бочку в клетке:", cellX, cellY);
-    try {
-      // 1. Получаем токен
-      const stored = localStorage.getItem("user");
-      const token = stored ? JSON.parse(stored).token : "";
-      if (!token) {
-        console.error("Токен не найден");
-        return null;
-      }
-
-      // 2. Посылаем запрос
-      const res = await fetch("http://localhost:8001/game/openBarrel", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          instance_id: instanceId,
-          user_id: myPlayerId,
-          cell_x: cellX,
-          cell_y: cellY,
-        }),
-      });
-
-      if (!res.ok) {
-        console.error("Ошибка открытия бочки:", await res.text());
-        return null;
-      }
-
-      // 3. Парсим ответ
-      const data = (await res.json()) as {
-        updatedCell?: any;
-        updatedPlayer?: any;
-        matchEnded?: boolean;
-      };
-      console.log("Бочка открыта, данные:", data);
-
-      if (!data.updatedCell || !data.updatedPlayer) {
-        console.warn("openBarrel: сервер вернул некорректные данные", data);
-        return null;
-      }
-
-      // 4. Мапим клетку
-      const mappedCell: Cell = {
-        cell_id: data.updatedCell.cell_id,
-        x: data.updatedCell.x,
-        y: data.updatedCell.y,
-        tileCode: data.updatedCell.tileCode,
-        resource: data.updatedCell.resource ?? null,
-        barbel: data.updatedCell.barbel ?? null,
-        monster: data.updatedCell.monster ?? null,
-        isPortal: data.updatedCell.isPortal,
-        isPlayer: data.updatedCell.isPlayer ?? false,
-      };
-
-      // 5. Мапим игрока — здесь position не меняется, просто приводим к типу
-      const mappedPlayer: PlayerState = data.updatedPlayer as PlayerState;
-
-      // 6. Возвращаем результат
-      if (data.matchEnded) {
-        return { updatedCell: mappedCell, updatedPlayer: mappedPlayer, matchEnded: true };
-      }
-      return { updatedCell: mappedCell, updatedPlayer: mappedPlayer };
-    } catch (e) {
-      console.error("Ошибка запроса открытия бочки:", e);
-      return null;
-    }
-  }
-
-
-
-
-
-
-
-
-
-  // Функция сбора ресурсов
-  async function collectResource(cellX: number, cellY: number) {
-    console.log("Начало сбора ресурса для клетки:", cellX, cellY);
-
-    // 1) Базовые проверки
-    if (!instanceId) {
-      console.error("collectResource: instanceId не задан");
-      return;
-    }
-    if (!user) {
-      console.error("collectResource: пользователь не авторизован");
-      return;
-    }
-
-    const token = user.token;
-    const myPlayerId = user.id;
-
-    if (!token) {
-      console.error("collectResource: токен пользователя отсутствует");
-      return;
-    }
-
-    try {
-      // 2) POST на сбор ресурса
-      const response = await fetch("http://localhost:8001/game/collectResource", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          instance_id: instanceId,
-          user_id: myPlayerId,
-          cell_x: cellX,
-          cell_y: cellY,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Ошибка сбора ресурса:", errorText);
-        return;
-      }
-
-      const { updatedCell } = await response.json();
-      console.log("Ресурс успешно собран. Полученные данные клетки:", updatedCell);
-
-      // 3) Обновляем локальное состояние клетки (пример)
-      const newCell = {
-        cell_id: updatedCell.cell_id,
-        x: updatedCell.x,
-        y: updatedCell.y,
-        tileCode: updatedCell.tileCode,
-        resource: updatedCell.resource || null,
-        barbel: updatedCell.barbel || null,
-        monster: updatedCell.monster || null,
-        isPortal: updatedCell.isPortal,
-        isPlayer: updatedCell.isPlayer ?? false,
-      };
-      // dispatch({ type: "UPDATE_CELL", payload: newCell });  // если используете редьюсер
-
-      // 4) GET для получения обновлённых данных игрока
-      const playerRes = await fetch(
-        `http://localhost:8001/game/matches/${instanceId}/players/${myPlayerId}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!playerRes.ok) {
-        const err = await playerRes.text();
-        console.error("Ошибка запроса обновлённого игрока:", err);
-        return;
-      }
-
-
-      const updatedPlayer = await playerRes.json();
-      console.log("Получили обновлённого игрока:", updatedPlayer);
-
-      // 5) диспатчим обновлённого игрока
-      dispatch({
-        type: "UPDATE_PLAYER",
-        payload: {
-          instanceId: state.instanceId,
-          player: updatedPlayer,
-        },
-      });
-    } catch (e) {
-      console.error("collectResource: запрос завершился с ошибкой", e);
-    }
-  }
-
-
-
-
-
-
-  // Функция перемещения: вычисляем новые координаты и отправляем запрос на сервер.
-  const handleMove = async (direction: "up" | "down" | "left" | "right") => {
-    if (!myPlayer) {
-      console.warn("Мой игрок не найден");
-      return;
-    }
-    if (!isMyTurn) {
-      console.warn("Сейчас не ваш ход");
-      return;
-    }
-    let newPos = { ...myPlayer.position };
-    if (direction === "up") newPos.y -= 1;
-    else if (direction === "down") newPos.y += 1;
-    else if (direction === "left") newPos.x -= 1;
-    else if (direction === "right") newPos.x += 1;
-
-    // Отправляем запрос перемещения на сервер (без проверок на клиенте)
-    const updatedPlayer = await movePlayer(newPos.x, newPos.y);
-    if (updatedPlayer) {
-      dispatch({
-        type: "UPDATE_PLAYER",
-        payload: { instanceId, player: updatedPlayer },
-      });
-    } else {
-      console.log("Перемещение не выполнено из-за ошибки сервера.");
-    }
-  };
-
-  // Функция действий на клетке: сервер принимает решение, что делать.
-
-  const [isCollecting, setIsCollecting] = useState(false);
-
-
-
-
-
-
-
-  const handleAction = () => {
-    if (!isMyTurn) {
-      console.warn("Сейчас не ваш ход");
-      return;
-    }
-    if (isCollecting) return; // предотвращаем повторные вызовы
-    setIsCollecting(true);
-
-    const activePlayer = state.players.find((p) => p.user_id === state.active_user);
-    if (!activePlayer) {
-      setIsCollecting(false);
-      return;
-    }
+  const {
+    myPlayer,
+    isMyTurn,
+    handleMoveOrAttack,
+    openBarrel,
+    collectResource,
+    fightMonster,
+  } = usePlayerActions(instanceId, user, state);
+
+  // Можно оптимизировать: вынести в useCallback
+  const handleAction = useCallback(() => {
+    if (!isMyTurn || !myPlayer) return;
     const currentCell = state.grid.find(
-      (cell) =>
-        cell.x === activePlayer.position.x &&
-        cell.y === activePlayer.position.y
+      (cell: any) =>
+        cell.x === myPlayer.position.x && cell.y === myPlayer.position.y
     );
-    if (!currentCell) {
-      console.log("Клетка не найдена");
-      setIsCollecting(false);
-      return;
-    }
+    if (!currentCell) return;
+    if (currentCell.monster) fightMonster(currentCell.x, currentCell.y);
+    else if (currentCell.resource) collectResource(currentCell.x, currentCell.y);
+    else if (currentCell.barbel) openBarrel(currentCell.x, currentCell.y);
+    // ...портал, пропуск
+  }, [isMyTurn, myPlayer, state.grid, fightMonster, collectResource, openBarrel]);
 
-    if (currentCell.monster) {
-      console.log("Начинаем бой с монстром", currentCell.monster);
-      setIsCollecting(false);
-      return;
-    }
-    if (currentCell.resource) {
-      console.log("Собираем ресурс", currentCell.resource);
-      collectResource(currentCell.x, currentCell.y)
-        .finally(() => setIsCollecting(false));
-      return;
-    }
-    if (currentCell.barbel) {
-      openBarrel(currentCell.x, currentCell.y)
-        .finally(() => setIsCollecting(false));
-      return;
-    }
+  useGameKeyboard({
+    onMove: handleMoveOrAttack,
+    onAction: handleAction,
+    onInventory: () => setShowInventory((v) => !v),
+  });
 
-    if (currentCell.isPortal) {
-      console.log("Пытаемся выйти через портал");
-      setIsCollecting(false);
-      return;
-    }
-    console.log("На данной клетке нет интерактивных объектов", currentCell);
-    setIsCollecting(false);
-  };
-
-  const handleTurnEnded = (data: { active_user: number; turnNumber: number; energy: number }) => {
-    dispatch({
-      type: "SET_ACTIVE_USER",
-      payload: { instanceId, active_user: data.active_user, turnNumber: data.turnNumber, energy: data.energy, },
-    });
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "i", "I", "ш", "Ш"].includes(e.key)) {
-        e.preventDefault();
-      }
-      if (e.key === "ArrowUp") {
-        handleMoveOrAttack("up");
-      } else if (e.key === "ArrowDown") {
-        handleMoveOrAttack("down");
-      } else if (e.key === "ArrowLeft") {
-        handleMoveOrAttack("left");
-      } else if (e.key === "ArrowRight") {
-        handleMoveOrAttack("right");
-      } else if (e.key === " ") {
-        handleAction();
-      } else if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш") {
-        setShowInventory((prev) => !prev);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [state, myPlayer, isMyTurn]);
+  const handleTurnEnded = useCallback((data: {
+    active_user: number;
+    turnNumber: number;
+    energy: number;
+  }) => {
+    dispatch(setActiveUser({
+      instanceId,
+      active_user: data.active_user,
+      turnNumber: data.turnNumber,
+      energy: data.energy,
+    }));
+  }, [dispatch, instanceId]);
 
   return (
     <div className={styles.container}>
@@ -7616,9 +7818,9 @@ export default function GameController() {
       <div className={styles.controlsContainer}>
         {isMyTurn ? (
           <>
-            <Controls onMove={handleMove} onAction={handleAction} />
+            <Controls onMove={handleMoveOrAttack} onAction={handleAction} />
             <EndTurnButton
-              playerId={myPlayerId!}
+              playerId={myPlayer?.user_id!}
               instanceId={instanceId}
               onTurnEnded={handleTurnEnded}
             />
@@ -7634,6 +7836,19 @@ export default function GameController() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
 
 
 
@@ -7772,9 +7987,10 @@ export function useInfoModal() {
 
 
 
-
-
-
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -7785,22 +8001,23 @@ export function useInfoModal() {
 "use client";
 
 import React, { useMemo } from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useDispatch, useSelector } from "react-redux";
 import { useAuth } from "../contexts/AuthContext";
+import type { RootState } from "../store";
 import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
+import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
-const Inventory: React.FC = () => {
-  const { state, dispatch } = useGame();
-  const { user } = useAuth();
-  const { instanceId } = state;
 
-  // 1) Находим игрока
+const Inventory: React.FC = () => {
+  const dispatch = useDispatch();
+  const state = useSelector((state: RootState) => state.game);
+  const { user } = useAuth();
+  const instanceId = state.instanceId;
+
   const player = state.players.find((p) => p.user_id === user?.id);
   if (!player) return <div>Инвентарь недоступен</div>;
 
-  // normalize-функция: из любого «сырого» объекта делаем RawInventoryItem
   const normalize = (it: any, keyHint?: string): RawInventoryItem => {
-    // если keyHint вида "resource_2", распарсим его
     let hintType: "resource" | "artifact" | undefined;
     let hintId: number | undefined;
     if (keyHint) {
@@ -7821,7 +8038,6 @@ const Inventory: React.FC = () => {
     return { item_type, item_id, name, item_count, image, description, bonus: it.bonus, effect: it.effect };
   };
 
-  // 2) Из разных форматов собираем единый плоский массив
   const rawItems: RawInventoryItem[] = useMemo(() => {
     let parsed: any;
     try {
@@ -7839,15 +8055,12 @@ const Inventory: React.FC = () => {
       flat = [
         ...(parsed.resources ? Object.entries(parsed.resources) : []),
         ...(parsed.artifacts ? Object.entries(parsed.artifacts) : []),
-      ].map(
-        ([key, val]) => ({ val, key }) // запомним ключ для normalize
-      );
+      ].map(([key, val]) => ({ val, key }));
     } else {
       flat = Object.entries(parsed).map(([key, val]) => ({ val, key }));
     }
 
     return flat.map(entry => {
-      // entry может быть либо raw объект, либо {val, key}
       if ((entry as any).val !== undefined) {
         return normalize((entry as any).val, (entry as any).key);
       } else {
@@ -7856,7 +8069,6 @@ const Inventory: React.FC = () => {
     });
   }, [player.inventory]);
 
-  // 3) Группируем
   const { resources, artifacts } = useMemo(() => {
     return rawItems.reduce<{
       resources: Record<string, RawInventoryItem>;
@@ -7872,7 +8084,6 @@ const Inventory: React.FC = () => {
     );
   }, [rawItems]);
 
-  // 4) Обработчик использования предмета
   const handleUseItem = async (
     section: "resources" | "artifacts",
     key: string,
@@ -7884,7 +8095,6 @@ const Inventory: React.FC = () => {
     const item_id = parseInt(idStr, 10);
 
     try {
-
       const stored = localStorage.getItem("user");
       const token = stored ? JSON.parse(stored).token : "";
       if (!token) {
@@ -7907,20 +8117,12 @@ const Inventory: React.FC = () => {
         console.error("Ошибка использования предмета", await res.text());
       }
       const updatedPlayer = await res.json() as PlayerState;
-      console.log("⚕️ after useItem, updatedPlayer.health =", updatedPlayer.health);
-      dispatch({
-        type: "UPDATE_PLAYER",
-        payload: {
-          instanceId,
-          player: updatedPlayer,
-        },
-      });
+      dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
     } catch (err) {
       console.error("Ошибка запроса на использование предмета", err);
     }
   };
 
-  // 5) Рендер элементов
   const renderItems = (
     section: "resources" | "artifacts",
     items: Record<string, RawInventoryItem>
@@ -7950,7 +8152,6 @@ const Inventory: React.FC = () => {
         </div>
       ));
 
-  // 6) JSX
   return (
     <div className={styles.inventoryContainer}>
       <h2 className={styles.title}>Инвентарь</h2>
@@ -7973,6 +8174,17 @@ const Inventory: React.FC = () => {
 };
 
 export default Inventory;
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
 
 
 
@@ -8074,11 +8286,10 @@ export default LoginPage;
 
 
 
-
-
-
-
-
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8088,8 +8299,13 @@ export default LoginPage;
 
 "use client";
 
-import React from "react";
-import { Cell } from "../types/GameTypes";
+import React, { useMemo } from "react";
+import { useSelector } from "react-redux";
+import { Cell } from "@/types/GameTypes";
+import { RootState } from "@/store";
+import { buildPlayerMap } from "@/utils/buildPlayerMap";
+import MapCell from "./MapCell";
+import { PlayerState } from "@/types/GameTypes";
 
 export interface MapProps {
   grid: Cell[];
@@ -8102,7 +8318,7 @@ export interface MapProps {
   onCellClick?: (cell: Cell) => void;
 }
 
-export default function Map({
+function Map({
   grid,
   mapWidth,
   mapHeight,
@@ -8112,15 +8328,34 @@ export default function Map({
   playerPosition,
   onCellClick,
 }: MapProps) {
-  // Проверка видимости клетки
-  const isCellVisible = (cell: Cell): boolean => {
-    const dx = Math.abs(cell.x - playerPosition.x);
-    const dy = Math.abs(cell.y - playerPosition.y);
-    return dx <= visionRange && dy <= visionRange;
-  };
+  const players = useSelector((state: RootState) => state.game.players);
 
   const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
   const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
+
+  // ✅ Мемоизированный playerMap
+  const playerMap = useMemo(() => buildPlayerMap(players), [players]);
+
+  // ✅ Мемоизированные видимые клетки с игроком
+const cellsWithVisibility = useMemo(() => {
+  if (!Array.isArray(grid) || grid.length === 0) return [];
+
+  const result: { cell: Cell; visible: boolean; player: PlayerState | null }[] = [];
+
+  for (const cell of grid) {
+    const dx = Math.abs(cell.x - playerPosition.x);
+    const dy = Math.abs(cell.y - playerPosition.y);
+    const visible = dx <= visionRange && dy <= visionRange;
+
+    const key = `${cell.x}-${cell.y}`;
+    const player = visible ? playerMap.get(key) || null : null;
+
+    result.push({ cell, visible, player });
+  }
+
+  return result;
+}, [grid, playerPosition.x, playerPosition.y, visionRange, playerMap]);
+
 
   return (
     <div
@@ -8135,102 +8370,170 @@ export default function Map({
         border: "2px solid #333",
       }}
     >
-      {grid.map((cell, index) => {
-        const visible = isCellVisible(cell);
-        return (
-          <div
-            key={`${cell.cell_id}-${index}`}
-            style={{
-              width: `${tileSize}px`,
-              height: `${tileSize}px`,
-              backgroundColor: getTileColor(cell),
-              opacity: visible ? 1 : 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "10px",
-              color: "#fff",
-              position: "relative",
-              cursor: visible && onCellClick ? "pointer" : "default",
-              pointerEvents: visible ? "auto" : "none",
-            }}
-            onClick={() => visible && onCellClick?.(cell)}
-          >
-            {renderCellContent(cell)}
-          </div>
-        );
-      })}
+      {cellsWithVisibility.map(({ cell, visible, player }) => (
+        <MapCell
+          key={`${cell.x}-${cell.y}`}
+          cell={cell}
+          visible={visible}
+          playerInCell={player}
+          tileSize={tileSize}
+          onClick={onCellClick}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default React.memo(Map);
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+import React, { useState } from "react";
+import { Cell, PlayerState } from "@/types/GameTypes";
+
+interface MapCellProps {
+  cell: Cell;
+  playerInCell: PlayerState | null;
+  visible: boolean;
+  tileSize: number;
+  onClick?: (cell: Cell) => void;
+}
+
+function MapCell({ cell, playerInCell, visible, tileSize, onClick }: MapCellProps) {
+  const [hovered, setHovered] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  let tooltipTimer: NodeJS.Timeout;
+
+  const getCellTooltip = () => {
+    if (cell.monster) return `👹 Монстр: ${cell.monster.name}\n❤️ ${cell.monster.health}\n⚔️ ${cell.monster.attack}\n🛡 ${cell.monster.defense}`;
+    if (cell.resource) return `⛏ Ресурс: ${cell.resource.type}`;
+    if (cell.barbel) return `🪵 Бочка`;
+    if (cell.isPortal) return `🌀 Портал`;
+    if (cell.isPlayer && playerInCell) {
+      return `🧍 Игрок: ${playerInCell.name}\n❤️ ${playerInCell.health}\n⚔️ ${playerInCell.attack}\n🛡 ${playerInCell.defense}`;
+    }
+    return `${cell.x} ${cell.y} `;
+  };
+
+  const renderCellContent = () => {
+    if (cell.monster?.image) {
+      return (
+        <img
+          src={cell.monster.image}
+          alt="monster"
+          style={imageStyle}
+        />
+      );
+    }
+    if (cell.resource?.image) {
+      return (
+        <img
+          src={cell.resource.image}
+          alt="resource"
+          style={imageStyle}
+        />
+      );
+    }
+    if (cell.barbel?.image) {
+      return (
+        <img
+          src={cell.barbel.image}
+          alt="barrel"
+          style={imageStyle}
+        />
+      );
+    }
+    return null;
+  };
+
+  const imageStyle = {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+  } as React.CSSProperties;
+
+  return (
+    <div
+      key={`${cell.x}-${cell.y}`}
+      style={{
+        width: tileSize,
+        height: tileSize,
+        backgroundColor: getTileColor(cell),
+        opacity: visible ? 1 : 0,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        position: "relative",
+        pointerEvents: visible ? "auto" : "none",
+        cursor: visible && onClick ? "pointer" : "default",
+      }}
+      onClick={() => visible && onClick?.(cell)}
+      onMouseEnter={() => {
+        tooltipTimer = setTimeout(() => {
+          setHovered(true);
+          setShowTooltip(true);
+        }, 2000);
+      }}
+      onMouseLeave={() => {
+        clearTimeout(tooltipTimer);
+        setShowTooltip(false);
+        setHovered(false);
+      }}
+    >
+      {renderCellContent()}
+
+      {showTooltip && hovered && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#222",
+            color: "#fff",
+            padding: "4px 6px",
+            fontSize: "12px",
+            borderRadius: "4px",
+            whiteSpace: "pre-line",
+            zIndex: 100,
+          }}
+        >
+          {getCellTooltip()}
+        </div>
+      )}
     </div>
   );
 }
 
 function getTileColor(cell: Cell): string {
   switch (cell.tileCode) {
-    case 48: // '0'
-      return "#CCCCCC";
-    case 80: // 'P'
-      return "#0000FF";
-    case 32: // пробел
-      return "#333333";
-    case 77: // 'M'
-      return "#FF0000";
-    case 82: // 'R'
-      return "#00AA00";
-    case 112: // 'p'
-      return "#02FEC0";
-    case 66: // 'B' (BarbelTile)
-      return "#FFA500";
-    default:
-      return "#952215";
+    case 48: return "#CCCCCC";
+    case 80: return "#0000FF";
+    case 32: return "#333333";
+    case 77: return "#FF0000";
+    case 82: return "#00AA00";
+    case 112: return "#02FEC0";
+    case 66: return "#FFA500";
+    default: return "#952215";
   }
 }
 
-function renderCellContent(cell: Cell) {
-  if (cell.monster && cell.monster.image) {
-    return (
-      <img
-        src={cell.monster.image}
-        alt="monster"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-  if (cell.resource && cell.resource.image) {
-    return (
-      <img
-        src={cell.resource.image}
-        alt="resource"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-
-  if (cell.barbel && cell.barbel.image) {
-    return (
-      <img
-        src={cell.barbel.image}
-        alt="barbel"
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
-    );
-  }
-  return null;
-}
+export default React.memo(MapCell);
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8241,11 +8544,13 @@ function renderCellContent(cell: Cell) {
 //==================================
 // src/components/MapWithCamera.tsx
 //==================================
-// src/components/MapWithCamera.tsx
+
 "use client";
 
 import React from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useSelector } from "react-redux";
+import { shallowEqual } from "react-redux";
+import type { RootState } from "@/store";
 import Map from "./Map";
 import type { PlayerState } from "../types/GameTypes";
 import { useInfoModal } from "./InfoModal";
@@ -8264,8 +8569,18 @@ export default function MapWithCamera({
   viewportHeight,
   myPlayer,
 }: MapWithCameraProps) {
-  const { state } = useGame();
-  const { grid, mapWidth, mapHeight, players, active_user } = state;
+  // console.log("🔄 MapWithCamera rerendered");
+  
+const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
+  (state: RootState) => ({
+    grid: state.game.grid,
+    mapWidth: state.game.mapWidth,
+    mapHeight: state.game.mapHeight,
+    players: state.game.players,
+    active_user: state.game.active_user,
+  }),
+  shallowEqual
+);
 
   const playerPosition = myPlayer?.position || { x: 0, y: 0 };
   const visionRange = myPlayer?.vision ?? 3;
@@ -8292,7 +8607,6 @@ export default function MapWithCamera({
   const playerImageOffsetX = 2;
   const playerImageOffsetY = 2;
 
-  // хук модалки
   const { open, Modal } = useInfoModal();
 
   return (
@@ -8321,7 +8635,9 @@ export default function MapWithCamera({
           gap={gap}
           visionRange={visionRange}
           playerPosition={playerPosition}
-          onCellClick={(cell) => open(cellToGameObject(cell))}
+          onCellClick={(cell) => {
+    console.log("Клик по клетке для перемещения:", cell);
+  }}
         />
 
         {players.map((player) => {
@@ -8338,18 +8654,11 @@ export default function MapWithCamera({
               onClick={() => open(playerToGameObject(player))}
               style={{
                 position: "absolute",
-                left:
-                  player.position.x * (tileSize + gap) +
-                  playerImageOffsetX,
-                top:
-                  player.position.y * (tileSize + gap) +
-                  playerImageOffsetY,
+                left: player.position.x * (tileSize + gap) + playerImageOffsetX,
+                top: player.position.y * (tileSize + gap) + playerImageOffsetY,
                 width: tileSize,
                 height: tileSize,
-                border:
-                  player.user_id === active_user
-                    ? "2px solid gold"
-                    : "none",
+                border: player.user_id === active_user ? "2px solid gold" : "none",
                 boxSizing: "border-box",
                 zIndex: 10,
                 opacity: playerVisible ? 1 : 0,
@@ -8358,6 +8667,7 @@ export default function MapWithCamera({
           );
         })}
       </div>
+
       <Modal />
     </div>
   );
@@ -8367,19 +8677,10 @@ export default function MapWithCamera({
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8396,6 +8697,9 @@ export default function MapWithCamera({
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import { useDispatch } from "react-redux";
+import { resetState } from "../store/slices/gameSlice";
+
 import styles from "../styles/ModeSelectionPage.module.css";
 
 export type GameMode = "PVE" | "1x1" | "1x2" | "2x2" | "3x3" | "5x5";
@@ -8414,14 +8718,12 @@ const REQUIRED_SIZE: Record<GameMode, number> = {
   "5x5": 10,
 };
 
-
 async function fetchQueueSize(mode: GameMode): Promise<number> {
   const res = await fetch(`${API_MATCH}/matchmaking/status?mode=${mode}`);
   if (!res.ok) throw new Error("Не удалось получить размер очереди");
   const queue: any[] = await res.json();
   return queue.length;
 }
-
 
 async function joinQueue(
   mode: GameMode,
@@ -8432,7 +8734,7 @@ async function joinQueue(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       player_id: player.playerId,
@@ -8441,7 +8743,7 @@ async function joinQueue(
     }),
   });
   if (!res.ok) {
-    throw new Error(await res.text() || "Ошибка при вступлении в очередь");
+    throw new Error((await res.text()) || "Ошибка при вступлении в очередь");
   }
 }
 
@@ -8453,7 +8755,7 @@ async function pollCurrentMatch(
     const res = await fetch(
       `${API_MATCH}/matchmaking/currentMatch?player_id=${playerId}`,
       {
-        headers: { "Authorization": `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       }
     );
     const data = await res.json();
@@ -8464,8 +8766,6 @@ async function pollCurrentMatch(
   }
 }
 
-
-
 export async function startMatchmaking(
   mode: GameMode,
   player: PlayerInfo,
@@ -8474,7 +8774,6 @@ export async function startMatchmaking(
   await joinQueue(mode, player, token);
   return pollCurrentMatch(player.playerId, token);
 }
-
 
 const MODES: { value: GameMode; label: string }[] = [
   { value: "PVE", label: "PvE (Solo)" },
@@ -8496,8 +8795,16 @@ export default function ModeSelectionPage() {
     "5x5": 0,
   });
   const router = useRouter();
-  const { user } = useAuth();
+   const { user, isLoading } = useAuth();
   const [isMatching, setIsMatching] = useState(false);
+    const dispatch = useDispatch();
+
+  useEffect(() => {
+     if (window.location.pathname === "/mode") {
+    dispatch(resetState());
+  }
+  }, [dispatch]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -8530,41 +8837,68 @@ export default function ModeSelectionPage() {
     }
   }, [user, router]);
 
+  useEffect(() => {
+  if (!user) return;
+  async function checkQueueStatus() {
+    // 1. Проверяем, есть ли уже матч (уже есть эта логика)
+    if (!user) return;
+    const matchRes = await fetch(
+      `${API_MATCH}/matchmaking/currentMatch?player_id=${user.id}`,
+      { headers: { Authorization: `Bearer ${user.token}` } }
+    );
+    const matchData = await matchRes.json();
+    if (matchData.instance_id) {
+      router.push(`/game?instance_id=${matchData.instance_id}`);
+      return;
+    }
 
-   const stored = localStorage.getItem("user");
-    const userData = stored ? JSON.parse(stored) : null;
-    const token = userData?.token;
-
-function isTokenExpired(token:string) {
-  try {
-    // JWT = header.payload.signature
-    const [, payload] = token.split('.');
-    if (!payload) return true;
-    // В браузере atob декодирует Base64
-    const decoded = JSON.parse(atob(payload));
-    // exp — время в секундах с эпохи Unix
-    return decoded.exp * 1000 < Date.now();
-  } catch (e) {
-    // Если не получилось распарсить — считаем, что токен невалиден/просрочен
-    return true;
+    // 2. Проверяем, стоит ли пользователь в очереди
+    const queueRes = await fetch(
+      `${API_MATCH}/matchmaking/inQueue?player_id=${user.id}`
+    );
+    const queueData = await queueRes.json();
+    if (queueData.inQueue && queueData.mode) {
+      setIsMatching(true);
+      setMode(queueData.mode); // чтобы подсветить режим
+    } else {
+      setIsMatching(false);
+    }
   }
-}
 
+  checkQueueStatus();
+}, [user]);
+
+
+  const token = user?.token;
+
+  function isTokenExpired(token: string) {
+    try {
+      // JWT = header.payload.signature
+      const [, payload] = token.split(".");
+      if (!payload) return true;
+      // В браузере atob декодирует Base64
+      const decoded = JSON.parse(atob(payload));
+      // exp — время в секундах с эпохи Unix
+      return decoded.exp * 1000 < Date.now();
+    } catch (e) {
+      // Если не получилось распарсить — считаем, что токен невалиден/просрочен
+      return true;
+    }
+  }
 
   async function handleStart() {
-   
     if (!token) {
       alert("Сначала выполните вход");
       router.push("/login");
       return;
     }
     // Проверка по времени
-  if (isTokenExpired(token)) {
-    alert("Сессия истекла, пожалуйста, войдите снова");
-    localStorage.removeItem("user");        // Очистим устаревшие данные
-    router.push("/login");
-    return;
-  }
+    if (isTokenExpired(token)) {
+      alert("Сессия истекла, пожалуйста, войдите снова");
+      localStorage.removeItem("user"); // Очистим устаревшие данные
+      router.push("/login");
+      return;
+    }
     try {
       setIsMatching(true);
       const playerInfo: PlayerInfo = { playerId: user!.id, level: user!.level };
@@ -8579,17 +8913,10 @@ function isTokenExpired(token:string) {
     }
   }
 
-
-
-
-
-
-
   async function handleCancel() {
-    const stored = localStorage.getItem("user");
-    const userData = stored ? JSON.parse(stored) : null;
-    const token = userData?.token;
-    if (!token) {
+    const token = user?.token;
+    const playerId = user?.id;
+    if (!token || !playerId) {
       alert("Сначала выполните вход");
       router.push("/login");
       return;
@@ -8602,10 +8929,10 @@ function isTokenExpired(token:string) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          player_id: userData.id,
+          player_id: playerId,
           mode: mode,
         }),
       });
@@ -8628,8 +8955,9 @@ function isTokenExpired(token:string) {
         {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => (
           <div
             key={m}
-            className={`${styles.modeBlock} ${mode === m ? styles.modeBlockSelected : ""
-              }`}
+            className={`${styles.modeBlock} ${
+              mode === m ? styles.modeBlockSelected : ""
+            }`}
             onClick={() => setMode(m)}
           >
             <div>{m === "PVE" ? "PvE (Solo)" : `PvP ${m}`}</div>
@@ -8656,7 +8984,6 @@ function isTokenExpired(token:string) {
           Выйти из очереди
         </button>
       </div>
-
     </div>
   );
 }
@@ -8665,6 +8992,11 @@ function isTokenExpired(token:string) {
 
 
 
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8744,6 +9076,10 @@ export default React.memo(function PlayerHUD({
 
 
 
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8840,7 +9176,61 @@ export default RegisterPage;
 
 
 
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
+
+
+
+
+
+
+//=================================
+// src/components/RequireAuth.tsx
+//=================================
+
+"use client";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../contexts/AuthContext";
+
+type Props = {
+  children: React.ReactNode;
+};
+
+export default function RequireAuth({ children }: Props) {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading) {
+    return <div>Загрузка...</div>;
+  }
+  if (!user) {
+    // можно вернуть null или спиннер, т.к. уже редирект
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
+
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 
@@ -8854,14 +9244,15 @@ export default RegisterPage;
 "use client";
 
 import React from "react";
-import { useGame } from "../contexts/GameContextt";
+import { useSelector } from "react-redux";
+import type { RootState } from "../store";
 
 const TurnIndicator = () => {
-  const { state } = useGame();
+  const turnNumber = useSelector((state: RootState) => state.game.turnNumber);
 
   return (
     <div style={{ padding: "0.5rem", backgroundColor: "#222", color: "#fff", borderRadius: "4px", width: 100 }}>
-      <p>Turn: {state.turnNumber}</p>
+      <p>Turn: {turnNumber}</p>
     </div>
   );
 };
@@ -8884,11 +9275,6 @@ export default TurnIndicator;
 
 
 
-
-
-
-
-
 //=============================
 // src/contexts/AuthContext.tsx
 //=============================
@@ -8898,7 +9284,7 @@ export default TurnIndicator;
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-type User = {
+export type User = {
   id: number;
   email: string;
   name: string;
@@ -8912,6 +9298,7 @@ type AuthContextType = {
   user: User | null;
   login: (userData: User) => void;
   logout: () => void;
+  isLoading: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -8929,16 +9316,21 @@ function parseJwt(token: string): { exp?: number } {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
+     async function restoreUser() {
     let stored: string | null = null;
     try {
       stored = localStorage.getItem("user");
     } catch (e) {
       console.warn("Не удалось прочитать localStorage:", e);
     }
-    if (!stored) return;
+    if (!stored){
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const u: User = JSON.parse(stored);
@@ -8947,14 +9339,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (exp && Date.now() >= exp * 1000) {
         // просрочен
         console.log("Токен истёк, вынужденный logout");
-        logout();
+        localStorage.removeItem("user");
+          setUser(null);
+        // logout();
       } else {
         setUser(u);
       }
     } catch (e) {
       console.warn("Не удалось распарсить user из localStorage:", e);
-      logout();
-    }
+       localStorage.removeItem("user");
+          setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+  }
+    restoreUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -8979,7 +9378,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading}}>
       {children}
     </AuthContext.Provider>
   );
@@ -8999,633 +9398,360 @@ export function useAuth() {
 
 
 
+======================================================================================================================================
+==================================src/features/game========================================================================================
+===================================src/features/game=========================================================================================
+===================================src/features/game===========================================================================================
+==================================src/features/game===================================================================================
+======================================================================================================================================
 
 
 
-//==================================
-// src/contexts/GameContextt.tsx
-//==================================
+//=======================================
+// src/features/game/createWsHandlers.ts
+//=======================================
+
+import { AppDispatch } from "@/store";
+import {
+  setMatchData,
+  updateCell,
+  updatePlayer,
+  movePlayer,
+  combatExchange,
+  setActiveUser,
+  playerDefeated,
+  turnPassed,
+  updateInventory,
+  updatePlayerPosition,
+  updatePlayerHealth,
+} from "@/store/slices/gameSlice";
+
+// Тип user можно импортировать из своего AuthContext
+type User = { id: number } | null;
+
+export function createWsHandlers(
+  dispatch: AppDispatch,
+  router: any,
+  instanceId: string,
+  user: User
+) {
+  return {
+    // --- MATCH UPDATE ---
+    MATCH_UPDATE: (payload: any) => {
+      console.log("[DISPATCH setMatchData] SOURCE: WS MATCH_UPDATE", {
+        payload,
+      });
+      dispatch(setMatchData(payload));
+    },
+
+    // --- MOVE/POSITION ---
+    MOVE_PLAYER: (payload: any) =>
+      dispatch(
+        movePlayer({
+          instanceId,
+          userId: payload.playerId ?? payload.userId,
+          newPosition: payload.newPosition,
+        })
+      ),
+    UPDATE_PLAYER_POSITION: (payload: any) =>
+      dispatch(
+        updatePlayerPosition({
+          userId: payload.userId,
+          newPosition: payload.newPosition,
+        })
+      ),
+    BARREL_DAMAGE: (payload: any) =>
+      dispatch(
+        updatePlayerHealth({
+          userId: payload.userId,
+          hp: payload.hp,
+        })
+      ),
+    // --- CELL/PLAYER UPDATES ---
+    UPDATE_CELL: (payload: any) =>
+      dispatch(
+        updateCell({
+          instanceId,
+          updatedCell: payload.updatedCell,
+        })
+      ),
+    UPDATE_PLAYER: (payload: any) =>
+      dispatch(
+        updatePlayer({
+          instanceId,
+          player: payload.player,
+        })
+      ),
+    // --- BOOTLE/RESOURCE ---
+    RESOURCE_COLLECTED: (payload: any) => {
+      dispatch(updateCell({ instanceId, updatedCell: payload.updatedCell }));
+      dispatch(updatePlayer({ instanceId, player: payload.updatedPlayer }));
+    },
+    BARREL_RESOURCE: (payload: any) => {
+      dispatch(updateCell({ instanceId, updatedCell: payload.updatedCell }));
+      dispatch(updatePlayer({ instanceId, player: payload.updatedPlayer }));
+    },
+    BARREL_ARTIFACT: (payload: any) => {
+      dispatch(updateCell({ instanceId, updatedCell: payload.updatedCell }));
+      dispatch(updatePlayer({ instanceId, player: payload.updatedPlayer }));
+    },
+    // --- BATTLE/COMBAT ---
+    COMBAT_EXCHANGE: (payload: any) =>
+      dispatch(
+        combatExchange({
+          instanceId,
+          attacker: payload.attacker,
+          target: payload.target,
+        })
+      ),
+    // --- TURN/USER ---
+    SET_ACTIVE_USER: (payload: any) =>
+      dispatch(
+        setActiveUser({
+          instanceId,
+          active_user: payload.active_user,
+          turnNumber: payload.turnNumber,
+          energy: payload.energy,
+        })
+      ),
+    TURN_PASSED: (payload: any) =>
+      dispatch(
+        turnPassed({
+          instanceId,
+          active_user: payload.active_user,
+        })
+      ),
+    PLAYER_DEFEATED: (payload: any) => {
+      if (payload.userId === user?.id) router.push("/mode");
+      dispatch(
+        playerDefeated({
+          instanceId,
+          userId: payload.userId,
+        })
+      );
+    },
+    // --- INV ---
+    UPDATE_INVENTORY: (payload: any) =>
+      dispatch(
+        updateInventory({
+          instanceId,
+          userId: payload.userId,
+          inventory: payload.inventory,
+        })
+      ),
+    // --- END ---
+    MATCH_ENDED: () => {
+      router.replace("/mode");
+    },
+    // ... любые другие новые типы событий!
+  };
+}
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+//===================================
+// src/features/game/GameWrapper.tsx
+//===================================
 
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useReducer,
-  useEffect,
-  Dispatch,
-  useState,
-  useRef,
-} from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useGameSocket } from "../hooks/useGameSocket";
-import { useAuth } from "../contexts/AuthContext";
-import type { GameState, Action, ResourceType, MonsterType, PlayerState, Cell, Inventory } from "../types/GameTypes";
+import { useAuth } from "@/contexts/AuthContext";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState, AppDispatch } from "@/store";
+import { resetState } from "@/store/slices/gameSlice";
+import { useGameSocket } from "@/hooks/useGameSocket";
+import type { ResourceType, MonsterType } from "@/types/GameTypes";
+import { createWsHandlers } from "./createWsHandlers";
 
-// Начальное состояние
-const initialState: GameState = {
-  instanceId: "",
-  mode: "",
-  grid: [],
-  mapWidth: 0,
-  mapHeight: 0,
-  players: [],
-  active_user: 0,
-  turnNumber: 1,
-};
-
-const GameContext = createContext<{ state: GameState; dispatch: Dispatch<Action>; socket: ReturnType<typeof useGameSocket> } | undefined>(undefined);
-
-
-
-export function gameReducer(state: GameState, action: Action): GameState {
-  switch (action.type) {
-    case "SET_MATCH_DATA":
-      // console.log("[GameReducer][SET_MATCH_DATA] Получены данные матча:", action.payload);
-      const active_user = action.payload.active_user;
-      // console.log("[GameReducer] Устанавливаем active_user:", active_user);
-      return {
-        ...state,
-        instanceId: action.payload.instanceId,
-        mode: action.payload.mode,
-        grid: action.payload.grid,
-        mapWidth: action.payload.mapWidth,
-        mapHeight: action.payload.mapHeight,
-        players: action.payload.players,
-        active_user: active_user,
-        turnNumber: action.payload.turnNumber || state.turnNumber,
-      };
-
-    case "MOVE_PLAYER":
-      // console.log("[GameReducer][MOVE_PLAYER] Перемещение игрока:", action.payload);
-      const playerId = action.payload.userId;
-      return {
-        ...state,
-        players: state.players.map((p) =>
-          p.user_id === playerId
-            ? { ...p, position: action.payload.newPosition }
-            : p
-        ),
-      };
-
-    case "COMBAT_EXCHANGE": {
-      const { attacker, target } = action.payload;
-      //console.log("[GameReducer][COMBAT_EXCHANGE]", attacker, target);
-      return {
-        ...state,
-        players: state.players.map(p => {
-          if (p.user_id === attacker.id) return { ...p, health: attacker.new_hp };
-          if (p.user_id === target.id) return { ...p, health: target.new_hp };
-          return p;
-        }),
-      };
-    }
-
-
-    case "BARREL_ARTIFACT": {
-      const { updatedPlayer } = action.payload;
-      return {
-        ...state,
-        players: state.players.map(p =>
-          p.user_id === updatedPlayer.user_id ? updatedPlayer : p
-        ),
-      };
-    }
-
-    case "UPDATE_INVENTORY": {
-      const { userId, inventory } = action.payload as {
-        userId: number;
-        inventory: Inventory;
-      };
-      // обновляем только у нужного игрока
-      return {
-        ...state,
-        players: state.players.map(p =>
-          p.user_id === userId ? { ...p, inventory } : p
-        ),
-      };
-    }
-
-    case "SET_ACTIVE_USER": {
-      // console.log("[GameReducer][SET_ACTIVE_USER] Новый активный игрок:", action.payload.active_user, "энергия:", action.payload.energy);
-      const { active_user, turnNumber, energy } = action.payload;
-      return {
-        ...state,
-        active_user,
-        turnNumber,
-        // обновляем энергию только у того, чей ход закончился
-        players: state.players.map(p =>
-          p.user_id === active_user
-            ? { ...p, energy: energy ?? p.energy }
-            : p
-        ),
-      };
-    }
-
-    case "UPDATE_PLAYER":
-      //  console.log("[GameReducer][UPDATE_PLAYER] До обновления. Полученные данные:", action.payload.player);
-      const updatedData = action.payload.player;
-      const normalizedPlayer: PlayerState = {
-        ...updatedData,
-        position: { x: updatedData.position?.x, y: updatedData.position?.y },
-        user_id: updatedData.user_id,
-      };
-      if (typeof normalizedPlayer.inventory === "string") {
-        //  console.log("[GameReducer][UPDATE_PLAYER] Инвентарь как строка:", normalizedPlayer.inventory);
-        try {
-          normalizedPlayer.inventory = JSON.parse(normalizedPlayer.inventory);
-          //   console.log("[GameReducer][UPDATE_PLAYER] Парсенный инвентарь:", normalizedPlayer.inventory);
-        } catch (e) {
-          //  console.error("[GameReducer][UPDATE_PLAYER] Ошибка парсинга инвентаря:", e);
-          normalizedPlayer.inventory = { resources: {}, artifacts: {} };
-        }
-      }
-      // console.log("[GameReducer][UPDATE_PLAYER] После нормализации:", normalizedPlayer);
-      return {
-        ...state,
-        players: state.players.map((p) =>
-          p.user_id === normalizedPlayer.user_id ? normalizedPlayer : p
-        ),
-      };
-
-    case "UPDATE_CELL": {
-      const { updatedCell } = action.payload
-      return {
-        ...state,
-        grid: state.grid.map(cell => {
-          // если пришёл cell_id и он совпадает — используем его:
-          if (updatedCell.cell_id != null && cell.cell_id === updatedCell.cell_id) {
-            return { ...cell, ...updatedCell }
-          }
-          // иначе, если пришли координаты, матчим по ним:
-          if (updatedCell.x != null && updatedCell.y != null &&
-            cell.x === updatedCell.x && cell.y === updatedCell.y) {
-            return { ...cell, ...updatedCell }
-          }
-          return cell
-        })
-      }
-    }
-
-    case "PLAYER_DEFEATED": {
-      // console.log("[GameReducer] PLAYER_DEFEATED, удаляем игрока:", action.payload.userId);
-      return {
-        ...state,
-        players: state.players.filter(p => p.user_id !== action.payload.userId),
-      };
-    }
-
-    case "TURN_PASSED":
-      return {
-        ...state,
-        active_user: action.payload.active_user,
-      };
-
-    case "RESET_STATE":
-      // console.log("[GameReducer][RESET_STATE] Сброс состояния");
-      return { ...initialState };
-
-    default:
-      return state;
-  }
-}
-
-type GameProviderProps = {
+interface GameWrapperProps {
   instanceId: string;
   children: React.ReactNode;
-};
+}
 
-
-
-
-
-export function GameProvider({ instanceId, children }: GameProviderProps) {
+export default function GameWrapper({
+  instanceId,
+  children,
+}: GameWrapperProps) {
+  console.log("[GameWrapper] РЕНДЕР! instanceId:", instanceId);
+  const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user , isLoading} = useAuth();
+  const state = useSelector((state: RootState) => state.game);
 
-  useEffect(() => {
-    if (!user) {
-      router.replace("/login");
-    }
-  }, [user, router]);
-
-
-  const [state, dispatch] = useReducer(gameReducer, { ...initialState, instanceId });
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
   const prevInstanceIdRef = useRef<string>("");
+  const isFetching = useRef(false);
 
-  useEffect(() => {
-    //console.log("[GameProvider] instanceId изменился на:", instanceId);
-    // Сброс состояния, если instanceId изменился
-    if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
-      dispatch({ type: "RESET_STATE" });
-    }
-    prevInstanceIdRef.current = instanceId;
+  // ========== FETCH MATCH ==========
 
-    async function fetchResources() {
-      try {
-        const res = await fetch("http://localhost:8001/api/resources", { cache: "no-store" });
-        if (!res.ok) {
-          console.error("[GameProvider] Ошибка загрузки ресурсов", await res.text());
-          return;
-        }
-        const data = await res.json();
-        // console.log("[GameProvider] Полученные ресурсы:", data);
-        setResources(data);
-      } catch (err) {
-        console.error("[GameProvider] fetchResources error:", err);
+  async function fetchAll() {
+    if (isFetching.current) return;
+    isFetching.current = true;
+
+    try {
+      if (!user || !user.token) {
+        console.warn("[GameWrapper] Нет user или токена — выход");
+        return;
       }
-    }
+      const [resources, monsters] = await Promise.all([
+        fetch("http://localhost:8001/api/resources").then((r) => r.json()),
+        fetch("http://localhost:8001/api/monsters").then((r) => r.json()),
+      ]);
+      setResources(resources);
+      setMonsters(monsters);
 
+      console.log("[GameWrapper] user:", user);
+      console.log("[GameWrapper] fetch match...");
 
+      const res = await fetch(
+        `http://localhost:8001/game/match?instance_id=${instanceId}`,
+        { headers: { Authorization: `Bearer ${user.token}` } }
+      );
+      const data = await res.json();
+      console.log("[GameWrapper] match data:", data);
 
+      const players = data.players.map((p: any) => ({
+        ...p,
+        user_id: p.user_id ?? p.player_id,
+        position: p.position,
+      }));
 
-
-
-    async function fetchMonsters() {
-      try {
-        const res = await fetch("http://localhost:8001/api/monsters", { cache: "no-store" });
-        if (!res.ok) {
-          console.error("[GameProvider] Ошибка загрузки монстров", await res.text());
-          return;
-        }
-        const data = await res.json();
-        // console.log("[GameProvider] Полученные монстры:", data);
-        setMonsters(data);
-      } catch (err) {
-        console.error("[GameProvider] fetchMonsters error:", err);
+      let active_user = data.active_player ?? data.active_user;
+      if ((!active_user || active_user === 0) && players.length > 0) {
+        active_user = players[0].user_id;
       }
-    }
 
-    fetchResources();
-    fetchMonsters();
-  }, [instanceId]);
-
-  useEffect(() => {
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-
-    // Ждём, пока подгрузятся ресурсы и монстры
-    if (resources.length === 0 || monsters.length === 0) return;
-
-    async function fetchMatchData() {
-      const token = user?.token;
-      try {
-        const res = await fetch(
-          `http://localhost:8001/game/match?instance_id=${instanceId}`,
-          {
-            cache: "no-store",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`,
-            },
-          }
-        );
-        if (!res.ok) {
-          console.error("[GameProvider] Ошибка загрузки данных матча", await res.text());
-          router.replace("/mode");
-          return;
-        }
-        const data = await res.json();
-        console.log("[GameProvider] Полученные данные матча:", data);
-        if (data.instance_id !== instanceId) {
-
-          router.replace(`/game?instance_id=${data.instance_id}`);
-          return;
-        }
-        // Если сервер уже возвращает поле position, используем его без лишних преобразований
-        const players = (data.players || []).map((p: any) => {
-          return {
-            ...p,
-            user_id: p.user_id || p.player_id,
-            position: { x: p.position.x, y: p.position.y },
-          };
-        });
-        dispatch({
-          type: "SET_MATCH_DATA",
-          payload: {
-            instanceId: data.instance_id,
-            mode: data.mode,
-            grid: data.map,
-            mapWidth: data.map_width,
-            mapHeight: data.map_height,
-            players,
-            active_user: data.active_user,
-            turnNumber: data.turn_number,
-          },
-        });
-      } catch (err) {
-        console.error("[GameProvider] fetchMatchData error:", err);
-      }
-    }
-    if (resources.length > 0 && monsters.length > 0) {
-      fetchMatchData();
-    }
-  }, [instanceId, resources.length, monsters.length, router, user]);
-
-
-
-
-
-
-
-
-  const socket = useGameSocket(
-    (data) => {
-      // Игнорируем сообщения не для текущего матча
-      if (data.payload?.instanceId && data.payload.instanceId !== state.instanceId) {
-        console.log("[GameProvider] Сообщение не для текущего матча, игнорируем:", data.payload.instanceId);
+      if (state.instanceId === data.instance_id && state.isMapLoaded) {
+        // ничего не делаем, всё уже актуально
         return;
       }
 
-      switch (data.type) {
-        case "MATCH_UPDATE": {
-          const { instanceId: msgMatch, mode, grid, mapWidth, mapHeight, players, active_player, turn_number } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          dispatch({
-            type: "SET_MATCH_DATA",
-            payload: {
-              instanceId: state.instanceId,
-              mode,
-              grid,
-              mapWidth,
-              mapHeight,
-              players,
-              active_user: active_player,
-              turnNumber: turn_number,
-            },
-          });
-          break;
-        }
+      console.log("[DISPATCH setMatchData] SOURCE: fetchAll", {
+        payload: {
+          instanceId: data.instance_id,
+          mode: data.mode,
+          grid: data.map,
+          mapWidth: data.map_width,
+          mapHeight: data.map_height,
+          players,
+          active_user,
+          turnNumber: data.turn_number,
+        },
+      });
+      dispatch({
+        type: "game/setMatchData",
+        payload: {
+          instanceId: data.instance_id,
+          mode: data.mode,
+          grid: data.map,
+          mapWidth: data.map_width,
+          mapHeight: data.map_height,
+          players,
+          active_user,
+          turnNumber: data.turn_number,
+        },
+      });
 
 
-        case "MOVE_PLAYER": {
-          // 1. Деструктурируем payload
-          const { instanceId: msgMatch, playerId, userId, newPosition } = data.payload;
-          // 2. Фильтруем не-наш матч
-          if (msgMatch !== state.instanceId) break;
-          // 3. Диспатчим, передавая instanceId из state (или msgMatch — они же равны)
-          dispatch({
-            type: "MOVE_PLAYER",
-            payload: {
-              instanceId: state.instanceId,
-              userId: playerId ?? userId,
-              newPosition,
-            },
-          });
-          break;
-        }
+    } catch (e) {
+      console.error("Ошибка загрузки данных матча, ресурсов или монстров", e);
+      router.replace("/mode");
+    } finally {
+      isFetching.current = false;
+    }
+  }
+  useEffect(() => {
+    if (isLoading) return; 
+    console.log(
+      "[GameWrapper/useEffect] user:",
+      user,
+      "token:",
+      user?.token,
+      "isMapLoaded:",
+      state.isMapLoaded,
+      "instanceId:",
+      instanceId
+    );
 
-        // 2) RESOURCE_COLLECTED
-        case "RESOURCE_COLLECTED": {
-          const { instanceId: msgMatch, updatedCell, updatedPlayer } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          dispatch({
-            type: "UPDATE_CELL",
-            payload: {
-              instanceId: state.instanceId,
-              updatedCell,
-            },
-          });
-          if (updatedPlayer) {
-            dispatch({
-              type: "UPDATE_PLAYER",
-              payload: {
-                instanceId: state.instanceId,
-                player: updatedPlayer,
-              },
-            });
-          }
-          break;
-        }
-        case "SET_ACTIVE_USER": {
-          const { instanceId: msgMatch, active_user, turnNumber, energy } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          console.log("[GameProvider] SET_ACTIVE_USER:", data.payload);
-          dispatch({
-            type: "SET_ACTIVE_USER",
-            payload: { instanceId: state.instanceId, active_user, turnNumber, energy },
-          });
-          break;
-        }
+    if (!user) {
+      console.log("[GameWrapper/useEffect] Нет user, уходим на /login");
+      router.replace("/login");
+      return;
+    }
+    if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
+      console.log("[GameWrapper/useEffect] Новый instanceId, resetState()");
+      dispatch(resetState());
+    }
+    prevInstanceIdRef.current = instanceId;
 
-        case "UPDATE_PLAYER": {
-          const { instanceId: msgMatch, player } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          dispatch({
-            type: "UPDATE_PLAYER",
-            payload: { instanceId: state.instanceId, player },
-          });
-          break;
-        }
+    if (!state.isMapLoaded && user && user.token) {
+      console.log("[GameWrapper/useEffect] Запускаем fetchAll");
+      fetchAll();
+    } else {
+      console.log(
+        "[GameWrapper/useEffect] НЕ запускаем fetchAll (isMapLoaded:",
+        state.isMapLoaded,
+        ")"
+      );
+    }
+  }, [instanceId, user, isLoading]);
 
+  // ========== SOCKET ==========
 
-        case "COMBAT_EXCHANGE": {
-          // приводим payload к нужному типу
-          const { instanceId, attacker, target } = data.payload as {
-            instanceId: string;
-            attacker: { id: number; new_hp: number; damage: number };
-            target: { id: number; new_hp: number; damage: number };
-          };
+  type WsEventType =
+    | "MATCH_UPDATE"
+    | "MOVE_PLAYER"
+    | "UPDATE_CELL"
+    | "UPDATE_PLAYER"
+    | "COMBAT_EXCHANGE"
+    | "SET_ACTIVE_USER"
+    | "PLAYER_DEFEATED"
+    | "TURN_PASSED"
+    | "UPDATE_INVENTORY"
+    | "RESOURCE_COLLECTED"
+    | "BARREL_RESOURCE"
+    | "BARREL_ARTIFACT"
+    | "MATCH_ENDED";
 
-          dispatch({
-            type: "COMBAT_EXCHANGE",
-            payload: {
-              instanceId,
-              attacker: { id: attacker.id, new_hp: attacker.new_hp },
-              target: { id: target.id, new_hp: target.new_hp },
-            },
-          });
-          break;
-        }
+  // Типизация всех известных событий:
+  type WsHandlers = {
+    [K in WsEventType]: (payload: any) => void;
+  } & {
+    // На всякий случай для всех остальных
+    [key: string]: (payload: any) => void;
+  };
 
-        case "MONSTER_HIT": {
-          const { instanceId, monsterInstanceId, newHP, x, y } = data.payload as {
-            instanceId: string;
-            monsterInstanceId: number;
-            newHP: number;
-            x: number;
-            y: number;
-          };
+  const wsHandlers = createWsHandlers(dispatch, router, instanceId, user);
 
-          // Обновляем клетку в grid, меняя здоровье монстра
-          dispatch({
-            type: "UPDATE_CELL",
-            payload: {
-              instanceId,
-              updatedCell: {
-                ...state.grid.find(cell => cell.x === x && cell.y === y)!,
-                monster: state.grid
-                  .find(cell => cell.x === x && cell.y === y)!
-                  .monster && {
-                  ...state.grid.find(cell => cell.x === x && cell.y === y)!.monster!,
-                  health: newHP,
-                },
-              },
-            },
-          });
-          break;
-        }
-
-
-
-        case "BARREL_DAMAGE": {
-          // payload: { userId, amount, hp }
-          const { instanceId, userId, amount, hp } = data.payload as {
-            instanceId: string;
-            userId: number;
-            amount: number;
-            hp: number;
-          };
-          // обновляем игрока
-          dispatch({
-            type: "UPDATE_PLAYER",
-            payload: {
-              instanceId,
-              player: {
-                ...state.players.find(p => p.user_id === userId)!,
-                health: hp
-              }
-            }
-          });
-          break;
-        }
-
-        // 5) BARREL_RESOURCE / BARREL_ARTIFACT
-        case "BARREL_RESOURCE":
-        case "BARREL_ARTIFACT": {
-          const { instanceId: msgMatch, updatedCell, updatedPlayer } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          dispatch({
-            type: "UPDATE_CELL",
-            payload: {
-              instanceId: state.instanceId,
-              updatedCell,
-            },
-          });
-          dispatch({
-            type: "UPDATE_PLAYER",
-            payload: {
-              instanceId: state.instanceId,
-              player: updatedPlayer,
-            },
-          });
-          break;
-        }
-
-
-        // 3) UPDATE_INVENTORY
-        case "UPDATE_INVENTORY": {
-          const { instanceId: msgMatch, userId, inventory } = data.payload;
-          if (msgMatch !== state.instanceId) break;
-          dispatch({
-            type: "UPDATE_INVENTORY",
-            payload: {
-              instanceId: state.instanceId,
-              userId,
-              inventory,
-            },
-          });
-          break;
-        }
-
-
-
-        // 4) UPDATE_CELL
-        case "UPDATE_CELL": {
-          const raw = data.payload as any;
-          const msgMatch = raw.instanceId ?? raw.payload?.instanceId;
-          if (msgMatch !== state.instanceId) break;
-          const updatedCell = raw.updatedCell ?? raw;
-          dispatch({
-            type: "UPDATE_CELL",
-            payload: {
-              instanceId: state.instanceId,
-              updatedCell: updatedCell as Cell,
-            },
-          });
-          break;
-        }
-
-        case "PLAYER_DEFEATED": {
-          const { instanceId: msgMatch, userId } = data.payload as {
-            instanceId: string;
-            userId: number;
-          };
-          // Фильтруем чужие матчи
-          if (msgMatch !== state.instanceId) break;
-          // Для себя — редирект
-          if (user?.id != null && userId === user.id) {
-            router.push("/mode");
-          }
-          // Удаляем игрока из списка
-          dispatch({
-            type: "PLAYER_DEFEATED",
-            payload: { userId },
-          });
-          break;
-        }
-
-        case "TURN_PASSED": {
-          // 1) Деструктурируем из payload и сразу переименовываем
-          const { instanceId: msgMatch, active_user: active_user } = data.payload as {
-            instanceId: string;
-            active_user: number;
-          };
-          // 2) Фильтруем «чужие» матчи
-          if (msgMatch !== state.instanceId) break;
-          // 3) Логируем и диспатчим только для нашего матча
-          console.log("[GameProvider] TURN_PASSED:", data.payload);
-          dispatch({
-            type: "TURN_PASSED",
-            payload: { active_user },
-          });
-          break;
-        }
-
-        default:
-          // можно логировать непредвидённые типы
-          console.warn("[GameProvider] Неизвестный тип WS-сообщения:", data.type);
+  const socket = useGameSocket(
+    (data) => {
+      if (data.payload?.instanceId !== instanceId) return;
+      const handler = wsHandlers[data.type as WsEventType];
+      if (handler) {
+        handler(data.payload);
+      } else {
+        console.warn("[WS] Неизвестный тип события:", data.type, data);
       }
     },
-    { instanceId: state.instanceId }
+    { instanceId }
   );
 
   useEffect(() => {
-    if (!user && socket) {
-      socket.close();
-    }
+    if (!user && socket) socket.close();
   }, [user, socket]);
 
-
-  return (
-    <GameContext.Provider value={{ state, dispatch, socket }}>
-      {children}
-    </GameContext.Provider>
-  );
-
+  return <>{children}</>;
 }
-
-export function useGame() {
-  const context = useContext(GameContext);
-  if (!context) throw new Error("useGame must be used within a GameProvider");
-  return context; // теперь здесь есть state, dispatch и socket
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -9639,12 +9765,64 @@ export function useGame() {
 ======================================================================================================================================
 
 
+//==============================
+// src/hooks/useGameKeyboard.ts
+//==============================
+
+import { useEffect } from "react";
+
+type Direction = "up" | "down" | "left" | "right";
+
+interface UseGameKeyboardProps {
+  onMove: (direction: Direction) => void;
+  onAction: () => void;
+  onInventory: () => void;
+}
+
+
+export function useGameKeyboard({ onMove, onAction, onInventory }: UseGameKeyboardProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        [
+          "ArrowUp",
+          "ArrowDown",
+          "ArrowLeft",
+          "ArrowRight",
+          " ",
+          "i",
+          "I",
+          "ш",
+          "Ш",
+        ].includes(e.key)
+      ) {
+        e.preventDefault();
+      }
+      if (e.key === "ArrowUp") onMove("up");
+      else if (e.key === "ArrowDown") onMove("down");
+      else if (e.key === "ArrowLeft") onMove("left");
+      else if (e.key === "ArrowRight") onMove("right");
+      else if (e.key === " ") onAction();
+      else if (e.key.toLowerCase() === "i" || e.key.toLowerCase() === "ш")
+        onInventory();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onMove, onAction, onInventory]);
+}
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
 
 
 //=============================
 // src/hooks/useGameSocket.ts
 //=============================
-
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -9661,10 +9839,11 @@ interface GameSocketOptions {
 }
 
 // Тип WS-сообщения
-interface WSMessage<Payload = any> {
+export interface WSMessage<Payload = any> {
   type: string;
   payload?: Payload;
 }
+
 
 interface MatchResponse {
   instance_id: string;
@@ -9690,7 +9869,7 @@ async function fetchFullMatch(
         cache: "no-store",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
         },
       }
     );
@@ -9729,6 +9908,11 @@ export function useGameSocket(
   const router = useRouter();
   const { user } = useAuth();
 
+  useEffect(() => {
+  console.log("[useGameSocket] MOUNTED for", options?.instanceId, user?.token);
+  return () => console.log("[useGameSocket] UNMOUNT for", options?.instanceId);
+}, [options?.instanceId, user?.token]);
+
   // Всегда актуальный обработчик
   useEffect(() => {
     onMessageRef.current = onMessage;
@@ -9741,7 +9925,12 @@ export function useGameSocket(
     const { instanceId } = options;
 
     const connect = () => {
-      const ws = new WebSocket(`${WS_URL}?token=${user?.token}&instanceId=${instanceId}`);
+      console.log("Connecting to WS with:", { token: user?.token, instanceId });
+      if (!user?.token || !instanceId) return;
+
+      const ws = new WebSocket(
+        `${WS_URL}?token=${user?.token}&instanceId=${instanceId}`
+      );
 
       wsRef.current = ws;
 
@@ -9749,7 +9938,6 @@ export function useGameSocket(
         ws.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
         fetchFullMatch(instanceId, onMessageRef.current, user?.token);
       };
-
       ws.onmessage = (e) => {
         let msg: WSMessage;
         try {
@@ -9759,7 +9947,6 @@ export function useGameSocket(
           return;
         }
 
-        // Фильтруем чужие матчи
         if (
           msg.payload?.instanceId != null &&
           msg.payload.instanceId !== instanceId
@@ -9769,37 +9956,59 @@ export function useGameSocket(
 
         switch (msg.type) {
           case "MATCH_ENDED":
-            // матч завершён
+            wsRef.current?.close(1000);
             router.replace("/mode");
             return;
 
           case "PLAYER_DEFEATED":
-            // если это моя смерть — выходим
             if (msg.payload.userId === user?.id) {
+              wsRef.current?.close(1000); 
               router.replace("/mode");
+                 }
+               onMessageRef.current(msg);
               return;
-            }
-            // чужая смерть — просто прокидываем дальше, чтобы context мог обновить, например, список игроков
-            break;
+         
+          
 
           case "TURN_PASSED":
-            // смена хода — диспатчим в контекст
             onMessageRef.current({
               type: "SET_ACTIVE_USER",
               payload: {
                 instanceId: msg.payload.instanceId,
                 active_user: msg.payload.userId,
                 turnNumber: msg.payload.turnNumber,
-                energy: msg.payload.energy, // если сервер шлёт energy
+                energy: msg.payload.energy,
               },
             });
             return;
 
-          // можно добавить другие кейсы событий WS здесь…
-        }
+          case "MOVE_PLAYER":
+            onMessageRef.current({
+              type: "UPDATE_PLAYER_POSITION",
+              payload: {
+                instanceId: msg.payload.instanceId,
+                userId: msg.payload.userId,
+                newPosition: msg.payload.newPosition,
+              },
+            });
+            return;
 
-        // по умолчанию — прокидываем все остальные события в контекст
-        onMessageRef.current(msg);
+          case "UPDATE_CELL":
+          case "UPDATE_PLAYER":
+          case "MATCH_UPDATE":
+          case "COMBAT_EXCHANGE":
+          case "SET_ACTIVE_USER":
+          case "UPDATE_INVENTORY":
+          case "RESOURCE_COLLECTED":
+          case "BARREL_RESOURCE":
+          case "BARREL_ARTIFACT":
+            onMessageRef.current(msg);
+            return;
+
+          default:
+            console.warn("[WS] Unknown event type:", msg.type, msg);
+            onMessageRef.current(msg);
+        }
       };
 
       ws.onerror = (err) => {
@@ -9807,11 +10016,11 @@ export function useGameSocket(
       };
 
       ws.onclose = (e) => {
-        // 1000 — нормальное закрытие
-        if (e.code !== 1000) {
-          reconnectRef.current = window.setTimeout(connect, 3000);
-        }
-      };
+  if (e.code !== 1000) {
+    reconnectRef.current = window.setTimeout(connect, 3000);
+  };
+};
+
     };
 
     connect();
@@ -9842,6 +10051,551 @@ export function useGameSocket(
 
 
 
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+
+//===============================
+// src/hooks/usePlayerActions.ts
+//===============================
+
+
+import { useDispatch } from "react-redux";
+import { updatePlayer, updateCell } from "../store/slices/gameSlice";
+import type { PlayerState, Cell } from "../types/GameTypes";
+import { useCallback, useMemo } from "react";
+import type { RootState } from "../store";
+import type { User } from "../contexts/AuthContext"; 
+
+const DELTAS = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+} as const;
+
+type MoveDirection = keyof typeof DELTAS;
+
+export function usePlayerActions(
+  instanceId: string,
+  user: User | null,
+  state: RootState["game"]
+): {
+  myPlayer: PlayerState | undefined;
+  isMyTurn: boolean;
+  handleMoveOrAttack: (direction: MoveDirection) => Promise<void>;
+  movePlayer: (x: number, y: number) => Promise<PlayerState | null>;
+  fightMonster: (cellX: number, cellY: number) => Promise<void>;
+  openBarrel: (cellX: number, cellY: number) => Promise<any>;
+  collectResource: (cellX: number, cellY: number) => Promise<void>;
+} {
+  const dispatch = useDispatch();
+
+  const myPlayerId = user?.id;
+  const myPlayer = useMemo(
+    () => state.players.find((p) => p.user_id === myPlayerId),
+    [state.players, myPlayerId]
+  );
+  const isMyTurn = !!myPlayer && myPlayerId === state.active_user;
+
+  // ===== Дефолт-методы если нет user =====
+  if (!user) {
+    return {
+      myPlayer: undefined,
+      isMyTurn: false,
+      handleMoveOrAttack: async () => {},
+      movePlayer: async () => null,
+      fightMonster: async () => {},
+      openBarrel: async () => null,
+      collectResource: async () => {},
+    };
+  }
+
+  // ===== Все методы ниже как у тебя, можно просто скопировать! =====
+  const movePlayer = useCallback(
+    async (newPosX: number, newPosY: number) => {
+      try {
+        const storedUser = localStorage.getItem("user");
+        const token = storedUser ? JSON.parse(storedUser).token : "";
+        if (!token) return null;
+        const url = `http://localhost:8001/game/${instanceId}/player/${myPlayerId}/move`;
+        const body = { new_pos_x: newPosX, new_pos_y: newPosY };
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) return null;
+        const updatedPlayer = await response.json();
+        return updatedPlayer as PlayerState;
+      } catch {
+        return null;
+      }
+    },
+    [instanceId, myPlayerId]
+  );
+
+  const fightMonster = useCallback(
+    async (cellX: number, cellY: number) => {
+      const targetCell = state.grid.find(
+        (c) => c.x === cellX && c.y === cellY
+      );
+      if (!targetCell?.monster) return;
+      const token = user?.token;
+      if (!token || !myPlayerId) return;
+      await fetch("http://localhost:8001/game/attack", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          instance_id: instanceId,
+          attacker_type: "player",
+          attacker_id: myPlayerId,
+          target_type: "monster",
+          target_id: targetCell.monster.db_instance_id,
+        }),
+      });
+    },
+    [user, state.grid, instanceId, myPlayerId]
+  );
+
+  const openBarrel = useCallback(
+    async (cellX: number, cellY: number) => {
+      const stored = localStorage.getItem("user");
+      const token = stored ? JSON.parse(stored).token : "";
+      if (!token) return null;
+      const res = await fetch("http://localhost:8001/game/openBarrel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          instance_id: instanceId,
+          user_id: myPlayerId,
+          cell_x: cellX,
+          cell_y: cellY,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.updatedCell || !data.updatedPlayer) return null;
+      const mappedCell: Cell = {
+        cell_id: data.updatedCell.cell_id,
+        x: data.updatedCell.x,
+        y: data.updatedCell.y,
+        tileCode: data.updatedCell.tileCode,
+        resource: data.updatedCell.resource ?? null,
+        barbel: data.updatedCell.barbel ?? null,
+        monster: data.updatedCell.monster ?? null,
+        isPortal: data.updatedCell.isPortal,
+        isPlayer: data.updatedCell.isPlayer ?? false,
+      };
+      const mappedPlayer: PlayerState = data.updatedPlayer as PlayerState;
+      dispatch(updateCell({ instanceId, updatedCell: mappedCell }));
+      dispatch(updatePlayer({ instanceId, player: mappedPlayer }));
+      return { updatedCell: mappedCell, updatedPlayer: mappedPlayer };
+    },
+    [instanceId, myPlayerId, dispatch]
+  );
+
+  const collectResource = useCallback(
+    async (cellX: number, cellY: number) => {
+      if (!instanceId || !user) return;
+      const token = user.token;
+      if (!token) return;
+      await fetch("http://localhost:8001/game/collectResource", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          instance_id: instanceId,
+          user_id: myPlayerId,
+          cell_x: cellX,
+          cell_y: cellY,
+        }),
+      });
+    },
+    [instanceId, user, myPlayerId]
+  );
+
+  const handleMoveOrAttack = useCallback(
+    async (direction: MoveDirection) => {
+      if (!myPlayer || !isMyTurn) return;
+      const { x: dx, y: dy } = DELTAS[direction];
+      const targetX = myPlayer.position.x + dx;
+      const targetY = myPlayer.position.y + dy;
+      const targetCell = state.grid.find(
+        (c) => c.x === targetX && c.y === targetY
+      );
+      if (!targetCell) return;
+      if (targetCell.monster) {
+        await fightMonster(targetCell.x, targetCell.y);
+        return;
+      }
+      await movePlayer(targetX, targetY);
+    },
+    [myPlayer, isMyTurn, state.grid, movePlayer, fightMonster]
+  );
+
+  return {
+    myPlayer,
+    isMyTurn,
+    handleMoveOrAttack,
+    movePlayer,
+    fightMonster,
+    openBarrel,
+    collectResource,
+  };
+}
+
+
+
+
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+
+//==============================
+// src/hooks/usePlayerInCell.ts
+//==============================
+
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store";
+import type { Cell } from "@/types/GameTypes";
+
+export function usePlayerInCell(cell: Cell) {
+  const players = useSelector((state: RootState) => state.game.players);
+  if (!cell.isPlayer) return null;
+  return players.find((p) => p.position.x === cell.x && p.position.y === cell.y) || null;
+}
+
+
+
+
+
+
+
+======================================================================================================================================
+==================================src/providers/========================================================================================
+===================================src/providers/=========================================================================================
+===================================src/providers/===========================================================================================
+==================================src/providers/===================================================================================
+======================================================================================================================================
+
+//=================================
+// src/providers/ReduxProvider.tsx
+//=================================
+
+"use client";
+
+import React from "react";
+import { Provider } from "react-redux";
+import { store } from "@/store";
+
+export default function ReduxProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <Provider store={store}>{children}</Provider>;
+}
+
+
+
+
+======================================================================================================================================
+==================================src/store/========================================================================================
+===================================src/store/=========================================================================================
+===================================src/store/===========================================================================================
+==================================src/store/===================================================================================
+======================================================================================================================================
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import type {
+  GameState,
+  PlayerState,
+  Inventory,
+  Cell,
+} from "../../types/GameTypes";
+
+const initialState: GameState = {
+  instanceId: "",
+  mode: "",
+  grid: [],
+  mapWidth: 0,
+  mapHeight: 0,
+  players: [],
+  active_user: 0,
+  turnNumber: 1,
+  isMapLoaded: false,
+};
+
+const gameSlice = createSlice({
+  name: "game",
+  initialState,
+  reducers: {
+   setMatchData(state, action: PayloadAction<Partial<GameState>>) {
+  // Обновлять только те поля, которые реально пришли в payload,
+  // и не трогать grid/mapWidth/mapHeight если они undefined.
+
+  if (action.payload.instanceId !== undefined) state.instanceId = action.payload.instanceId;
+  if (action.payload.mode !== undefined) state.mode = action.payload.mode;
+  if (action.payload.grid !== undefined) state.grid = action.payload.grid;
+  if (action.payload.mapWidth !== undefined) state.mapWidth = action.payload.mapWidth;
+  if (action.payload.mapHeight !== undefined) state.mapHeight = action.payload.mapHeight;
+  if (action.payload.players !== undefined) state.players = action.payload.players;
+  if (action.payload.active_user !== undefined) state.active_user = action.payload.active_user;
+  if (action.payload.turnNumber !== undefined) state.turnNumber = action.payload.turnNumber;
+  // Ставим isMapLoaded только если карта уже есть
+  if (state.grid.length > 0 && state.mapWidth && state.mapHeight) {
+    state.isMapLoaded = true;
+  }
+   console.log("[gameSlice/setMatchData] payload:", action.payload);
+   console.log("[gameSlice/setMatchData] new state:", {
+    players: state.players,
+    active_user: state.active_user,
+    instanceId: state.instanceId,
+    isMapLoaded: state.isMapLoaded,
+  });
+},
+
+    movePlayer(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        userId: number;
+        newPosition: { x: number; y: number };
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      const p = state.players.find((p) => p.user_id === action.payload.userId);
+      if (p) p.position = action.payload.newPosition;
+    },
+
+    combatExchange(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        attacker: { id: number; new_hp: number };
+        target: { id: number; new_hp: number };
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      for (const p of state.players) {
+        if (p.user_id === action.payload.attacker.id)
+          p.health = action.payload.attacker.new_hp;
+        if (p.user_id === action.payload.target.id)
+          p.health = action.payload.target.new_hp;
+      }
+    },
+
+    updateInventory(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        userId: number;
+        inventory: Inventory;
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      const p = state.players.find((p) => p.user_id === action.payload.userId);
+      if (p) p.inventory = action.payload.inventory;
+    },
+
+    updatePlayer(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        player: PlayerState;
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      const updated = action.payload.player;
+      const i = state.players.findIndex((p) => p.user_id === updated.user_id);
+      if (i >= 0) state.players[i] = updated;
+    },
+
+updateCell(
+  state,
+  action: PayloadAction<{
+    instanceId: string;
+    updatedCell: Cell;
+  }>
+) {
+  if (action.payload.instanceId !== state.instanceId) return;
+
+  const uc = action.payload.updatedCell;
+
+  const index = state.grid.findIndex(
+    (cell) =>
+      (cell.x === uc.x && cell.y === uc.y)
+  );
+
+  if (index !== -1) {
+
+      state.grid[index] = uc; 
+    };
+},
+
+
+    setActiveUser(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        active_user: number;
+        turnNumber: number;
+        energy?: number;
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      state.active_user = action.payload.active_user;
+      state.turnNumber = action.payload.turnNumber;
+      const p = state.players.find(
+        (p) => p.user_id === action.payload.active_user
+      );
+      if (p && action.payload.energy !== undefined)
+        p.energy = action.payload.energy;
+    },
+
+   updatePlayerPosition: (state, action) => {
+  const { userId, newPosition } = action.payload;
+  const player = state.players.find(p => p.user_id === userId);
+  if (player) {
+    player.position = newPosition;
+  }
+},
+
+
+updatePlayerHealth: (state, action) => {
+  const { userId, hp } = action.payload;
+  // Находим игрока в текущем матче
+  const player = state.players.find(p => p.user_id === userId);
+  if (player) {
+    player.health = hp;
+  }
+},
+
+    playerDefeated(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        userId: number;
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      state.players = state.players.filter(
+        (p) => p.user_id !== action.payload.userId
+      );
+    },
+
+    turnPassed(
+      state,
+      action: PayloadAction<{
+        instanceId: string;
+        active_user: number;
+      }>
+    ) {
+      if (action.payload.instanceId !== state.instanceId) return;
+      state.active_user = action.payload.active_user;
+    },
+
+    resetState() {
+      return initialState;
+    },
+    setInstanceId(state, action: PayloadAction<string>) {
+  state.instanceId = action.payload;
+},
+
+  },
+});
+
+export const {
+  setMatchData,
+  movePlayer,
+  combatExchange,
+  updateInventory,
+  updatePlayer,
+  updateCell,
+  setActiveUser,
+  playerDefeated,
+  turnPassed,
+  resetState,
+  setInstanceId,
+  updatePlayerPosition,
+  updatePlayerHealth,
+
+} = gameSlice.actions;
+
+export default gameSlice.reducer;
+
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+//===============================
+// src/store/index.ts
+//===============================
+
+
+import { configureStore } from "@reduxjs/toolkit";
+import gameReducer from "./slices/gameSlice"; // и другие редьюсеры при необходимости
+
+export const store = configureStore({
+  reducer: {
+    game: gameReducer,
+    // другие редьюсеры
+  },
+});
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
 
 
 
@@ -9853,8 +10607,6 @@ export function useGameSocket(
 ===================================src/types/===========================================================================================
 ==================================src/types/===================================================================================
 ======================================================================================================================================
-
-
 
 // ==============================
 // src/types/GameTypes.ts
@@ -9914,6 +10666,7 @@ export type PlayerState = {
 
 export type MonsterType = {
   id: number;
+  db_instance_id: number;  
   name: string;
   type: string;
   health: number;
@@ -9956,82 +10709,11 @@ export type GameState = {
   players: PlayerState[];
   active_user: number;
   turnNumber: number;
+  isMapLoaded: boolean;
 };
-
-export type Action =
-  | {
-    type: "SET_MATCH_DATA";
-    payload: {
-      instanceId: string;
-      mode: string;
-      grid: Cell[];
-      mapWidth: number;
-      mapHeight: number;
-      players: PlayerState[];
-      active_user: number;
-      turnNumber: number;
-    };
-  }
-  | {
-    type: "MOVE_PLAYER";
-    payload: { instanceId: string; userId: number; newPosition: { x: number; y: number } };
-  }
-  | {
-    type: "SET_ACTIVE_USER";
-    payload: { instanceId: string; active_user: number; turnNumber: number; energy?: number };
-  }
-  | {
-    type: "UPDATE_CELL";
-    payload: { instanceId: string; updatedCell: Cell };
-  }
-  | {
-    type: "UPDATE_PLAYER";
-    payload: { instanceId: string; player: PlayerState };
-  }
-  |
-  {
-    type: "COMBAT_EXCHANGE"; payload: {
-      instanceId: string;
-      attacker: { id: number; new_hp: number }
-      target: { id: number; new_hp: number }
-    }
-  }
-  | {
-    type: "UPDATE_INVENTORY";
-    payload: {instanceId: string; userId: number; inventory: Inventory };
-  }
-  | {
-    type: "RESET_STATE";
-  }
-  
-  | {
-      type: "BARREL_RESOURCE";
-      payload: {
-        instanceId: string;
-        updatedCell: Cell;
-        updatedPlayer: PlayerState;
-      };
-    }
-  | {
-      type: "BARREL_ARTIFACT";
-      payload: {
-        instanceId: string;
-        updatedCell: Cell;
-        updatedPlayer: PlayerState;
-      };
-    }
-
-  | { type: "PLAYER_DEFEATED"; payload: { userId: number } }
-  | {
-      type: "TURN_PASSED";
-      payload: {
-        active_user: number;   // новый текущий игрок
-      };
-    };
 
 // Здесь перечисляем возможные направления
 export type Dir = "up" | "down" | "left" | "right";
-
 
 
 
@@ -10047,7 +10729,56 @@ export type Dir = "up" | "down" | "left" | "right";
 
 
 
+//==============================
+// src/utils/buildPlayerMap.ts
+//==============================
 
+
+import { PlayerState } from "@/types/GameTypes";
+
+export function buildPlayerMap(players: PlayerState[]): Map<string, PlayerState> {
+  const map = new Map<string, PlayerState>();
+  for (const player of players) {
+    const key = `${player.position.x}-${player.position.y}`;
+    map.set(key, player);
+  }
+  return map;
+}
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+
+
+
+
+
+
+//==============================
+// src/utils/getPlayerInCell.ts
+//==============================
+
+import { Cell, PlayerState } from "@/types/GameTypes";
+
+export function getPlayerInCell(cell: Cell, players: PlayerState[]): PlayerState | null {
+  if (!cell.isPlayer) return null;
+  return players.find((p) => p.position.x === cell.x && p.position.y === cell.y) || null;
+}
+
+
+
+
+
+
+
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
+=======================================================================================================================================================================
 
 
 

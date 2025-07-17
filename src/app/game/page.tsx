@@ -1,4 +1,3 @@
-
 //=======================
 // src/app/game/page.tsx
 //=======================
@@ -7,7 +6,9 @@
 
 import React from "react";
 import { useSearchParams } from "next/navigation";
-import { GameProvider } from "../../contexts/GameContextt";
+import { Provider } from "react-redux";
+import { store } from "../../store"; // путь зависит от структуры
+import GameWrapper from "../../features/game/GameWrapper";
 import GameController from "../../components/GameController";
 
 export default function GamePage() {
@@ -19,8 +20,10 @@ export default function GamePage() {
   }
 
   return (
-    <GameProvider instanceId={instanceId}>
-      <GameController />
-    </GameProvider>
+    <Provider store={store}>
+      <GameWrapper instanceId={instanceId}>
+        <GameController instanceId={instanceId} />
+      </GameWrapper>
+    </Provider>
   );
 }
