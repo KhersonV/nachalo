@@ -130,33 +130,57 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 
 // assignMatchPlayers создаёт копии игроков в матче с их стартовыми позициями.
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
-func assignMatchPlayers(instanceID string, playerIDs []int, starts [][2]int) {
-	// Инициализируем локальное состояние матча
-	game.CreateMatchState(instanceID, playerIDs)
-
-	for i, uid := range playerIDs {
-		p, err := repository.GetPlayerByUserID(uid)
-		if err != nil {
-			log.Printf("[assignMatchPlayers] player %d not found: %v", uid, err)
-			continue
-		}
-
-		// выбираем позицию
-		var x, y int
-		if i < len(starts) {
-			x, y = starts[i][0], starts[i][1]
-		} else {
-			x, y = starts[0][0], starts[0][1]
-		}
-
-		// групповая логика (TODO: если нужно различать команды, здесь можно считать groupID из i)
-		const groupID = 1
-
-		if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
-			log.Printf("[assignMatchPlayers] failed to insert player %d: %v", uid, err)
-		}
+// assignMatchPlayers – распределяет игроков по группам в зависимости от режима игры и вызывает создание копий игроков для матча.
+func assignMatchPlayers(
+    instanceID string,
+    playerIDs []int,
+    starts [][2]int,
+    mode string,
+) {
+    // Определяем число команд
+    teamsCount := 1
+    switch mode {
+    case "pve":
+        teamsCount = 1
+    case "1x1":
+        teamsCount = 2
+    case "1x2":
+        teamsCount = 3
+    case "2x2":
+        teamsCount = 2
+    case "3x3":
+        teamsCount = 2
+    case "5x5":
+        teamsCount = 2
+    default:
+        teamsCount = 2 // по умолчанию 2 команды
+    }
+	playersPerTeam := len(playerIDs) / teamsCount
+	if playersPerTeam == 0 {
+		playersPerTeam = 1
 	}
+
+    game.CreateMatchState(instanceID, playerIDs)
+
+    for i, uid := range playerIDs {
+        p, err := repository.GetPlayerByUserID(uid)
+        if err != nil {
+            log.Printf("[assignMatchPlayers] player %d not found: %v", uid, err)
+            continue
+        }
+        var x, y int
+        if i < len(starts) {
+            x, y = starts[i][0], starts[i][1]
+        } else {
+            x, y = starts[0][0], starts[0][1]
+        }
+        groupID := (i / playersPerTeam) + 1
+        if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
+            log.Printf("[assignMatchPlayers] failed to insert player %d: %v", uid, err)
+        }
+    }
 }
+
 
 func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	return &game.MonsterState{
@@ -173,76 +197,6 @@ func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	}
 }
 
-
-
-
-
-
-// func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-// 	instanceID := r.URL.Query().Get("instance_id")
-// 	if instanceID == "" {
-// 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// 1) Забираем из БД
-// 	match, err := repository.GetMatchByID(instanceID)
-// 	if err != nil {
-// 		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
-// 		return
-// 	}
-// 	players, err := repository.GetPlayersInMatch(instanceID)
-// 	if err != nil {
-// 		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	// 2) Распарсим JSON-поля
-// 	var fullMap []game.FullCell
-// 	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
-// 		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	var startPositions [][2]int
-// 	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
-// 		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	var portalPos [2]int
-// 	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
-// 		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	// 3) Вычисляем active_user
-// 	activeUser := match.ActiveUserID
-// 	if activeUser == 0 && len(players) > 0 {
-// 		activeUser = players[0].UserID
-// 	}
-
-// 	// 4) Собираем ответ
-// 	resp := MatchResponse{
-// 		InstanceID:     match.InstanceID,
-// 		Mode:           match.Mode,
-// 		TeamsCount:     match.TeamsCount,
-// 		TotalPlayers:   match.TotalPlayers,
-// 		MapWidth:       match.MapWidth,
-// 		MapHeight:      match.MapHeight,
-// 		Map:            fullMap,
-// 		Players:        players,
-// 		ActiveUser:     activeUser,
-// 		TurnNumber:     match.TurnNumber,
-// 		StartPositions: startPositions,
-// 		PortalPosition: portalPos,
-// 		// Winner оставим nil — он нужен только после финализации
-// 	}
-
-// 	// 5) Отвечаем
-// 	w.Header().Set("Content-Type", "application/json")
-// 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-// 		log.Printf("[GetMatch] Encode response failed: %v", err)
-// 	}
-// }
 
 
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +323,8 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 // 9. Копируем игроков в матч
-assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
+assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions, req.Mode)
+
 
 // 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
 if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {

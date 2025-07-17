@@ -29,6 +29,41 @@ type EndTurnResponse struct {
 // Константа пополнения энергии при получении хода
 const energyRegen = 10
 
+
+// Можно оставить energyRegen = 10 как дефолтное значение, а в функцию передавать явно нужное значение.
+func regenEnergyForNextPlayer(instanceID string, userID int, regenEnergy int) error {
+    if regenEnergy <= 0 {
+        regenEnergy = 10 // дефолт, если не передан или <=0
+    }
+    nextPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
+    if err != nil {
+        return err
+    }
+    newEnergy := nextPlayer.Energy + regenEnergy
+    if newEnergy > nextPlayer.MaxEnergy {
+        newEnergy = nextPlayer.MaxEnergy
+    }
+    nextPlayer.Energy = newEnergy
+
+    if err = repository.UpdateMatchPlayer(instanceID, nextPlayer); err != nil {
+        return err
+    }
+
+    // WebSocket сообщение для клиента об обновлении энергии/игрока
+    updatePlayerMsg := map[string]interface{}{
+        "type": "UPDATE_PLAYER",
+        "payload": map[string]interface{}{
+            "instanceId": instanceID,
+            "player":     nextPlayer,
+        },
+    }
+    buf, _ := json.Marshal(updatePlayerMsg)
+    Broadcast(buf)
+
+    return nil
+}
+
+
 // EndTurnHandler теперь полностью выполняет логику смены хода на сервере
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	var req EndTurnRequest
@@ -61,14 +96,6 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем данные нового активного игрока
-	nextUser, err := repository.GetMatchPlayerByID(req.InstanceID, nextUserID)
-	if err != nil {
-		log.Printf("Ошибка получения данных нового активного игрока: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
 	// Обновляем данные матча в БД
 	if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.TurnNumber); err != nil {
 		log.Printf("Ошибка обновления матча в БД: %v", err)
@@ -76,16 +103,17 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Пополняем энергию нового активного игрока
-	newEnergy := nextUser.Energy + energyRegen
-	if newEnergy > nextUser.MaxEnergy {
-		newEnergy = nextUser.MaxEnergy
+	// Регенерируем энергию для следующего игрока через общую функцию
+	if err := regenEnergyForNextPlayer(req.InstanceID, nextUserID, energyRegen); err != nil {
+		log.Printf("Ошибка начисления энергии следующему игроку: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
-	nextUser.Energy = newEnergy
 
-	// Обновляем данные игрока в БД (энергия и прочее обновление состояния)
-	if err = repository.UpdateMatchPlayer(matchState.InstanceID, nextUser); err != nil {
-		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
+	// Получаем свежие данные нового активного игрока для ответа
+	nextUser, err := repository.GetMatchPlayerByID(req.InstanceID, nextUserID)
+	if err != nil {
+		log.Printf("Ошибка получения данных нового активного игрока: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -96,7 +124,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		"payload": map[string]interface{}{
 			"instanceId":  req.InstanceID,
 			"active_user": nextUserID,
-			"energy":      newEnergy,
+			"energy":      nextUser.Energy,
 			"turnNumber":  matchState.TurnNumber,
 		},
 	}
@@ -106,7 +134,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	// Отправляем ответ клиенту
 	response := EndTurnResponse{
 		ActiveUser: nextUserID,
-		Energy:     newEnergy,
+		Energy:     nextUser.Energy,
 		TurnNumber: matchState.TurnNumber,
 	}
 	w.Header().Set("Content-Type", "application/json")

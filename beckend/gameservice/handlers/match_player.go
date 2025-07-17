@@ -33,7 +33,7 @@ func GetMatchPlayerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
 		return
 	}
-	player, err := repository.GetMatchPlayer(instanceID, playerID)
+	player, err := repository.GetMatchPlayerByID(instanceID, playerID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
 		return

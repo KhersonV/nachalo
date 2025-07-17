@@ -402,6 +402,9 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
             if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
                 log.Printf("UpdateMatchTurn error: %v", err)
             }
+			 if err := regenEnergyForNextPlayer(instanceID, nextID, energyRegen); err != nil {
+        log.Printf("Ошибка регенерации энергии новому игроку после смерти: %v", err)
+    }
             turnMsg := map[string]interface{}{
                 "type": "TURN_PASSED",
                 "payload": map[string]interface{}{

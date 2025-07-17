@@ -174,7 +174,9 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 	return nil
 }
 
-// GetMatchPlayerByID – получает данные игрока из match_players по instance_id и user_id.
+// функция получения данных игрока из match_players,
+// которая формирует структуру PlayerResponse.
+// GetMatchPlayerByID – возвращает данные игрока из match_players по instance_id и user_id.
 func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, error) {
 	query := `
 		SELECT 
@@ -196,6 +198,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			maneuverability,
 			vision,
 			vision_range,
+			group_id,
 			balance
 		FROM match_players
 		WHERE instance_id = $1 AND user_id = $2
@@ -223,6 +226,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		&pr.Maneuverability,
 		&pr.Vision,
 		&pr.VisionRange,
+		&pr.GroupID,
 		&pr.Balance,
 	)
 	if err != nil {
@@ -230,7 +234,6 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		return nil, err
 	}
 
-	// Распарсить JSON из поля position в структуру Position модели
 	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
 		return nil, err
 	}
@@ -286,6 +289,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			maneuverability,
 			vision,
 			vision_range,
+			group_id,
 			balance
 		FROM match_players
 		WHERE instance_id = $1
@@ -320,6 +324,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			&pr.Maneuverability,
 			&pr.Vision,
 			&pr.VisionRange,
+			&pr.GroupID,
 			&pr.Balance,
 		)
 		if err != nil {

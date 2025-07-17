@@ -599,7 +599,9 @@ func main() {
  ===============================================game=====================================================================
  ================================================game====================================================================
  ========================================================================================================================
- // ====================================
+
+
+// ====================================
 // gameservice/game/mapgen.go
 // ====================================
 
@@ -609,6 +611,7 @@ import (
 	"errors"
 	"math/rand"
 	"time"
+	"sort"
 )
 
 // TileType определяет тип тайла на карте.
@@ -681,6 +684,115 @@ type FullCell struct {
 
 
 
+
+// Возвращает квадрат расстояния между двумя точками
+func dist2(a, b [2]int) int {
+	dx := a[0] - b[0]
+	dy := a[1] - b[1]
+	return dx*dx + dy*dy
+}
+
+func collectCandidates(grid [][]int) [][2]int {
+	var candidates [][2]int
+	h, w := len(grid), len(grid[0])
+	for y := 1; y < h-1; y++ {
+		for x := 1; x < w-1; x++ {
+			if grid[y][x] == int(Walkable) {
+				candidates = append(candidates, [2]int{x, y})
+			}
+		}
+	}
+	return candidates
+}
+
+
+func portalReachable(grid [][]int, starts [][2]int, portal [2]int) bool {
+	for _, st := range starts {
+		if isReachable(grid, st[0], st[1], portal[0], portal[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+
+// Для FFA и 1xN — теперь тоже в цикле с проверкой достижимости портала:
+func generateRandomPositions(grid [][]int, totalPlayers int) ([][2]int, [2]int, error) {
+	candidates := collectCandidates(grid)
+	if len(candidates) < totalPlayers+1 {
+		return nil, [2]int{}, errors.New("недостаточно проходимых тайлов")
+	}
+	const maxTries = 50
+	for try := 0; try < maxTries; try++ {
+		rand.Shuffle(len(candidates), func(i, j int) {
+			candidates[i], candidates[j] = candidates[j], candidates[i]
+		})
+		starts := make([][2]int, totalPlayers)
+		copy(starts, candidates[:totalPlayers])
+		portal := candidates[totalPlayers]
+		if portalReachable(grid, starts, portal) {
+			for _, st := range starts {
+				grid[st[1]][st[0]] = int(StartTile)
+			}
+			grid[portal[1]][portal[0]] = int(Portal)
+			return starts, portal, nil
+		}
+	}
+	return nil, [2]int{}, errors.New("не удалось выбрать стартовые и портал")
+}
+
+
+
+func generateRandomTeamClusters(grid [][]int, totalPlayers, teamsCount int) ([][2]int, [2]int, error) {
+	candidates := collectCandidates(grid)
+	if len(candidates) < totalPlayers+1 {
+		return nil, [2]int{}, errors.New("недостаточно проходимых тайлов")
+	}
+
+	playersPerTeam := totalPlayers / teamsCount
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+	centers := candidates[:teamsCount]
+	used := make([]bool, len(candidates))
+	for i := 0; i < teamsCount; i++ {
+		used[i] = true // заняли центры
+	}
+
+	res := make([][2]int, 0, totalPlayers)
+	for _, center := range centers {
+		type posDist struct{ idx, dist int }
+		var dists []posDist
+		for idx, c := range candidates {
+			if used[idx] { continue }
+			dists = append(dists, posDist{idx, dist2(center, c)})
+		}
+		sort.Slice(dists, func(i, j int) bool { return dists[i].dist < dists[j].dist })
+		res = append(res, center)
+		count := 1
+		for _, d := range dists {
+			if count >= playersPerTeam { break }
+			res = append(res, candidates[d.idx])
+			used[d.idx] = true
+			count++
+		}
+	}
+	var portal [2]int
+	for idx, c := range candidates {
+		if !used[idx] {
+			portal = c
+			break
+		}
+	}
+	for _, st := range res {
+		grid[st[1]][st[0]] = int(StartTile)
+	}
+	grid[portal[1]][portal[0]] = int(Portal)
+	return res, portal, nil
+}
+
+
+
 // проверяет, достижима ли клетка (tx,ty) из (sx,sy)
 func isReachable(grid [][]int, sx, sy, tx, ty int) bool {
     h, w := len(grid), len(grid[0])
@@ -709,53 +821,6 @@ func isReachable(grid [][]int, sx, sy, tx, ty int) bool {
     return false
 }
 
-func placeSpecialTiles(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
-    var candidates []struct{ x, y int }
-    h, w := len(grid), len(grid[0])
-    for y := 1; y < h-1; y++ {
-        for x := 1; x < w-1; x++ {
-            if grid[y][x] == int(Walkable) {
-                candidates = append(candidates, struct{ x, y int }{x, y})
-            }
-        }
-    }
-    if len(candidates) < teamsCount+1 {
-        return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для специальных точек")
-    }
-
-    // Попытки подобрать связный набор
-    rand.Shuffle(len(candidates), func(i, j int) {
-        candidates[i], candidates[j] = candidates[j], candidates[i]
-    })
-    for startIdx := 0; startIdx <= len(candidates)-teamsCount-1; startIdx++ {
-        // берём блок подряд: [startIdx..startIdx+teamsCount-1] – старты, [startIdx+teamsCount] – портал
-        var starts [][2]int
-        for i := 0; i < teamsCount; i++ {
-            pt := candidates[startIdx+i]
-            starts = append(starts, [2]int{pt.x, pt.y})
-        }
-        portal := candidates[startIdx+teamsCount]
-        // проверяем, что из любого старта до портала есть путь
-        ok := false
-        for _, st := range starts {
-            if isReachable(grid, st[0], st[1], portal.x, portal.y) {
-                ok = true
-                break
-            }
-        }
-        if !ok {
-            continue // пробуем следующий кусок
-        }
-        // разметить их на grid
-        for _, st := range starts {
-            grid[st[1]][st[0]] = int(StartTile)
-        }
-        grid[portal.y][portal.x] = int(Portal)
-        return starts, [2]int{portal.x, portal.y}, nil
-    }
-
-    return nil, [2]int{}, errors.New("не удалось найти связные старт+портал точки")
-}
 
 
 
@@ -793,10 +858,21 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		}
 	}
 
-	startPositions, portalPos, err := placeSpecialTiles(grid, cfg.TeamsCount)
-	if err != nil {
-		return nil, 0, 0, nil, [2]int{}, err
-	}
+
+
+var startPositions [][2]int
+var portalPos [2]int
+var err error
+
+if cfg.TeamsCount == 1 || cfg.TeamsCount == cfg.TotalPlayers {
+    startPositions, portalPos, err = generateRandomPositions(grid, cfg.TotalPlayers)
+} else {
+    startPositions, portalPos, err = generateRandomTeamClusters(grid, cfg.TotalPlayers, cfg.TeamsCount)
+}
+
+if err != nil {
+    return nil, 0, 0, nil, [2]int{}, err
+}
 
 	monsterCounter := 1
 	var fullCells []FullCell
@@ -965,8 +1041,11 @@ if r < 0.3+0.4 && len(resources) > 0 {
 }
 
 
-
-
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1125,6 +1204,11 @@ func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int
 
 
 
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1166,6 +1250,11 @@ func (ms *MatchState) InitMonstersFromCells(cells []FullCell) {
 
 
 
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1262,6 +1351,11 @@ func CalculateResults(
 
 
 
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1517,6 +1611,11 @@ func UpdateArtifactHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1664,6 +1763,11 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
+========================================================================================================================================
 
 
 
@@ -1900,8 +2004,6 @@ func HandleOpenBarrel(
 // ================================================================================================================================================
 // ================================================================================================================================================
 // ================================================================================================================================================
-
-
 
 
 
@@ -2309,6 +2411,9 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
             if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
                 log.Printf("UpdateMatchTurn error: %v", err)
             }
+			 if err := regenEnergyForNextPlayer(instanceID, nextID, energyRegen); err != nil {
+        log.Printf("Ошибка регенерации энергии новому игроку после смерти: %v", err)
+    }
             turnMsg := map[string]interface{}{
                 "type": "TURN_PASSED",
                 "payload": map[string]interface{}{
@@ -2567,6 +2672,15 @@ if req.TargetType == "player" {
 
 
 
+
+
+
+
+
+
+
+
+
 // ================================================================================================================================================
 // ================================================================================================================================================
 // ================================================================================================================================================
@@ -2766,9 +2880,6 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
-
-
 //====================================
 // gameservice/handlers/inventory.go
 //====================================
@@ -2902,7 +3013,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Получаем свежие данные игрока
-	player, err := repository.GetMatchPlayer(req.InstanceID, playerID)
+	player, err := repository.GetMatchPlayerByID(req.InstanceID, playerID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения данных игрока: %v", err), http.StatusInternalServerError)
 		return
@@ -2965,10 +3076,6 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
-
-
-
 //======================================
 // gameservice/handlers/match_player.go
 //======================================
@@ -3004,7 +3111,7 @@ func GetMatchPlayerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
 		return
 	}
-	player, err := repository.GetMatchPlayer(instanceID, playerID)
+	player, err := repository.GetMatchPlayerByID(instanceID, playerID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
 		return
@@ -3161,33 +3268,57 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 
 // assignMatchPlayers создаёт копии игроков в матче с их стартовыми позициями.
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
-func assignMatchPlayers(instanceID string, playerIDs []int, starts [][2]int) {
-	// Инициализируем локальное состояние матча
-	game.CreateMatchState(instanceID, playerIDs)
-
-	for i, uid := range playerIDs {
-		p, err := repository.GetPlayerByUserID(uid)
-		if err != nil {
-			log.Printf("[assignMatchPlayers] player %d not found: %v", uid, err)
-			continue
-		}
-
-		// выбираем позицию
-		var x, y int
-		if i < len(starts) {
-			x, y = starts[i][0], starts[i][1]
-		} else {
-			x, y = starts[0][0], starts[0][1]
-		}
-
-		// групповая логика (TODO: если нужно различать команды, здесь можно считать groupID из i)
-		const groupID = 1
-
-		if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
-			log.Printf("[assignMatchPlayers] failed to insert player %d: %v", uid, err)
-		}
+// assignMatchPlayers – распределяет игроков по группам в зависимости от режима игры и вызывает создание копий игроков для матча.
+func assignMatchPlayers(
+    instanceID string,
+    playerIDs []int,
+    starts [][2]int,
+    mode string,
+) {
+    // Определяем число команд
+    teamsCount := 1
+    switch mode {
+    case "pve":
+        teamsCount = 1
+    case "1x1":
+        teamsCount = 2
+    case "1x2":
+        teamsCount = 3
+    case "2x2":
+        teamsCount = 2
+    case "3x3":
+        teamsCount = 2
+    case "5x5":
+        teamsCount = 2
+    default:
+        teamsCount = 2 // по умолчанию 2 команды
+    }
+	playersPerTeam := len(playerIDs) / teamsCount
+	if playersPerTeam == 0 {
+		playersPerTeam = 1
 	}
+
+    game.CreateMatchState(instanceID, playerIDs)
+
+    for i, uid := range playerIDs {
+        p, err := repository.GetPlayerByUserID(uid)
+        if err != nil {
+            log.Printf("[assignMatchPlayers] player %d not found: %v", uid, err)
+            continue
+        }
+        var x, y int
+        if i < len(starts) {
+            x, y = starts[i][0], starts[i][1]
+        } else {
+            x, y = starts[0][0], starts[0][1]
+        }
+        groupID := (i / playersPerTeam) + 1
+        if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
+            log.Printf("[assignMatchPlayers] failed to insert player %d: %v", uid, err)
+        }
+    }
 }
+
 
 func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	return &game.MonsterState{
@@ -3204,76 +3335,6 @@ func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	}
 }
 
-
-
-
-
-
-// func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-// 	instanceID := r.URL.Query().Get("instance_id")
-// 	if instanceID == "" {
-// 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
-// 		return
-// 	}
-
-// 	// 1) Забираем из БД
-// 	match, err := repository.GetMatchByID(instanceID)
-// 	if err != nil {
-// 		http.Error(w, fmt.Sprintf("Матч не найден: %v", err), http.StatusNotFound)
-// 		return
-// 	}
-// 	players, err := repository.GetPlayersInMatch(instanceID)
-// 	if err != nil {
-// 		http.Error(w, fmt.Sprintf("Ошибка получения игроков: %v", err), http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	// 2) Распарсим JSON-поля
-// 	var fullMap []game.FullCell
-// 	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
-// 		http.Error(w, "Ошибка разбора поля map", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	var startPositions [][2]int
-// 	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
-// 		http.Error(w, "Ошибка разбора поля start_positions", http.StatusInternalServerError)
-// 		return
-// 	}
-// 	var portalPos [2]int
-// 	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
-// 		http.Error(w, "Ошибка разбора поля portal_position", http.StatusInternalServerError)
-// 		return
-// 	}
-
-// 	// 3) Вычисляем active_user
-// 	activeUser := match.ActiveUserID
-// 	if activeUser == 0 && len(players) > 0 {
-// 		activeUser = players[0].UserID
-// 	}
-
-// 	// 4) Собираем ответ
-// 	resp := MatchResponse{
-// 		InstanceID:     match.InstanceID,
-// 		Mode:           match.Mode,
-// 		TeamsCount:     match.TeamsCount,
-// 		TotalPlayers:   match.TotalPlayers,
-// 		MapWidth:       match.MapWidth,
-// 		MapHeight:      match.MapHeight,
-// 		Map:            fullMap,
-// 		Players:        players,
-// 		ActiveUser:     activeUser,
-// 		TurnNumber:     match.TurnNumber,
-// 		StartPositions: startPositions,
-// 		PortalPosition: portalPos,
-// 		// Winner оставим nil — он нужен только после финализации
-// 	}
-
-// 	// 5) Отвечаем
-// 	w.Header().Set("Content-Type", "application/json")
-// 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-// 		log.Printf("[GetMatch] Encode response failed: %v", err)
-// 	}
-// }
 
 
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
@@ -3400,7 +3461,8 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 // 9. Копируем игроков в матч
-assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions)
+assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions, req.Mode)
+
 
 // 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
 if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
@@ -3966,7 +4028,6 @@ func GetMonstersHandler(w http.ResponseWriter, r *http.Request) {
 
 
 
-
 // ==============================
 // gameservice/handlers/turn.go
 // ==============================
@@ -3997,6 +4058,41 @@ type EndTurnResponse struct {
 
 // Константа пополнения энергии при получении хода
 const energyRegen = 10
+
+
+// Можно оставить energyRegen = 10 как дефолтное значение, а в функцию передавать явно нужное значение.
+func regenEnergyForNextPlayer(instanceID string, userID int, regenEnergy int) error {
+    if regenEnergy <= 0 {
+        regenEnergy = 10 // дефолт, если не передан или <=0
+    }
+    nextPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
+    if err != nil {
+        return err
+    }
+    newEnergy := nextPlayer.Energy + regenEnergy
+    if newEnergy > nextPlayer.MaxEnergy {
+        newEnergy = nextPlayer.MaxEnergy
+    }
+    nextPlayer.Energy = newEnergy
+
+    if err = repository.UpdateMatchPlayer(instanceID, nextPlayer); err != nil {
+        return err
+    }
+
+    // WebSocket сообщение для клиента об обновлении энергии/игрока
+    updatePlayerMsg := map[string]interface{}{
+        "type": "UPDATE_PLAYER",
+        "payload": map[string]interface{}{
+            "instanceId": instanceID,
+            "player":     nextPlayer,
+        },
+    }
+    buf, _ := json.Marshal(updatePlayerMsg)
+    Broadcast(buf)
+
+    return nil
+}
+
 
 // EndTurnHandler теперь полностью выполняет логику смены хода на сервере
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
@@ -4030,14 +4126,6 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем данные нового активного игрока
-	nextUser, err := repository.GetMatchPlayerByID(req.InstanceID, nextUserID)
-	if err != nil {
-		log.Printf("Ошибка получения данных нового активного игрока: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
 	// Обновляем данные матча в БД
 	if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.TurnNumber); err != nil {
 		log.Printf("Ошибка обновления матча в БД: %v", err)
@@ -4045,16 +4133,17 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Пополняем энергию нового активного игрока
-	newEnergy := nextUser.Energy + energyRegen
-	if newEnergy > nextUser.MaxEnergy {
-		newEnergy = nextUser.MaxEnergy
+	// Регенерируем энергию для следующего игрока через общую функцию
+	if err := regenEnergyForNextPlayer(req.InstanceID, nextUserID, energyRegen); err != nil {
+		log.Printf("Ошибка начисления энергии следующему игроку: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
-	nextUser.Energy = newEnergy
 
-	// Обновляем данные игрока в БД (энергия и прочее обновление состояния)
-	if err = repository.UpdateMatchPlayer(matchState.InstanceID, nextUser); err != nil {
-		log.Printf("Ошибка обновления данных нового активного игрока: %v", err)
+	// Получаем свежие данные нового активного игрока для ответа
+	nextUser, err := repository.GetMatchPlayerByID(req.InstanceID, nextUserID)
+	if err != nil {
+		log.Printf("Ошибка получения данных нового активного игрока: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -4065,7 +4154,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		"payload": map[string]interface{}{
 			"instanceId":  req.InstanceID,
 			"active_user": nextUserID,
-			"energy":      newEnergy,
+			"energy":      nextUser.Energy,
 			"turnNumber":  matchState.TurnNumber,
 		},
 	}
@@ -4075,7 +4164,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	// Отправляем ответ клиенту
 	response := EndTurnResponse{
 		ActiveUser: nextUserID,
-		Energy:     newEnergy,
+		Energy:     nextUser.Energy,
 		TurnNumber: matchState.TurnNumber,
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -4745,8 +4834,6 @@ func UpdatePersistedArtifact(a PersistedArtifact) error {
 
 
 
-
-
 // ==============================
 // /gameservice/repository/db.go
 // ==============================
@@ -4760,7 +4847,6 @@ import (
 	"log"
 
 	"gameservice/game"
-	"gameservice/models"
 
 	_ "github.com/lib/pq"
 )
@@ -5035,74 +5121,6 @@ func RestoreMatchStates() error {
 		log.Printf("Состояние матча %s восстановлено", instanceID)
 	}
 	return nil
-}
-
-// Пример обновлённой функции получения данных игрока из match_players,
-// которая формирует структуру PlayerResponse.
-// GetMatchPlayer возвращает данные игрока по паре (instance_id, user_id)
-func GetMatchPlayer(instanceID string, userID int) (*models.PlayerResponse, error) {
-	query := `
-		SELECT 
-			user_id,
-			name, 
-			image, 
-			position, 
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
-			group_id,
-			balance
-		FROM match_players
-		WHERE instance_id = $1
-		AND user_id     = $2
-		LIMIT 1;
-	`
-	var pr models.PlayerResponse
-	var positionJSON []byte
-
-	err := DB.QueryRow(query, instanceID, userID).Scan(
-		&pr.UserID,          // user_id
-		&pr.Name,            // name
-		&pr.Image,           // image
-		&positionJSON,       // position (JSONB)
-		&pr.Inventory,       // inventory (JSONB, как строка)
-		&pr.Level,           // level
-		&pr.Energy,          // energy
-		&pr.MaxEnergy,       // max_energy
-		&pr.Health,          // health
-		&pr.MaxHealth,       // max_health
-		&pr.Experience,      // experience
-		&pr.MaxExperience,   // max_experience
-		&pr.Attack,          // attack
-		&pr.Defense,         // defense
-		&pr.Speed,           // speed
-		&pr.Maneuverability, // maneuverability
-		&pr.Vision,          // vision
-		&pr.VisionRange,     // vision_range
-		&pr.GroupID,         // group_id
-		&pr.Balance,         // balance
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Распарсить JSON из поля position в структуру Position модели
-	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
-		return nil, err
-	}
-
-	return &pr, nil
 }
 
 // GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.
@@ -5629,13 +5647,6 @@ func InsertMatchMonsterReturningID(m MatchMonster) (int, error) {
 
 
 
-
-
-
-
-
-
-
 // ====================================
 // gameservice/repository/matches.go
 // ====================================
@@ -5812,7 +5823,9 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 	return nil
 }
 
-// GetMatchPlayerByID – получает данные игрока из match_players по instance_id и user_id.
+// функция получения данных игрока из match_players,
+// которая формирует структуру PlayerResponse.
+// GetMatchPlayerByID – возвращает данные игрока из match_players по instance_id и user_id.
 func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, error) {
 	query := `
 		SELECT 
@@ -5834,6 +5847,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			maneuverability,
 			vision,
 			vision_range,
+			group_id,
 			balance
 		FROM match_players
 		WHERE instance_id = $1 AND user_id = $2
@@ -5861,6 +5875,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		&pr.Maneuverability,
 		&pr.Vision,
 		&pr.VisionRange,
+		&pr.GroupID,
 		&pr.Balance,
 	)
 	if err != nil {
@@ -5868,7 +5883,6 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		return nil, err
 	}
 
-	// Распарсить JSON из поля position в структуру Position модели
 	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
 		return nil, err
 	}
@@ -5924,6 +5938,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			maneuverability,
 			vision,
 			vision_range,
+			group_id,
 			balance
 		FROM match_players
 		WHERE instance_id = $1
@@ -5958,6 +5973,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			&pr.Maneuverability,
 			&pr.Vision,
 			&pr.VisionRange,
+			&pr.GroupID,
 			&pr.Balance,
 		)
 		if err != nil {
@@ -10057,8 +10073,6 @@ export function useGameSocket(
 =======================================================================================================================================================================
 
 
-
-
 //===============================
 // src/hooks/usePlayerActions.ts
 //===============================
@@ -10102,20 +10116,6 @@ export function usePlayerActions(
   );
   const isMyTurn = !!myPlayer && myPlayerId === state.active_user;
 
-  // ===== Дефолт-методы если нет user =====
-  if (!user) {
-    return {
-      myPlayer: undefined,
-      isMyTurn: false,
-      handleMoveOrAttack: async () => {},
-      movePlayer: async () => null,
-      fightMonster: async () => {},
-      openBarrel: async () => null,
-      collectResource: async () => {},
-    };
-  }
-
-  // ===== Все методы ниже как у тебя, можно просто скопировать! =====
   const movePlayer = useCallback(
     async (newPosX: number, newPosY: number) => {
       try {

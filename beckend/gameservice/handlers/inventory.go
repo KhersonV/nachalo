@@ -131,7 +131,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Получаем свежие данные игрока
-	player, err := repository.GetMatchPlayer(req.InstanceID, playerID)
+	player, err := repository.GetMatchPlayerByID(req.InstanceID, playerID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка получения данных игрока: %v", err), http.StatusInternalServerError)
 		return

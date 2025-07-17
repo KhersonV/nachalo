@@ -11,7 +11,6 @@ import (
 	"log"
 
 	"gameservice/game"
-	"gameservice/models"
 
 	_ "github.com/lib/pq"
 )
@@ -286,74 +285,6 @@ func RestoreMatchStates() error {
 		log.Printf("Состояние матча %s восстановлено", instanceID)
 	}
 	return nil
-}
-
-// Пример обновлённой функции получения данных игрока из match_players,
-// которая формирует структуру PlayerResponse.
-// GetMatchPlayer возвращает данные игрока по паре (instance_id, user_id)
-func GetMatchPlayer(instanceID string, userID int) (*models.PlayerResponse, error) {
-	query := `
-		SELECT 
-			user_id,
-			name, 
-			image, 
-			position, 
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
-			group_id,
-			balance
-		FROM match_players
-		WHERE instance_id = $1
-		AND user_id     = $2
-		LIMIT 1;
-	`
-	var pr models.PlayerResponse
-	var positionJSON []byte
-
-	err := DB.QueryRow(query, instanceID, userID).Scan(
-		&pr.UserID,          // user_id
-		&pr.Name,            // name
-		&pr.Image,           // image
-		&positionJSON,       // position (JSONB)
-		&pr.Inventory,       // inventory (JSONB, как строка)
-		&pr.Level,           // level
-		&pr.Energy,          // energy
-		&pr.MaxEnergy,       // max_energy
-		&pr.Health,          // health
-		&pr.MaxHealth,       // max_health
-		&pr.Experience,      // experience
-		&pr.MaxExperience,   // max_experience
-		&pr.Attack,          // attack
-		&pr.Defense,         // defense
-		&pr.Speed,           // speed
-		&pr.Maneuverability, // maneuverability
-		&pr.Vision,          // vision
-		&pr.VisionRange,     // vision_range
-		&pr.GroupID,         // group_id
-		&pr.Balance,         // balance
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Распарсить JSON из поля position в структуру Position модели
-	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
-		return nil, err
-	}
-
-	return &pr, nil
 }
 
 // GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.

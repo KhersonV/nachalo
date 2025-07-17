@@ -42,18 +42,6 @@ export function usePlayerActions(
   );
   const isMyTurn = !!myPlayer && myPlayerId === state.active_user;
 
-  // ===== Дефолт-методы если нет user =====
-  if (!user) {
-    return {
-      myPlayer: undefined,
-      isMyTurn: false,
-      handleMoveOrAttack: async () => {},
-      movePlayer: async () => null,
-      fightMonster: async () => {},
-      openBarrel: async () => null,
-      collectResource: async () => {},
-    };
-  }
 
   // ===== Все методы ниже как у тебя, можно просто скопировать! =====
   const movePlayer = useCallback(

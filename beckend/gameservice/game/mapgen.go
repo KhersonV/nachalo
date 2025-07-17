@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/rand"
 	"time"
+	"sort"
 )
 
 // TileType определяет тип тайла на карте.
@@ -80,6 +81,115 @@ type FullCell struct {
 
 
 
+
+// Возвращает квадрат расстояния между двумя точками
+func dist2(a, b [2]int) int {
+	dx := a[0] - b[0]
+	dy := a[1] - b[1]
+	return dx*dx + dy*dy
+}
+
+func collectCandidates(grid [][]int) [][2]int {
+	var candidates [][2]int
+	h, w := len(grid), len(grid[0])
+	for y := 1; y < h-1; y++ {
+		for x := 1; x < w-1; x++ {
+			if grid[y][x] == int(Walkable) {
+				candidates = append(candidates, [2]int{x, y})
+			}
+		}
+	}
+	return candidates
+}
+
+
+func portalReachable(grid [][]int, starts [][2]int, portal [2]int) bool {
+	for _, st := range starts {
+		if isReachable(grid, st[0], st[1], portal[0], portal[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+
+// Для FFA и 1xN — теперь тоже в цикле с проверкой достижимости портала:
+func generateRandomPositions(grid [][]int, totalPlayers int) ([][2]int, [2]int, error) {
+	candidates := collectCandidates(grid)
+	if len(candidates) < totalPlayers+1 {
+		return nil, [2]int{}, errors.New("недостаточно проходимых тайлов")
+	}
+	const maxTries = 50
+	for try := 0; try < maxTries; try++ {
+		rand.Shuffle(len(candidates), func(i, j int) {
+			candidates[i], candidates[j] = candidates[j], candidates[i]
+		})
+		starts := make([][2]int, totalPlayers)
+		copy(starts, candidates[:totalPlayers])
+		portal := candidates[totalPlayers]
+		if portalReachable(grid, starts, portal) {
+			for _, st := range starts {
+				grid[st[1]][st[0]] = int(StartTile)
+			}
+			grid[portal[1]][portal[0]] = int(Portal)
+			return starts, portal, nil
+		}
+	}
+	return nil, [2]int{}, errors.New("не удалось выбрать стартовые и портал")
+}
+
+
+
+func generateRandomTeamClusters(grid [][]int, totalPlayers, teamsCount int) ([][2]int, [2]int, error) {
+	candidates := collectCandidates(grid)
+	if len(candidates) < totalPlayers+1 {
+		return nil, [2]int{}, errors.New("недостаточно проходимых тайлов")
+	}
+
+	playersPerTeam := totalPlayers / teamsCount
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+	centers := candidates[:teamsCount]
+	used := make([]bool, len(candidates))
+	for i := 0; i < teamsCount; i++ {
+		used[i] = true // заняли центры
+	}
+
+	res := make([][2]int, 0, totalPlayers)
+	for _, center := range centers {
+		type posDist struct{ idx, dist int }
+		var dists []posDist
+		for idx, c := range candidates {
+			if used[idx] { continue }
+			dists = append(dists, posDist{idx, dist2(center, c)})
+		}
+		sort.Slice(dists, func(i, j int) bool { return dists[i].dist < dists[j].dist })
+		res = append(res, center)
+		count := 1
+		for _, d := range dists {
+			if count >= playersPerTeam { break }
+			res = append(res, candidates[d.idx])
+			used[d.idx] = true
+			count++
+		}
+	}
+	var portal [2]int
+	for idx, c := range candidates {
+		if !used[idx] {
+			portal = c
+			break
+		}
+	}
+	for _, st := range res {
+		grid[st[1]][st[0]] = int(StartTile)
+	}
+	grid[portal[1]][portal[0]] = int(Portal)
+	return res, portal, nil
+}
+
+
+
 // проверяет, достижима ли клетка (tx,ty) из (sx,sy)
 func isReachable(grid [][]int, sx, sy, tx, ty int) bool {
     h, w := len(grid), len(grid[0])
@@ -108,53 +218,6 @@ func isReachable(grid [][]int, sx, sy, tx, ty int) bool {
     return false
 }
 
-func placeSpecialTiles(grid [][]int, teamsCount int) ([][2]int, [2]int, error) {
-    var candidates []struct{ x, y int }
-    h, w := len(grid), len(grid[0])
-    for y := 1; y < h-1; y++ {
-        for x := 1; x < w-1; x++ {
-            if grid[y][x] == int(Walkable) {
-                candidates = append(candidates, struct{ x, y int }{x, y})
-            }
-        }
-    }
-    if len(candidates) < teamsCount+1 {
-        return nil, [2]int{}, errors.New("недостаточно проходимых тайлов для специальных точек")
-    }
-
-    // Попытки подобрать связный набор
-    rand.Shuffle(len(candidates), func(i, j int) {
-        candidates[i], candidates[j] = candidates[j], candidates[i]
-    })
-    for startIdx := 0; startIdx <= len(candidates)-teamsCount-1; startIdx++ {
-        // берём блок подряд: [startIdx..startIdx+teamsCount-1] – старты, [startIdx+teamsCount] – портал
-        var starts [][2]int
-        for i := 0; i < teamsCount; i++ {
-            pt := candidates[startIdx+i]
-            starts = append(starts, [2]int{pt.x, pt.y})
-        }
-        portal := candidates[startIdx+teamsCount]
-        // проверяем, что из любого старта до портала есть путь
-        ok := false
-        for _, st := range starts {
-            if isReachable(grid, st[0], st[1], portal.x, portal.y) {
-                ok = true
-                break
-            }
-        }
-        if !ok {
-            continue // пробуем следующий кусок
-        }
-        // разметить их на grid
-        for _, st := range starts {
-            grid[st[1]][st[0]] = int(StartTile)
-        }
-        grid[portal.y][portal.x] = int(Portal)
-        return starts, [2]int{portal.x, portal.y}, nil
-    }
-
-    return nil, [2]int{}, errors.New("не удалось найти связные старт+портал точки")
-}
 
 
 
@@ -192,10 +255,21 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		}
 	}
 
-	startPositions, portalPos, err := placeSpecialTiles(grid, cfg.TeamsCount)
-	if err != nil {
-		return nil, 0, 0, nil, [2]int{}, err
-	}
+
+
+var startPositions [][2]int
+var portalPos [2]int
+var err error
+
+if cfg.TeamsCount == 1 || cfg.TeamsCount == cfg.TotalPlayers {
+    startPositions, portalPos, err = generateRandomPositions(grid, cfg.TotalPlayers)
+} else {
+    startPositions, portalPos, err = generateRandomTeamClusters(grid, cfg.TotalPlayers, cfg.TeamsCount)
+}
+
+if err != nil {
+    return nil, 0, 0, nil, [2]int{}, err
+}
 
 	monsterCounter := 1
 	var fullCells []FullCell
