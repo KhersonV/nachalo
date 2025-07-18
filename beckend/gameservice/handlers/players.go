@@ -37,8 +37,11 @@ var levelThresholds = map[int]int{
 	10: 131072000,
 }
 
+
+
+
+
 // CreatePlayerHandler – создает нового игрока.
-// Вставка выполняется с полем position, которое хранится как JSONB (например, '{"x": 0, "y": 0}').
 func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreatePlayerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -58,7 +61,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.Image = "/player-1.webp"
 	}
 
-	
 	query := `
 		INSERT INTO players (
 			user_id, name, image, energy, max_energy, 
@@ -75,7 +77,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 				  attack, defense, speed, maneuverability, vision, vision_range, balance, inventory
 	`
 	player := &models.PlayerResponse{}
-	var positionJSON []byte
 	err := repository.DB.QueryRow(query, req.UserID, req.Name, req.Image).Scan(
 		&player.UserID,
 		&player.Name,
@@ -98,11 +99,6 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка создания игрока: %v", err), http.StatusInternalServerError)
-		return
-	}
-	// Разбираем JSON из поля position
-	if err := json.Unmarshal(positionJSON, &player.Position); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка разбора позиции: %v", err), http.StatusInternalServerError)
 		return
 	}
 

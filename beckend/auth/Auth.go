@@ -81,6 +81,7 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
+	Image   string  `json:"image"`
 }
 
 type LoginRequest struct {
@@ -146,6 +147,7 @@ func getUserByID(userID int) (*User, error) {
 	payload := map[string]interface{}{
 		"user_id": userID,
 		"name":    req.Name,
+		"image":   req.Image,
 	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
