@@ -21,6 +21,9 @@ import (
 
 // Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
+const attackEnergyCost = 4
+const counterAttackEnergyCost = 2
+
 
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
 type CombatExchangePayload struct {
@@ -492,67 +495,58 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 }
 
 // --- Контратака + логика TURN_PASSED для игрока ----------------------------
-
-func doCounterattack(
-	instanceID, attackerType string,
-	attackerID int,
-	attStats, defStats stats,
-	targetAlive bool,
+// attackerType/attackerID - тот, кто атаковал
+// defenderType/defenderID - тот, кто защищается (и может делать контратаку)
+func doCounterattackWithEnergy(
+    instanceID string,
+    attackerType string, attackerID int, // <-- кто получает урон
+    defenderType string, defenderID int, // <-- кто контратакует
+    attackerStats stats, defenderStats stats,
+    targetAlive bool,
 ) (attackResult, error) {
-	// если цель мертва — нет контратаки
-	if !targetAlive {
-		return attackResult{Damage: 0, NewHealth: attStats.Health}, nil
-	}
-	ar := applyDamage(defStats, attStats)
+    if !targetAlive {
+        return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+    }
 
-	if attackerType == "player" {
-		p, err := Combat.GetPlayer(instanceID, attackerID)
-		if err != nil {
-			log.Printf("doCounterattack load player error: %v", err)
-			return ar, err
-		}
-		p.Health = ar.NewHealth
-		if ar.NewHealth > 0 {
-			Combat.UpdatePlayer(instanceID, p)
-		} else {
-			// игрок погиб в контратаке
-			handlePlayerDeath(instanceID, p)
+    // Проверяем энергию для контратаки (только если defender — игрок)
+    if defenderType == "player" {
+        p, err := Combat.GetPlayer(instanceID, defenderID)
+        if err != nil {
+            return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+        }
+        if p.Energy < counterAttackEnergyCost {
+            // Недостаточно энергии — нет контратаки
+            return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+        }
+        // Списываем энергию
+        p.Energy -= counterAttackEnergyCost
+        Combat.UpdatePlayer(instanceID, p)
+    }
 
-			// переход хода другому
-			if ms, ok := game.GetMatchState(instanceID); ok {
-				nextID := ms.ActiveUserID
-				if nextID != 0 {
-					// сохранить новый ход в БД
-					if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
-						log.Printf("UpdateMatchTurn error: %v", err)
-					}
-					// WS: TURN_PASSED
-					turnMsg := map[string]interface{}{
-						"type": "TURN_PASSED",
-						"payload": map[string]interface{}{
-							"instanceId": instanceID,
-							"userId":     nextID,
-							"turnNumber": ms.TurnNumber,
-						},
-					}
-					buf, _ := json.Marshal(turnMsg)
-					Broadcast(buf)
-				}
-			}
-		}
-	} else {
-		// монстр получает урон
-		Combat.UpdateMonsterHealth(instanceID, attackerID, ar.NewHealth)
-		if ar.NewHealth <= 0 {
-			handleMonsterDeath(instanceID, attackerID)
-		}
-	}
+    // Контратака происходит
+    ar := applyDamage(defenderStats, attackerStats) // defender контратакует attacker
 
-	return ar, nil
+    // Обновляем здоровье атакующего
+    if attackerType == "player" {
+        p, err := Combat.GetPlayer(instanceID, attackerID)
+        if err == nil {
+            p.Health = ar.NewHealth
+            if p.Health > 0 {
+                Combat.UpdatePlayer(instanceID, p)
+            } else {
+                handlePlayerDeath(instanceID, p)
+            }
+        }
+    } else {
+        Combat.UpdateMonsterHealth(instanceID, attackerID, ar.NewHealth)
+        if ar.NewHealth <= 0 {
+            handleMonsterDeath(instanceID, attackerID)
+        }
+    }
+    return ar, nil
 }
 
 // --- Главная функция обработки атаки --------------------------------------
-
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	// 1) Декодируем
 	var req struct {
@@ -564,24 +558,42 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-    log.Printf("[DEBUG] UniversalAttackHandler: decode error: %v", err)
-    http.Error(w, "invalid request body", http.StatusBadRequest)
-    return
-}
+		log.Printf("[DEBUG] UniversalAttackHandler: decode error: %v", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
-atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
-if err != nil {
-    log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
-    http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
-    return
-}
-defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
-if err != nil {
-    log.Printf("[DEBUG] UniversalAttackHandler: loadStats target error: %v", err)
-    http.Error(w, "failed to load target stats", http.StatusInternalServerError)
-    return
-}
+	// --- ENERGY COST FOR ATTACK ---
+	if req.AttackerType == "player" {
+		player, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		if err != nil {
+			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+			return
+		}
+		if player.Energy < attackEnergyCost {
+			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
+			return
+		}
+		player.Energy -= attackEnergyCost
+		if err := repository.UpdateMatchPlayer(req.InstanceID, player); err != nil {
+			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
+			return
+		}
+	}
+	// -------------------------------
 
+	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
+	if err != nil {
+		log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
+		http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
+		return
+	}
+	defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
+	if err != nil {
+		log.Printf("[DEBUG] UniversalAttackHandler: loadStats target error: %v", err)
+		http.Error(w, "failed to load target stats", http.StatusInternalServerError)
+		return
+	}
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
@@ -594,14 +606,14 @@ if err != nil {
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
-	counterRes, _ := doCounterattack(
-		req.InstanceID,
-		req.AttackerType,
-		req.AttackerID,
-		atkStats,
-		defStats,
-		targetRes.NewHealth > 0,
-	)
+counterRes, _ := doCounterattackWithEnergy(
+    req.InstanceID,
+    req.AttackerType, req.AttackerID,
+    req.TargetType, req.TargetID,
+    atkStats, defStats,
+    targetRes.NewHealth > 0,
+)
+
 
 	// 8) HTTP-ответ
 	resp := map[string]interface{}{
@@ -627,33 +639,30 @@ if err != nil {
 	Broadcast(data)
 
 	// 10) WS: MATCH_UPDATE — обновим статы игроков (HP, energy и т.п.)
-
-if req.AttackerType == "player" {
-    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID); err == nil {
-        updatePlayerMsg := map[string]interface{}{
-            "type": "UPDATE_PLAYER",
-            "payload": map[string]interface{}{
-                "instanceId": req.InstanceID,
-                "player":     p,
-            },
-        }
-        buf, _ := json.Marshal(updatePlayerMsg)
-        Broadcast(buf)
-    }
-}
-if req.TargetType == "player" {
-    if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID); err == nil {
-        updatePlayerMsg := map[string]interface{}{
-            "type": "UPDATE_PLAYER",
-            "payload": map[string]interface{}{
-                "instanceId": req.InstanceID,
-                "player":     p,
-            },
-        }
-        buf, _ := json.Marshal(updatePlayerMsg)
-        Broadcast(buf)
-    }
-}
-
-
+	if req.AttackerType == "player" {
+		if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID); err == nil {
+			updatePlayerMsg := map[string]interface{}{
+				"type": "UPDATE_PLAYER",
+				"payload": map[string]interface{}{
+					"instanceId": req.InstanceID,
+					"player":     p,
+				},
+			}
+			buf, _ := json.Marshal(updatePlayerMsg)
+			Broadcast(buf)
+		}
+	}
+	if req.TargetType == "player" {
+		if p, err := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID); err == nil {
+			updatePlayerMsg := map[string]interface{}{
+				"type": "UPDATE_PLAYER",
+				"payload": map[string]interface{}{
+					"instanceId": req.InstanceID,
+					"player":     p,
+				},
+			}
+			buf, _ := json.Marshal(updatePlayerMsg)
+			Broadcast(buf)
+		}
+	}
 }
