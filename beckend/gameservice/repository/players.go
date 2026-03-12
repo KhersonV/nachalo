@@ -12,8 +12,8 @@ import (
 	"gameservice/models"
 )
 
-// GetPlayerByUserID получает игрока из таблицы players по user_id
-// и формирует структуру PlayerResponse, разбирая поле position (JSONB).
+// GetPlayerByUserID получает игрока из таблицы players по user_id.
+// position хранится в match_players, поэтому здесь не читается.
 func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 	player := &models.PlayerResponse{}
 	query := `
@@ -21,7 +21,6 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 			user_id, 
 			name, 
 			image, 
-			position, 
 			energy, 
 			max_energy, 
 			health, 
@@ -40,13 +39,11 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 		FROM players
 		WHERE user_id = $1
 	`
-	var positionJSON []byte
 	row := DB.QueryRow(query, userID)
 	err := row.Scan(
 		&player.UserID,
 		&player.Name,
 		&player.Image,
-		&positionJSON,
 		&player.Energy,
 		&player.MaxEnergy,
 		&player.Health,
@@ -65,12 +62,6 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 	)
 	if err != nil {
 		log.Printf("GetPlayerByUserID: ошибка получения игрока user_id=%d: %v", userID, err)
-		return nil, err
-	}
-
-	// Разбираем JSON из поля position и записываем его в структуру Position.
-	if err := json.Unmarshal(positionJSON, &player.Position); err != nil {
-		log.Printf("GetPlayerByUserID: ошибка разбора поля position: %v", err)
 		return nil, err
 	}
 

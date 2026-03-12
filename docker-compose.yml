@@ -1,0 +1,104 @@
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nachalo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  auth:
+    build:
+      context: .
+      dockerfile: docker/auth.Dockerfile
+    container_name: nachalo_auth
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AUTH_DB_DSN: postgres://admin:admin@postgres:5432/admin?sslmode=disable
+      GAME_SERVICE_URL: http://gameservice:8001
+      FRONTEND_ORIGIN: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  gameservice:
+    build:
+      context: .
+      dockerfile: docker/gameservice.Dockerfile
+    container_name: nachalo_gameservice
+    restart: unless-stopped
+    environment:
+      PORT: 8001
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      GAME_DB_DSN: postgres://admin:admin@postgres:5432/game_db?sslmode=disable
+      FRONTEND_ORIGIN: http://localhost:3000
+      MATCHMAKING_URL: http://matchmaking:8002
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+
+  matchmaking:
+    build:
+      context: .
+      dockerfile: docker/matchmaking.Dockerfile
+    container_name: nachalo_matchmaking
+    restart: unless-stopped
+    environment:
+      PORT: 8002
+      GAME_SERVICE_URL: http://gameservice:8001
+      GAME_DB_DSN: postgres://admin:admin@postgres:5432/game_db?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gameservice:
+        condition: service_started
+    ports:
+      - "8002:8002"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: nachalo_frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8001
+      NEXT_PUBLIC_WS_URL: ws://localhost:8001/ws
+      NEXT_PUBLIC_AUTH_BASE: http://localhost:8000
+      NEXT_PUBLIC_MATCHMAKING_BASE: http://localhost:8002
+    depends_on:
+      - auth
+      - gameservice
+      - matchmaking
+    ports:
+      - "3000:3000"
+
+  adminer:
+    image: adminer:4
+    container_name: nachalo_adminer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:

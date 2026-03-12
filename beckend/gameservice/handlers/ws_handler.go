@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
@@ -78,7 +79,16 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	clientsMu.Lock()
 	if oldClient, ok := clients[client.userID]; ok {
 		log.Printf("[WsHandler] Закрываем старый сокет для userID=%d, old instance=%s", oldClient.userID, oldClient.instanceID)
-		oldClient.Conn.Close()
+		// Set a short read deadline so the old goroutine exits promptly, then
+		// send the close frame (code 1000). Do NOT force-close TCP immediately —
+		// that would cause the close frame to be lost and the client would receive
+		// 1006 Abnormal Closure, triggering a reconnect loop.
+		oldClient.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_ = oldClient.Conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "replaced by new connection"),
+			time.Now().Add(time.Second),
+		)
 		delete(clients, client.userID)
 	}
 	clients[client.userID] = client
@@ -117,6 +127,15 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
                     }
                 } else {
                     log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
+					endedMsg := map[string]interface{}{
+						"type": "MATCH_ENDED",
+						"payload": map[string]interface{}{
+							"instanceId": client.instanceID,
+						},
+					}
+					if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
+						_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+					}
                 }
             }
 				continue
@@ -126,7 +145,9 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 
 	ws.Close()
 	clientsMu.Lock()
-	delete(clients, client.userID)
+	if current, ok := clients[client.userID]; ok && current == client {
+		delete(clients, client.userID)
+	}
 	clientsMu.Unlock()
 }
 
@@ -152,7 +173,9 @@ var broadcastFn = func(message []byte) {
             // Если ошибка — безопасно удалить клиента (требуется ещё один lock)
             clientsMu.Lock()
             client.Conn.Close()
-            delete(clients, client.userID)
+			if current, ok := clients[client.userID]; ok && current == client {
+				delete(clients, client.userID)
+			}
             clientsMu.Unlock()
         }
     }

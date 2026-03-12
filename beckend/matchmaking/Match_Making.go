@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 	"strconv"
@@ -65,6 +67,7 @@ var (
 	matchMu       sync.Mutex
 )
 
+var gameServiceURL = os.Getenv("GAME_SERVICE_URL")
 
 // RemovePlayerMatch убирает игрока из текущего матча (playerMatches)
 func RemovePlayerMatch(playerID int) {
@@ -227,7 +230,6 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	instanceID, exists := playerMatches[playerID]
 	if !exists {
-		// Если для данного игрока матч ещё не сформирован
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 		return
@@ -235,6 +237,26 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	match, ok := currentMatches[instanceID]
 	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
+		return
+	}
+
+	// Validate that the player is still active in this match according to the DB.
+	// This prevents stale in-memory mappings from redirecting the user to a
+	// finished match (e.g., when FinalizeMatch deleted match_players via CASCADE
+	// but unbindPlayer hadn't run yet or failed silently).
+	players, err := repository.GetPlayersInMatch(instanceID)
+	if err != nil || func() bool {
+		for _, p := range players {
+			if p.UserID == playerID {
+				return false
+			}
+		}
+		return true
+	}() {
+		// Player no longer in DB — clean up stale mapping
+		delete(playerMatches, playerID)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 		return
@@ -353,13 +375,25 @@ func createMatch(mode string, group []QueueEntry) {
 		log.Printf("Ошибка маршалинга запроса матча: %v", err)
 		return
 	}
-	resp, err := http.Post("http://localhost:8001/game/createMatch", "application/json", bytes.NewBuffer(reqJSON))
+	resp, err := http.Post(gameServiceURL+"/game/createMatch", "application/json", bytes.NewBuffer(reqJSON))
 	if err != nil {
 		log.Printf("Ошибка вызова Game-сервиса: %v", err)
+		mu.Lock()
+		queues[mode] = append(group, queues[mode]...)
+		mu.Unlock()
 		return
 	}
 	defer resp.Body.Close()
 	log.Printf("Game-сервис вернул статус: %s", resp.Status)
+
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Game-сервис не создал матч: status=%d body=%s", resp.StatusCode, string(body))
+		mu.Lock()
+		queues[mode] = append(group, queues[mode]...)
+		mu.Unlock()
+		return
+	}
 
 	// Сохраняем состояние матча и сопоставление для каждого игрока
 	matchMu.Lock()
@@ -391,6 +425,10 @@ func enableCors(next http.Handler) http.Handler {
 }
 
 func main() {
+	if gameServiceURL == "" {
+		gameServiceURL = "http://gameservice:8001"
+	}
+
 	repository.InitDB()
 
 	r := mux.NewRouter()
@@ -399,15 +437,21 @@ func main() {
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
-
 	r.HandleFunc("/matchmaking/inQueue", inQueueHandler).Methods("GET")
-
-
 	r.HandleFunc("/matchmaking/player/{playerID}", removePlayerHandler).Methods("DELETE")
 
 	handler := enableCors(r)
-	srv := &http.Server{Handler: handler, Addr: ":8002"}
 
-	log.Println("Matchmaking-сервис запущен на порту 8002")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8002"
+	}
+
+	srv := &http.Server{
+		Handler: handler,
+		Addr:    ":" + port,
+	}
+
+	log.Printf("Matchmaking-сервис запущен на порту %s", port)
 	log.Fatal(srv.ListenAndServe())
 }

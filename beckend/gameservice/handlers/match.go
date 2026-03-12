@@ -132,53 +132,54 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
 // assignMatchPlayers – распределяет игроков по группам в зависимости от режима игры и вызывает создание копий игроков для матча.
 func assignMatchPlayers(
-    instanceID string,
-    playerIDs []int,
-    starts [][2]int,
-    mode string,
-) {
-    // Определяем число команд
-    teamsCount := 1
-    switch mode {
-    case "pve":
-        teamsCount = 1
-    case "1x1":
-        teamsCount = 2
-    case "1x2":
-        teamsCount = 3
-    case "2x2":
-        teamsCount = 2
-    case "3x3":
-        teamsCount = 2
-    case "5x5":
-        teamsCount = 2
-    default:
-        teamsCount = 2 // по умолчанию 2 команды
-    }
+	instanceID string,
+	playerIDs []int,
+	starts [][2]int,
+	mode string,
+) error {
+	// Определяем число команд
+	teamsCount := 1
+	switch mode {
+	case "pve":
+		teamsCount = 1
+	case "1x1":
+		teamsCount = 2
+	case "1x2":
+		teamsCount = 3
+	case "2x2":
+		teamsCount = 2
+	case "3x3":
+		teamsCount = 2
+	case "5x5":
+		teamsCount = 2
+	default:
+		teamsCount = 2 // по умолчанию 2 команды
+	}
 	playersPerTeam := len(playerIDs) / teamsCount
 	if playersPerTeam == 0 {
 		playersPerTeam = 1
 	}
 
-    game.CreateMatchState(instanceID, playerIDs)
+	game.CreateMatchState(instanceID, playerIDs)
 
-    for i, uid := range playerIDs {
-        p, err := repository.GetPlayerByUserID(uid)
-        if err != nil {
-            log.Printf("[assignMatchPlayers] player %d not found: %v", uid, err)
-            continue
-        }
-        var x, y int
-        if i < len(starts) {
-            x, y = starts[i][0], starts[i][1]
-        } else {
-            x, y = starts[0][0], starts[0][1]
-        }
-        groupID := (i / playersPerTeam) + 1
-        if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
-            log.Printf("[assignMatchPlayers] failed to insert player %d: %v", uid, err)
-        }
-    }
+	for i, uid := range playerIDs {
+		p, err := repository.GetPlayerByUserID(uid)
+		if err != nil {
+			return fmt.Errorf("player %d not found in players: %w", uid, err)
+		}
+		var x, y int
+		if i < len(starts) {
+			x, y = starts[i][0], starts[i][1]
+		} else {
+			x, y = starts[0][0], starts[0][1]
+		}
+		groupID := (i / playersPerTeam) + 1
+		if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
+			return fmt.Errorf("failed to insert player %d: %w", uid, err)
+		}
+	}
+
+	return nil
 }
 
 
@@ -323,7 +324,11 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 // 9. Копируем игроков в матч
-assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions, req.Mode)
+if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions, req.Mode); err != nil {
+	_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
+	handleError(w, "[CreateMatch] failed to assign players", err)
+	return
+}
 
 
 // 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.

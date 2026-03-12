@@ -25,10 +25,10 @@ import (
 )
 
 var jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
+var connStr = os.Getenv("AUTH_DB_DSN")
+var gameServiceURL = os.Getenv("GAME_SERVICE_URL")
+var frontendOrigin = os.Getenv("FRONTEND_ORIGIN")
 
-const connStr = "user=admin password=yourpassword dbname=admin sslmode=disable"
-
-// User описывает структуру пользователя, соответствующую таблице в БД
 type User struct {
 	ID           int       `json:"id"`
 	Email        string    `json:"email"`
@@ -37,7 +37,6 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// LoginResponse – расширенный тип для ответа на логин, включает токен
 type LoginResponse struct {
 	ID        int       `json:"id"`
 	Email     string    `json:"email"`
@@ -50,14 +49,21 @@ var db *sql.DB
 
 func initDB() {
 	var err error
+
+	if connStr == "" {
+		log.Fatal("AUTH_DB_DSN environment variable is not set")
+	}
+
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
+
 	err = db.Ping()
 	if err != nil {
 		log.Fatalf("Невозможно подключиться к БД: %v", err)
 	}
+
 	log.Println("Подключение к БД установлено")
 }
 
@@ -70,10 +76,12 @@ func createUsersTable() {
 		name VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);`
+
 	_, err := db.Exec(query)
 	if err != nil {
 		log.Fatalf("Ошибка создания таблицы пользователей: %v", err)
 	}
+
 	log.Println("Таблица users успешно создана (или уже существует)")
 }
 
@@ -81,7 +89,7 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
-	Image   string  `json:"image"`
+	Image    string `json:"image"`
 }
 
 type LoginRequest struct {
@@ -97,63 +105,70 @@ func createUser(email, password, name string) (int, error) {
 
 	var userID int
 	query := `INSERT INTO public.users (email, password_hash, name) VALUES ($1, $2, $3) RETURNING id`
+
 	err = db.QueryRow(query, email, string(hashedPassword), name).Scan(&userID)
 	if err != nil {
 		return 0, fmt.Errorf("ошибка создания пользователя: %w", err)
 	}
+
 	return userID, nil
 }
 
 func getUserByEmail(email string) (*User, error) {
 	user := &User{}
 	query := `SELECT id, email, password_hash, name, created_at FROM public.users WHERE email=$1`
+
 	row := db.QueryRow(query, email)
 	err := row.Scan(&user.ID, &user.Email, &user.PasswordHash, &user.Name, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
 	return user, nil
 }
 
 func getUserByID(userID int) (*User, error) {
 	user := &User{}
 	query := `SELECT id, email, name, created_at FROM public.users WHERE id=$1`
+
 	row := db.QueryRow(query, userID)
 	err := row.Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
 	return user, nil
 }
 
-// Обработчик регистрации
-	func registerHandler(w http.ResponseWriter, r *http.Request) {
+func registerHandler(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
 		return
 	}
+
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		http.Error(w, "Все поля (email, password, name) обязательны", http.StatusBadRequest)
 		return
 	}
+
 	userID, err := createUser(req.Email, req.Password, req.Name)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка регистрации: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Пример вызова другого сервиса (Game Service) для создания персонажа.
 	payload := map[string]interface{}{
 		"user_id": userID,
 		"name":    req.Name,
 		"image":   req.Image,
 	}
+
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Ошибка маршаллинга для Game Service: %v", err)
 	} else {
-		resp, err := http.Post("http://localhost:8001/create/player", "application/json", bytes.NewBuffer(jsonData))
+		resp, err := http.Post(gameServiceURL+"/create/player", "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
 			log.Printf("Ошибка создания персонажа в Game Service: %v", err)
 		} else {
@@ -170,13 +185,13 @@ func getUserByID(userID int) (*User, error) {
 	w.Write([]byte("Пользователь успешно зарегистрирован"))
 }
 
-// Обработчик логина, возвращающий данные пользователя вместе с токеном.
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
 		return
 	}
+
 	if req.Email == "" || req.Password == "" {
 		http.Error(w, "Email и password обязательны", http.StatusBadRequest)
 		return
@@ -187,16 +202,17 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Пользователь не найден", http.StatusUnauthorized)
 		return
 	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		http.Error(w, "Неверный пароль", http.StatusUnauthorized)
 		return
 	}
 
-	// Создаем JWT-токен с данными пользователя
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
 		"exp":     time.Now().Add(6 * time.Hour).Unix(),
 	})
+
 	tokenString, err := token.SignedString([]byte(jwtSecretKey))
 	if err != nil {
 		http.Error(w, "Ошибка генерации токена", http.StatusInternalServerError)
@@ -215,7 +231,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(loginResp)
 }
 
-// Middleware для проверки JWT с использованием общего ключа
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -223,6 +238,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Отсутствует токен", http.StatusUnauthorized)
 			return
 		}
+
 		var tokenString string
 		_, err := fmt.Sscanf(authHeader, "Bearer %s", &tokenString)
 		if err != nil || tokenString == "" {
@@ -236,13 +252,13 @@ func authMiddleware(next http.Handler) http.Handler {
 			}
 			return []byte(jwtSecretKey), nil
 		})
+
 		if err != nil || !token.Valid {
 			http.Error(w, "Неверный или просроченный токен", http.StatusUnauthorized)
 			return
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			
 			userID, ok := claims["user_id"].(float64)
 			if !ok {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
@@ -257,7 +273,6 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Обработчик получения профиля пользователя
 func profileHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(common.UserIDKey).(int)
 	if !ok {
@@ -277,10 +292,23 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
+	connStr = os.Getenv("AUTH_DB_DSN")
+	gameServiceURL = os.Getenv("GAME_SERVICE_URL")
+	frontendOrigin = os.Getenv("FRONTEND_ORIGIN")
+
 	if jwtSecretKey == "" {
 		log.Fatal("JWT_SECRET_KEY environment variable is not set")
 	}
-	log.Println("JWT_SECRET_KEY загружен:", jwtSecretKey)
+	if connStr == "" {
+		log.Fatal("AUTH_DB_DSN environment variable is not set")
+	}
+	if gameServiceURL == "" {
+		gameServiceURL = "http://gameservice:8001"
+	}
+	if frontendOrigin == "" {
+		frontendOrigin = "http://localhost:3000"
+	}
+
 	initDB()
 	defer db.Close()
 	createUsersTable()
@@ -291,17 +319,19 @@ func main() {
 	mux.Handle("/auth/profile", authMiddleware(http.HandlerFunc(profileHandler)))
 
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
+		AllowedOrigins:   []string{frontendOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,
 	})
+
 	handler := c.Handler(mux)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8000"
 	}
+
 	log.Printf("Auth-сервис запущен на порту %s", port)
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatalf("Ошибка запуска сервера: %v", err)

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"gameservice/models"
@@ -174,7 +176,11 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 
 // unbindPlayer удаляет игрока из матчинга по HTTP
 func unbindPlayer(playerID int) {
-    url := fmt.Sprintf("http://localhost:8002/matchmaking/player/%d", playerID)
+	baseURL := strings.TrimRight(os.Getenv("MATCHMAKING_URL"), "/")
+	if baseURL == "" {
+		baseURL = "http://localhost:8002"
+	}
+	url := fmt.Sprintf("%s/matchmaking/player/%d", baseURL, playerID)
     req, err := http.NewRequest(http.MethodDelete, url, nil)
     if err != nil {
         log.Printf("unbindPlayer: не удалось создать запрос: %v", err)

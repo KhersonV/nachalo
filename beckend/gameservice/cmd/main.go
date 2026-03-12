@@ -41,17 +41,6 @@ func main() {
 	repository.InitDB()
 	defer repository.DB.Close()
 
-	// Создаём нужные таблицы, если их нет
-	repository.CreatePlayersTable()
-	repository.CreateMatchesTable()
-	repository.CreateMatchPlayersTable()
-	repository.CreateInventoryTable()
-
-	if err := repository.RestoreMatchStates(); err != nil {
-		log.Fatalf("Ошибка восстановления состояний матчей: %v", err)
-	}
-	// при необходимости создавайте и таблицу inventory_items и т.д.
-
 	// Настраиваем маршруты
 	router := mux.NewRouter()
 	// === websocket ===

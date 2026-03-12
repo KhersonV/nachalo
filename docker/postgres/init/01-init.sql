@@ -1,0 +1,4 @@
+CREATE USER admin WITH PASSWORD 'admin';
+
+CREATE DATABASE admin OWNER admin;
+CREATE DATABASE game_db OWNER admin;
