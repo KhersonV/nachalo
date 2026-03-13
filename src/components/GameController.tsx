@@ -4,6 +4,7 @@
 
 import { useSelector, useDispatch } from "react-redux";
 import React, { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
 import Controls from "./Controls";
@@ -28,6 +29,7 @@ interface GameControllerProps {
 
 export default function GameController({ instanceId }: GameControllerProps) {
     const dispatch = useDispatch();
+    const router = useRouter();
     const state = useSelector((state: RootState) => state.game);
     const { user } = useAuth();
 
@@ -40,7 +42,34 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const [showInventory, setShowInventory] = useState(false);
     const [showQuestAlert, setShowQuestAlert] = useState(false);
     const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
+    const [canOpenStats, setCanOpenStats] = useState(false);
     const questAlertShownRef = React.useRef(false);
+
+    useEffect(() => {
+        // Новый матч: сбрасываем флаг и возможный кэш прошлой статистики.
+        setCanOpenStats(false);
+        if (typeof window !== "undefined") {
+            sessionStorage.removeItem("lastMatchPlayerStats");
+        }
+    }, [instanceId]);
+
+    useEffect(() => {
+        const handleStatsReady = () => setCanOpenStats(true);
+        if (typeof window !== "undefined") {
+            window.addEventListener("match-stats-ready", handleStatsReady);
+            if (sessionStorage.getItem("lastMatchPlayerStats")) {
+                setCanOpenStats(true);
+            }
+        }
+        return () => {
+            if (typeof window !== "undefined") {
+                window.removeEventListener(
+                    "match-stats-ready",
+                    handleStatsReady,
+                );
+            }
+        };
+    }, []);
 
     // Show the quest artifact alert once when the map loads
     useEffect(() => {
@@ -73,6 +102,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const handlePortalExit = useCallback(async () => {
         const token = user?.token;
         if (!token) return;
+        setCanOpenStats(false);
         const res = await fetch("http://localhost:8001/game/finishMatch", {
             method: "POST",
             headers: {
@@ -88,8 +118,17 @@ export default function GameController({ instanceId }: GameControllerProps) {
             } else {
                 console.error("[Portal] finishMatch error", res.status, data);
             }
+            return;
         }
-        // On success the server broadcasts MATCH_ENDED which the WS handler handles
+
+        const data = await res.json().catch(() => null);
+        if (typeof window !== "undefined" && data?.stats) {
+            sessionStorage.setItem(
+                "lastMatchPlayerStats",
+                JSON.stringify(data.stats),
+            );
+            setCanOpenStats(true);
+        }
     }, [instanceId, user]);
 
     // Можно оптимизировать: вынести в useCallback
@@ -136,11 +175,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
         [dispatch, instanceId],
     );
 
-    const questFoundConfirmLabel = state.questFoundNotification?.includes(
+    const isPortalExitNotification = !!state.questFoundNotification?.includes(
         "покинул поле боя через портал",
-    )
-        ? "К статистике"
-        : "Понятно";
+    );
+    const questFoundConfirmLabel =
+        isPortalExitNotification && canOpenStats ? "К статистике" : "Понятно";
 
     return (
         <div className={styles.container}>
@@ -204,6 +243,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     hintText={state.questFoundNotification}
                     confirmLabel={questFoundConfirmLabel}
                     onClose={() => {
+                        if (isPortalExitNotification && canOpenStats) {
+                            router.replace("/game/stats");
+                        }
                         setShowQuestFoundAlert(false);
                         dispatch(setQuestFoundNotification(null));
                     }}

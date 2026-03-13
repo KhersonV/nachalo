@@ -145,6 +145,10 @@ export function createWsHandlers(
             ),
         // --- END ---
         MATCH_ENDED: () => {
+            const hasLastMatchStats =
+                typeof window !== "undefined" &&
+                !!sessionStorage.getItem("lastMatchPlayerStats");
+            if (hasLastMatchStats) return;
             router.replace("/mode");
         },
         QUEST_ARTIFACT_FOUND: (payload: any) => {

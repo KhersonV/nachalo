@@ -28,6 +28,18 @@ export interface WSMessage<Payload = any> {
     payload?: Payload;
 }
 
+type MatchEndedPlayerStat = {
+    userId: number;
+    name: string;
+    expGained: number;
+    playerKills: number;
+    monsterKills: number;
+    damageTotal: number;
+    damageToPlayers: number;
+    damageToMonsters: number;
+    rewards?: unknown;
+};
+
 interface MatchResponse {
     instance_id: string;
     mode: string;
@@ -201,6 +213,41 @@ export function useGameSocket(
                             reconnectRef.current = null;
                         }
                         wsRef.current?.close(1000);
+
+                        if (
+                            typeof window !== "undefined" &&
+                            user?.id &&
+                            Array.isArray(msg.payload?.stats)
+                        ) {
+                            const myStats = (
+                                msg.payload.stats as MatchEndedPlayerStat[]
+                            ).find((s) => s.userId === user.id);
+                            if (myStats) {
+                                sessionStorage.setItem(
+                                    "lastMatchPlayerStats",
+                                    JSON.stringify({
+                                        instanceId:
+                                            msg.payload.instanceId ??
+                                            msg.payload.instance_id ??
+                                            instanceId,
+                                        winnerType:
+                                            msg.payload.winnerType ?? "user",
+                                        winnerId: msg.payload.winnerId ?? 0,
+                                        player: myStats,
+                                    }),
+                                );
+                                window.dispatchEvent(
+                                    new Event("match-stats-ready"),
+                                );
+                            }
+                        }
+
+                        const hasLastMatchStats =
+                            typeof window !== "undefined" &&
+                            !!sessionStorage.getItem("lastMatchPlayerStats");
+                        if (hasLastMatchStats) {
+                            return;
+                        }
                         router.replace("/mode");
                         return;
 
