@@ -5,7 +5,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -233,12 +235,20 @@ func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
     instanceID := r.URL.Query().Get("instance_id")
     if instanceID == "" {
-        http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "instance_id обязателен"})
         return
     }
     resp, err := BuildMatchResponse(instanceID)
     if err != nil {
-        http.Error(w, fmt.Sprintf("Ошибка: %v", err), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "match_not_found"})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
         return
     }
     w.Header().Set("Content-Type", "application/json")

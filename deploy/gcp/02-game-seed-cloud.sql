@@ -1,4 +1,3 @@
-\connect game_db
 
 CREATE TABLE IF NOT EXISTS monsters (
     id SERIAL PRIMARY KEY,
@@ -21,35 +20,9 @@ CREATE TABLE IF NOT EXISTS resources (
     id SERIAL PRIMARY KEY,
     type TEXT NOT NULL,
     description TEXT,
-    effect JSONB,
+    effect TEXT,
     image TEXT
 );
-
-DO $$
-DECLARE
-    effect_type TEXT;
-BEGIN
-    SELECT c.data_type
-    INTO effect_type
-    FROM information_schema.columns c
-    WHERE c.table_schema = 'public'
-      AND c.table_name = 'resources'
-      AND c.column_name = 'effect';
-
-    IF effect_type = 'text' THEN
-        EXECUTE $sql$
-            ALTER TABLE resources
-            ALTER COLUMN effect TYPE jsonb
-            USING CASE
-                WHEN effect IS NULL OR btrim(effect) = '' THEN '{}'::jsonb
-                WHEN left(btrim(effect), 1) IN ('{', '[') THEN effect::jsonb
-                ELSE to_jsonb(effect)
-            END
-        $sql$;
-    END IF;
-
-    UPDATE resources SET effect = '{}'::jsonb WHERE effect IS NULL;
-END $$;
 
 CREATE TABLE IF NOT EXISTS artifacts (
     id SERIAL PRIMARY KEY,
@@ -194,13 +167,4 @@ WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'titan_breastplate');
 
 DELETE FROM artifacts WHERE name = 'ancient_amulet';
 
-ALTER TABLE monsters OWNER TO admin;
-ALTER TABLE resources OWNER TO admin;
-ALTER TABLE artifacts OWNER TO admin;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE monsters TO admin;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE resources TO admin;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE artifacts TO admin;
-GRANT USAGE, SELECT ON SEQUENCE monsters_id_seq TO admin;
-GRANT USAGE, SELECT ON SEQUENCE resources_id_seq TO admin;
-GRANT USAGE, SELECT ON SEQUENCE artifacts_id_seq TO admin;

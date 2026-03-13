@@ -27,6 +27,8 @@ interface GameControllerProps {
     instanceId: string;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
 export default function GameController({ instanceId }: GameControllerProps) {
     const dispatch = useDispatch();
     const router = useRouter();
@@ -166,7 +168,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         const token = user?.token;
         if (!token) return;
         setCanOpenStats(false);
-        const res = await fetch("http://localhost:8001/game/finishMatch", {
+        const res = await fetch(`${API_BASE}/game/finishMatch`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -310,7 +312,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         myPlayer={myPlayer}
                     />
                 ) : (
-                    <p>Загрузка карты...</p>
+                    <p className={styles.mapLoading}>Загрузка карты...</p>
                 )}
             </div>
             <div className={styles.controlsContainer}>

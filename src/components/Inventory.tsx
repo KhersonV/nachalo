@@ -12,6 +12,8 @@ import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
 import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
 const Inventory: React.FC = () => {
     const dispatch = useDispatch();
     const state = useSelector((state: RootState) => state.game);
@@ -123,7 +125,7 @@ const Inventory: React.FC = () => {
             }
 
             const res = await fetch(
-                `http://localhost:8001/game/player/${user.id}/inventory/use`,
+                `${API_BASE}/game/player/${user.id}/inventory/use`,
                 {
                     method: "POST",
                     headers: {

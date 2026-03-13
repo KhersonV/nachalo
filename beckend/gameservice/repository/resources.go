@@ -12,6 +12,20 @@ import (
 	"gameservice/game"
 )
 
+func effectToBytes(value any) []byte {
+	switch v := value.(type) {
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	case nil:
+		return []byte("{}")
+	default:
+		b, _ := json.Marshal(v)
+		return b
+	}
+}
+
 // GetResourcesData извлекает данные ресурсов из таблицы resources
 // и возвращает срез game.ResourceData.
 func GetResourcesData() ([]game.ResourceData, error) {
@@ -23,10 +37,11 @@ func GetResourcesData() ([]game.ResourceData, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var rd game.ResourceData
-		var effectBytes []byte
-		if err := rows.Scan(&rd.ID, &rd.Type, &rd.Description, &effectBytes, &rd.Image); err != nil {
+		var effectValue any
+		if err := rows.Scan(&rd.ID, &rd.Type, &rd.Description, &effectValue, &rd.Image); err != nil {
 			return nil, err
 		}
+		effectBytes := effectToBytes(effectValue)
 		var effect map[string]int
 		if err := json.Unmarshal(effectBytes, &effect); err != nil {
 			effect = make(map[string]int)

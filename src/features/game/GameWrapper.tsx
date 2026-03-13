@@ -19,6 +19,8 @@ interface GameWrapperProps {
     children: React.ReactNode;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
 export default function GameWrapper({
     instanceId,
     children,
@@ -45,13 +47,21 @@ export default function GameWrapper({
                 console.warn("[GameWrapper] Нет user или токена — выход");
                 return;
             }
+            const [resourcesRes, monstersRes] = await Promise.all([
+                fetch(`${API_BASE}/api/resources`),
+                fetch(`${API_BASE}/api/monsters`),
+            ]);
+            if (!resourcesRes.ok) {
+                const text = await resourcesRes.text();
+                throw new Error(`resources ${resourcesRes.status}: ${text}`);
+            }
+            if (!monstersRes.ok) {
+                const text = await monstersRes.text();
+                throw new Error(`monsters ${monstersRes.status}: ${text}`);
+            }
             const [resources, monsters] = await Promise.all([
-                fetch("http://localhost:8001/api/resources").then((r) =>
-                    r.json(),
-                ),
-                fetch("http://localhost:8001/api/monsters").then((r) =>
-                    r.json(),
-                ),
+                resourcesRes.json(),
+                monstersRes.json(),
             ]);
             setResources(resources);
             setMonsters(monsters);
@@ -60,9 +70,13 @@ export default function GameWrapper({
             console.log("[GameWrapper] fetch match...");
 
             const res = await fetch(
-                `http://localhost:8001/game/match?instance_id=${instanceId}`,
+                `${API_BASE}/game/match?instance_id=${instanceId}`,
                 { headers: { Authorization: `Bearer ${user.token}` } },
             );
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`match ${res.status}: ${text}`);
+            }
             const data = await res.json();
             console.log("[GameWrapper] match data:", data);
 

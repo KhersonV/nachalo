@@ -178,7 +178,7 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 func unbindPlayer(playerID int) {
 	baseURL := strings.TrimRight(os.Getenv("MATCHMAKING_URL"), "/")
 	if baseURL == "" {
-		baseURL = "http://localhost:8002"
+		baseURL = "http://matchmaking:8002"
 	}
 	url := fmt.Sprintf("%s/matchmaking/player/%d", baseURL, playerID)
     req, err := http.NewRequest(http.MethodDelete, url, nil)

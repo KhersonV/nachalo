@@ -18,6 +18,8 @@ const DELTAS = {
 
 type MoveDirection = keyof typeof DELTAS;
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
 export function usePlayerActions(
     instanceId: string,
     user: User | null,
@@ -53,7 +55,7 @@ export function usePlayerActions(
                 const storedUser = localStorage.getItem("user");
                 const token = storedUser ? JSON.parse(storedUser).token : "";
                 if (!token) return null;
-                const url = `http://localhost:8001/game/${instanceId}/player/${myPlayerId}/move`;
+                const url = `${API_BASE}/game/${instanceId}/player/${myPlayerId}/move`;
                 const body = { new_pos_x: newPosX, new_pos_y: newPosY };
                 const response = await fetch(url, {
                     method: "POST",
@@ -81,7 +83,7 @@ export function usePlayerActions(
             if (!targetCell?.monster) return;
             const token = user?.token;
             if (!token || !myPlayerId) return;
-            await fetch("http://localhost:8001/game/attack", {
+            await fetch(`${API_BASE}/game/attack`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -104,7 +106,7 @@ export function usePlayerActions(
             const stored = localStorage.getItem("user");
             const token = stored ? JSON.parse(stored).token : "";
             if (!token) return null;
-            const res = await fetch("http://localhost:8001/game/openBarrel", {
+            const res = await fetch(`${API_BASE}/game/openBarrel`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -144,7 +146,7 @@ export function usePlayerActions(
             if (!instanceId || !user) return;
             const token = user.token;
             if (!token) return;
-            await fetch("http://localhost:8001/game/collectResource", {
+            await fetch(`${API_BASE}/game/collectResource`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

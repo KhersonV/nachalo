@@ -1,0 +1,248 @@
+.page {
+    --bg-1: #0f172a;
+    --bg-2: #111827;
+    --card: rgba(12, 22, 36, 0.78);
+    --line: rgba(255, 255, 255, 0.14);
+    --text: #e5edf7;
+    --muted: #9db0c8;
+    --accent: #22d3ee;
+    --accent-2: #14b8a6;
+    --danger: #fb7185;
+
+    position: relative;
+    min-height: calc(100vh - 72px);
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    overflow: hidden;
+    background:
+        radial-gradient(
+            1200px 500px at 15% -20%,
+            rgba(20, 184, 166, 0.26),
+            transparent 70%
+        ),
+        radial-gradient(
+            900px 450px at 100% 0%,
+            rgba(34, 211, 238, 0.2),
+            transparent 60%
+        ),
+        linear-gradient(160deg, var(--bg-1), var(--bg-2));
+}
+
+.glowA,
+.glowB {
+    position: absolute;
+    border-radius: 999px;
+    filter: blur(40px);
+    pointer-events: none;
+}
+
+.glowA {
+    width: 280px;
+    height: 280px;
+    background: rgba(20, 184, 166, 0.25);
+    top: 5%;
+    left: 5%;
+}
+
+.glowB {
+    width: 220px;
+    height: 220px;
+    background: rgba(34, 211, 238, 0.25);
+    right: 8%;
+    bottom: 8%;
+}
+
+.card {
+    position: relative;
+    z-index: 1;
+    width: min(560px, 100%);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 28px;
+    color: var(--text);
+    backdrop-filter: blur(10px);
+    background: linear-gradient(160deg, var(--card), rgba(10, 16, 28, 0.82));
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+
+.kicker {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+.title {
+    margin: 6px 0 0;
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.05;
+}
+
+.subtitle {
+    margin: 10px 0 22px;
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.form {
+    display: grid;
+    gap: 14px;
+}
+
+.field {
+    display: grid;
+    gap: 8px;
+}
+
+.label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.input {
+    width: 100%;
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(8, 15, 26, 0.65);
+    color: var(--text);
+    padding: 0 12px;
+    font-size: 14px;
+    outline: none;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.input:focus {
+    border-color: rgba(34, 211, 238, 0.8);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
+}
+
+.passwordWrap {
+    position: relative;
+}
+
+.passwordWrap .input {
+    padding-right: 94px;
+}
+
+.passwordToggle {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    height: 32px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: rgba(12, 22, 36, 0.85);
+    color: var(--text);
+    padding: 0 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.passwordToggle:hover {
+    border-color: rgba(34, 211, 238, 0.7);
+}
+
+.avatarGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.avatarOption {
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 6px;
+    background: rgba(8, 15, 26, 0.5);
+    cursor: pointer;
+    transition:
+        transform 0.16s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.avatarOption:hover {
+    transform: translateY(-1px);
+}
+
+.avatarOptionActive {
+    border-color: rgba(34, 211, 238, 0.75);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15) inset;
+}
+
+.avatarRadio {
+    display: none;
+}
+
+.avatarImage {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 13px;
+}
+
+.submitButton {
+    margin-top: 6px;
+    height: 44px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #052226;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        filter 0.2s ease,
+        transform 0.12s ease;
+}
+
+.submitButton:hover {
+    filter: brightness(1.07);
+}
+
+.submitButton:active {
+    transform: translateY(1px);
+}
+
+.submitButton:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+}
+
+.linkButton {
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.linkButton:hover {
+    color: var(--text);
+}
+
+@media (max-width: 640px) {
+    .page {
+        padding: 12px;
+    }
+
+    .card {
+        border-radius: 16px;
+        padding: 18px;
+    }
+
+    .avatarGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

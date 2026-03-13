@@ -14,6 +14,29 @@ import (
     "gameservice/repository"
 )
 
+func normalizeEffectRaw(value any) json.RawMessage {
+	switch v := value.(type) {
+	case []byte:
+		if json.Valid(v) {
+			return json.RawMessage(v)
+		}
+		enc, _ := json.Marshal(string(v))
+		return json.RawMessage(enc)
+	case string:
+		b := []byte(v)
+		if json.Valid(b) {
+			return json.RawMessage(b)
+		}
+		enc, _ := json.Marshal(v)
+		return json.RawMessage(enc)
+	case nil:
+		return json.RawMessage([]byte("{}"))
+	default:
+		enc, _ := json.Marshal(v)
+		return json.RawMessage(enc)
+	}
+}
+
 // Структура для ресурса
 type Resource struct {
     ID          int             `json:"id"`
@@ -35,10 +58,12 @@ func GetResourcesHandler(w http.ResponseWriter, r *http.Request) {
     var resources []Resource
     for rows.Next() {
         var rsc Resource
-        if err := rows.Scan(&rsc.ID, &rsc.Type, &rsc.Description, &rsc.Effect, &rsc.Image); err != nil {
+		var effectValue any
+		if err := rows.Scan(&rsc.ID, &rsc.Type, &rsc.Description, &effectValue, &rsc.Image); err != nil {
             http.Error(w, fmt.Sprintf("Ошибка чтения ресурсов: %v", err), http.StatusInternalServerError)
             return
         }
+		rsc.Effect = normalizeEffectRaw(effectValue)
         resources = append(resources, rsc)
     }
     w.Header().Set("Content-Type", "application/json")

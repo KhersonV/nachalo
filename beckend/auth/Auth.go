@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -318,8 +319,29 @@ func main() {
 	mux.HandleFunc("/auth/login", loginHandler)
 	mux.Handle("/auth/profile", authMiddleware(http.HandlerFunc(profileHandler)))
 
+	allowedOrigins := []string{"http://localhost:3000", "https://*.run.app"}
+	for _, origin := range strings.Split(frontendOrigin, ",") {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" {
+			allowedOrigins = append(allowedOrigins, trimmed)
+		}
+	}
+
+	allowedOriginSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		if origin != "" {
+			allowedOriginSet[origin] = struct{}{}
+		}
+	}
+
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{frontendOrigin},
+		AllowedOrigins:   allowedOrigins,
+		AllowOriginFunc: func(origin string) bool {
+			if _, ok := allowedOriginSet[origin]; ok {
+				return true
+			}
+			return strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, ".run.app")
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: true,

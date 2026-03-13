@@ -1,68 +1,109 @@
 .container {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    width: 800px;
-    margin: 0 auto;
+    --panel-bg: rgba(12, 22, 34, 0.78);
+    --panel-line: rgba(160, 184, 206, 0.3);
+    --text-main: #e6eef6;
+    --text-muted: #9cb3c8;
 
-    margin-left: 500;
+    position: relative;
+    width: min(1200px, 100%);
+    margin: 0 auto;
+    padding: 16px 18px 24px;
+    display: grid;
+    gap: 14px;
+    color: var(--text-main);
 }
 
 .mapContainer {
-    margin-left: -400;
-    width: 800px;
-    height: 600px;
-    margin-bottom: 20px;
-    /* Отступ между картой и панелью управления */
+    width: min(100%, 1120px);
+    margin: 0 auto;
+    min-height: 620px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--panel-line);
+    border-radius: 16px;
+    background:
+        radial-gradient(
+            1200px 480px at 0% -10%,
+            rgba(56, 189, 248, 0.12),
+            transparent 65%
+        ),
+        linear-gradient(180deg, rgba(13, 20, 31, 0.85), rgba(7, 12, 20, 0.9));
+    box-shadow: 0 22px 48px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
 }
 
 .controlsContainer {
-    margin-left: -500;
-    width: 800px;
+    width: min(100%, 1120px);
+    margin: 0 auto;
     display: flex;
-    justify-content: flex-start;
-    /* Выравнивание панели по левому краю */
-    padding-left: 10px;
-    /* Отступ слева для панели управления */
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid var(--panel-line);
+    border-radius: 14px;
+    background: var(--panel-bg);
+    backdrop-filter: blur(8px);
+    padding: 12px 14px;
+}
+
+.mapLoading {
+    color: var(--text-muted);
+    font-size: 15px;
+}
+
+.waitingOverlay {
+    width: 100%;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 15px;
+    padding: 14px;
 }
 
 .hud {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    background: rgba(141, 103, 103, 0.6);
-    color: #fff;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    position: fixed;
+    top: 14px;
+    left: 14px;
     z-index: 20;
-}
-
-.hud p {
-    margin: 0;
-    line-height: 1.2;
+    min-width: 250px;
+    border: 1px solid var(--panel-line);
+    border-radius: 12px;
+    background: var(--panel-bg);
+    color: var(--text-main);
+    padding: 10px 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
 }
 
 .hudRow {
-    display: flex;
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
     align-items: center;
-    margin-bottom: 0.25rem;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.hudRow:last-child {
+    margin-bottom: 0;
 }
 
 .progressBar {
-    flex: 1;
     height: 8px;
-    background: #444;
-    border-radius: 4px;
-    margin: 0 0.5rem;
+    background: rgba(148, 163, 184, 0.25);
+    border-radius: 999px;
     overflow: hidden;
 }
 
 .progressFill {
     height: 100%;
-    background: #0f0;
-    /* по умолчанию зелёный, можно заменить переменной */
     transition: width 0.2s ease;
+}
+
+.progressFillHealth {
+    background: linear-gradient(90deg, #22c55e, #86efac);
+}
+
+.progressFillEnergy {
+    background: linear-gradient(90deg, #38bdf8, #7dd3fc);
 }
 .questFoundBanner {
     position: fixed;
@@ -162,6 +203,52 @@
 .disconnectTimerCritical {
     color: #ef4444;
     animation: disconnectPulse 1s ease-in-out infinite;
+}
+
+.endTurnButton {
+    height: 46px;
+    border: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #fb7185, #ef4444);
+    color: #fff;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0 18px;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(239, 68, 68, 0.25);
+    transition:
+        transform 0.12s ease,
+        filter 0.2s ease;
+}
+
+.endTurnButton:hover {
+    filter: brightness(1.05);
+}
+
+.endTurnButton:active {
+    transform: translateY(1px);
+}
+
+.turnIndicator {
+    min-width: 130px;
+    border: 1px solid var(--panel-line);
+    border-radius: 12px;
+    background: rgba(10, 16, 27, 0.75);
+    color: var(--text-main);
+    padding: 10px 12px;
+    text-align: center;
+    font-size: 13px;
+}
+
+@media (max-width: 980px) {
+    .controlsContainer {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .hud {
+        min-width: 220px;
+    }
 }
 
 @keyframes disconnectPulse {

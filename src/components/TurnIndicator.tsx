@@ -1,4 +1,3 @@
-
 //=====================================
 // src/components/TurnIndicator.tsx
 //=====================================
@@ -8,15 +7,16 @@
 import React from "react";
 import { useSelector } from "react-redux";
 import type { RootState } from "../store";
+import styles from "../styles/GameController.module.css";
 
 const TurnIndicator = () => {
-  const turnNumber = useSelector((state: RootState) => state.game.turnNumber);
+    const turnNumber = useSelector((state: RootState) => state.game.turnNumber);
 
-  return (
-    <div style={{ padding: "0.5rem", backgroundColor: "#222", color: "#fff", borderRadius: "4px", width: 100 }}>
-      <p>Turn: {turnNumber}</p>
-    </div>
-  );
+    return (
+        <div className={styles.turnIndicator}>
+            <p>Turn: {turnNumber}</p>
+        </div>
+    );
 };
 
 export default TurnIndicator;
