@@ -175,6 +175,8 @@ export default function GameWrapper({
         | "BARREL_ARTIFACT"
         | "QUEST_ARTIFACT_FOUND"
         | "PLAYER_LEFT_PORTAL"
+        | "PLAYER_DISCONNECTED"
+        | "PLAYER_RECONNECTED"
         | "MATCH_ENDED";
 
     // Типизация всех известных событий:

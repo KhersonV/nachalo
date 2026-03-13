@@ -43,6 +43,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const [showQuestAlert, setShowQuestAlert] = useState(false);
     const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
     const [canOpenStats, setCanOpenStats] = useState(false);
+    const [disconnectedDeadlines, setDisconnectedDeadlines] = useState<
+        Record<number, number>
+    >({});
+    const [nowMs, setNowMs] = useState<number>(Date.now());
     const questAlertShownRef = React.useRef(false);
 
     useEffect(() => {
@@ -68,6 +72,50 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     handleStatsReady,
                 );
             }
+        };
+    }, []);
+
+    useEffect(() => {
+        const tick = window.setInterval(() => {
+            setNowMs(Date.now());
+        }, 1000);
+        return () => {
+            window.clearInterval(tick);
+        };
+    }, []);
+
+    useEffect(() => {
+        const onDisconnected = (event: Event) => {
+            const custom = event as CustomEvent<{
+                userId?: number;
+                graceMs?: number;
+            }>;
+            const userId = custom.detail?.userId;
+            const graceMs = custom.detail?.graceMs ?? 180000;
+            if (!userId) return;
+            setDisconnectedDeadlines((prev) => ({
+                ...prev,
+                [userId]: Date.now() + graceMs,
+            }));
+        };
+
+        const onReconnected = (event: Event) => {
+            const custom = event as CustomEvent<{ userId?: number }>;
+            const userId = custom.detail?.userId;
+            if (!userId) return;
+            setDisconnectedDeadlines((prev) => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            });
+        };
+
+        window.addEventListener("player-disconnected", onDisconnected);
+        window.addEventListener("player-reconnected", onReconnected);
+
+        return () => {
+            window.removeEventListener("player-disconnected", onDisconnected);
+            window.removeEventListener("player-reconnected", onReconnected);
         };
     }, []);
 
@@ -181,8 +229,51 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const questFoundConfirmLabel =
         isPortalExitNotification && canOpenStats ? "К статистике" : "Понятно";
 
+    const disconnectedPlayers = Object.entries(disconnectedDeadlines)
+        .map(([id, deadline]) => {
+            const userId = Number(id);
+            const remainingMs = Math.max(0, deadline - nowMs);
+            const remainingSec = Math.ceil(remainingMs / 1000);
+            const minutes = Math.floor(remainingSec / 60);
+            const seconds = remainingSec % 60;
+            const playerName =
+                state.players.find((p) => p.user_id === userId)?.name ??
+                `Игрок ${userId}`;
+            return {
+                userId,
+                playerName,
+                remainingSec,
+                isCritical: remainingSec <= 30,
+                timerText: `${minutes}:${String(seconds).padStart(2, "0")}`,
+            };
+        })
+        .filter((p) => p.remainingSec > 0);
+
     return (
         <div className={styles.container}>
+            {disconnectedPlayers.length > 0 && (
+                <div className={styles.disconnectBanner}>
+                    <div className={styles.disconnectTitle}>
+                        Отключение игрока: дается 3:00 на переподключение
+                    </div>
+                    <div className={styles.disconnectHint}>
+                        Если таймер истечет, игрок погибнет от удара молнии.
+                    </div>
+                    {disconnectedPlayers.map((p) => (
+                        <div
+                            key={p.userId}
+                            className={`${styles.disconnectRow} ${p.isCritical ? styles.disconnectRowCritical : ""}`}
+                        >
+                            <span>{p.playerName}</span>
+                            <span
+                                className={`${styles.disconnectTimer} ${p.isCritical ? styles.disconnectTimerCritical : ""}`}
+                            >
+                                {p.timerText}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
             {myPlayer && (
                 <PlayerHUD
                     health={myPlayer.health}

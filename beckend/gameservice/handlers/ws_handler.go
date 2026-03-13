@@ -11,8 +11,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
+
+	"gameservice/repository"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/websocket"
@@ -24,7 +27,12 @@ var (
 	}
 	clients   = make(map[int]*Client)
 	clientsMu sync.Mutex
+
+	disconnectGraceMu sync.Mutex
+	disconnectGrace   = make(map[string]*time.Timer)
 )
+
+const reconnectGracePeriod = 3 * time.Minute
 
 // Client представляет подключённого клиента WebSocket.
 type Client struct {
@@ -37,6 +45,62 @@ type broadcastEnvelope struct {
 	Payload struct {
 		InstanceID string `json:"instanceId"`
 	} `json:"payload"`
+}
+
+func graceKey(instanceID string, userID int) string {
+	return instanceID + ":" + strconv.Itoa(userID)
+}
+
+func cancelReconnectGrace(instanceID string, userID int) bool {
+	key := graceKey(instanceID, userID)
+	disconnectGraceMu.Lock()
+	timer, ok := disconnectGrace[key]
+	if ok {
+		delete(disconnectGrace, key)
+	}
+	disconnectGraceMu.Unlock()
+	if !ok {
+		return false
+	}
+	return timer.Stop()
+}
+
+func scheduleReconnectGrace(instanceID string, userID int) {
+	if instanceID == "" || userID == 0 {
+		return
+	}
+
+	key := graceKey(instanceID, userID)
+
+	disconnectGraceMu.Lock()
+	if oldTimer, exists := disconnectGrace[key]; exists {
+		oldTimer.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(reconnectGracePeriod, func() {
+		disconnectGraceMu.Lock()
+		current, ok := disconnectGrace[key]
+		if !ok || current != timer {
+			disconnectGraceMu.Unlock()
+			return
+		}
+		delete(disconnectGrace, key)
+		disconnectGraceMu.Unlock()
+
+		// Если за 3 минуты не переподключился — "молния" = смертельный урон.
+		p, err := repository.GetMatchPlayerByID(instanceID, userID)
+		if err != nil || p == nil {
+			return
+		}
+		if p.Health <= 0 {
+			return
+		}
+
+		log.Printf("[WsHandler] reconnect grace expired: userID=%d instance=%s -> lightning death", userID, instanceID)
+		handlePlayerDeath(instanceID, p, 0, false)
+	})
+	disconnectGrace[key] = timer
+	disconnectGraceMu.Unlock()
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +174,18 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
         if envelope.Type == "JOIN_MATCH" {
             if client.instanceID == "" {
                 client.instanceID = envelope.InstanceID
+				if cancelReconnectGrace(client.instanceID, client.userID) {
+					reconnectedMsg := map[string]interface{}{
+						"type": "PLAYER_RECONNECTED",
+						"payload": map[string]interface{}{
+							"instanceId": client.instanceID,
+							"userId":     client.userID,
+						},
+					}
+					if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
+						Broadcast(rb)
+					}
+				}
                 log.Printf("[WsHandler] client %d joined match %s", client.userID, envelope.InstanceID)
                 // >>> Отправить MATCH_UPDATE <<<
 
@@ -144,11 +220,30 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ws.Close()
+	shouldScheduleGrace := false
+	instanceID := client.instanceID
+	userIDInt := client.userID
 	clientsMu.Lock()
 	if current, ok := clients[client.userID]; ok && current == client {
 		delete(clients, client.userID)
+		shouldScheduleGrace = true
 	}
 	clientsMu.Unlock()
+
+	if shouldScheduleGrace && instanceID != "" {
+		disconnectedMsg := map[string]interface{}{
+			"type": "PLAYER_DISCONNECTED",
+			"payload": map[string]interface{}{
+				"instanceId": instanceID,
+				"userId":     userIDInt,
+				"graceMs":    int(reconnectGracePeriod / time.Millisecond),
+			},
+		}
+		if db, marshalErr := json.Marshal(disconnectedMsg); marshalErr == nil {
+			Broadcast(db)
+		}
+		scheduleReconnectGrace(instanceID, userIDInt)
+	}
 }
 
 

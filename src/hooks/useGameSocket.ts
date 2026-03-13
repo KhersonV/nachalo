@@ -298,6 +298,37 @@ export function useGameSocket(
                         });
                         return;
 
+                    case "PLAYER_DISCONNECTED":
+                        if (typeof window !== "undefined") {
+                            window.dispatchEvent(
+                                new CustomEvent("player-disconnected", {
+                                    detail: {
+                                        userId:
+                                            msg.payload?.userId ??
+                                            msg.payload?.user_id,
+                                        graceMs: msg.payload?.graceMs,
+                                    },
+                                }),
+                            );
+                        }
+                        onMessageRef.current(msg);
+                        return;
+
+                    case "PLAYER_RECONNECTED":
+                        if (typeof window !== "undefined") {
+                            window.dispatchEvent(
+                                new CustomEvent("player-reconnected", {
+                                    detail: {
+                                        userId:
+                                            msg.payload?.userId ??
+                                            msg.payload?.user_id,
+                                    },
+                                }),
+                            );
+                        }
+                        onMessageRef.current(msg);
+                        return;
+
                     case "UPDATE_CELL":
                     case "UPDATE_PLAYER":
                     case "MATCH_UPDATE":

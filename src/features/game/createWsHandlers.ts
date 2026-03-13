@@ -159,6 +159,12 @@ export function createWsHandlers(
             const msg = `Игрок ${payload.playerName} покинул поле боя через портал в клетке (${payload.x}, ${payload.y})`;
             dispatch(setQuestFoundNotification(msg));
         },
+        PLAYER_DISCONNECTED: () => {
+            // Обрабатывается локально в GameController через window events.
+        },
+        PLAYER_RECONNECTED: () => {
+            // Обрабатывается локально в GameController через window events.
+        },
         // ... любые другие новые типы событий!
     };
 }
