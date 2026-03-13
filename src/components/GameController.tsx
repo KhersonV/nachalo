@@ -14,7 +14,11 @@ import PlayerHUD from "./PlayerHUD";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import type { RootState } from "../store";
-import { setInstanceId, setActiveUser } from "../store/slices/gameSlice";
+import {
+    setInstanceId,
+    setActiveUser,
+    setQuestFoundNotification,
+} from "../store/slices/gameSlice";
 import { usePlayerActions } from "../hooks/usePlayerActions";
 import { useGameKeyboard } from "../hooks/useGameKeyboard";
 
@@ -35,6 +39,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
     const [showInventory, setShowInventory] = useState(false);
     const [showQuestAlert, setShowQuestAlert] = useState(false);
+    const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
     const questAlertShownRef = React.useRef(false);
 
     // Show the quest artifact alert once when the map loads
@@ -48,6 +53,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
             setShowQuestAlert(true);
         }
     }, [state.isMapLoaded, state.questArtifactId]);
+
+    // Show the same modal when someone finds the quest artifact
+    useEffect(() => {
+        if (!state.questFoundNotification) return;
+        setShowQuestFoundAlert(true);
+    }, [state.questFoundNotification]);
 
     const {
         myPlayer,
@@ -175,6 +186,20 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     image={state.questArtifactImage}
                     description={state.questArtifactDescription}
                     onClose={() => setShowQuestAlert(false)}
+                />
+            )}
+            {showQuestFoundAlert && state.questFoundNotification && (
+                <QuestArtifactAlert
+                    artifactId={state.questArtifactId}
+                    name={state.questArtifactName}
+                    image={state.questArtifactImage}
+                    description={state.questArtifactDescription}
+                    badgeText="Событие"
+                    hintText={state.questFoundNotification}
+                    onClose={() => {
+                        setShowQuestFoundAlert(false);
+                        dispatch(setQuestFoundNotification(null));
+                    }}
                 />
             )}
         </div>

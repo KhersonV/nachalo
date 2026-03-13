@@ -272,6 +272,21 @@ func HandleOpenBarrel(
 		rb, _ := json.Marshal(resMsg)
 		Broadcast(rb)
 
+		// Если из бочки выпал именно квестовый артефакт — уведомляем всех игроков.
+		if matchInfo.QuestArtifactID > 0 && v.ID == matchInfo.QuestArtifactID {
+			questMsg := map[string]interface{}{
+				"type": "QUEST_ARTIFACT_FOUND",
+				"payload": map[string]interface{}{
+					"instanceId": instanceID,
+					"playerName": updatedPlayer.Name,
+					"x":          cell.X,
+					"y":          cell.Y,
+				},
+			}
+			qb, _ := json.Marshal(questMsg)
+			Broadcast(qb)
+		}
+
 		return cell, updatedPlayer, false, nil
 
 	default:

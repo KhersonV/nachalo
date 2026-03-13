@@ -20,6 +20,7 @@ const initialState: GameState = {
     questArtifactName: "",
     questArtifactImage: "",
     questArtifactDescription: "",
+    questFoundNotification: null,
 };
 
 const gameSlice = createSlice({
@@ -216,6 +217,9 @@ const gameSlice = createSlice({
         setInstanceId(state, action: PayloadAction<string>) {
             state.instanceId = action.payload;
         },
+        setQuestFoundNotification(state, action: PayloadAction<string | null>) {
+            state.questFoundNotification = action.payload;
+        },
     },
 });
 
@@ -233,6 +237,7 @@ export const {
     setInstanceId,
     updatePlayerPosition,
     updatePlayerHealth,
+    setQuestFoundNotification,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;

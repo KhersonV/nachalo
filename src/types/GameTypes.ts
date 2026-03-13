@@ -104,6 +104,7 @@ export type GameState = {
     questArtifactName: string;
     questArtifactImage: string;
     questArtifactDescription: string;
+    questFoundNotification: string | null;
 };
 
 // Здесь перечисляем возможные направления

@@ -154,6 +154,30 @@ if err := repository.AddInventoryItem(
 	msgBuf, _ := json.Marshal(wsMsg)
 	Broadcast(msgBuf)
 
+
+	// Если собранный предмет — квест-артефакт, уведомляем всех игроков
+	if itemType == "artifact" {
+		var questArtifactID int
+		repository.DB.QueryRow(
+			`SELECT COALESCE(quest_artifact_id, 0) FROM matches WHERE instance_id=$1`,
+			req.InstanceID,
+		).Scan(&questArtifactID)
+
+		if questArtifactID != 0 && itemID == questArtifactID {
+			questMsg := map[string]interface{}{
+				"type": "QUEST_ARTIFACT_FOUND",
+				"payload": map[string]interface{}{
+					"instanceId": req.InstanceID,
+					"playerName": playerResp.Name,
+					"x":          req.CellX,
+					"y":          req.CellY,
+				},
+			}
+			questBuf, _ := json.Marshal(questMsg)
+			Broadcast(questBuf)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message":       "успешно",

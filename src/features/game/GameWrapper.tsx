@@ -173,6 +173,7 @@ export default function GameWrapper({
         | "RESOURCE_COLLECTED"
         | "BARREL_RESOURCE"
         | "BARREL_ARTIFACT"
+        | "QUEST_ARTIFACT_FOUND"
         | "MATCH_ENDED";
 
     // Типизация всех известных событий:

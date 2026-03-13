@@ -13,6 +13,8 @@ interface QuestArtifactAlertProps {
     name: string;
     image: string;
     description: string;
+    badgeText?: string;
+    hintText?: string;
     onClose: () => void;
 }
 
@@ -21,6 +23,8 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
     name,
     image,
     description,
+    badgeText = "Квест",
+    hintText = "Найдите этот артефакт, чтобы покинуть уровень через портал.",
     onClose,
 }) => {
     useEffect(() => {
@@ -50,7 +54,7 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
                 aria-labelledby="quest-alert-title"
             >
                 <div className={styles.header}>
-                    <span className={styles.badge}>Квест</span>
+                    <span className={styles.badge}>{badgeText}</span>
                     <button
                         className={styles.close}
                         onClick={onClose}
@@ -74,10 +78,7 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
                     {description && (
                         <p className={styles.description}>{description}</p>
                     )}
-                    <p className={styles.hint}>
-                        Найдите этот артефакт, чтобы покинуть уровень через
-                        портал.
-                    </p>
+                    <p className={styles.hint}>{hintText}</p>
                 </div>
 
                 <div className={styles.footer}>
