@@ -85,3 +85,73 @@ func TestUniversalAttackHandler(t *testing.T) {
 		}
 	}
 }
+
+func TestDoCounterattackWithEnergy_RecordsDefenderDamageEvent(t *testing.T) {
+	const instanceID = "counter-match"
+	const attackerID = 1
+	const defenderID = 2
+
+	Combat = CombatDeps{
+		UpdatePlayer: func(_ string, _ *models.PlayerResponse) error { return nil },
+		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
+			return &models.PlayerResponse{
+				UserID: userID,
+				Energy: 10,
+				Health: 10,
+			}, nil
+		},
+		UpdateMonsterHealth: func(_ string, _, _ int) error { return nil },
+		MarkPlayerDead:      func(_ string, _ int) error { return nil },
+		ClearPlayerFlag:     func(_ string, _ repository.Position) error { return nil },
+		UpdateTurn:          func(_ string, _, _ int) error { return nil },
+		Finalize:            func(_ string) error { return nil },
+		LoadMap:             func(_ string) ([]game.FullCell, error) { return nil, nil },
+		SaveMap:             func(_ string, _ []game.FullCell) error { return nil },
+	}
+	defer RestoreDefaults()
+
+	game.MatchStatesMu.Lock()
+	game.MatchStates[instanceID] = &game.MatchState{InstanceID: instanceID, TurnOrder: []int{attackerID, defenderID}, ActiveUserID: attackerID, TurnNumber: 1}
+	game.MatchStatesMu.Unlock()
+	defer func() {
+		game.MatchStatesMu.Lock()
+		delete(game.MatchStates, instanceID)
+		game.MatchStatesMu.Unlock()
+	}()
+
+	result, err := doCounterattackWithEnergy(
+		instanceID,
+		"player", attackerID,
+		"player", defenderID,
+		stats{Attack: 5, Defense: 1, Health: 10},
+		stats{Attack: 7, Defense: 1, Health: 10},
+		true,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Damage != 6 {
+		t.Fatalf("expected counter damage 6, got %d", result.Damage)
+	}
+
+	ms, ok := game.GetMatchState(instanceID)
+	if !ok {
+		t.Fatal("expected match state to exist")
+	}
+	if len(ms.DamageEvents) != 1 {
+		t.Fatalf("expected 1 damage event, got %d", len(ms.DamageEvents))
+	}
+	got := ms.DamageEvents[0]
+	if got.DealerID != defenderID {
+		t.Fatalf("expected defender to be dealer, got %d", got.DealerID)
+	}
+	if got.TargetType != "player" {
+		t.Fatalf("expected target type player, got %q", got.TargetType)
+	}
+	if got.Amount != 6 {
+		t.Fatalf("expected counter damage amount 6, got %d", got.Amount)
+	}
+	if len(ms.KillEvents) != 0 {
+		t.Fatalf("expected no kill events for non-lethal counterattack, got %d", len(ms.KillEvents))
+	}
+}

@@ -237,7 +237,11 @@ export function useGameSocket(
                                             instanceId,
                                         winnerType:
                                             msg.payload.winnerType ?? "user",
-                                        winnerId: msg.payload.winnerId ?? 0,
+                                        winnerId:
+                                            typeof msg.payload.winnerId ===
+                                            "number"
+                                                ? msg.payload.winnerId
+                                                : 0,
                                         player: myStats,
                                     }),
                                 );

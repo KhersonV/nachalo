@@ -221,7 +221,22 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
         }
     }
 
-    // 5.1. Считаем итоговую статистику до финализации (до удаления матча).
+    // 5.1 Фиксируем победителя в matches только после прохождения всех проверок.
+    if player.GroupID > 0 {
+        if err := repository.SetMatchWinner(req.InstanceID, 0, player.GroupID); err != nil {
+            log.Printf("FinishMatchHandler: SetMatchWinner(group=%d) failed for %s: %v", player.GroupID, req.InstanceID, err)
+            http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+            return
+        }
+    } else {
+        if err := repository.SetMatchWinner(req.InstanceID, userID, 0); err != nil {
+            log.Printf("FinishMatchHandler: SetMatchWinner(user=%d) failed for %s: %v", userID, req.InstanceID, err)
+            http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+            return
+        }
+    }
+
+    // 5.2. Считаем итоговую статистику до финализации (до удаления матча).
     results, err := repository.GetMatchResults(req.InstanceID)
     if err != nil {
         log.Printf("FinishMatchHandler: GetMatchResults error for %s: %v", req.InstanceID, err)

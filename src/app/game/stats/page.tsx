@@ -293,9 +293,11 @@ export default function GameStatsPage() {
     }
 
     const winnerText =
-        stats.winnerType === "group"
-            ? `Победившая команда: ${stats.winnerId}`
-            : `Победитель: игрок ${stats.winnerId}`;
+        stats.winnerId > 0
+            ? stats.winnerType === "group"
+                ? `Победившая команда: ${stats.winnerId}`
+                : `Победитель: игрок ${stats.winnerId}`
+            : "Победитель не определён";
 
     return (
         <main className={styles.page}>

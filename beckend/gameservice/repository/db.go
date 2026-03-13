@@ -548,14 +548,11 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 	var mr game.MatchResults
 
-	// Предполагаем, что в game.MatchResults поля WinnerID и WinnerGroupID — это plain int,
-	// и отсутствующий победитель будет обозначаться как -1.
-
-	// 1) Победители из таблицы matches, NULL → -1
+	// 1) Победители из таблицы matches, NULL → 0 (не определён)
 	if err := DB.QueryRow(
 		`SELECT
-            COALESCE(winner_id, -1),
-            COALESCE(winner_group_id, -1)
+            COALESCE(winner_id, 0),
+            COALESCE(winner_group_id, 0)
          FROM matches
         WHERE instance_id = $1`,
 		instanceID,
@@ -575,7 +572,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 	// 2) Список участников
 	rows, err := DB.Query(
-		`SELECT user_id, COALESCE(group_id, 0)
+		`SELECT user_id, COALESCE(group_id, 0), COALESCE(health, 0)
            FROM match_players
           WHERE instance_id = $1`,
 		instanceID,
@@ -589,15 +586,16 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 	// 3) Для каждого игрока — игровая логика CalculateResults
 	for rows.Next() {
-		var userID, groupID int
-		if err := rows.Scan(&userID, &groupID); err != nil {
+		var userID, groupID, health int
+		if err := rows.Scan(&userID, &groupID, &health); err != nil {
 			log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
 			continue
 		}
 		groupByUser[userID] = groupID
+		survived := health > 0
 
 		exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, err :=
-			game.CalculateResults(instanceID, userID)
+			game.CalculateResults(instanceID, userID, survived)
 		if err != nil {
 			log.Printf("GetMatchResults: CalculateResults для user %d вернул ошибку: %v", userID, err)
 			continue

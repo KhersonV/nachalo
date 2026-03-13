@@ -351,6 +351,20 @@ func UpdateMatchTurn(instanceID string, activeUserID int, turnNumber int) error 
 	return err
 }
 
+// SetMatchWinner фиксирует победителя матча перед финализацией.
+// Для одиночного победителя используем winnerID > 0 и winnerGroupID = 0.
+// Для командной победы используем winnerGroupID > 0 и winnerID = 0.
+func SetMatchWinner(instanceID string, winnerID int, winnerGroupID int) error {
+	query := `
+		UPDATE matches
+		SET winner_id = $1,
+		    winner_group_id = $2
+		WHERE instance_id = $3
+	`
+	_, err := DB.Exec(query, winnerID, winnerGroupID, instanceID)
+	return err
+}
+
 // GetItemEffect – получает эффект предмета из таблицы resources.
 func GetItemEffect(itemID int) (map[string]int, error) {
 	query := `SELECT effect FROM resources WHERE id = $1;`

@@ -461,6 +461,21 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 		if len(ms.TurnOrder) == 0 {
 			log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
 
+			// Если последний удар нанес игрок, фиксируем его (или его группу) победителем.
+			if killerIsPlayer && killerID > 0 {
+				if killer, kerr := repository.GetMatchPlayerByID(instanceID, killerID); kerr == nil && killer != nil {
+					winnerID := killerID
+					winnerGroupID := 0
+					if killer.GroupID > 0 {
+						winnerID = 0
+						winnerGroupID = killer.GroupID
+					}
+					if err := repository.SetMatchWinner(instanceID, winnerID, winnerGroupID); err != nil {
+						log.Printf("[combat] SetMatchWinner failed for %s: %v", instanceID, err)
+					}
+				}
+			}
+
 			// Важно: для последнего погибшего тоже отправляем PLAYER_DEFEATED,
 			// иначе клиент не покажет модалку "Вы погибли".
 			defeatedMsg := map[string]interface{}{
@@ -650,6 +665,12 @@ func doCounterattackWithEnergy(
 
 	// Контратака происходит
 	ar := applyDamage(defenderStats, attackerStats) // defender контратакует attacker
+	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
+		ms.RecordDamageEvent(defenderID, attackerType, ar.Damage)
+		if ar.NewHealth <= 0 {
+			ms.RecordKillEvent(defenderID, attackerType, ar.Damage)
+		}
+	}
 
 	// Обновляем здоровье атакующего
 	if attackerType == "player" {

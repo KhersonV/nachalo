@@ -15,6 +15,7 @@ import (
 func CalculateResults(
     instanceID string,
     userID     int,
+    survived   bool,
 ) (
     exp           int,
     rewards       []Reward,
@@ -33,7 +34,7 @@ func CalculateResults(
         return 0, nil, 0, 0, 0, 0, 0, fmt.Errorf("no state for match %s", instanceID)
     }
 
-    // 2) Считаем убийства и урон
+    // 2) Считаем убийства
     for _, ke := range state.KillEvents {
         if ke.KillerID != userID {
             continue
@@ -44,13 +45,14 @@ func CalculateResults(
         case "monster":
             monsterKills++
         }
-        dmgTotal += ke.Damage
     }
+
+    // 3) Считаем урон только по DamageEvents.
+    // KillEvents уже отражают факт убийства и могут дублировать последний удар.
     for _, de := range state.DamageEvents {
         if de.DealerID != userID {
             continue
         }
-        dmgTotal += de.Amount
         switch de.TargetType {
         case "player":
             dmgPlayers += de.Amount
@@ -59,11 +61,20 @@ func CalculateResults(
         }
     }
 
-    // 3) Вычисляем опыт: базовый за участие + вклад в бою.
-    exp = 80 + playerKills*80 + monsterKills*20 + (dmgTotal / 12)
+    dmgTotal = dmgPlayers + dmgMonsters
 
-    // 4) Деньги за матч (пока без артефактов/коллекций).
-    coins := 40 + playerKills*30 + monsterKills*10 + (dmgTotal / 30)
+    // 4) Вычисляем опыт строго от урона:
+    // - за каждые 5 урона по монстрам: +1 XP
+    // - за каждые 5 урона по игрокам: +2 XP
+    exp = (dmgMonsters / 5) + ((dmgPlayers / 5) * 2)
+
+    // 5) Деньги за матч с анти-инфляционной корректировкой.
+    // Базовая награда даётся только тем, кто дожил до конца матча.
+    baseCoins := 0
+    if survived {
+        baseCoins = 20
+    }
+    coins := baseCoins + playerKills*20 + monsterKills*8 + (dmgTotal / 50)
     if coins > 0 {
         rewards = append(rewards, Reward{
             Type:   "balance",
