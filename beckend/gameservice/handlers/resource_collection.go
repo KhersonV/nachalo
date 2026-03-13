@@ -88,7 +88,12 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 	itemID := int(resData["id"].(float64))
 	itemName := resData["type"].(string)
 	itemDesc := resData["description"].(string)
-	itemImage := resData["image"].(string)        // картинка ресурса
+	itemImage := resData["image"].(string) // картинка ресурса
+	// item_type: "artifact" если это дроп артефакта, иначе "resource"
+	itemType := "resource"
+	if t, ok := resData["item_type"].(string); ok && t == "artifact" {
+		itemType = "artifact"
+	}
 
 
 	// 4) Очищаем клетку
@@ -112,14 +117,14 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 
 
 if err := repository.AddInventoryItem(
-    req.InstanceID,   // string
-    req.PlayerID,     // int
-    "resource",       // string
-    itemID,           // int
-    itemName,         // string
-    itemImage,        // string — imageURL
-    itemDesc,         // string — itemDescription
-    1,                // int — count
+	req.InstanceID,
+	req.PlayerID,
+	itemType, // "resource" или "artifact"
+	itemID,
+	itemName,
+	itemImage,
+	itemDesc,
+	1,
 ); err != nil {
     http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
     return

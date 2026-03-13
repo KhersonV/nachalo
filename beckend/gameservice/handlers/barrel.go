@@ -68,13 +68,76 @@ func HandleOpenBarrel(
 		return cell, nil, false, fmt.Errorf("fetch player: %w", err)
 	}
 
-	// 2) OpenBarbel → outcome
-	outcome, err := game.OpenBarbel(cell, resources, artifacts)
+	// 2) Load quest artifact state for this match to control drop rules.
+	matchInfo, err := repository.GetMatchByID(instanceID)
+	if err != nil {
+		return cell, nil, false, fmt.Errorf("get match: %w", err)
+	}
+
+	questDropped := false
+	remainingBarrels := 0
+	if matchInfo.QuestArtifactID > 0 {
+		questDropped, err = repository.MatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
+		if err != nil {
+			return cell, nil, false, fmt.Errorf("check quest artifact dropped: %w", err)
+		}
+
+		cells, err := repository.LoadMapCells(instanceID)
+		if err != nil {
+			return cell, nil, false, fmt.Errorf("load map cells: %w", err)
+		}
+		for _, c := range cells {
+			if c.Barbel != nil {
+				remainingBarrels++
+			}
+		}
+	}
+
+	filteredArtifacts := artifacts
+	if matchInfo.QuestArtifactID > 0 {
+		filteredArtifacts = make([]game.ResourceData, 0, len(artifacts))
+		for _, a := range artifacts {
+			if questDropped && a.ID == matchInfo.QuestArtifactID {
+				continue
+			}
+			filteredArtifacts = append(filteredArtifacts, a)
+		}
+	}
+
+	var outcome interface{}
+	// If this is the last barrel and quest artifact has not dropped yet,
+	// force quest artifact drop to keep match completable.
+	if matchInfo.QuestArtifactID > 0 && !questDropped && remainingBarrels == 1 {
+		forced := false
+		for _, a := range artifacts {
+			if a.ID == matchInfo.QuestArtifactID {
+				outcome = a
+				forced = true
+				break
+			}
+		}
+		if !forced {
+			qa, err := repository.GetArtifactFromCatalogByID(matchInfo.QuestArtifactID)
+			if err != nil {
+				return cell, nil, false, fmt.Errorf("load forced quest artifact: %w", err)
+			}
+			outcome = game.ResourceData{
+				ID:          qa.ID,
+				Type:        qa.Name,
+				Description: qa.Description,
+				Effect:      map[string]int{},
+				Image:       qa.Image,
+			}
+		}
+	} else {
+		// 3) OpenBarbel → outcome
+		outcome, err = game.OpenBarbel(cell, resources, filteredArtifacts)
+	}
 	if err != nil {
 		return cell, nil, false, fmt.Errorf("open barrel: %w", err)
 	}
 
-	// 3) Обработка результата
+	// 4) Обработка результата
 	switch v := outcome.(type) {
 
 	case game.DamageEvent:
@@ -121,7 +184,8 @@ func HandleOpenBarrel(
 		// д) Если игрок умер — передать ход и т.д. (как у тебя)
 		if player.Health == 0 {
 			log.Printf("[handleBarrel] player %d died from barrel", player.UserID)
-			handlePlayerDeath(instanceID, player)
+			// Barrel kill: no player killer → killerID=0, killerIsPlayer=false
+			handlePlayerDeath(instanceID, player, 0, false)
 			// передаём ход дальше
 			if ms, ok := game.GetMatchState(instanceID); ok && len(ms.TurnOrder) > 0 {
 				nextUser := ms.TurnOrder[0]

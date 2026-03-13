@@ -73,6 +73,10 @@ async function fetchFullMatch(
                 })),
                 active_player: d.active_user,
                 turn_number: d.turn_number,
+                questArtifactId: d.quest_artifact_id ?? 0,
+                questArtifactName: d.quest_artifact_name ?? "",
+                questArtifactImage: d.quest_artifact_image ?? "",
+                questArtifactDescription: d.quest_artifact_description ?? "",
             },
         });
     } catch (err) {

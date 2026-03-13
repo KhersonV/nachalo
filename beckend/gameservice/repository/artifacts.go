@@ -164,3 +164,71 @@ func UpdatePersistedArtifact(a PersistedArtifact) error {
     }
     return nil
 }
+
+// CatalogArtifact — артефакт из каталога (таблица artifacts), не персональный.
+type CatalogArtifact struct {
+    ID          int
+    Name        string
+    Description string
+    Image       string
+}
+
+// GetRandomArtifactFromCatalog возвращает случайный артефакт из таблицы artifacts.
+func GetRandomArtifactFromCatalog() (*CatalogArtifact, error) {
+    const q = `SELECT id, name, description, image FROM artifacts ORDER BY RANDOM() LIMIT 1`
+    var a CatalogArtifact
+    err := DB.QueryRow(q).Scan(&a.ID, &a.Name, &a.Description, &a.Image)
+    if err == sql.ErrNoRows {
+        return nil, ErrNotFound
+    }
+    if err != nil {
+        return nil, fmt.Errorf("GetRandomArtifactFromCatalog: %w", err)
+    }
+    return &a, nil
+}
+
+// GetArtifactFromCatalogByID возвращает артефакт каталога по его id.
+func GetArtifactFromCatalogByID(id int) (*CatalogArtifact, error) {
+    const q = `SELECT id, name, description, image FROM artifacts WHERE id = $1`
+    var a CatalogArtifact
+    err := DB.QueryRow(q, id).Scan(&a.ID, &a.Name, &a.Description, &a.Image)
+    if err == sql.ErrNoRows {
+        return nil, ErrNotFound
+    }
+    if err != nil {
+        return nil, fmt.Errorf("GetArtifactFromCatalogByID(%d): %w", id, err)
+    }
+    return &a, nil
+}
+
+// PlayerHasQuestArtifact returns true if the player has the given artifact_id
+// (item_type='artifact') in their inventory_items for this match.
+func PlayerHasQuestArtifact(instanceID string, userID, artifactID int) (bool, error) {
+    const q = `
+        SELECT COUNT(1) FROM inventory_items
+        WHERE instance_id = $1 AND user_id = $2
+          AND item_type = 'artifact' AND item_id = $3 AND item_count > 0`
+    var count int
+    err := DB.QueryRow(q, instanceID, userID, artifactID).Scan(&count)
+    if err != nil {
+        return false, fmt.Errorf("PlayerHasQuestArtifact: %w", err)
+    }
+    return count > 0, nil
+}
+
+// MatchHasQuestArtifact checks whether quest artifact already exists
+// in any player's inventory for this match.
+func MatchHasQuestArtifact(instanceID string, artifactID int) (bool, error) {
+    const q = `
+        SELECT COUNT(1) FROM inventory_items
+        WHERE instance_id = $1
+          AND item_type = 'artifact'
+          AND item_id = $2
+          AND item_count > 0`
+    var count int
+    err := DB.QueryRow(q, instanceID, artifactID).Scan(&count)
+    if err != nil {
+        return false, fmt.Errorf("MatchHasQuestArtifact: %w", err)
+    }
+    return count > 0, nil
+}

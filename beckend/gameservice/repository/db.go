@@ -49,6 +49,7 @@ func InitDB() {
 	EnsureStaticGameData()
 	CreateMatchStatsTable()
 	CreateMatchPlayerStatsTable()
+	EnsureQuestArtifactColumn()
 
 	// Восстанавливаем state матчей
 	if err := RestoreMatchStates(); err != nil {
@@ -153,11 +154,19 @@ func CreateMatchesTable() {
 		portal_position JSONB,
 		map_height INTEGER NOT NULL,
 		map_width INTEGER NOT NULL,
-		map JSONB NOT NULL
+		map JSONB NOT NULL,
+		quest_artifact_id INTEGER DEFAULT 0
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы matches: %v", err)
+	}
+}
+
+func EnsureQuestArtifactColumn() {
+	_, err := DB.Exec(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS quest_artifact_id INTEGER DEFAULT 0`)
+	if err != nil {
+		log.Printf("EnsureQuestArtifactColumn: %v", err)
 	}
 }
 

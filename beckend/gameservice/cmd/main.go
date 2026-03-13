@@ -67,7 +67,9 @@ func main() {
 	).Methods("GET")
 
 	// Эндпоинт для финализации матча
-	router.HandleFunc("/game/finishMatch", handlers.FinishMatchHandler).Methods("POST")
+	router.Handle("/game/finishMatch",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.FinishMatchHandler)),
+	).Methods("POST")
 
 	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
 	router.Handle("/game/{instance_id}/player/{id}/move",

@@ -96,7 +96,8 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
             active_user_id,
             turn_number,
             start_positions,
-            portal_position
+            portal_position,
+            COALESCE(quest_artifact_id, 0)
         FROM matches
         WHERE instance_id = $1
     `
@@ -111,8 +112,9 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 		&match.Map,
 		&match.ActiveUserID,
 		&match.TurnNumber,
-		&match.StartPositions, // <-- raw JSONB
-		&match.PortalPosition, // <-- raw JSONB
+		&match.StartPositions,
+		&match.PortalPosition,
+		&match.QuestArtifactID,
 	)
 	if err != nil {
 		return nil, err

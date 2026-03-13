@@ -17,19 +17,23 @@ import (
 
 // DTO для ответа на создание и получение матча
 type MatchResponse struct {
-	InstanceID     string                  `json:"instance_id"`
-	Mode           string                  `json:"mode"`
-	TeamsCount     int                     `json:"teams_count"`
-	TotalPlayers   int                     `json:"total_players"`
-	MapWidth       int                     `json:"map_width"`
-	MapHeight      int                     `json:"map_height"`
-	Map            []game.FullCell         `json:"map"`
-	Players        []models.PlayerResponse `json:"players"`
-	ActiveUser     int                     `json:"active_user"`
-	TurnNumber     int                     `json:"turn_number"`
-	StartPositions [][2]int                `json:"start_positions"`
-	PortalPosition [2]int                  `json:"portal_position"`
-	Winner         *models.WinnerInfo      `json:"winner,omitempty"`
+	InstanceID              string                  `json:"instance_id"`
+	Mode                    string                  `json:"mode"`
+	TeamsCount              int                     `json:"teams_count"`
+	TotalPlayers            int                     `json:"total_players"`
+	MapWidth                int                     `json:"map_width"`
+	MapHeight               int                     `json:"map_height"`
+	Map                     []game.FullCell         `json:"map"`
+	Players                 []models.PlayerResponse `json:"players"`
+	ActiveUser              int                     `json:"active_user"`
+	TurnNumber              int                     `json:"turn_number"`
+	StartPositions          [][2]int                `json:"start_positions"`
+	PortalPosition          [2]int                  `json:"portal_position"`
+	Winner                  *models.WinnerInfo      `json:"winner,omitempty"`
+	QuestArtifactID          int                     `json:"quest_artifact_id"`
+	QuestArtifactName        string                  `json:"quest_artifact_name"`
+	QuestArtifactImage       string                  `json:"quest_artifact_image"`
+	QuestArtifactDescription string                  `json:"quest_artifact_description"`
 }
 
 type RequestMatch struct {
@@ -88,6 +92,24 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Safety-net: старые/конфликтные матчи могли сохраниться без quest_artifact_id.
+	if match.QuestArtifactID <= 0 {
+		if qa, qerr := repository.GetRandomArtifactFromCatalog(); qerr == nil {
+			if _, uerr := repository.DB.Exec(
+				`UPDATE matches SET quest_artifact_id = $1 WHERE instance_id = $2`,
+				qa.ID,
+				instanceID,
+			); uerr != nil {
+				log.Printf("[BuildMatchResponse] failed to backfill quest_artifact_id for %s: %v", instanceID, uerr)
+			} else {
+				match.QuestArtifactID = qa.ID
+			}
+		} else {
+			log.Printf("[BuildMatchResponse] failed to get random quest artifact for %s: %v", instanceID, qerr)
+		}
+	}
+
 	players, err := repository.GetPlayersInMatch(instanceID)
 	if err != nil {
 		return nil, err
@@ -122,6 +144,14 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 		TurnNumber:     match.TurnNumber,
 		StartPositions: startPositions,
 		PortalPosition: portalPos,
+	}
+	if match.QuestArtifactID > 0 {
+		if qa, err := repository.GetArtifactFromCatalogByID(match.QuestArtifactID); err == nil {
+			resp.QuestArtifactID = qa.ID
+			resp.QuestArtifactName = qa.Name
+			resp.QuestArtifactImage = qa.Image
+			resp.QuestArtifactDescription = qa.Description
+		}
 	}
 	return resp, nil
 }
@@ -277,16 +307,24 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	startPosJSON := toJSON(startPositions)
 	portalPosJSON := toJSON(portalPos)
 
+	// 5.5. Выбираем случайный артефакт-квест
+	questArtifact, err := repository.GetRandomArtifactFromCatalog()
+	if err != nil {
+		handleError(w, "[CreateMatch] GetRandomArtifactFromCatalog failed", err)
+		return
+	}
+
 	// 6. Сначала вставляем матч — он нужен для внешнего ключа монстров!
 	_, err = repository.DB.Exec(`
 		INSERT INTO matches (
 			instance_id, mode, teams_count, total_players,
 			map_width, map_height, map, active_user_id,
-			turn_order, turn_number, start_positions, portal_position
+			turn_order, turn_number, start_positions, portal_position,
+			quest_artifact_id
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8,
-			$9, 1, $10, $11
+			$9, 1, $10, $11, $12
 		)
 		ON CONFLICT (instance_id) DO NOTHING
 	`,
@@ -301,6 +339,7 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		turnOrderJSON,
 		startPosJSON,
 		portalPosJSON,
+		questArtifact.ID,
 	)
 	if err != nil {
 		handleError(w, "[CreateMatch] Insert match failed", err)
@@ -345,18 +384,22 @@ if err != nil {
 
 // 12. Собираем и отдаём JSON-ответ
 resp := MatchResponse{
-	InstanceID:     req.InstanceID,
-	Mode:           req.Mode,
-	TeamsCount:     req.TeamsCount,
-	TotalPlayers:   req.TotalPlayers,
-	MapWidth:       mapWidth,
-	MapHeight:      mapHeight,
-	Map:            fullMap,
-	Players:        playersInMatch, // <-- теперь не пусто!
-	ActiveUser:     req.PlayerIDs[0],
-	TurnNumber:     1,
-	StartPositions: startPositions,
-	PortalPosition: portalPos,
+	InstanceID:               req.InstanceID,
+	Mode:                     req.Mode,
+	TeamsCount:               req.TeamsCount,
+	TotalPlayers:             req.TotalPlayers,
+	MapWidth:                 mapWidth,
+	MapHeight:                mapHeight,
+	Map:                      fullMap,
+	Players:                  playersInMatch,
+	ActiveUser:               req.PlayerIDs[0],
+	TurnNumber:               1,
+	StartPositions:           startPositions,
+	PortalPosition:           portalPos,
+	QuestArtifactID:          questArtifact.ID,
+	QuestArtifactName:        questArtifact.Name,
+	QuestArtifactImage:       questArtifact.Image,
+	QuestArtifactDescription: questArtifact.Description,
 }
 w.WriteHeader(http.StatusCreated)
 if err := json.NewEncoder(w).Encode(resp); err != nil {

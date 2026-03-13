@@ -44,6 +44,7 @@ type ResourceData struct {
 	Description string         `json:"description"` // описание ресурса
 	Effect      map[string]int `json:"effect"`      // эффекты или бонусы (например, {"energy": 10})
 	Image       string         `json:"image"`       // путь к изображению ресурса
+	ItemType    string         `json:"item_type,omitempty"` // "resource" или "artifact" (для дропа на клетку)
 }
 
 // MonsterData – структура для хранения данных монстра.
@@ -104,12 +105,13 @@ func collectCandidates(grid [][]int) [][2]int {
 
 
 func portalReachable(grid [][]int, starts [][2]int, portal [2]int) bool {
+	// Все стартовые позиции должны иметь доступ до портала
 	for _, st := range starts {
-		if isReachable(grid, st[0], st[1], portal[0], portal[1]) {
-			return true
+		if !isReachable(grid, st[0], st[1], portal[0], portal[1]) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 

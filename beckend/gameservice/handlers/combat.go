@@ -286,6 +286,7 @@ func saveTargetHealth(
 	targetType string,
 	targetID int,
 	attackerID int,
+	attackerType string,
 	ar attackResult,
 ) {
 	log.Printf("[saveTargetHealth] Called for %s #%d (new hp: %d), attacker: %d", targetType, targetID, ar.NewHealth, attackerID)
@@ -306,7 +307,7 @@ func saveTargetHealth(
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordKillEvent(attackerID, "player", ar.Damage)
 			}
-			handlePlayerDeath(instanceID, p)
+			handlePlayerDeath(instanceID, p, attackerID, attackerType == "player")
 			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
 		}
 	} else {
@@ -361,12 +362,90 @@ func saveTargetHealth(
 	}
 }
 
+// transferQuestArtifact handles quest-artifact fate when a player dies.
+// If killed by another player, the artifact is transferred to the killer's inventory.
+// If killed by a monster or a barrel trap (killerIsPlayer=false), the artifact is
+// dropped on the death cell as a collectible resource.
+func transferQuestArtifact(instanceID string, deadPlayerID, deadX, deadY, killerID int, killerIsPlayer bool) {
+	matchInfo, err := repository.GetMatchByID(instanceID)
+	if err != nil || matchInfo.QuestArtifactID == 0 {
+		return
+	}
+	has, err := repository.PlayerHasQuestArtifact(instanceID, deadPlayerID, matchInfo.QuestArtifactID)
+	if err != nil || !has {
+		return
+	}
+	qa, err := repository.GetArtifactFromCatalogByID(matchInfo.QuestArtifactID)
+	if err != nil {
+		log.Printf("[transferQuestArtifact] GetArtifactFromCatalogByID: %v", err)
+		return
+	}
+
+	if killerIsPlayer && killerID > 0 {
+		// Transfer to killer's inventory
+		if err := repository.AddInventoryItem(instanceID, killerID, "artifact", qa.ID, qa.Name, qa.Image, qa.Description, 1); err != nil {
+			log.Printf("[transferQuestArtifact] AddInventoryItem to killer %d: %v", killerID, err)
+			return
+		}
+		killerPlayer, err := repository.GetMatchPlayerByID(instanceID, killerID)
+		if err == nil {
+			invMsg := map[string]interface{}{
+				"type": "UPDATE_INVENTORY",
+				"payload": map[string]interface{}{
+					"instanceId": instanceID,
+					"userId":     killerID,
+					"inventory":  killerPlayer.Inventory,
+				},
+			}
+			b, _ := json.Marshal(invMsg)
+			Broadcast(b)
+		}
+		log.Printf("[transferQuestArtifact] artifact %d transferred from dead player %d to killer %d", qa.ID, deadPlayerID, killerID)
+	} else {
+		// Drop artifact on the death cell as a collectible resource
+		cells, err := Combat.LoadMap(instanceID)
+		if err != nil {
+			log.Printf("[transferQuestArtifact] LoadMap: %v", err)
+			return
+		}
+		for i := range cells {
+			if cells[i].X == deadX && cells[i].Y == deadY {
+				if cells[i].Resource == nil {
+					cells[i].Resource = &game.ResourceData{
+						ID:          qa.ID,
+						Type:        qa.Name,
+						Description: qa.Description,
+						Image:       qa.Image,
+						Effect:      map[string]int{},
+						ItemType:    "artifact",
+					}
+					_ = Combat.SaveMap(instanceID, cells)
+					upd := map[string]interface{}{
+						"type": "UPDATE_CELL",
+						"payload": map[string]interface{}{
+							"instanceId":  instanceID,
+							"updatedCell": serialiseUpdatedCell(cells[i]),
+						},
+					}
+					b, _ := json.Marshal(upd)
+					Broadcast(b)
+					log.Printf("[transferQuestArtifact] artifact %d dropped at (%d,%d)", qa.ID, deadX, deadY)
+				}
+				break
+			}
+		}
+	}
+}
+
 // --- Смерть игрока (удаление, флаги, WS: PLAYER_DEFEATED) -------------------
-func handlePlayerDeath(instanceID string, p *models.PlayerResponse) {
+func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int, killerIsPlayer bool) {
 	userID := p.UserID
 	oldPos := p.Position
 
 	log.Printf("[handlePlayerDeath] start, userID=%d, pos=%+v", userID, oldPos)
+
+	// Transfer quest artifact before removing player from match
+	transferQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
 
 	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
 		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
@@ -543,7 +622,8 @@ func doCounterattackWithEnergy(
 			if p.Health > 0 {
 				Combat.UpdatePlayer(instanceID, p)
 			} else {
-				handlePlayerDeath(instanceID, p)
+				// Counterattack: defender killed the attacker
+				handlePlayerDeath(instanceID, p, defenderID, defenderType == "player")
 			}
 		}
 	} else {
@@ -612,7 +692,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 5) Сохранение цели + возможная смерть
 
-	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, targetRes)
+	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
 
 	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
 	counterRes, _ := doCounterattackWithEnergy(
