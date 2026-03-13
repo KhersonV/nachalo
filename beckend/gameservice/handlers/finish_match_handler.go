@@ -56,6 +56,23 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
             return
         }
     }
+
+    // 5.1 Отправляем всем событие, что игрок вышел через портал
+    if player, err := repository.GetMatchPlayerByID(req.InstanceID, userID); err == nil {
+        portalMsg := map[string]interface{}{
+            "type": "PLAYER_LEFT_PORTAL",
+            "payload": map[string]interface{}{
+                "instanceId": req.InstanceID,
+                "playerName": player.Name,
+                "x":          match.PortalPosition[0],
+                "y":          match.PortalPosition[1],
+            },
+        }
+        if b, err := json.Marshal(portalMsg); err == nil {
+            Broadcast(b)
+        }
+    }
+
     // 6. Вызов финализации
     if err := service.FinalizeMatch(req.InstanceID); err != nil {
         log.Printf("FinalizeMatch error for %s: %v", req.InstanceID, err)

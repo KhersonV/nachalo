@@ -151,6 +151,10 @@ export function createWsHandlers(
             const msg = `Игрок ${payload.playerName} нашел нужный артефакт в клетке (${payload.x}, ${payload.y})`;
             dispatch(setQuestFoundNotification(msg));
         },
+        PLAYER_LEFT_PORTAL: (payload: any) => {
+            const msg = `Игрок ${payload.playerName} покинул поле боя через портал в клетке (${payload.x}, ${payload.y})`;
+            dispatch(setQuestFoundNotification(msg));
+        },
         // ... любые другие новые типы событий!
     };
 }

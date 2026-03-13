@@ -213,11 +213,41 @@ func HandleOpenBarrel(
 		return cell, player, player.Health == 0, nil
 
 	case game.ResourceData:
+		isQuestArtifact := matchInfo.QuestArtifactID > 0 && v.ID == matchInfo.QuestArtifactID
+
+		// Если это квест-артефакт — финальная проверка перед добавлением в инвентарь.
+		// Защита от состояния гонки: questDropped мог устареть к моменту выполнения.
+		if isQuestArtifact {
+			alreadyFound, _ := repository.MatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
+			if alreadyFound {
+				// Артефакт уже есть у кого-то — просто убираем бочку и ничего не выдаём.
+				cell.Barbel = nil
+				cell.TileCode = 48
+				updateCellInMap(instanceID, cell)
+				cellJSON := serialiseUpdatedCell(cell)
+				upd := map[string]interface{}{
+					"type": "UPDATE_CELL",
+					"payload": map[string]interface{}{
+						"instanceId":  instanceID,
+						"updatedCell": cellJSON,
+					},
+				}
+				updBytes, _ := json.Marshal(upd)
+				Broadcast(updBytes)
+				updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
+				if err != nil {
+					return cell, nil, false, fmt.Errorf("reload player: %w", err)
+				}
+				return cell, updatedPlayer, false, nil
+			}
+		}
+
+		// Для квест-артефакта всегда используем item_type="artifact", чтобы
+		// MatchHasQuestArtifact корректно нашёл его при следующей проверке.
 		itemType := "resource"
-		if isArtifact(v, artifacts) {
+		if isArtifact(v, artifacts) || isQuestArtifact {
 			itemType = "artifact"
 		}
-		fmt.Printf("DEBUG: AddInventoryItem for ID=%d Name=%q → itemType=%q\n", v.ID, v.Type, itemType)
 
 		// а) кладём в инвентарь
 		if err := Barrel.AddItem(
@@ -255,10 +285,10 @@ func HandleOpenBarrel(
 		cell.Barbel = nil
 		cell.TileCode = 48
 		updateCellInMap(instanceID, cell)
-		
+
 		cellJSON := serialiseUpdatedCell(cell)
 		evtType := "BARREL_RESOURCE"
-		if isArtifact(v, artifacts) {
+		if isArtifact(v, artifacts) || isQuestArtifact {
 			evtType = "BARREL_ARTIFACT"
 		}
 		resMsg := map[string]interface{}{
@@ -273,7 +303,7 @@ func HandleOpenBarrel(
 		Broadcast(rb)
 
 		// Если из бочки выпал именно квестовый артефакт — уведомляем всех игроков.
-		if matchInfo.QuestArtifactID > 0 && v.ID == matchInfo.QuestArtifactID {
+		if isQuestArtifact {
 			questMsg := map[string]interface{}{
 				"type": "QUEST_ARTIFACT_FOUND",
 				"payload": map[string]interface{}{
