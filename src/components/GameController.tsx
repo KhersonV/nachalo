@@ -136,6 +136,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
         [dispatch, instanceId],
     );
 
+    const questFoundConfirmLabel = state.questFoundNotification?.includes(
+        "покинул поле боя через портал",
+    )
+        ? "К статистике"
+        : "Понятно";
+
     return (
         <div className={styles.container}>
             {myPlayer && (
@@ -196,6 +202,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     description={state.questArtifactDescription}
                     badgeText="Событие"
                     hintText={state.questFoundNotification}
+                    confirmLabel={questFoundConfirmLabel}
                     onClose={() => {
                         setShowQuestFoundAlert(false);
                         dispatch(setQuestFoundNotification(null));
