@@ -28,15 +28,53 @@ type PlayerStatsPayload = {
 
 function parseRewards(raw: PlayerStatsPayload["player"]["rewards"]): Reward[] {
     if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
+
+    const normalizeRewardEntry = (entry: unknown): Reward | null => {
+        if (!entry || typeof entry !== "object") return null;
+        const rec = entry as Record<string, unknown>;
+        const typeVal = rec.type ?? rec.Type;
+        const amountVal = rec.amount ?? rec.Amount;
+        if (typeof typeVal !== "string") return null;
+        const amountNum = Number(amountVal ?? 0);
+        if (!Number.isFinite(amountNum)) return null;
+        return { type: typeVal, amount: amountNum };
+    };
+
+    if (Array.isArray(raw)) {
+        return raw
+            .map((r) => normalizeRewardEntry(r))
+            .filter((r): r is Reward => r !== null);
+    }
+
+    const toRewardsFromObject = (obj: Record<string, unknown>): Reward[] =>
+        Object.entries(obj)
+            .filter(([, value]) => typeof value === "number")
+            .map(([type, amount]) => ({
+                type,
+                amount: Number(amount),
+            }));
+
     if (typeof raw === "string") {
         try {
             const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : [];
+            if (Array.isArray(parsed)) {
+                return parsed
+                    .map((r) => normalizeRewardEntry(r))
+                    .filter((r): r is Reward => r !== null);
+            }
+            if (parsed && typeof parsed === "object") {
+                return toRewardsFromObject(parsed as Record<string, unknown>);
+            }
+            return [];
         } catch {
             return [];
         }
     }
+
+    if (typeof raw === "object") {
+        return toRewardsFromObject(raw as Record<string, unknown>);
+    }
+
     return [];
 }
 
@@ -153,7 +191,12 @@ export default function GameStatsPage() {
                                     key={`${reward.type ?? "reward"}-${idx}`}
                                     className={styles.rewardItem}
                                 >
-                                    {reward.type ?? "unknown"}:{" "}
+                                    {(reward.type === "balance" ||
+                                    reward.type === "coin" ||
+                                    reward.type === "coins"
+                                        ? "Баланс"
+                                        : (reward.type ?? "unknown")) +
+                                        ":"}{" "}
                                     {reward.amount ?? 0}
                                 </li>
                             ))}

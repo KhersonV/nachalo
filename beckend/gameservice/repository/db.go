@@ -561,7 +561,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 	// 2) Список участников
 	rows, err := DB.Query(
-		`SELECT user_id
+		`SELECT user_id, COALESCE(group_id, 0)
            FROM match_players
           WHERE instance_id = $1`,
 		instanceID,
@@ -571,13 +571,16 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 	}
 	defer rows.Close()
 
+	groupByUser := make(map[int]int)
+
 	// 3) Для каждого игрока — игровая логика CalculateResults
 	for rows.Next() {
-		var userID int
-		if err := rows.Scan(&userID); err != nil {
+		var userID, groupID int
+		if err := rows.Scan(&userID, &groupID); err != nil {
 			log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
 			continue
 		}
+		groupByUser[userID] = groupID
 
 		exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, err :=
 			game.CalculateResults(instanceID, userID)
@@ -604,6 +607,46 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 			DamageToMonsters: dmgMonsters,
 		})
 	}
+
+	// 3.1) Победный бонус: +XP и +деньги победителю (или его команде).
+	const winnerExpBonus = 120
+	const winnerMoneyBonus = 100
+	for i := range mr.PlayerResults {
+		isWinner := false
+		if mr.WinnerGroupID > 0 {
+			isWinner = groupByUser[mr.PlayerResults[i].UserID] == mr.WinnerGroupID
+		} else if mr.WinnerID > 0 {
+			isWinner = mr.PlayerResults[i].UserID == mr.WinnerID
+		}
+		if !isWinner {
+			continue
+		}
+
+		mr.PlayerResults[i].ExpGained += winnerExpBonus
+
+		var existing []game.Reward
+		if err := json.Unmarshal(mr.PlayerResults[i].RewardsData, &existing); err != nil {
+			existing = []game.Reward{}
+		}
+
+		merged := false
+		for j := range existing {
+			if existing[j].Type == "balance" || existing[j].Type == "coin" {
+				existing[j].Type = "balance"
+				existing[j].Amount += winnerMoneyBonus
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			existing = append(existing, game.Reward{Type: "balance", Amount: winnerMoneyBonus})
+		}
+
+		if b, err := json.Marshal(existing); err == nil {
+			mr.PlayerResults[i].RewardsData = b
+		}
+	}
+
 	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
 	if len(mr.PlayerResults) == 0 {
 		return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)

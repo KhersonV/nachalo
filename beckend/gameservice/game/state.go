@@ -50,8 +50,8 @@ type MonsterState struct {
 
 // Reward — пример структуры для награды
 type Reward struct {
-    Type   string // "coin", "artifact" и т.п.
-    Amount int    // количество или ID артефакта
+    Type   string `json:"type"`
+    Amount int    `json:"amount"`
 }
 
 

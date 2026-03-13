@@ -160,10 +160,30 @@ func AddPlayerExperience(userID, exp int) error {
 
 func AddPlayerRewards(userID int, rewardsData []byte) error {
 	log.Printf("Raw rewardsData for user %d: %s", userID, string(rewardsData))
-	// 1) Распарсим JSON наград
-	var rewards map[string]int
-	if err := json.Unmarshal(rewardsData, &rewards); err != nil {
-		return fmt.Errorf("AddPlayerRewards: unmarshal rewards: %w", err)
+
+	type rewardEntry struct {
+		Type   string `json:"type"`
+		Amount int    `json:"amount"`
+	}
+
+	// 1) Распарсим JSON наград (поддерживаем и map, и массив объектов).
+	rewards := make(map[string]int)
+	var rewardsMap map[string]int
+	if err := json.Unmarshal(rewardsData, &rewardsMap); err == nil {
+		for k, v := range rewardsMap {
+			rewards[k] += v
+		}
+	} else {
+		var rewardsList []rewardEntry
+		if err := json.Unmarshal(rewardsData, &rewardsList); err != nil {
+			return fmt.Errorf("AddPlayerRewards: unmarshal rewards: %w", err)
+		}
+		for _, r := range rewardsList {
+			if r.Type == "" || r.Amount == 0 {
+				continue
+			}
+			rewards[r.Type] += r.Amount
+		}
 	}
 
 	// 2) Получаем игрока
@@ -175,7 +195,7 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 	// 3) Применяем каждую награду
 	for key, amount := range rewards {
 		switch key {
-		case "balance":
+		case "balance", "coin", "coins":
 			player.Balance += amount
 
 		default:

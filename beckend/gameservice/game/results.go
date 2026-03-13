@@ -59,22 +59,15 @@ func CalculateResults(
         }
     }
 
-    // 3) Вычисляем опыт
-    // — например: 100 XP за каждого игрока, 20 за монстра, плюс 1 XP за каждые 10 единиц урона
-    exp = playerKills*100 + monsterKills*20 + (dmgTotal/10)
+    // 3) Вычисляем опыт: базовый за участие + вклад в бою.
+    exp = 80 + playerKills*80 + monsterKills*20 + (dmgTotal / 12)
 
-    // 4) Генерируем награды
-    // — пример: монеты за фраги, артефакт за много фрагов монстров
-    if playerKills > 0 {
+    // 4) Деньги за матч (пока без артефактов/коллекций).
+    coins := 40 + playerKills*30 + monsterKills*10 + (dmgTotal / 30)
+    if coins > 0 {
         rewards = append(rewards, Reward{
-            Type:   "coin",
-            Amount: playerKills * 50, // по 50 монет за каждого убитого игрока
-        })
-    }
-    if monsterKills > 5 {
-        rewards = append(rewards, Reward{
-            Type:   "artifact",
-            Amount: 1, // даём 1 случайный артефакт
+            Type:   "balance",
+            Amount: coins,
         })
     }
 

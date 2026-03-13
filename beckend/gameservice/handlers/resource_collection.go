@@ -169,8 +169,8 @@ if err := repository.AddInventoryItem(
 				"payload": map[string]interface{}{
 					"instanceId": req.InstanceID,
 					"playerName": playerResp.Name,
-					"x":          req.CellX,
-					"y":          req.CellY,
+					"x":          updatedCell.X,
+					"y":          updatedCell.Y,
 				},
 			}
 			questBuf, _ := json.Marshal(questMsg)

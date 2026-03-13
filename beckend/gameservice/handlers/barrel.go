@@ -309,8 +309,8 @@ func HandleOpenBarrel(
 				"payload": map[string]interface{}{
 					"instanceId": instanceID,
 					"playerName": updatedPlayer.Name,
-					"x":          cell.X,
-					"y":          cell.Y,
+					"x":          updatedPlayer.Position.X,
+					"y":          updatedPlayer.Position.Y,
 				},
 			}
 			qb, _ := json.Marshal(questMsg)

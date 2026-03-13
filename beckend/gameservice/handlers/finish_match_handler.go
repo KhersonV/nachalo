@@ -192,13 +192,19 @@ func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // 5.2 Отправляем всем событие, что игрок вышел через портал
+    portalX, portalY := player.Position.X, player.Position.Y
+    var portalPos [2]int
+    if err := json.Unmarshal(match.PortalPosition, &portalPos); err == nil {
+        portalX, portalY = portalPos[0], portalPos[1]
+    }
+
     portalMsg := map[string]interface{}{
         "type": "PLAYER_LEFT_PORTAL",
         "payload": map[string]interface{}{
             "instanceId": req.InstanceID,
             "playerName": player.Name,
-            "x":          match.PortalPosition[0],
-            "y":          match.PortalPosition[1],
+            "x":          portalX,
+            "y":          portalY,
         },
     }
     if b, err := json.Marshal(portalMsg); err == nil {
