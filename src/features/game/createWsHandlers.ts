@@ -126,7 +126,6 @@ export function createWsHandlers(
                 }),
             ),
         PLAYER_DEFEATED: (payload: any) => {
-            if (payload.userId === user?.id) router.push("/mode");
             dispatch(
                 playerDefeated({
                     instanceId,
@@ -149,6 +148,10 @@ export function createWsHandlers(
                 typeof window !== "undefined" &&
                 !!sessionStorage.getItem("lastMatchPlayerStats");
             if (hasLastMatchStats) return;
+            const isPendingAfterDefeat =
+                typeof window !== "undefined" &&
+                sessionStorage.getItem("lastMatchStatsPending") === "1";
+            if (isPendingAfterDefeat) return;
             router.replace("/mode");
         },
         QUEST_ARTIFACT_FOUND: (payload: any) => {

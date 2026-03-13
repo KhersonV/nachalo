@@ -103,6 +103,17 @@ func scheduleReconnectGrace(instanceID string, userID int) {
 	disconnectGraceMu.Unlock()
 }
 
+func isAliveMatchPlayer(instanceID string, userID int) bool {
+	if instanceID == "" || userID == 0 {
+		return false
+	}
+	p, err := repository.GetMatchPlayerByID(instanceID, userID)
+	if err != nil || p == nil {
+		return false
+	}
+	return p.Health > 0
+}
+
 func WsHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Получаем токен из query-параметра
 	tokenString := r.URL.Query().Get("token")
@@ -203,14 +214,29 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
                     }
                 } else {
                     log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
-					endedMsg := map[string]interface{}{
-						"type": "MATCH_ENDED",
-						"payload": map[string]interface{}{
-							"instanceId": client.instanceID,
-						},
-					}
-					if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
-						_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+					if allStats, winnerType, winnerID, serr := buildAllPlayersGameStatsFromStored(client.instanceID); serr == nil {
+						endedMsg := matchEndedBroadcastResponse{
+							Type: "MATCH_ENDED",
+							Payload: matchEndedBroadcastResult{
+								InstanceID: client.instanceID,
+								WinnerType: winnerType,
+								WinnerID:   winnerID,
+								Stats:      allStats,
+							},
+						}
+						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
+							_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+						}
+					} else {
+						endedMsg := map[string]interface{}{
+							"type": "MATCH_ENDED",
+							"payload": map[string]interface{}{
+								"instanceId": client.instanceID,
+							},
+						}
+						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
+							_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+						}
 					}
                 }
             }
@@ -230,7 +256,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clientsMu.Unlock()
 
-	if shouldScheduleGrace && instanceID != "" {
+	if shouldScheduleGrace && instanceID != "" && isAliveMatchPlayer(instanceID, userIDInt) {
 		disconnectedMsg := map[string]interface{}{
 			"type": "PLAYER_DISCONNECTED",
 			"payload": map[string]interface{}{

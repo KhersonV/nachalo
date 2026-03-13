@@ -65,6 +65,10 @@ func main() {
 		"/game/match",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMatchHandler)),
 	).Methods("GET")
+	router.Handle(
+		"/game/match/{instance_id}/my-stats",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
+	).Methods("GET")
 
 	// Эндпоинт для финализации матча
 	router.Handle("/game/finishMatch",

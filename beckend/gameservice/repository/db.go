@@ -49,6 +49,7 @@ func InitDB() {
 	EnsureStaticGameData()
 	CreateMatchStatsTable()
 	CreateMatchPlayerStatsTable()
+	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
 
 	// Восстанавливаем state матчей
@@ -490,6 +491,19 @@ func CreateMatchPlayerStatsTable() {
     `
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_player_stats: %v", err)
+	}
+}
+
+// EnsureMatchStatsRetentionSchema убирает каскадное удаление истории матча
+// из-за FK match_stats -> matches, чтобы match_stats/match_player_stats
+// сохранялись после DeleteMatch.
+func EnsureMatchStatsRetentionSchema() {
+	query := `
+	ALTER TABLE IF EXISTS match_stats
+	DROP CONSTRAINT IF EXISTS match_stats_instance_id_fkey;
+	`
+	if _, err := DB.Exec(query); err != nil {
+		log.Printf("EnsureMatchStatsRetentionSchema: %v", err)
 	}
 }
 

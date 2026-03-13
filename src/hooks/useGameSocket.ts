@@ -214,6 +214,11 @@ export function useGameSocket(
                         }
                         wsRef.current?.close(1000);
 
+                        const isPendingAfterDefeat =
+                            typeof window !== "undefined" &&
+                            sessionStorage.getItem("lastMatchStatsPending") ===
+                                "1";
+
                         if (
                             typeof window !== "undefined" &&
                             user?.id &&
@@ -248,6 +253,18 @@ export function useGameSocket(
                         if (hasLastMatchStats) {
                             return;
                         }
+                        if (isPendingAfterDefeat) {
+                            if (typeof window !== "undefined") {
+                                sessionStorage.setItem(
+                                    "lastMatchEndedNoStats",
+                                    "1",
+                                );
+                                window.dispatchEvent(
+                                    new Event("match-stats-ready"),
+                                );
+                            }
+                            return;
+                        }
                         router.replace("/mode");
                         return;
 
@@ -261,7 +278,28 @@ export function useGameSocket(
                                 reconnectRef.current = null;
                             }
                             wsRef.current?.close(1000);
-                            router.replace("/mode");
+                            if (typeof window !== "undefined") {
+                                sessionStorage.setItem(
+                                    "lastMatchStatsPending",
+                                    "1",
+                                );
+                                sessionStorage.setItem(
+                                    "lastMatchPendingInstanceId",
+                                    msg.payload?.instanceId ??
+                                        msg.payload?.instance_id ??
+                                        instanceId,
+                                );
+                                window.dispatchEvent(
+                                    new CustomEvent("my-player-defeated", {
+                                        detail: {
+                                            instanceId:
+                                                msg.payload?.instanceId ??
+                                                msg.payload?.instance_id ??
+                                                instanceId,
+                                        },
+                                    }),
+                                );
+                            }
                         }
                         onMessageRef.current(msg);
                         return;

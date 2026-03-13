@@ -119,6 +119,21 @@ export default function GameController({ instanceId }: GameControllerProps) {
         };
     }, []);
 
+    useEffect(() => {
+        const onMyDefeat = () => {
+            dispatch(
+                setQuestFoundNotification(
+                    'Ваш персонаж погиб. Нажмите "К статистике", чтобы открыть экран результатов.',
+                ),
+            );
+        };
+
+        window.addEventListener("my-player-defeated", onMyDefeat);
+        return () => {
+            window.removeEventListener("my-player-defeated", onMyDefeat);
+        };
+    }, [dispatch]);
+
     // Show the quest artifact alert once when the map loads
     useEffect(() => {
         if (
@@ -226,8 +241,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const isPortalExitNotification = !!state.questFoundNotification?.includes(
         "покинул поле боя через портал",
     );
+    const isDeathNotification =
+        !!state.questFoundNotification?.includes("Ваш персонаж погиб");
     const questFoundConfirmLabel =
-        isPortalExitNotification && canOpenStats ? "К статистике" : "Понятно";
+        isDeathNotification || (isPortalExitNotification && canOpenStats)
+            ? "К статистике"
+            : "Понятно";
 
     const disconnectedPlayers = Object.entries(disconnectedDeadlines)
         .map(([id, deadline]) => {
@@ -334,7 +353,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     hintText={state.questFoundNotification}
                     confirmLabel={questFoundConfirmLabel}
                     onClose={() => {
-                        if (isPortalExitNotification && canOpenStats) {
+                        if (
+                            isDeathNotification ||
+                            (isPortalExitNotification && canOpenStats)
+                        ) {
                             router.replace("/game/stats");
                         }
                         setShowQuestFoundAlert(false);

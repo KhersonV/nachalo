@@ -460,17 +460,54 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 		// 2а Если больше нет игроков — завершаем матч
 		if len(ms.TurnOrder) == 0 {
 			log.Printf("[combat] all players dead → auto-finalize match %s", instanceID)
+
+			// Важно: для последнего погибшего тоже отправляем PLAYER_DEFEATED,
+			// иначе клиент не покажет модалку "Вы погибли".
+			defeatedMsg := map[string]interface{}{
+				"type": "PLAYER_DEFEATED",
+				"payload": map[string]interface{}{
+					"instanceId": instanceID,
+					"userId":     userID,
+				},
+			}
+			if b, derr := json.Marshal(defeatedMsg); derr == nil {
+				Broadcast(b)
+			}
+
+			var endedPayload []byte
+			if results, rerr := repository.GetMatchResults(instanceID); rerr == nil {
+				if allStats, winnerType, winnerID, serr := buildAllPlayersGameStats(instanceID, results); serr == nil {
+					endedMsg := matchEndedBroadcastResponse{
+						Type: "MATCH_ENDED",
+						Payload: matchEndedBroadcastResult{
+							InstanceID: instanceID,
+							WinnerType: winnerType,
+							WinnerID:   winnerID,
+							Stats:      allStats,
+						},
+					}
+					if b, merr := json.Marshal(endedMsg); merr == nil {
+						endedPayload = b
+					}
+				}
+			}
+
 			if err := Combat.Finalize(instanceID); err != nil {
 				log.Printf("[combat] FinalizeMatch failed: %v", err)
 			} else {
 				log.Printf("[combat] FinalizeMatch OK for %s", instanceID)
 			}
-			msg := map[string]interface{}{
-				"type":    "MATCH_ENDED",
-				"payload": map[string]string{"instanceId": instanceID},
+
+			if len(endedPayload) > 0 {
+				Broadcast(endedPayload)
+			} else {
+				msg := map[string]interface{}{
+					"type":    "MATCH_ENDED",
+					"payload": map[string]string{"instanceId": instanceID},
+				}
+				b, _ := json.Marshal(msg)
+				Broadcast(b)
 			}
-			b, _ := json.Marshal(msg)
-			Broadcast(b)
 			return
 		}
 

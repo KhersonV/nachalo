@@ -496,15 +496,8 @@ func DeleteMatch(instanceID string) error {
 		return fmt.Errorf("DeleteMatch: failed to delete match_players: %w", err)
 	}
 
-	// 2) Удаляем связанные детали (если есть table match_player_stats)
-	if _, err := DB.Exec(`
-        DELETE FROM match_player_stats
-        WHERE instance_id = $1
-    `, instanceID); err != nil {
-		return fmt.Errorf("DeleteMatch: failed to delete match_player_stats: %w", err)
-	}
-
-	// 3) Наконец, удаляем сам матч
+	// 2) Наконец, удаляем сам матч.
+	// Итоговые таблицы match_stats/match_player_stats сохраняем для истории.
 	if _, err := DB.Exec(`
         DELETE FROM matches
         WHERE instance_id = $1
@@ -607,21 +600,18 @@ func CleanupMatchPlayers(instanceID string) error {
 func LoadMatchStats(instanceID string) (*models.MatchInfo, error) {
 	var mi models.MatchInfo
 
-	// Джоиним match_stats и matches, чтобы достать mode из matches
+	// Читаем только match_stats: запись в matches может быть уже удалена после финализации.
 	query := `
     SELECT 
       ms.instance_id,
-      m.mode,
       ms.winner_id,
       ms.winner_group_id
     FROM match_stats ms
-    JOIN matches m ON m.instance_id = ms.instance_id
     WHERE ms.instance_id = $1
     `
 	row := DB.QueryRow(query, instanceID)
 	if err := row.Scan(
 		&mi.InstanceID,
-		&mi.Mode,
 		&mi.WinnerID,
 		&mi.WinnerGroupID,
 	); err != nil {

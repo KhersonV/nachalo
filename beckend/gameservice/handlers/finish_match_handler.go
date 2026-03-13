@@ -128,6 +128,50 @@ func buildAllPlayersGameStats(instanceID string, results *game.MatchResults) ([]
     return stats, winnerType, winnerID, nil
 }
 
+func buildAllPlayersGameStatsFromStored(instanceID string) ([]playerGameStats, string, int, error) {
+    stored, err := repository.LoadMatchPlayerStats(instanceID)
+    if err != nil {
+        return nil, "", 0, err
+    }
+    if len(stored) == 0 {
+        return nil, "", 0, fmt.Errorf("no stored player stats for match %s", instanceID)
+    }
+
+    matchInfo, err := repository.LoadMatchStats(instanceID)
+    if err != nil {
+        return nil, "", 0, err
+    }
+
+    winnerType := "user"
+    winnerID := matchInfo.WinnerID
+    if matchInfo.WinnerGroupID > 0 {
+        winnerType = "group"
+        winnerID = matchInfo.WinnerGroupID
+    }
+
+    stats := make([]playerGameStats, 0, len(stored))
+    for _, pr := range stored {
+        playerName := fmt.Sprintf("Player %d", pr.UserID)
+        if p, perr := repository.GetPlayerByUserID(pr.UserID); perr == nil && p != nil && p.Name != "" {
+            playerName = p.Name
+        }
+
+        stats = append(stats, playerGameStats{
+            UserID:           pr.UserID,
+            Name:             playerName,
+            ExpGained:        pr.ExpGained,
+            PlayerKills:      pr.PlayerKills,
+            MonsterKills:     pr.MonsterKills,
+            DamageTotal:      pr.DamageTotal,
+            DamageToPlayers:  pr.DamageToPlayers,
+            DamageToMonsters: pr.DamageToMonsters,
+            Rewards:          pr.Rewards,
+        })
+    }
+
+    return stats, winnerType, winnerID, nil
+}
+
 func FinishMatchHandler(w http.ResponseWriter, r *http.Request) {
     // 1. Метод
     if r.Method != http.MethodPost {
