@@ -328,10 +328,28 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             onTurnEnded={handleTurnEnded}
                         />
                         <TurnIndicator />
+                        <button
+                            type="button"
+                            className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
+                            onClick={() => setShowInventory((v) => !v)}
+                        >
+                            {showInventory
+                                ? "Закрыть инвентарь"
+                                : "Открыть инвентарь"}
+                        </button>
                     </>
                 ) : (
                     <div className={styles.waitingOverlay}>
                         <p>Ожидание хода...</p>
+                        <button
+                            type="button"
+                            className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
+                            onClick={() => setShowInventory((v) => !v)}
+                        >
+                            {showInventory
+                                ? "Закрыть инвентарь"
+                                : "Открыть инвентарь"}
+                        </button>
                     </div>
                 )}
             </div>
