@@ -49,7 +49,51 @@ export default function GameController({ instanceId }: GameControllerProps) {
         Record<number, number>
     >({});
     const [nowMs, setNowMs] = useState<number>(Date.now());
+    const [mapViewport, setMapViewport] = useState({
+        width: 800,
+        height: 600,
+        tileSize: 80,
+    });
     const questAlertShownRef = React.useRef(false);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const updateViewport = () => {
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+            const isMobile = screenW <= 900;
+
+            if (!isMobile) {
+                setMapViewport({ width: 800, height: 600, tileSize: 80 });
+                return;
+            }
+
+            const horizontalPadding = 26;
+            const verticalReserved = 330;
+            const width = Math.max(
+                290,
+                Math.min(760, screenW - horizontalPadding),
+            );
+            const height = Math.max(
+                290,
+                Math.min(560, Math.floor(screenH - verticalReserved)),
+            );
+
+            const tileSize = screenW <= 420 ? 42 : screenW <= 560 ? 48 : 56;
+
+            setMapViewport({ width, height, tileSize });
+        };
+
+        updateViewport();
+        window.addEventListener("resize", updateViewport);
+        window.addEventListener("orientationchange", updateViewport);
+
+        return () => {
+            window.removeEventListener("resize", updateViewport);
+            window.removeEventListener("orientationchange", updateViewport);
+        };
+    }, []);
 
     useEffect(() => {
         // Новый матч: сбрасываем флаг и возможный кэш прошлой статистики.
@@ -306,9 +350,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
-                        tileSize={80}
-                        viewportWidth={800}
-                        viewportHeight={600}
+                        tileSize={mapViewport.tileSize}
+                        viewportWidth={mapViewport.width}
+                        viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
                     />
                 ) : (
