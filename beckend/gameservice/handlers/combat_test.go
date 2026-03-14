@@ -126,6 +126,7 @@ func TestDoCounterattackWithEnergy_RecordsDefenderDamageEvent(t *testing.T) {
 		stats{Attack: 5, Defense: 1, Health: 10},
 		stats{Attack: 7, Defense: 1, Health: 10},
 		true,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -153,5 +154,26 @@ func TestDoCounterattackWithEnergy_RecordsDefenderDamageEvent(t *testing.T) {
 	}
 	if len(ms.KillEvents) != 0 {
 		t.Fatalf("expected no kill events for non-lethal counterattack, got %d", len(ms.KillEvents))
+	}
+}
+
+func TestDoCounterattackWithEnergy_SkipsOnRangedAttack(t *testing.T) {
+	result, err := doCounterattackWithEnergy(
+		"range-match",
+		"player", 1,
+		"player", 2,
+		stats{Attack: 5, Defense: 1, Health: 10},
+		stats{Attack: 7, Defense: 1, Health: 10},
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Damage != 0 {
+		t.Fatalf("expected no counter damage for ranged attack, got %d", result.Damage)
+	}
+	if result.NewHealth != 10 {
+		t.Fatalf("expected attacker health unchanged, got %d", result.NewHealth)
 	}
 }

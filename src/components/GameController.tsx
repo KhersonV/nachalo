@@ -202,6 +202,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         myPlayer,
         isMyTurn,
         handleMoveOrAttack,
+        handleCellClick,
+        handlePlayerClick,
         openBarrel,
         collectResource,
         fightMonster,
@@ -345,6 +347,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     maxHealth={myPlayer.maxHealth}
                     energy={myPlayer.energy}
                     maxEnergy={myPlayer.maxEnergy}
+                    isRanged={myPlayer.isRanged}
+                    attackRange={myPlayer.attackRange}
                 />
             )}
             <div className={styles.mapContainer}>
@@ -354,6 +358,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
+                        onCellClick={handleCellClick}
+                        onPlayerClick={handlePlayerClick}
                     />
                 ) : (
                     <p className={styles.mapLoading}>Загрузка карты...</p>

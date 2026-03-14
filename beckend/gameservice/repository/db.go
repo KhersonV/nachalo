@@ -40,8 +40,11 @@ func InitDB() {
 
 	// Существующие таблицы
 	CreatePlayersTable()
+	EnsurePlayersCharacterTypeColumn()
+	EnsurePlayersStatColumns()
 	CreateMatchesTable()
 	CreateMatchPlayersTable()
+	EnsureMatchPlayersStatColumns()
 	CreateInventoryTable()
 	// Добавляем нашу новую
 	CreateMatchMonstersTable()
@@ -117,6 +120,7 @@ func CreatePlayersTable() {
 		user_id SERIAL PRIMARY KEY,
 		name TEXT DEFAULT 'Unnamed Player',
 		image TEXT DEFAULT '/player-1.webp',
+		character_type TEXT DEFAULT 'adventurer',
 		energy INTEGER DEFAULT 100,
 		max_energy INTEGER DEFAULT 100,
 		health INTEGER DEFAULT 100,
@@ -126,16 +130,68 @@ func CreatePlayersTable() {
 		max_experience INTEGER DEFAULT 500,
 		attack INTEGER DEFAULT 10,
 		defense INTEGER DEFAULT 5,
-		speed INTEGER DEFAULT 3,
-		maneuverability INTEGER DEFAULT 2,
-		vision INTEGER DEFAULT 2,
-		vision_range INTEGER DEFAULT 2,
+		mobility INTEGER DEFAULT 3,
+		agility INTEGER DEFAULT 2,
+		sight_range INTEGER DEFAULT 2,
+		is_ranged BOOLEAN DEFAULT FALSE,
+		attack_range INTEGER DEFAULT 1,
 		balance INTEGER DEFAULT 0,
 		inventory JSONB DEFAULT '{}'
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы players: %v", err)
+	}
+}
+
+func EnsurePlayersCharacterTypeColumn() {
+	_, err := DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS character_type TEXT DEFAULT 'adventurer'`)
+	if err != nil {
+		log.Printf("EnsurePlayersCharacterTypeColumn: %v", err)
+	}
+}
+
+func EnsurePlayersStatColumns() {
+	_, err := DB.Exec(`ALTER TABLE players RENAME COLUMN speed TO mobility`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns rename speed->mobility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN maneuverability TO agility`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns rename maneuverability->agility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN vision_range TO sight_range`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns rename vision_range->sight_range: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN range_attack TO is_ranged`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns rename range_attack->is_ranged: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN range_distance TO attack_range`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns rename range_distance->attack_range: %v", err)
+	}
+
+	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns mobility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 2`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns agility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS sight_range INTEGER DEFAULT 2`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns sight_range: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS is_ranged BOOLEAN DEFAULT FALSE`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns is_ranged: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS attack_range INTEGER DEFAULT 1`)
+	if err != nil {
+		log.Printf("EnsurePlayersStatColumns attack_range: %v", err)
 	}
 }
 
@@ -188,10 +244,11 @@ func CreateMatchPlayersTable() {
 		max_experience INTEGER,
 		attack INTEGER,
 		defense INTEGER,
-		speed INTEGER,
-		maneuverability INTEGER,
-		vision INTEGER,
-		vision_range INTEGER,
+		mobility INTEGER,
+		agility INTEGER,
+		sight_range INTEGER,
+		is_ranged BOOLEAN,
+		attack_range INTEGER,
 		balance INTEGER,
         image TEXT,
 		group_id INTEGER,
@@ -200,6 +257,50 @@ func CreateMatchPlayersTable() {
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_players: %v", err)
+	}
+}
+
+func EnsureMatchPlayersStatColumns() {
+	_, err := DB.Exec(`ALTER TABLE match_players RENAME COLUMN speed TO mobility`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns rename speed->mobility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN maneuverability TO agility`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns rename maneuverability->agility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN vision_range TO sight_range`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns rename vision_range->sight_range: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN range_attack TO is_ranged`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns rename range_attack->is_ranged: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN range_distance TO attack_range`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns rename range_distance->attack_range: %v", err)
+	}
+
+	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns mobility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 2`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns agility: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS sight_range INTEGER DEFAULT 2`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns sight_range: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS is_ranged BOOLEAN DEFAULT FALSE`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns is_ranged: %v", err)
+	}
+	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS attack_range INTEGER DEFAULT 1`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayersStatColumns attack_range: %v", err)
 	}
 }
 

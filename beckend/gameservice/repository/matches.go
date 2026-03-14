@@ -137,11 +137,11 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 		INSERT INTO match_players (
 			instance_id, user_id, name, image, position, inventory,
 			level, energy, max_energy, health, max_health, experience, max_experience,
-			attack, defense, speed, maneuverability, vision, vision_range, balance, group_id
+			attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, group_id
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19, $20, $21
+			$14, $15, $16, $17, $18, $19, $20, $21, $22
 		);
 	`
 	res, err := DB.Exec(query,
@@ -160,10 +160,11 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 		p.MaxExperience,
 		p.Attack,
 		p.Defense,
-		p.Speed,
-		p.Maneuverability,
-		p.Vision,
-		p.VisionRange,
+		p.Mobility,
+		p.Agility,
+		p.SightRange,
+		p.IsRanged,
+		p.AttackRange,
 		p.Balance,
 		groupID,
 	)
@@ -196,10 +197,11 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			max_experience,
 			attack,
 			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
+			mobility,
+			agility,
+			sight_range,
+			is_ranged,
+			attack_range,
 			group_id,
 			balance
 		FROM match_players
@@ -224,10 +226,11 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		&pr.MaxExperience,
 		&pr.Attack,
 		&pr.Defense,
-		&pr.Speed,
-		&pr.Maneuverability,
-		&pr.Vision,
-		&pr.VisionRange,
+		&pr.Mobility,
+		&pr.Agility,
+		&pr.SightRange,
+		&pr.IsRanged,
+		&pr.AttackRange,
 		&pr.GroupID,
 		&pr.Balance,
 	)
@@ -287,10 +290,11 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			max_experience,
 			attack,
 			defense,
-			speed,
-			maneuverability,
-			vision,
-			vision_range,
+			mobility,
+			agility,
+			sight_range,
+			is_ranged,
+			attack_range,
 			group_id,
 			balance
 		FROM match_players
@@ -322,10 +326,11 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			&pr.MaxExperience,
 			&pr.Attack,
 			&pr.Defense,
-			&pr.Speed,
-			&pr.Maneuverability,
-			&pr.Vision,
-			&pr.VisionRange,
+			&pr.Mobility,
+			&pr.Agility,
+			&pr.SightRange,
+			&pr.IsRanged,
+			&pr.AttackRange,
 			&pr.GroupID,
 			&pr.Balance,
 		)

@@ -91,6 +91,7 @@ type RegisterRequest struct {
 	Password string `json:"password"`
 	Name     string `json:"name"`
 	Image    string `json:"image"`
+	CharacterType string `json:"characterType"`
 }
 
 type LoginRequest struct {
@@ -163,6 +164,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		"user_id": userID,
 		"name":    req.Name,
 		"image":   req.Image,
+		"character_type": req.CharacterType,
 	}
 
 	jsonData, err := json.Marshal(payload)

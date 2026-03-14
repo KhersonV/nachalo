@@ -7,26 +7,28 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../styles/RegisterPage.module.css";
+import {
+    characterArchetypes,
+    type CharacterArchetype,
+} from "../constants/characterArchetypes";
 
 const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_BASE || "http://localhost:8000";
-
-// Массив доступных картинок
-const avatarOptions = [
-    "/Character_1.webp",
-    "/Character_2.webp",
-    "/player-1.webp",
-    "/player-2.webp",
-];
 
 const RegisterPage = () => {
     const router = useRouter();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [name, setName] = useState("");
-    const [image, setImage] = useState(avatarOptions[0]);
+    const [characterType, setCharacterType] = useState<
+        CharacterArchetype["id"]
+    >(characterArchetypes[0].id);
     const [error, setError] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const selectedArchetype =
+        characterArchetypes.find((item) => item.id === characterType) ??
+        characterArchetypes[0];
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,7 +41,13 @@ const RegisterPage = () => {
                 headers: {
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ email, password, name, image }),
+                body: JSON.stringify({
+                    email,
+                    password,
+                    name,
+                    image: selectedArchetype.image,
+                    characterType,
+                }),
             });
 
             if (!res.ok) {
@@ -116,26 +124,86 @@ const RegisterPage = () => {
                     </div>
 
                     <div className={styles.field}>
-                        <label className={styles.label}>Выберите аватар</label>
+                        <div className={styles.characterHeader}>
+                            <label className={styles.label}>
+                                Выберите архетип персонажа
+                            </label>
+                            <p className={styles.characterHint}>
+                                Класс определяет стартовые характеристики. Позже
+                                можно будет расширить набор архетипов без
+                                переписывания формы.
+                            </p>
+                            <div className={styles.statLegend}>
+                                <p className={styles.statLegendTitle}>
+                                    Как читать параметры:
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    HP: запас здоровья персонажа.
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    Энергия: ресурс на действия;
+                                    восстанавливается каждый ход.
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    Атака/Защита: исходящий и входящий урон в
+                                    бою.
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    Мобильность/Ловкость: базовые параметры
+                                    подвижности архетипа.
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    Обзор: сколько клеток вокруг видно на карте.
+                                </p>
+                                <p className={styles.statLegendRow}>
+                                    Тип боя и дальность атаки: ближний или
+                                    дальний режим и максимальная дистанция
+                                    удара.
+                                </p>
+                            </div>
+                        </div>
                         <div className={styles.avatarGrid}>
-                            {avatarOptions.map((src) => (
+                            {characterArchetypes.map((item) => (
                                 <label
-                                    key={src}
-                                    className={`${styles.avatarOption} ${image === src ? styles.avatarOptionActive : ""}`}
+                                    key={item.id}
+                                    className={`${styles.avatarOption} ${characterType === item.id ? styles.avatarOptionActive : ""}`}
                                 >
                                     <input
                                         type="radio"
-                                        name="avatar"
-                                        value={src}
-                                        checked={image === src}
-                                        onChange={() => setImage(src)}
+                                        name="characterType"
+                                        value={item.id}
+                                        checked={characterType === item.id}
+                                        onChange={() =>
+                                            setCharacterType(item.id)
+                                        }
                                         className={styles.avatarRadio}
                                     />
                                     <img
-                                        src={src}
-                                        alt="avatar"
+                                        src={item.image}
+                                        alt={item.name}
                                         className={styles.avatarImage}
                                     />
+                                    <div className={styles.avatarContent}>
+                                        <div className={styles.avatarTitleRow}>
+                                            <strong>{item.name}</strong>
+                                            <span className={styles.avatarTag}>
+                                                {item.title}
+                                            </span>
+                                        </div>
+                                        <p className={styles.avatarDescription}>
+                                            {item.description}
+                                        </p>
+                                        <div className={styles.statsGrid}>
+                                            {item.stats.map((stat) => (
+                                                <span
+                                                    key={`${item.id}-${stat.label}`}
+                                                    className={styles.statChip}
+                                                >
+                                                    {stat.label}: {stat.value}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </label>
                             ))}
                         </div>

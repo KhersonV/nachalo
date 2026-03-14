@@ -9,7 +9,7 @@ import { useSelector } from "react-redux";
 import { shallowEqual } from "react-redux";
 import type { RootState } from "@/store";
 import Map from "./Map";
-import type { PlayerState } from "../types/GameTypes";
+import type { Cell, PlayerState } from "../types/GameTypes";
 import { useInfoModal } from "./InfoModal";
 import { cellToGameObject, playerToGameObject } from "../utils/toGameObject";
 import { useCombatFloaters } from "../hooks/useCombatFloaters";
@@ -20,6 +20,8 @@ interface MapWithCameraProps {
     viewportWidth: number;
     viewportHeight: number;
     myPlayer: PlayerState;
+    onCellClick?: (cell: Cell) => void;
+    onPlayerClick?: (player: PlayerState) => void;
 }
 
 export default function MapWithCamera({
@@ -27,6 +29,8 @@ export default function MapWithCamera({
     viewportWidth,
     viewportHeight,
     myPlayer,
+    onCellClick,
+    onPlayerClick,
 }: MapWithCameraProps) {
     // console.log("🔄 MapWithCamera rerendered");
 
@@ -42,7 +46,7 @@ export default function MapWithCamera({
     );
 
     const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-    const visionRange = myPlayer?.vision ?? 3;
+    const sightRange = myPlayer?.sightRange ?? 3;
     const tileSize = Number(inputTileSize) || 60;
     const safeMapWidth = Number(mapWidth) || 15;
     const safeMapHeight = Number(mapHeight) || 15;
@@ -91,18 +95,15 @@ export default function MapWithCamera({
                     mapHeight={safeMapHeight}
                     tileSize={tileSize}
                     gap={gap}
-                    visionRange={visionRange}
+                    sightRange={sightRange}
                     playerPosition={playerPosition}
-                    onCellClick={(cell) => {
-                        console.log("Клик по клетке для перемещения:", cell);
-                    }}
+                    onCellClick={onCellClick}
                 />
 
                 {players.map((player) => {
                     const dx = Math.abs(player.position.x - playerPosition.x);
                     const dy = Math.abs(player.position.y - playerPosition.y);
-                    const playerVisible =
-                        dx <= visionRange && dy <= visionRange;
+                    const playerVisible = dx <= sightRange && dy <= sightRange;
 
                     // Игрок вне зоны видимости — не рендерим совсем
                     if (!playerVisible) return null;
@@ -113,7 +114,16 @@ export default function MapWithCamera({
                             src={player.image}
                             alt={player.name}
                             title={player.name}
-                            onClick={() => open(playerToGameObject(player))}
+                            onClick={() => {
+                                if (
+                                    onPlayerClick &&
+                                    player.user_id !== myPlayer.user_id
+                                ) {
+                                    onPlayerClick(player);
+                                    return;
+                                }
+                                open(playerToGameObject(player));
+                            }}
                             style={{
                                 position: "absolute",
                                 left:

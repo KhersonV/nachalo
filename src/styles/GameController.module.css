@@ -89,6 +89,28 @@
     margin-bottom: 0;
 }
 
+.hudMetaRow {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.hudMetaLabel {
+    color: var(--text-muted);
+}
+
+.hudMetaValue {
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: rgba(5, 17, 31, 0.7);
+    color: var(--text-main);
+    font-weight: 600;
+}
+
 .progressBar {
     height: 8px;
     background: rgba(148, 163, 184, 0.25);

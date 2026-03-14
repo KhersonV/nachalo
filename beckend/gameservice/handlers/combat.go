@@ -22,6 +22,7 @@ import (
 // Стоимость перемещения: 1 единица энергии.
 const moveEnergyCost = 1
 const attackEnergyCost = 4
+const rangedAttackEnergyCost = 6
 const counterAttackEnergyCost = 2
 
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
@@ -237,7 +238,22 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Вспомогательные типы --------------------------------------------------
 
-type stats struct{ Attack, Defense, Health int }
+type attackMode string
+
+const (
+	attackModeMelee  attackMode = "melee"
+	attackModeRanged attackMode = "ranged"
+)
+
+type stats struct {
+	Attack      int
+	Defense     int
+	Health      int
+	IsRanged    bool
+	AttackRange int
+	X           int
+	Y           int
+}
 
 type attackResult struct {
 	Damage    int
@@ -252,7 +268,15 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 		if err != nil {
 			return stats{}, err
 		}
-		return stats{p.Attack, p.Defense, p.Health}, nil
+		return stats{
+			Attack:      p.Attack,
+			Defense:     p.Defense,
+			Health:      p.Health,
+			IsRanged:    p.IsRanged,
+			AttackRange: p.AttackRange,
+			X:           p.Position.X,
+			Y:           p.Position.Y,
+		}, nil
 	}
 
 	// monster
@@ -261,7 +285,38 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 	if err != nil {
 		return stats{}, err
 	}
-	return stats{mm.Attack, mm.Defense, mm.Health}, nil
+	return stats{
+		Attack:      mm.Attack,
+		Defense:     mm.Defense,
+		Health:      mm.Health,
+		IsRanged:    false,
+		AttackRange: 1,
+		X:           mm.X,
+		Y:           mm.Y,
+	}, nil
+}
+
+func manhattanDistance(att stats, def stats) int {
+	dx := att.X - def.X
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := att.Y - def.Y
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx + dy
+}
+
+func resolveAttackMode(attacker stats, target stats) (attackMode, error) {
+	distance := manhattanDistance(attacker, target)
+	if distance == 1 {
+		return attackModeMelee, nil
+	}
+	if attacker.IsRanged && distance > 1 && distance <= attacker.AttackRange {
+		return attackModeRanged, nil
+	}
+	return "", fmt.Errorf("цель вне дистанции атаки")
 }
 
 // --- Расчёт урона и оставшегося HP ----------------------------------------
@@ -643,8 +698,9 @@ func doCounterattackWithEnergy(
 	defenderType string, defenderID int, // <-- кто контратакует
 	attackerStats stats, defenderStats stats,
 	targetAlive bool,
+	allowCounterattack bool,
 ) (attackResult, error) {
-	if !targetAlive {
+	if !targetAlive || !allowCounterattack {
 		return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
 	}
 
@@ -710,25 +766,6 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- ENERGY COST FOR ATTACK ---
-	if req.AttackerType == "player" {
-		player, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
-		if err != nil {
-			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
-			return
-		}
-		if player.Energy < attackEnergyCost {
-			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
-			return
-		}
-		player.Energy -= attackEnergyCost
-		if err := repository.UpdateMatchPlayer(req.InstanceID, player); err != nil {
-			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
-			return
-		}
-	}
-	// -------------------------------
-
 	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
 	if err != nil {
 		log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
@@ -741,6 +778,34 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load target stats", http.StatusInternalServerError)
 		return
 	}
+	mode, err := resolveAttackMode(atkStats, defStats)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// --- ENERGY COST FOR ATTACK ---
+	if req.AttackerType == "player" {
+		player, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		if err != nil {
+			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+			return
+		}
+		attackCost := attackEnergyCost
+		if mode == attackModeRanged {
+			attackCost = rangedAttackEnergyCost
+		}
+		if player.Energy < attackCost {
+			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
+			return
+		}
+		player.Energy -= attackCost
+		if err := repository.UpdateMatchPlayer(req.InstanceID, player); err != nil {
+			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
+			return
+		}
+	}
+	// -------------------------------
 
 	// 4) Урон по цели
 	targetRes := applyDamage(atkStats, defStats)
@@ -759,6 +824,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		req.TargetType, req.TargetID,
 		atkStats, defStats,
 		targetRes.NewHealth > 0,
+		mode == attackModeMelee,
 	)
 
 	// 8) HTTP-ответ
@@ -767,6 +833,7 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		"new_target_hp":    targetRes.NewHealth,
 		"counter_damage":   counterRes.Damage,
 		"new_attacker_hp":  counterRes.NewHealth,
+		"attack_mode":      mode,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

@@ -28,8 +28,11 @@ export function usePlayerActions(
     myPlayer: PlayerState | undefined;
     isMyTurn: boolean;
     handleMoveOrAttack: (direction: MoveDirection) => Promise<void>;
+    handleCellClick: (cell: Cell) => Promise<void>;
+    handlePlayerClick: (targetPlayer: PlayerState) => Promise<void>;
     movePlayer: (x: number, y: number) => Promise<PlayerState | null>;
     fightMonster: (cellX: number, cellY: number) => Promise<void>;
+    fightPlayer: (targetUserId: number) => Promise<void>;
     openBarrel: (cellX: number, cellY: number) => Promise<any>;
     collectResource: (cellX: number, cellY: number) => Promise<void>;
 } {
@@ -99,6 +102,28 @@ export function usePlayerActions(
             });
         },
         [user, state.grid, instanceId, myPlayerId],
+    );
+
+    const fightPlayer = useCallback(
+        async (targetUserId: number) => {
+            const token = user?.token;
+            if (!token || !myPlayerId || targetUserId === myPlayerId) return;
+            await fetch(`${API_BASE}/game/attack`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    instance_id: instanceId,
+                    attacker_type: "player",
+                    attacker_id: myPlayerId,
+                    target_type: "player",
+                    target_id: targetUserId,
+                }),
+            });
+        },
+        [user, instanceId, myPlayerId],
     );
 
     const openBarrel = useCallback(
@@ -182,12 +207,96 @@ export function usePlayerActions(
         [myPlayer, isMyTurn, state.grid, movePlayer, fightMonster],
     );
 
+    const getDistance = useCallback(
+        (cellX: number, cellY: number) => {
+            if (!myPlayer) return Number.MAX_SAFE_INTEGER;
+            return (
+                Math.abs(myPlayer.position.x - cellX) +
+                Math.abs(myPlayer.position.y - cellY)
+            );
+        },
+        [myPlayer],
+    );
+
+    const canAttackAtDistance = useCallback(
+        (distance: number) => {
+            if (!myPlayer) return false;
+            if (distance === 1) return true;
+            return (
+                !!myPlayer.isRanged && distance <= (myPlayer.attackRange ?? 1)
+            );
+        },
+        [myPlayer],
+    );
+
+    const handlePlayerClick = useCallback(
+        async (targetPlayer: PlayerState) => {
+            if (
+                !myPlayer ||
+                !isMyTurn ||
+                targetPlayer.user_id === myPlayer.user_id
+            ) {
+                return;
+            }
+            const distance = getDistance(
+                targetPlayer.position.x,
+                targetPlayer.position.y,
+            );
+            if (!canAttackAtDistance(distance)) return;
+            await fightPlayer(targetPlayer.user_id);
+        },
+        [myPlayer, isMyTurn, getDistance, canAttackAtDistance, fightPlayer],
+    );
+
+    const handleCellClick = useCallback(
+        async (cell: Cell) => {
+            if (!myPlayer || !isMyTurn) return;
+
+            const distance = getDistance(cell.x, cell.y);
+            const targetPlayer = state.players.find(
+                (player) =>
+                    player.user_id !== myPlayer.user_id &&
+                    player.position.x === cell.x &&
+                    player.position.y === cell.y,
+            );
+
+            if (cell.monster) {
+                if (!canAttackAtDistance(distance)) return;
+                await fightMonster(cell.x, cell.y);
+                return;
+            }
+
+            if (targetPlayer) {
+                if (!canAttackAtDistance(distance)) return;
+                await fightPlayer(targetPlayer.user_id);
+                return;
+            }
+
+            if (distance === 1) {
+                await movePlayer(cell.x, cell.y);
+            }
+        },
+        [
+            myPlayer,
+            isMyTurn,
+            getDistance,
+            state.players,
+            canAttackAtDistance,
+            fightMonster,
+            fightPlayer,
+            movePlayer,
+        ],
+    );
+
     return {
         myPlayer,
         isMyTurn,
         handleMoveOrAttack,
+        handleCellClick,
+        handlePlayerClick,
         movePlayer,
         fightMonster,
+        fightPlayer,
         openBarrel,
         collectResource,
     };

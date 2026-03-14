@@ -12,6 +12,8 @@ interface PlayerHUDProps {
     maxHealth: number;
     energy: number;
     maxEnergy: number;
+    isRanged?: boolean;
+    attackRange?: number;
 }
 
 export default React.memo(function PlayerHUD({
@@ -19,9 +21,13 @@ export default React.memo(function PlayerHUD({
     maxHealth,
     energy,
     maxEnergy,
+    isRanged,
+    attackRange,
 }: PlayerHUDProps) {
     const healthPercent = Math.round((health / maxHealth) * 100);
     const energyPercent = Math.round((energy / maxEnergy) * 100);
+    const attackTypeLabel = isRanged ? "Дальний" : "Ближний";
+    const attackRangeLabel = isRanged ? (attackRange ?? 1) : 1;
 
     return (
         <div className={styles.hud}>
@@ -48,6 +54,14 @@ export default React.memo(function PlayerHUD({
                 <span>
                     {energy} / {maxEnergy}
                 </span>
+            </div>
+            <div className={styles.hudMetaRow}>
+                <span className={styles.hudMetaLabel}>Тип боя</span>
+                <span className={styles.hudMetaValue}>{attackTypeLabel}</span>
+            </div>
+            <div className={styles.hudMetaRow}>
+                <span className={styles.hudMetaLabel}>Дальность</span>
+                <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>
         </div>
     );

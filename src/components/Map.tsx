@@ -19,7 +19,7 @@ export interface MapProps {
     mapHeight: number;
     tileSize: number;
     gap: number;
-    visionRange: number;
+    sightRange: number;
     playerPosition: { x: number; y: number };
     onCellClick?: (cell: Cell) => void;
 }
@@ -30,7 +30,7 @@ function Map({
     mapHeight,
     tileSize,
     gap,
-    visionRange,
+    sightRange,
     playerPosition,
     onCellClick,
 }: MapProps) {
@@ -66,7 +66,7 @@ function Map({
         for (const cell of grid) {
             const dx = Math.abs(cell.x - playerPosition.x);
             const dy = Math.abs(cell.y - playerPosition.y);
-            const inVision = dx <= visionRange && dy <= visionRange;
+            const inVision = dx <= sightRange && dy <= sightRange;
             const key = `${cell.x}-${cell.y}`;
 
             if (inVision) exploredCellsRef.current.add(key);
@@ -91,7 +91,7 @@ function Map({
         mapHeight,
         playerPosition.x,
         playerPosition.y,
-        visionRange,
+        sightRange,
         playerMap,
     ]);
 

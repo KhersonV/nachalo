@@ -14,6 +14,7 @@ type PlayerResponse struct {
 	UserID   int    `json:"user_id"`
 	Name     string `json:"name"`
 	Image    string `json:"image"`
+	CharacterType string `json:"characterType"`
 	Position struct {
 		X int `json:"x"`
 		Y int `json:"y"`
@@ -27,10 +28,11 @@ type PlayerResponse struct {
 	MaxExperience   int    `json:"maxExperience"`
 	Attack          int    `json:"attack"`
 	Defense         int    `json:"defense"`
-	Speed           int    `json:"speed"`
-	Maneuverability int    `json:"maneuverability"`
-	Vision          int    `json:"vision"`
-	VisionRange     int    `json:"visionRange"`
+	Mobility        int    `json:"mobility"`
+	Agility         int    `json:"agility"`
+	SightRange      int    `json:"sightRange"`
+	IsRanged        bool   `json:"isRanged"`
+	AttackRange     int    `json:"attackRange"`
 	Balance         int    `json:"balance"`
 	GroupID         int    `json:"group_id"`
 	Inventory       string `json:"inventory"`

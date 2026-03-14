@@ -46,12 +46,12 @@ export type PlayerState = {
     level: number;
     experience: number;
     maxExperience: number;
-    visionRange: number;
+    sightRange: number;
     inventory: Inventory;
-    speed: number;
-    maneuverability: number;
-    rangeAttack?: boolean;
-    rangeDistance?: number;
+    mobility: number;
+    agility: number;
+    isRanged?: boolean;
+    attackRange?: number;
 };
 
 export type MonsterType = {
