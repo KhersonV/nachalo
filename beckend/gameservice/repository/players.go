@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	"gameservice/models"
 )
@@ -198,6 +200,11 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 
 	// 3) Применяем каждую награду
 	for key, amount := range rewards {
+		// По политике переноса инвентаря артефакты не должны переходить между матчами.
+		if strings.HasPrefix(key, "artifact_") || key == "artifact" {
+			continue
+		}
+
 		switch key {
 		case "balance", "coin", "coins":
 			player.Balance += amount
@@ -220,6 +227,111 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 	// 4) Сохраняем изменени
 	if err := UpdatePlayer(player); err != nil {
 		return fmt.Errorf("AddPlayerRewards: update player: %w", err)
+	}
+	return nil
+}
+
+// SyncPersistentInventoryFromMatchResources переносит в players.inventory итог матча
+// и удаляет артефакты из постоянного инвентаря.
+func SyncPersistentInventoryFromMatchResources(instanceID string, userID int) error {
+	matchPlayer, err := GetMatchPlayerByID(instanceID, userID)
+	if err != nil {
+		return fmt.Errorf("SyncPersistentInventoryFromMatchResources: fetch match player: %w", err)
+	}
+
+	finalInv := make(map[string]map[string]interface{})
+	if matchPlayer.Health > 0 && matchPlayer.Inventory != "" && matchPlayer.Inventory != "{}" {
+		if err := json.Unmarshal([]byte(matchPlayer.Inventory), &finalInv); err != nil {
+			finalInv = make(map[string]map[string]interface{})
+		}
+	}
+
+	// Явно удаляем артефакты по ключу из JSON инвентаря.
+	for key := range finalInv {
+		if strings.HasPrefix(key, "artifact_") || key == "artifact" {
+			delete(finalInv, key)
+		}
+	}
+
+	player, err := GetPlayerByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("SyncPersistentInventoryFromMatchResources: fetch player: %w", err)
+	}
+
+	b, err := json.Marshal(finalInv)
+	if err != nil {
+		return fmt.Errorf("SyncPersistentInventoryFromMatchResources: marshal inventory: %w", err)
+	}
+	player.Inventory = string(b)
+
+	if err := UpdatePlayer(player); err != nil {
+		return fmt.Errorf("SyncPersistentInventoryFromMatchResources: update player: %w", err)
+	}
+
+	return nil
+}
+
+// ConsumePlayerInventoryItem уменьшает количество предмета в перманентном players.inventory.
+// Это нужно для синхронизации трат купленных в магазине предметов между матчами.
+func ConsumePlayerInventoryItem(userID int, itemType string, itemID int, count int) error {
+	if count <= 0 {
+		count = 1
+	}
+
+	player, err := GetPlayerByUserID(userID)
+	if err != nil {
+		return fmt.Errorf("ConsumePlayerInventoryItem: fetch player: %w", err)
+	}
+
+	inv := make(map[string]map[string]interface{})
+	if player.Inventory != "" && player.Inventory != "{}" {
+		if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
+			inv = make(map[string]map[string]interface{})
+		}
+	}
+
+	key := fmt.Sprintf("%s_%d", itemType, itemID)
+	entry, ok := inv[key]
+	if !ok {
+		// Нечего списывать — считаем это no-op.
+		return nil
+	}
+
+	current := 0
+	switch v := entry["item_count"].(type) {
+	case float64:
+		current = int(v)
+	case int:
+		current = v
+	case int64:
+		current = int(v)
+	case string:
+		parsed, parseErr := strconv.Atoi(v)
+		if parseErr == nil {
+			current = parsed
+		} else {
+			current = 0
+		}
+	default:
+		current = 0
+	}
+
+	next := current - count
+	if next > 0 {
+		entry["item_count"] = next
+		inv[key] = entry
+	} else {
+		delete(inv, key)
+	}
+
+	b, err := json.Marshal(inv)
+	if err != nil {
+		return fmt.Errorf("ConsumePlayerInventoryItem: marshal inventory: %w", err)
+	}
+	player.Inventory = string(b)
+
+	if err := UpdatePlayer(player); err != nil {
+		return fmt.Errorf("ConsumePlayerInventoryItem: update player: %w", err)
 	}
 	return nil
 }

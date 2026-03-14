@@ -19,7 +19,7 @@ import (
 func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -54,6 +54,27 @@ func main() {
 	router.HandleFunc("/game/matches/{instance_id}/players/{id}", handlers.GetMatchPlayerHandler).Methods("GET")
 
 	router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
+	router.HandleFunc("/game/shop/items", handlers.GetShopItemsHandler).Methods("GET")
+	router.Handle(
+		"/game/shop/buy",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuyShopItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/base/state",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetBaseStateHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/base/forge/build",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildForgeHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/profile",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/profile",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UpdateProfileHandler)),
+	).Methods("PATCH")
 
 	// === Эндпоинты для инвентаря ===
 	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")

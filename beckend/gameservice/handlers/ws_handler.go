@@ -306,3 +306,35 @@ var broadcastFn = func(message []byte) {
 func Broadcast(msg []byte) {
 	broadcastFn(msg)
 }
+
+// IsUserOnline returns true when user currently has an active WebSocket connection.
+func IsUserOnline(userID int) bool {
+	if userID == 0 {
+		return false
+	}
+	clientsMu.Lock()
+	_, ok := clients[userID]
+	clientsMu.Unlock()
+	return ok
+}
+
+// GetUserActivityStatus returns one of: in_match, in_lobby, offline.
+func GetUserActivityStatus(userID int) string {
+	if userID == 0 {
+		return "offline"
+	}
+
+	clientsMu.Lock()
+	client, ok := clients[userID]
+	clientsMu.Unlock()
+
+	if !ok {
+		return "offline"
+	}
+
+	if client.instanceID != "" {
+		return "in_match"
+	}
+
+	return "in_lobby"
+}

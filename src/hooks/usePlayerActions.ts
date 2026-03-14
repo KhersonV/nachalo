@@ -202,9 +202,28 @@ export function usePlayerActions(
                 await fightMonster(targetCell.x, targetCell.y);
                 return;
             }
-            await movePlayer(targetX, targetY);
+
+            const moved = await movePlayer(targetX, targetY);
+            if (!moved) return;
+
+            if (targetCell.resource) {
+                await collectResource(targetCell.x, targetCell.y);
+                return;
+            }
+
+            if (targetCell.barbel) {
+                await openBarrel(targetCell.x, targetCell.y);
+            }
         },
-        [myPlayer, isMyTurn, state.grid, movePlayer, fightMonster],
+        [
+            myPlayer,
+            isMyTurn,
+            state.grid,
+            movePlayer,
+            fightMonster,
+            collectResource,
+            openBarrel,
+        ],
     );
 
     const getDistance = useCallback(
@@ -273,7 +292,17 @@ export function usePlayerActions(
             }
 
             if (distance === 1) {
-                await movePlayer(cell.x, cell.y);
+                const moved = await movePlayer(cell.x, cell.y);
+                if (!moved) return;
+
+                if (cell.resource) {
+                    await collectResource(cell.x, cell.y);
+                    return;
+                }
+
+                if (cell.barbel) {
+                    await openBarrel(cell.x, cell.y);
+                }
             }
         },
         [
@@ -285,6 +314,8 @@ export function usePlayerActions(
             fightMonster,
             fightPlayer,
             movePlayer,
+            collectResource,
+            openBarrel,
         ],
     );
 

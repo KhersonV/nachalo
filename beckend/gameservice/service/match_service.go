@@ -25,6 +25,10 @@ func FinalizeMatch(instanceID string) error {
 
 	// 2) Начислить опыт и награды каждому игроку
 	for _, r := range results.PlayerResults {
+		if err := repository.SyncPersistentInventoryFromMatchResources(instanceID, r.UserID); err != nil {
+			log.Printf("SyncPersistentInventoryFromMatchResources failed for user %d: %v", r.UserID, err)
+		}
+
 		if err := repository.AddPlayerExperience(r.UserID, r.ExpGained); err != nil {
 			log.Printf("AddPlayerExperience failed for user %d: %v", r.UserID, err)
 		}

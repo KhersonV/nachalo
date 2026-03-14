@@ -52,6 +52,7 @@ func InitDB() {
 	EnsureStaticGameData()
 	CreateMatchStatsTable()
 	CreateMatchPlayerStatsTable()
+	EnsurePlayerBaseBuildingsTable()
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
 

@@ -7,6 +7,7 @@ package repository
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"gameservice/game"
@@ -24,6 +25,28 @@ func effectToBytes(value any) []byte {
 		b, _ := json.Marshal(v)
 		return b
 	}
+}
+
+// GetResourceByType возвращает ресурс по его типу (например food/water).
+func GetResourceByType(resourceType string) (*game.ResourceData, error) {
+	var rd game.ResourceData
+	var effectValue any
+	err := DB.QueryRow(
+		`SELECT id, type, description, effect, image FROM resources WHERE type = $1 LIMIT 1`,
+		resourceType,
+	).Scan(&rd.ID, &rd.Type, &rd.Description, &effectValue, &rd.Image)
+	if err != nil {
+		return nil, fmt.Errorf("GetResourceByType: %w", err)
+	}
+
+	effectBytes := effectToBytes(effectValue)
+	var effect map[string]int
+	if err := json.Unmarshal(effectBytes, &effect); err != nil {
+		effect = make(map[string]int)
+	}
+	rd.Effect = effect
+	rd.Image = strings.Trim(rd.Image, "\"")
+	return &rd, nil
 }
 
 // GetResourcesData извлекает данные ресурсов из таблицы resources
