@@ -10,11 +10,187 @@
     margin: 0;
 }
 
+.partyPanel {
+    margin-top: 1rem;
+    border: 1px solid rgba(126, 228, 255, 0.28);
+    border-radius: 14px;
+    padding: 1rem;
+    background: linear-gradient(rgba(10, 30, 48, 0.92), rgba(5, 13, 22, 0.88));
+    color: #eefbff;
+    display: grid;
+    gap: 0.9rem;
+}
+
+.partyHeaderRow {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.partyTitle {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.partySubtitle {
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+    color: rgba(238, 251, 255, 0.78);
+}
+
+.partyMeta {
+    color: #7ee4ff;
+    font-weight: 700;
+}
+
+.partyError {
+    margin: 0;
+    color: #ff9aa5;
+}
+
+.partyInfo {
+    margin: 0;
+    color: #9ff2b5;
+}
+
+.partyMuted {
+    margin: 0;
+    color: rgba(238, 251, 255, 0.66);
+    font-size: 0.88rem;
+}
+
+.partyMembers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+
+.partyMemberCard {
+    border: 1px solid rgba(126, 228, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(17, 38, 56, 0.74);
+    padding: 0.75rem;
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    gap: 0.7rem;
+    align-items: center;
+}
+
+.partyAvatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.partyMemberMeta {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.84rem;
+}
+
+.partyLeaderBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    border-radius: 999px;
+    padding: 0.15rem 0.5rem;
+    background: rgba(126, 228, 255, 0.16);
+    color: #7ee4ff;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.partyActionsRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+}
+
+.partyInviteSection {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.partyInviteTitle {
+    margin: 0;
+    font-size: 0.98rem;
+}
+
+.partyInviteGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.7rem;
+}
+
+.partyInviteCard {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    background: rgba(18, 31, 49, 0.72);
+    padding: 0.7rem;
+    display: grid;
+    gap: 0.5rem;
+}
+
+.partyInviteMeta {
+    display: grid;
+    gap: 0.15rem;
+    font-size: 0.82rem;
+}
+
+.partyActionButton,
+.partySecondaryButton {
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.partyActionButton {
+    background: linear-gradient(
+        rgba(126, 228, 255, 0.92),
+        rgba(18, 162, 205, 0.9)
+    );
+    color: #042a35;
+}
+
+.partySecondaryButton {
+    background: rgba(116, 148, 169, 0.18);
+    color: #eefbff;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.partyActionButton:disabled,
+.partySecondaryButton:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .modeContainer {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1rem;
     margin: 1rem 0;
+}
+
+@media (max-width: 900px) {
+    .modeContainer {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .modeContainer {
+        grid-template-columns: 1fr;
+    }
+
+    .partyMemberCard {
+        grid-template-columns: 48px 1fr;
+    }
 }
 
 .modeBlock {
@@ -46,6 +222,12 @@
 .modeBlockMatching {
     border-color: #28a745; /* зелёная рамка */
     background: linear-gradient(rgba(40, 167, 69, 0.7), rgba(0, 0, 0, 0.4));
+}
+
+.modeBlockDisabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.25);
 }
 
 .startButton {

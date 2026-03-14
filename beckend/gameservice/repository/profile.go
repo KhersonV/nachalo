@@ -39,10 +39,9 @@ func GetPlayerProgressSummary(userID int) (*PlayerProgressSummary, error) {
 
     if err := DB.QueryRow(`
         SELECT COUNT(*)
-        FROM match_player_stats mps
-        JOIN match_stats ms ON ms.instance_id = mps.instance_id
-        WHERE mps.user_id = $1
-          AND ms.winner_id = $1
+        FROM match_player_stats
+        WHERE user_id = $1
+          AND is_winner = TRUE
     `, userID).Scan(&summary.Wins); err != nil {
         return nil, fmt.Errorf("GetPlayerProgressSummary: wins: %w", err)
     }

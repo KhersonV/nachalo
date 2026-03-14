@@ -22,6 +22,7 @@ type MatchInfo struct {
 	PortalPosition  json.RawMessage `json:"portal_position"`
 	WinnerID        int             `json:"winner_id"`
 	WinnerGroupID   int             `json:"winner_group_id"`
+	WinnerUserIDs   []int           `json:"winner_user_ids,omitempty"`
 	QuestArtifactID int             `json:"quest_artifact_id"`
 }
 

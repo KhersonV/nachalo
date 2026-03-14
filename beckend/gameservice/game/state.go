@@ -18,6 +18,7 @@ import(
 // PlayerResult — результат одного игрока
 type PlayerResult struct {
     UserID           int             // ID игрока
+    IsWinner         bool            // победил ли игрок в этом матче
     ExpGained        int             // сколько опыта дать
     RewardsData      json.RawMessage // JSON-представление наград
     PlayerKills      int             // сколько игроков убил
@@ -32,6 +33,7 @@ type MatchResults struct {
     PlayerResults   []PlayerResult
     WinnerID        int
     WinnerGroupID   int
+    WinnerUserIDs   []int
 }
 
 type MonsterState struct {

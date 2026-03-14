@@ -28,11 +28,15 @@ var (
 	clients   = make(map[int]*Client)
 	clientsMu sync.Mutex
 
+	httpPresenceMu sync.Mutex
+	httpPresence   = make(map[int]time.Time)
+
 	disconnectGraceMu sync.Mutex
 	disconnectGrace   = make(map[string]*time.Timer)
 )
 
 const reconnectGracePeriod = 3 * time.Minute
+const httpPresenceTTL = 30 * time.Second
 
 // Client представляет подключённого клиента WebSocket.
 type Client struct {
@@ -312,10 +316,17 @@ func IsUserOnline(userID int) bool {
 	if userID == 0 {
 		return false
 	}
-	clientsMu.Lock()
-	_, ok := clients[userID]
-	clientsMu.Unlock()
-	return ok
+	return GetUserActivityStatus(userID) != "offline"
+}
+
+// MarkUserHTTPActive updates lobby presence for users interacting via authenticated HTTP endpoints.
+func MarkUserHTTPActive(userID int) {
+	if userID == 0 {
+		return
+	}
+	httpPresenceMu.Lock()
+	httpPresence[userID] = time.Now()
+	httpPresenceMu.Unlock()
 }
 
 // GetUserActivityStatus returns one of: in_match, in_lobby, offline.
@@ -329,6 +340,12 @@ func GetUserActivityStatus(userID int) string {
 	clientsMu.Unlock()
 
 	if !ok {
+		httpPresenceMu.Lock()
+		lastSeen, hasHTTP := httpPresence[userID]
+		httpPresenceMu.Unlock()
+		if hasHTTP && time.Since(lastSeen) <= httpPresenceTTL {
+			return "in_lobby"
+		}
 		return "offline"
 	}
 

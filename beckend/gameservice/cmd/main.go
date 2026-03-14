@@ -19,7 +19,7 @@ import (
 func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -75,6 +75,46 @@ func main() {
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UpdateProfileHandler)),
 	).Methods("PATCH")
+	router.Handle(
+		"/game/profile/{id}",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetPublicProfileHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/friends",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetFriendsHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/friends/add",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AddFriendHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/friends/{id}",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.RemoveFriendHandler)),
+	).Methods("DELETE")
+	router.Handle(
+		"/game/players/search",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SearchPlayersHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/friends/requests/incoming",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetIncomingFriendRequestsHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/friends/requests/outgoing",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetOutgoingFriendRequestsHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/friends/requests/{id}/accept",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AcceptFriendRequestHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/friends/requests/{id}/reject",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.RejectFriendRequestHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/friends/requests/{id}",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CancelOutgoingFriendRequestHandler)),
+	).Methods("DELETE")
 
 	// === Эндпоинты для инвентаря ===
 	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")

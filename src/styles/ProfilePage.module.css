@@ -28,6 +28,19 @@
     cursor: pointer;
 }
 
+.dangerBtn {
+    border: none;
+    border-radius: 10px;
+    padding: 0.58rem 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff0f0;
+    background: linear-gradient(
+        rgba(153, 35, 35, 0.95),
+        rgba(111, 20, 20, 0.92)
+    );
+}
+
 .backBtn {
     color: #e8f6ff;
     background: linear-gradient(
@@ -177,6 +190,56 @@
     flex-wrap: wrap;
 }
 
+.lookupRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.6rem;
+    align-items: end;
+}
+
+.previewCard {
+    margin-top: 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    padding: 0.75rem;
+    display: grid;
+    gap: 0.6rem;
+    background: rgba(7, 24, 37, 0.55);
+}
+
+.friendList {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.friendItem {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    padding: 0.5rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    background: rgba(5, 20, 33, 0.55);
+}
+
+.friendAvatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 9px;
+    object-fit: cover;
+}
+
+.friendMeta {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.friendMeta span {
+    font-size: 0.78rem;
+    color: rgba(226, 241, 255, 0.84);
+}
+
 .info {
     color: #9ff5b9;
 }
@@ -240,6 +303,10 @@
     .grid {
         grid-template-columns: 1fr;
     }
+
+    .friendItem {
+        grid-template-columns: auto 1fr;
+    }
 }
 
 @media (max-width: 560px) {
@@ -257,8 +324,13 @@
     }
 
     .backBtn,
-    .primaryBtn {
+    .primaryBtn,
+    .dangerBtn {
         width: 100%;
+    }
+
+    .lookupRow {
+        grid-template-columns: 1fr;
     }
 
     .identityRow {

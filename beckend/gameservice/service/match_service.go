@@ -42,6 +42,7 @@ func FinalizeMatch(instanceID string) error {
 		InstanceID:    instanceID,
 		WinnerID:      results.WinnerID,
 		WinnerGroupID: results.WinnerGroupID,
+		WinnerUserIDs: results.WinnerUserIDs,
 	}
 	if err := repository.SaveMatchStats(&stats); err != nil {
 		log.Printf("SaveMatchStats failed: %v", err)

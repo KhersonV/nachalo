@@ -42,6 +42,7 @@ type RequestMatch struct {
 	InstanceID   string `json:"instance_id"`
 	Mode         string `json:"mode"`
 	PlayerIDs    []int  `json:"player_ids"`
+	GroupIDs     []int  `json:"group_ids"`
 	TeamsCount   int    `json:"teams_count"`
 	TotalPlayers int    `json:"total_players"`
 }
@@ -166,6 +167,7 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 func assignMatchPlayers(
 	instanceID string,
 	playerIDs []int,
+	groupIDs []int,
 	starts [][2]int,
 	mode string,
 ) error {
@@ -206,6 +208,9 @@ func assignMatchPlayers(
 			x, y = starts[0][0], starts[0][1]
 		}
 		groupID := (i / playersPerTeam) + 1
+		if i < len(groupIDs) && groupIDs[i] > 0 {
+			groupID = groupIDs[i]
+		}
 		if err := repository.CreateMatchPlayerCopy(instanceID, p, x, y, groupID); err != nil {
 			return fmt.Errorf("failed to insert player %d: %w", uid, err)
 		}
@@ -280,6 +285,10 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.PlayerIDs) != req.TotalPlayers {
 		http.Error(w, "Неверное количество player_ids", http.StatusBadRequest)
+		return
+	}
+	if len(req.GroupIDs) > 0 && len(req.GroupIDs) != len(req.PlayerIDs) {
+		http.Error(w, "Неверное количество group_ids", http.StatusBadRequest)
 		return
 	}
 
@@ -373,7 +382,7 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 // 9. Копируем игроков в матч
-if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, startPositions, req.Mode); err != nil {
+if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, req.GroupIDs, startPositions, req.Mode); err != nil {
 	_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
 	handleError(w, "[CreateMatch] failed to assign players", err)
 	return

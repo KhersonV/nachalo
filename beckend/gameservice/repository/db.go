@@ -8,9 +8,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"gameservice/game"
 	"log"
 	"os"
-	"gameservice/game"
 
 	_ "github.com/lib/pq"
 )
@@ -51,7 +51,11 @@ func InitDB() {
 	CreatePersistedArtifactsTable()
 	EnsureStaticGameData()
 	CreateMatchStatsTable()
+	EnsureMatchStatsWinnerUsersColumn()
 	CreateMatchPlayerStatsTable()
+	EnsureMatchPlayerStatsWinnerColumn()
+	CreatePlayerFriendsTable()
+	CreatePlayerFriendRequestsTable()
 	EnsurePlayerBaseBuildingsTable()
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
@@ -225,6 +229,40 @@ func EnsureQuestArtifactColumn() {
 	_, err := DB.Exec(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS quest_artifact_id INTEGER DEFAULT 0`)
 	if err != nil {
 		log.Printf("EnsureQuestArtifactColumn: %v", err)
+	}
+}
+
+func CreatePlayerFriendsTable() {
+	query := `
+	CREATE TABLE IF NOT EXISTS player_friends (
+		user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		friend_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (user_id, friend_user_id),
+		CHECK (user_id <> friend_user_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_player_friends_user_id ON player_friends(user_id);
+	CREATE INDEX IF NOT EXISTS idx_player_friends_friend_user_id ON player_friends(friend_user_id);
+	`
+	if _, err := DB.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы player_friends: %v", err)
+	}
+}
+
+func CreatePlayerFriendRequestsTable() {
+	query := `
+	CREATE TABLE IF NOT EXISTS player_friend_requests (
+		requester_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		target_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (requester_user_id, target_user_id),
+		CHECK (requester_user_id <> target_user_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_player_friend_requests_target ON player_friend_requests(target_user_id);
+	CREATE INDEX IF NOT EXISTS idx_player_friend_requests_requester ON player_friend_requests(requester_user_id);
+	`
+	if _, err := DB.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы player_friend_requests: %v", err)
 	}
 }
 
@@ -565,11 +603,48 @@ func CreateMatchStatsTable() {
                            ON DELETE CASCADE,
         winner_id        INTEGER     NOT NULL,
         winner_group_id  INTEGER     NOT NULL,
+		winner_user_ids  JSONB       NOT NULL DEFAULT '[]'::jsonb,
         created_at       TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
     );
     `
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_stats: %v", err)
+	}
+}
+
+func EnsureMatchStatsWinnerUsersColumn() {
+	_, err := DB.Exec(`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS winner_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsWinnerUsersColumn add column: %v", err)
+		return
+	}
+
+	// Backfill from per-player match stats where winner flags are available.
+	_, err = DB.Exec(`
+		UPDATE match_stats ms
+		SET winner_user_ids = COALESCE(src.winners, '[]'::jsonb)
+		FROM (
+			SELECT instance_id, jsonb_agg(user_id ORDER BY user_id) AS winners
+			FROM match_player_stats
+			WHERE is_winner = TRUE
+			GROUP BY instance_id
+		) AS src
+		WHERE ms.instance_id = src.instance_id
+		  AND (ms.winner_user_ids IS NULL OR ms.winner_user_ids = '[]'::jsonb)
+	`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsWinnerUsersColumn backfill winners: %v", err)
+	}
+
+	// Fallback for solo winners if per-player winner flags are absent.
+	_, err = DB.Exec(`
+		UPDATE match_stats
+		SET winner_user_ids = jsonb_build_array(winner_id)
+		WHERE winner_id > 0
+		  AND (winner_user_ids IS NULL OR winner_user_ids = '[]'::jsonb)
+	`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsWinnerUsersColumn backfill solo: %v", err)
 	}
 }
 
@@ -581,6 +656,7 @@ func CreateMatchPlayerStatsTable() {
                                  REFERENCES match_stats(instance_id)
                                  ON DELETE CASCADE,
         user_id            INTEGER  NOT NULL,
+		is_winner          BOOLEAN  NOT NULL DEFAULT FALSE,
         exp_gained         INTEGER  NOT NULL,
         rewards            JSONB    NOT NULL,
         player_kills       INTEGER  NOT NULL,
@@ -593,6 +669,27 @@ func CreateMatchPlayerStatsTable() {
     `
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_player_stats: %v", err)
+	}
+}
+
+func EnsureMatchPlayerStatsWinnerColumn() {
+	_, err := DB.Exec(`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS is_winner BOOLEAN NOT NULL DEFAULT FALSE`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayerStatsWinnerColumn add column: %v", err)
+		return
+	}
+
+	// Backfill historical solo wins where winner_id was stored explicitly.
+	_, err = DB.Exec(`
+        UPDATE match_player_stats mps
+        SET is_winner = TRUE
+        FROM match_stats ms
+        WHERE ms.instance_id = mps.instance_id
+          AND ms.winner_id > 0
+          AND ms.winner_id = mps.user_id
+    `)
+	if err != nil {
+		log.Printf("EnsureMatchPlayerStatsWinnerColumn backfill: %v", err)
 	}
 }
 
@@ -712,6 +809,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 		mr.PlayerResults = append(mr.PlayerResults, game.PlayerResult{
 			UserID:           userID,
+			IsWinner:         false,
 			ExpGained:        exp,
 			RewardsData:      rewardsJSON,
 			PlayerKills:      killsP,
@@ -732,6 +830,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		} else if mr.WinnerID > 0 {
 			isWinner = mr.PlayerResults[i].UserID == mr.WinnerID
 		}
+		mr.PlayerResults[i].IsWinner = isWinner
 		if !isWinner {
 			continue
 		}
@@ -760,6 +859,14 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 			mr.PlayerResults[i].RewardsData = b
 		}
 	}
+
+	winnerUserIDs := make([]int, 0)
+	for i := range mr.PlayerResults {
+		if mr.PlayerResults[i].IsWinner {
+			winnerUserIDs = append(winnerUserIDs, mr.PlayerResults[i].UserID)
+		}
+	}
+	mr.WinnerUserIDs = winnerUserIDs
 
 	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
 	if len(mr.PlayerResults) == 0 {
