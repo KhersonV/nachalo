@@ -33,7 +33,7 @@
 }
 
 .controlsContainer {
-    width: min(100%, 1120px);
+    width: min(100%, 820px);
     margin: 0 auto;
     display: flex;
     align-items: center;
