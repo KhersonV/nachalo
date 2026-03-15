@@ -9,7 +9,7 @@ import { useSelector } from "react-redux";
 import { shallowEqual } from "react-redux";
 import type { RootState } from "@/store";
 import Map from "./Map";
-import type { Cell, PlayerState } from "../types/GameTypes";
+import type { Cell, PlayerState } from "../types";
 import { useInfoModal } from "./InfoModal";
 import { cellToGameObject, playerToGameObject } from "../utils/toGameObject";
 import { useCombatFloaters } from "../hooks/useCombatFloaters";

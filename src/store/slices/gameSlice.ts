@@ -1,10 +1,5 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import type {
-    GameState,
-    PlayerState,
-    Inventory,
-    Cell,
-} from "../../types/GameTypes";
+import type { GameState, PlayerState, Inventory, Cell } from "../../types";
 
 const initialState: GameState = {
     instanceId: "",

@@ -49,6 +49,16 @@ func GetResourceByType(resourceType string) (*game.ResourceData, error) {
 	return &rd, nil
 }
 
+// GetResourceTypeByID returns canonical resource type (food, water, wood, etc.) by resource ID.
+func GetResourceTypeByID(resourceID int) (string, error) {
+	var resourceType string
+	err := DB.QueryRow(`SELECT type FROM resources WHERE id = $1 LIMIT 1`, resourceID).Scan(&resourceType)
+	if err != nil {
+		return "", fmt.Errorf("GetResourceTypeByID: %w", err)
+	}
+	return strings.ToLower(strings.TrimSpace(resourceType)), nil
+}
+
 // GetResourcesData извлекает данные ресурсов из таблицы resources
 // и возвращает срез game.ResourceData.
 func GetResourcesData() ([]game.ResourceData, error) {

@@ -4,21 +4,51 @@
 
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useAuth } from "../contexts/AuthContext";
 import type { RootState } from "../store";
-import type { RawInventoryItem, PlayerState } from "../types/GameTypes";
+import type { RawInventoryItem, PlayerState } from "../types";
 import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
+
+const isConsumableResource = (item: RawInventoryItem): boolean => {
+    if (item.item_type !== "resource") return false;
+    const effect = item.effect || {};
+    if (
+        typeof effect.health === "number" ||
+        typeof effect.energy === "number"
+    ) {
+        return true;
+    }
+
+    const normalizedName = String(item.name || "")
+        .trim()
+        .toLowerCase();
+    return (
+        normalizedName === "food" ||
+        normalizedName === "water" ||
+        normalizedName === "еда" ||
+        normalizedName === "вода"
+    );
+};
 
 const Inventory: React.FC = () => {
     const dispatch = useDispatch();
     const state = useSelector((state: RootState) => state.game);
     const { user } = useAuth();
     const instanceId = state.instanceId;
+    const [feedback, setFeedback] = useState("");
+
+    useEffect(() => {
+        if (!feedback) return;
+        const timer = window.setTimeout(() => {
+            setFeedback("");
+        }, 4000);
+        return () => window.clearTimeout(timer);
+    }, [feedback]);
 
     const player = state.players.find((p) => p.user_id === user?.id);
     if (!player) return <div>Инвентарь недоступен</div>;
@@ -113,6 +143,8 @@ const Inventory: React.FC = () => {
     ) => {
         if (item.item_count <= 0 || !user) return;
 
+        setFeedback("");
+
         const [item_type, idStr] = key.split("_");
         const item_id = parseInt(idStr, 10);
 
@@ -120,7 +152,7 @@ const Inventory: React.FC = () => {
             const stored = localStorage.getItem("user");
             const token = stored ? JSON.parse(stored).token : "";
             if (!token) {
-                console.error("Токен не найден");
+                setFeedback("Сессия не найдена. Войдите снова.");
                 return;
             }
 
@@ -141,15 +173,14 @@ const Inventory: React.FC = () => {
                 },
             );
             if (!res.ok) {
-                console.error(
-                    "Ошибка использования предмета",
-                    await res.text(),
-                );
+                const errorText = await res.text();
+                setFeedback(errorText || "Не удалось использовать предмет");
+                return;
             }
             const updatedPlayer = (await res.json()) as PlayerState;
             dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
         } catch (err) {
-            console.error("Ошибка запроса на использование предмета", err);
+            setFeedback("Ошибка сети при использовании предмета");
         }
     };
 
@@ -173,14 +204,16 @@ const Inventory: React.FC = () => {
                             <div className={styles.itemCount}>
                                 Кол-во: {item.item_count}
                             </div>
-                            <button
-                                className={styles.useButton}
-                                onClick={() =>
-                                    handleUseItem(section, key, item)
-                                }
-                            >
-                                Использовать
-                            </button>
+                            {isConsumableResource(item) && (
+                                <button
+                                    className={styles.useButton}
+                                    onClick={() =>
+                                        handleUseItem(section, key, item)
+                                    }
+                                >
+                                    Использовать
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -189,9 +222,26 @@ const Inventory: React.FC = () => {
     return (
         <div className={styles.inventoryContainer}>
             <h2 className={styles.title}>Инвентарь</h2>
+            {feedback && (
+                <div className={styles.feedbackRow}>
+                    <p className={styles.feedbackError}>{feedback}</p>
+                    <button
+                        type="button"
+                        className={styles.feedbackCloseButton}
+                        onClick={() => setFeedback("")}
+                        aria-label="Закрыть сообщение"
+                        title="Закрыть"
+                    >
+                        x
+                    </button>
+                </div>
+            )}
             <div className={styles.sections}>
                 <div className={styles.section}>
                     <h3 className={styles.sectionTitle}>Ресурсы</h3>
+                    <p className={styles.sectionHint}>
+                        Лимиты: еда - 1 раз в 2 хода, вода - до 5 за 2 хода.
+                    </p>
                     <div className={styles.itemsContainer}>
                         {renderItems("resources", resources)}
                     </div>

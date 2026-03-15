@@ -4,7 +4,7 @@
 
 import { useDispatch } from "react-redux";
 import { updatePlayer, updateCell } from "../store/slices/gameSlice";
-import type { PlayerState, Cell } from "../types/GameTypes";
+import type { PlayerState, Cell } from "../types";
 import { useCallback, useMemo } from "react";
 import type { RootState } from "../store";
 import type { User } from "../contexts/AuthContext";

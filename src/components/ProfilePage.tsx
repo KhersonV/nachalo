@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
+import LobbyHeader from "./LobbyHeader";
 import styles from "../styles/ProfilePage.module.css";
 
 type ProfileApiResponse = {
@@ -809,6 +810,9 @@ export default function ProfilePage() {
 
     return (
         <div className={styles.page}>
+            <div style={{ marginBottom: "0.95rem" }}>
+                <LobbyHeader />
+            </div>
             <div className={styles.topRow}>
                 <h2 className={styles.title}>Профиль игрока</h2>
                 <button

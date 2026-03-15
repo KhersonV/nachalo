@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
-import { Cell, PlayerState } from "../types/GameTypes";
+import type { Cell, PlayerState } from "../types";
 
 // -- Вынесем базовый адрес WebSocket и HTTP API в константы/ENV --
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws";

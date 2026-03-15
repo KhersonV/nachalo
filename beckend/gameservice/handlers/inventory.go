@@ -9,10 +9,26 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"gameservice/repository"
 
 	"github.com/gorilla/mux"
+)
+
+const (
+	foodCooldownTurns  = 2
+	maxWaterUses2Turns = 5
+)
+
+type consumableUsageState struct {
+	LastFoodTurn int
+	WaterByTurn  map[int]int
+}
+
+var (
+	consumableUseMu          sync.Mutex
+	consumableUseByMatchUser = make(map[string]*consumableUsageState)
 )
 
 // AddInventoryHandler принимает запрос на добавление предмета в инвентарь игрока.
@@ -123,9 +139,88 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Count <= 0 {
 		req.Count = 1
 	}
+	if req.InstanceID == "" {
+		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+		return
+	}
+
+	resourceType, err := repository.GetResourceTypeByID(req.ItemID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Не удалось определить тип ресурса: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if resourceType != "food" && resourceType != "water" {
+		http.Error(w, "Можно использовать только еду и воду", http.StatusBadRequest)
+		return
+	}
+
+	matchInfo, err := repository.GetMatchByID(req.InstanceID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Не удалось получить матч: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	matchUserKey := fmt.Sprintf("%s:%d", req.InstanceID, playerID)
+	turnNumber := matchInfo.TurnNumber
+
+	consumableUseMu.Lock()
+	state, ok := consumableUseByMatchUser[matchUserKey]
+	if !ok {
+		state = &consumableUsageState{WaterByTurn: make(map[int]int)}
+		consumableUseByMatchUser[matchUserKey] = state
+	}
+
+	for turn := range state.WaterByTurn {
+		if turn < turnNumber-1 {
+			delete(state.WaterByTurn, turn)
+		}
+	}
+
+	if resourceType == "food" {
+		if req.Count > 1 {
+			consumableUseMu.Unlock()
+			http.Error(w, "Еду можно использовать только по 1 за раз", http.StatusBadRequest)
+			return
+		}
+		if state.LastFoodTurn > 0 && turnNumber-state.LastFoodTurn < foodCooldownTurns {
+			consumableUseMu.Unlock()
+			http.Error(w, "Еду можно использовать только 1 раз в 2 хода", http.StatusBadRequest)
+			return
+		}
+		state.LastFoodTurn = turnNumber
+	} else if resourceType == "water" {
+		waterUsedLastTwoTurns := state.WaterByTurn[turnNumber] + state.WaterByTurn[turnNumber-1]
+		if waterUsedLastTwoTurns+req.Count > maxWaterUses2Turns {
+			consumableUseMu.Unlock()
+			http.Error(w, "Воды можно использовать максимум 5 за 2 хода", http.StatusBadRequest)
+			return
+		}
+		state.WaterByTurn[turnNumber] += req.Count
+	} else {
+		consumableUseMu.Unlock()
+		http.Error(w, "Неподдерживаемый тип расходника", http.StatusBadRequest)
+		return
+	}
+	consumableUseMu.Unlock()
 
 	// 3. Снижаем количество в normalized таблице и синхронизируем JSON
 	if err := repository.RemoveInventoryItemAndSyncJSON(req.InstanceID, playerID, req.ItemType, req.ItemID, req.Count); err != nil {
+		consumableUseMu.Lock()
+		if rollbackState, ok := consumableUseByMatchUser[matchUserKey]; ok {
+			if resourceType == "food" {
+				if rollbackState.LastFoodTurn == turnNumber {
+					rollbackState.LastFoodTurn = 0
+				}
+			}
+			if resourceType == "water" {
+				rollbackState.WaterByTurn[turnNumber] -= req.Count
+				if rollbackState.WaterByTurn[turnNumber] <= 0 {
+					delete(rollbackState.WaterByTurn, turnNumber)
+				}
+			}
+		}
+		consumableUseMu.Unlock()
 		http.Error(w, fmt.Sprintf("Ошибка использования предмета: %v", err), http.StatusInternalServerError)
 		return
 	}
