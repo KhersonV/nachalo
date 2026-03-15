@@ -4,12 +4,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"gameservice/game"
 	"gameservice/middleware"
 	"gameservice/repository"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 )
 
 // EndTurnRequest представляет запрос на завершение хода.
@@ -63,6 +66,74 @@ func regenEnergyForNextPlayer(instanceID string, userID int, regenEnergy int) er
     return nil
 }
 
+
+// turnTimerLimit is the per-turn time limit.
+const turnTimerLimit = 60 * time.Second
+
+// turnTimers holds per-instance cancel funcs for active turn timers.
+var turnTimers sync.Map // key: instanceID → context.CancelFunc
+
+// CancelTurnTimer stops the running turn timer for an instance.
+func CancelTurnTimer(instanceID string) {
+	if v, loaded := turnTimers.LoadAndDelete(instanceID); loaded {
+		v.(context.CancelFunc)()
+	}
+}
+
+// startTurnTimer schedules an auto-endTurn for instanceID/userID after turnTimerLimit.
+func startTurnTimer(instanceID string, userID int) {
+	CancelTurnTimer(instanceID)
+	ctx, cancel := context.WithCancel(context.Background())
+	turnTimers.Store(instanceID, cancel)
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(turnTimerLimit):
+		}
+		ms, ok := game.GetMatchState(instanceID)
+		if !ok || ms.ActiveUserID != userID {
+			return
+		}
+		log.Printf("[turnTimer] auto-ending turn for user %d in match %s", userID, instanceID)
+		doEndTurn(instanceID, userID, ms)
+	}()
+}
+
+// doEndTurn executes the turn-change logic without an HTTP context (used by both
+// the timer goroutine and EndTurnHandler to avoid duplication).
+func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
+	nextUserID, err := ms.EndTurn(userID)
+	if err != nil {
+		log.Printf("[doEndTurn] EndTurn error for user %d: %v", userID, err)
+		return
+	}
+	if err := repository.UpdateMatchTurn(instanceID, nextUserID, ms.TurnNumber); err != nil {
+		log.Printf("[doEndTurn] UpdateMatchTurn error: %v", err)
+		return
+	}
+	if err := regenEnergyForNextPlayer(instanceID, nextUserID, energyRegen); err != nil {
+		log.Printf("[doEndTurn] regenEnergy error: %v", err)
+		return
+	}
+	nextUser, err := repository.GetMatchPlayerByID(instanceID, nextUserID)
+	if err != nil {
+		log.Printf("[doEndTurn] GetMatchPlayerByID error: %v", err)
+		return
+	}
+	updateMsg := map[string]interface{}{
+		"type": "SET_ACTIVE_USER",
+		"payload": map[string]interface{}{
+			"instanceId":  instanceID,
+			"active_user": nextUserID,
+			"energy":      nextUser.Energy,
+			"turnNumber":  ms.TurnNumber,
+		},
+	}
+	updateJSON, _ := json.Marshal(updateMsg)
+	Broadcast(updateJSON)
+	startTurnTimer(instanceID, nextUserID)
+}
 
 // EndTurnHandler теперь полностью выполняет логику смены хода на сервере
 func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +201,9 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	updateJSON, _ := json.Marshal(updateMsg)
 	Broadcast(updateJSON)
+
+	// Запускаем/сбрасываем таймер хода для нового активного игрока
+	startTurnTimer(req.InstanceID, nextUserID)
 
 	// Отправляем ответ клиенту
 	response := EndTurnResponse{

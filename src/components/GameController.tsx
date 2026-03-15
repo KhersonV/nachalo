@@ -42,6 +42,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
     }, [instanceId, dispatch, state.instanceId]);
 
     const [showInventory, setShowInventory] = useState(false);
+    const [showTurnModal, setShowTurnModal] = useState(false);
+    const prevIsMyTurnRef = React.useRef(false);
+    const turnModalTimerRef = React.useRef<ReturnType<
+        typeof setTimeout
+    > | null>(null);
     const [showQuestAlert, setShowQuestAlert] = useState(false);
     const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
     const [canOpenStats, setCanOpenStats] = useState(false);
@@ -55,9 +60,15 @@ export default function GameController({ instanceId }: GameControllerProps) {
         tileSize: 80,
     });
     const questAlertShownRef = React.useRef(false);
+    const turnStartMsRef = React.useRef<number>(Date.now());
+    const autoEndTurnInFlightRef = React.useRef(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
+
+        const baseViewportWidth = 800;
+        const baseViewportHeight = 600;
+        const baseTileSize = 80;
 
         const updateViewport = () => {
             const screenW = window.innerWidth;
@@ -65,24 +76,37 @@ export default function GameController({ instanceId }: GameControllerProps) {
             const isMobile = screenW <= 900;
 
             if (!isMobile) {
-                setMapViewport({ width: 800, height: 600, tileSize: 80 });
+                setMapViewport({
+                    width: baseViewportWidth,
+                    height: baseViewportHeight,
+                    tileSize: baseTileSize,
+                });
                 return;
             }
 
-            const horizontalPadding = 26;
-            const verticalReserved = 330;
-            const width = Math.max(
-                290,
-                Math.min(760, screenW - horizontalPadding),
-            );
-            const height = Math.max(
-                290,
-                Math.min(560, Math.floor(screenH - verticalReserved)),
+            // Keep the same logical map window for all devices and only scale
+            // the rendered result on small screens.
+            const horizontalPadding = 18;
+            const verticalReserved = 190;
+            const availableWidth = Math.max(280, screenW - horizontalPadding);
+            const availableHeight = Math.max(220, screenH - verticalReserved);
+
+            const scale = Math.max(
+                0.42,
+                Math.min(
+                    1,
+                    Math.min(
+                        availableWidth / baseViewportWidth,
+                        availableHeight / baseViewportHeight,
+                    ),
+                ),
             );
 
-            const tileSize = screenW <= 420 ? 42 : screenW <= 560 ? 48 : 56;
-
-            setMapViewport({ width, height, tileSize });
+            setMapViewport({
+                width: Math.floor(baseViewportWidth * scale),
+                height: Math.floor(baseViewportHeight * scale),
+                tileSize: Math.max(28, Math.floor(baseTileSize * scale)),
+            });
         };
 
         updateViewport();
@@ -129,6 +153,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
             window.clearInterval(tick);
         };
     }, []);
+
+    // Reset local turn countdown whenever turn ownership changes.
+    useEffect(() => {
+        turnStartMsRef.current = Date.now();
+        autoEndTurnInFlightRef.current = false;
+    }, [state.active_user, state.turnNumber]);
 
     useEffect(() => {
         const onDisconnected = (event: Event) => {
@@ -209,6 +239,24 @@ export default function GameController({ instanceId }: GameControllerProps) {
         fightMonster,
     } = usePlayerActions(instanceId, user, state);
 
+    // Show centered "YOUR TURN" modal when turn transitions to the current player
+    useEffect(() => {
+        if (isMyTurn && !prevIsMyTurnRef.current) {
+            setShowTurnModal(true);
+            if (turnModalTimerRef.current)
+                clearTimeout(turnModalTimerRef.current);
+            turnModalTimerRef.current = setTimeout(
+                () => setShowTurnModal(false),
+                2000,
+            );
+        }
+        prevIsMyTurnRef.current = isMyTurn;
+        return () => {
+            if (turnModalTimerRef.current)
+                clearTimeout(turnModalTimerRef.current);
+        };
+    }, [isMyTurn]);
+
     // Portal exit: call /game/finishMatch with auth token
     const handlePortalExit = useCallback(async () => {
         const token = user?.token;
@@ -274,6 +322,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
     const handleTurnEnded = useCallback(
         (data: { active_user: number; turnNumber: number; energy: number }) => {
+            turnStartMsRef.current = Date.now();
+            autoEndTurnInFlightRef.current = false;
             dispatch(
                 setActiveUser({
                     instanceId,
@@ -295,6 +345,62 @@ export default function GameController({ instanceId }: GameControllerProps) {
         isDeathNotification || (isPortalExitNotification && canOpenStats)
             ? "К статистике"
             : "Понятно";
+
+    const TURN_SECS = 60;
+    const turnSecsLeft = Math.max(
+        0,
+        TURN_SECS - Math.floor((nowMs - turnStartMsRef.current) / 1000),
+    );
+    const isTurnWarning = turnSecsLeft <= 30;
+    const turnTimerText = `${Math.floor(turnSecsLeft / 60)}:${String(turnSecsLeft % 60).padStart(2, "0")}`;
+
+    // Fallback: if timer reaches 00:00 on client and it's still my turn,
+    // force end-turn request to keep gameplay flowing.
+    useEffect(() => {
+        if (!isMyTurn || !myPlayer || turnSecsLeft > 0) return;
+        if (autoEndTurnInFlightRef.current) return;
+
+        const token = user?.token;
+        if (!token) return;
+
+        autoEndTurnInFlightRef.current = true;
+
+        const requestAutoEndTurn = async () => {
+            try {
+                const response = await fetch(`${API_BASE}/game/endTurn`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                        user_id: myPlayer.user_id,
+                        instance_id: instanceId,
+                    }),
+                });
+
+                if (!response.ok) {
+                    autoEndTurnInFlightRef.current = false;
+                    return;
+                }
+
+                const data = await response.json();
+                turnStartMsRef.current = Date.now();
+                dispatch(
+                    setActiveUser({
+                        instanceId,
+                        active_user: data.active_user,
+                        turnNumber: data.turn_number,
+                        energy: data.energy,
+                    }),
+                );
+            } catch {
+                autoEndTurnInFlightRef.current = false;
+            }
+        };
+
+        requestAutoEndTurn();
+    }, [dispatch, instanceId, isMyTurn, myPlayer, turnSecsLeft, user]);
 
     const disconnectedPlayers = Object.entries(disconnectedDeadlines)
         .map(([id, deadline]) => {
@@ -351,6 +457,29 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     attackRange={myPlayer.attackRange}
                 />
             )}
+            <div
+                className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
+            >
+                {isMyTurn ? "ТВОЙ ХОД" : "ОЖИДАНИЕ ХОДА"}
+            </div>
+            <button
+                type="button"
+                className={`${styles.inventoryFab} ${showInventory ? styles.inventoryFabActive : ""}`}
+                onClick={() => setShowInventory((v) => !v)}
+                aria-label={
+                    showInventory ? "Закрыть инвентарь" : "Открыть инвентарь"
+                }
+                title={
+                    showInventory ? "Закрыть инвентарь" : "Открыть инвентарь"
+                }
+            >
+                <img
+                    src="/ui-icons/backpack.png"
+                    alt="Инвентарь"
+                    className={styles.inventoryFabIcon}
+                    draggable={false}
+                />
+            </button>
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
@@ -365,19 +494,29 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     <p className={styles.mapLoading}>Загрузка карты...</p>
                 )}
             </div>
-            <div className={styles.controlsContainer}>
+            <div
+                className={`${styles.controlsContainer} ${!isMyTurn ? styles.controlsContainerHiddenMobile : ""}`}
+            >
                 {isMyTurn ? (
                     <>
+                        <div className={styles.turnPrompt}>
+                            <span className={styles.turnPromptBadge}>
+                                ТВОЙ ХОД
+                            </span>
+                            <span className={styles.turnPromptText}>
+                                Выбери действие и заверши ход
+                            </span>
+                        </div>
                         <Controls
                             onMove={handleMoveOrAttack}
                             onAction={handleAction}
                         />
-                        <EndTurnButton
-                            playerId={myPlayer?.user_id!}
-                            instanceId={instanceId}
-                            onTurnEnded={handleTurnEnded}
-                        />
                         <TurnIndicator />
+                        <div
+                            className={`${styles.turnTimer} ${styles.turnTimerInline} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
+                        >
+                            {turnTimerText}
+                        </div>
                         <button
                             type="button"
                             className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
@@ -390,7 +529,25 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     </>
                 ) : (
                     <div className={styles.waitingOverlay}>
-                        <p>Ожидание хода...</p>
+                        <div
+                            className={`${styles.turnPrompt} ${styles.turnPromptWaiting}`}
+                        >
+                            <span
+                                className={`${styles.turnPromptBadge} ${styles.turnPromptBadgeWaiting}`}
+                            >
+                                ОЖИДАНИЕ ХОДА
+                            </span>
+                            <span
+                                className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
+                            >
+                                Сейчас ход другого игрока
+                            </span>
+                        </div>
+                        <div
+                            className={`${styles.turnTimer} ${styles.turnTimerInline} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
+                        >
+                            {turnTimerText}
+                        </div>
                         <button
                             type="button"
                             className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
@@ -403,6 +560,20 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     </div>
                 )}
             </div>
+            {isMyTurn && (
+                <div className={styles.turnActionDock}>
+                    <div
+                        className={`${styles.turnTimer} ${styles.turnTimerDock} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
+                    >
+                        {turnTimerText}
+                    </div>
+                    <EndTurnButton
+                        playerId={myPlayer?.user_id!}
+                        instanceId={instanceId}
+                        onTurnEnded={handleTurnEnded}
+                    />
+                </div>
+            )}
             {showInventory && <Inventory />}
             {showQuestAlert && (
                 <QuestArtifactAlert
@@ -433,6 +604,20 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         dispatch(setQuestFoundNotification(null));
                     }}
                 />
+            )}
+            {showTurnModal && (
+                <div
+                    className={styles.turnModalOverlay}
+                    onClick={() => setShowTurnModal(false)}
+                >
+                    <div className={styles.turnModalCard}>
+                        <span className={styles.turnModalIcon}>⚔️</span>
+                        <span className={styles.turnModalTitle}>ТВОЙ ХОД</span>
+                        <span className={styles.turnModalSub}>
+                            Выбери действие
+                        </span>
+                    </div>
+                </div>
             )}
         </div>
     );

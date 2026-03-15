@@ -65,28 +65,29 @@
 @media (max-width: 760px) {
     .controlsContainer {
         width: 100%;
-        gap: 10px;
+        gap: 3px;
     }
 
     .buttonRow {
-        gap: 10px;
+        gap: 4px;
     }
 
     .controlButton {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+        border-radius: 8px;
     }
 
     .actionRow {
         width: 100%;
-        margin-top: 2px;
+        margin-top: 0;
     }
 
     .actionButton {
         width: 100%;
         min-width: 0;
-        height: 46px;
-        font-size: 14px;
+        height: 32px;
+        font-size: 11px;
     }
 }

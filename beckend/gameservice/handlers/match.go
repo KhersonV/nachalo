@@ -393,6 +393,8 @@ if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, req.GroupIDs, startP
 if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
 	log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
 }
+// Запускаем таймер хода для первого игрока
+startTurnTimer(req.InstanceID, req.PlayerIDs[0])
 
 // 11. Теперь получаем список игроков для ответа (они уже точно есть!)
 playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
