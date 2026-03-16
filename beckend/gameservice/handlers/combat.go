@@ -154,34 +154,106 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5.1) Проверяем, что тайл проходимый
-	var mapJSON []byte
-	if err := repository.DB.QueryRow(
-		`SELECT map FROM matches WHERE instance_id = $1`,
-		instanceID,
-	).Scan(&mapJSON); err != nil {
-		http.Error(w, "Ошибка загрузки карты", http.StatusInternalServerError)
+var mapJSON []byte
+if err := repository.DB.QueryRow(
+	`SELECT map FROM matches WHERE instance_id = $1`,
+	instanceID,
+).Scan(&mapJSON); err != nil {
+	http.Error(w, "Ошибка загрузки карты", http.StatusInternalServerError)
+	return
+}
+
+var cells []game.FullCell
+if err := json.Unmarshal(mapJSON, &cells); err != nil {
+	http.Error(w, "Ошибка разбора карты", http.StatusInternalServerError)
+	return
+}
+
+cellIdx := -1
+var targetCell *game.FullCell
+for i := range cells {
+	if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
+		cellIdx = i
+		targetCell = &cells[i]
+		break
+	}
+}
+if cellIdx == -1 || targetCell == nil {
+	http.Error(w, "Клетка не найдена", http.StatusBadRequest)
+	return
+}
+
+if !cellPassable(targetCell.TileCode) {
+	http.Error(w, fmt.Sprintf("Непроходимый тайл %d", targetCell.TileCode), http.StatusBadRequest)
+	return
+}
+
+if targetCell.StructureType != "" || targetCell.IsUnderConstruction {
+	player, err := repository.GetMatchPlayerByID(instanceID, userID)
+	if err != nil {
+		http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
 		return
 	}
-	var cells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &cells); err != nil {
-		http.Error(w, "Ошибка разбора карты", http.StatusInternalServerError)
+
+	if manhattan(player.Position.X, player.Position.Y, req.NewPosX, req.NewPosY) != 1 {
+		http.Error(w, "строение можно атаковать только в соседней клетке", http.StatusBadRequest)
 		return
 	}
-	var targetCell *game.FullCell
-	for i := range cells {
-		if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
-			targetCell = &cells[i]
-			break
+
+	if !canAttackStructure(userID, targetCell) {
+		http.Error(w, "это строение нельзя атаковать", http.StatusBadRequest)
+		return
+	}
+
+	if player.Energy < attackEnergyCost {
+		http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
+		return
+	}
+
+	structureType := targetCell.StructureType
+
+	attackerStats := stats{
+		Attack:      player.Attack,
+		Defense:     player.Defense,
+		Health:      player.Health,
+		IsRanged:    player.IsRanged,
+		AttackRange: player.AttackRange,
+		X:           player.Position.X,
+		Y:           player.Position.Y,
+	}
+
+	player.Energy -= attackEnergyCost
+	if err := repository.UpdateMatchPlayer(instanceID, player); err != nil {
+		http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
+		return
+	}
+
+	targetRes := applyDamageToStructure(attackerStats, targetCell.StructureHealth, targetCell.StructureDefense)
+
+	if targetRes.NewHealth > 0 {
+		if err := damageStructureOnCell(instanceID, cells, cellIdx, targetRes.NewHealth); err != nil {
+			http.Error(w, "Ошибка обновления строения", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := destroyStructureOnCell(instanceID, cells, cellIdx); err != nil {
+			http.Error(w, "Ошибка разрушения строения", http.StatusInternalServerError)
+			return
 		}
 	}
-	if targetCell == nil {
-		http.Error(w, "Клетка не найдена", http.StatusBadRequest)
-		return
-	}
-	if !cellPassable(targetCell.TileCode) {
-		http.Error(w, fmt.Sprintf("Непроходимый тайл %d", targetCell.TileCode), http.StatusBadRequest)
-		return
-	}
+
+	sendUpdatePlayerWS(instanceID, userID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"attack_mode":      "melee",
+		"damage_to_target": targetRes.Damage,
+		"new_target_hp":    targetRes.NewHealth,
+		"target_type":      "structure",
+		"structure_type":   structureType,
+	})
+	return
+}
 
 	// 6) Обычное перемещение
 	player, err := repository.GetMatchPlayerByID(instanceID, userID)
@@ -331,6 +403,108 @@ func applyDamage(att stats, def stats) attackResult {
 		newHP = 0
 	}
 	return attackResult{Damage: dmg, NewHealth: newHP}
+}
+
+
+func canAttackStructure(attackerUserID int, cell *game.FullCell) bool {
+	if cell == nil {
+		return false
+	}
+	if cell.StructureType == "" || cell.IsUnderConstruction {
+		return false
+	}
+
+	// Чужие здания можно атаковать всегда.
+	if cell.StructureOwnerUserID != attackerUserID {
+		return true
+	}
+
+	// Свои можно атаковать только если это стена.
+	return cell.StructureType == "wall"
+}
+
+func applyDamageToStructure(att stats, structureHealth int, structureDefense int) attackResult {
+	dmg := att.Attack - structureDefense
+	if dmg < 0 {
+		dmg = 0
+	}
+
+	newHP := structureHealth - dmg
+	if newHP < 0 {
+		newHP = 0
+	}
+
+	return attackResult{
+		Damage:    dmg,
+		NewHealth: newHP,
+	}
+}
+
+func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) error {
+	cell := &cells[idx]
+
+	ownerUserID := cell.StructureOwnerUserID
+	structureType := cell.StructureType
+
+	cell.StructureType = ""
+	cell.StructureOwnerUserID = 0
+	cell.StructureHealth = 0
+	cell.StructureDefense = 0
+	cell.StructureAttack = 0
+	cell.StructureEnergy = 0
+	cell.IsUnderConstruction = false
+	cell.ConstructionTurnsLeft = 0
+
+	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+		return err
+	}
+
+	if ownerUserID > 0 && structureType != "" {
+		if err := repository.DecrementStructureCount(instanceID, ownerUserID, structureType); err != nil {
+			log.Printf("destroyStructureOnCell: DecrementStructureCount failed: instance=%s owner=%d type=%s err=%v",
+				instanceID, ownerUserID, structureType, err)
+		}
+
+		if structureType == "scout_tower" {
+			if err := repository.RemoveScoutTowerBonusIfNeeded(instanceID, ownerUserID); err != nil {
+				log.Printf("destroyStructureOnCell: RemoveScoutTowerBonusIfNeeded failed: instance=%s owner=%d err=%v",
+					instanceID, ownerUserID, err)
+			}
+		}
+	}
+
+	update := map[string]interface{}{
+		"type": "UPDATE_CELL",
+		"payload": map[string]interface{}{
+			"instanceId":  instanceID,
+			"updatedCell": serialiseUpdatedCell(*cell),
+		},
+	}
+	buf, _ := json.Marshal(update)
+	Broadcast(buf)
+
+	return nil
+}
+
+func damageStructureOnCell(instanceID string, cells []game.FullCell, idx int, newHP int) error {
+	cell := &cells[idx]
+	cell.StructureHealth = newHP
+
+	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+		return err
+	}
+
+	update := map[string]interface{}{
+		"type": "UPDATE_CELL",
+		"payload": map[string]interface{}{
+			"instanceId":  instanceID,
+			"updatedCell": serialiseUpdatedCell(*cell),
+		},
+	}
+	buf, _ := json.Marshal(update)
+	Broadcast(buf)
+
+	return nil
 }
 
 // --- Обновление HP и обработка смерти цели --------------------------------

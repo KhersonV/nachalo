@@ -220,8 +220,22 @@
 }
 
 .modeBlockMatching {
-    border-color: #28a745; /* зелёная рамка */
-    background: linear-gradient(rgba(40, 167, 69, 0.7), rgba(0, 0, 0, 0.4));
+    border-color: #28a745 !important; /* зелёная рамка */
+    background: linear-gradient(
+        rgba(40, 167, 69, 0.7),
+        rgba(0, 0, 0, 0.4)
+    ) !important;
+}
+
+.modeBlockSelectedMatching {
+    border: 2.5px solid #28a745 !important;
+    background: linear-gradient(
+        rgba(40, 167, 69, 0.9),
+        rgba(0, 0, 0, 0.5)
+    ) !important;
+    color: #fff !important;
+    box-shadow: 0 0 0 2px #28a74555;
+    z-index: 2;
 }
 
 .modeBlockDisabled {

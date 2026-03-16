@@ -34,6 +34,17 @@ type forgeStateResponse struct {
     Resources  forgeResourceResponse `json:"resources"`
     CanBuild   bool                  `json:"canBuild"`
     Recipes    []forgeRecipeResponse `json:"recipes"`
+    Library    buildingStateResponse `json:"library"`
+    Forge      buildingStateResponse `json:"forge"`
+}
+
+type buildingStateResponse struct {
+    Level       int                   `json:"level"`
+    Built       bool                  `json:"built"`
+    Costs       forgeCostResponse     `json:"costs"`
+    Resources   forgeResourceResponse `json:"resources"`
+    CanBuild    bool                  `json:"canBuild"`
+    Unlockables []forgeRecipeResponse `json:"unlockables"`
 }
 
 func getResourceCountByType(playerInventory string, resourceType string) (int, error) {
@@ -69,7 +80,11 @@ func getResourceCountByType(playerInventory string, resourceType string) (int, e
 }
 
 func buildForgeState(userID int) (*forgeStateResponse, error) {
-    level, err := repository.GetForgeLevel(userID)
+    forgeLevel, err := repository.GetForgeLevel(userID)
+    if err != nil {
+        return nil, err
+    }
+    libraryLevel, err := repository.GetLibraryLevel(userID)
     if err != nil {
         return nil, err
     }
@@ -92,15 +107,21 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
         return nil, err
     }
 
-    built := level > 0
-    canBuild := !built &&
+    forgeBuilt := forgeLevel > 0
+    forgeCanBuild := !forgeBuilt &&
         woodCount >= repository.ForgeCostWood &&
         stoneCount >= repository.ForgeCostStone &&
         ironCount >= repository.ForgeCostIron
 
-    recipes := []forgeRecipeResponse{}
-    if built {
-        recipes = []forgeRecipeResponse{
+    libraryBuilt := libraryLevel > 0
+    libraryCanBuild := !libraryBuilt &&
+        woodCount >= repository.LibraryCostWood &&
+        stoneCount >= repository.LibraryCostStone &&
+        ironCount >= repository.LibraryCostIron
+
+    forgeUnlockables := []forgeRecipeResponse{}
+    if forgeBuilt {
+        forgeUnlockables = []forgeRecipeResponse{
             {
                 ID:          "fortified_blade",
                 Name:        "Укрепленный клинок",
@@ -119,9 +140,30 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
         }
     }
 
+    libraryUnlockables := []forgeRecipeResponse{}
+    if libraryBuilt {
+        libraryUnlockables = []forgeRecipeResponse{
+            {
+                ID:          "cartographer_notes",
+                Name:        "Записи картографа",
+                Description: "Открыт бонус: +1 к обзору в начале матча.",
+            },
+            {
+                ID:          "battle_treatise",
+                Name:        "Боевой трактат",
+                Description: "Открыт бонус: +1 к атаке на первые 2 хода.",
+            },
+            {
+                ID:          "field_manual",
+                Name:        "Полевой устав",
+                Description: "Открыт бонус: -1 к стоимости первой атаки в матче.",
+            },
+        }
+    }
+
     return &forgeStateResponse{
-        ForgeLevel: level,
-        Built:      built,
+        ForgeLevel: forgeLevel,
+        Built:      forgeBuilt,
         Costs: forgeCostResponse{
             Wood:  repository.ForgeCostWood,
             Stone: repository.ForgeCostStone,
@@ -132,8 +174,24 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
             Stone: stoneCount,
             Iron:  ironCount,
         },
-        CanBuild: canBuild,
-        Recipes:  recipes,
+        CanBuild: forgeCanBuild,
+        Recipes:  forgeUnlockables,
+        Forge: buildingStateResponse{
+            Level:       forgeLevel,
+            Built:       forgeBuilt,
+            Costs:       forgeCostResponse{Wood: repository.ForgeCostWood, Stone: repository.ForgeCostStone, Iron: repository.ForgeCostIron},
+            Resources:   forgeResourceResponse{Wood: woodCount, Stone: stoneCount, Iron: ironCount},
+            CanBuild:    forgeCanBuild,
+            Unlockables: forgeUnlockables,
+        },
+        Library: buildingStateResponse{
+            Level:       libraryLevel,
+            Built:       libraryBuilt,
+            Costs:       forgeCostResponse{Wood: repository.LibraryCostWood, Stone: repository.LibraryCostStone, Iron: repository.LibraryCostIron},
+            Resources:   forgeResourceResponse{Wood: woodCount, Stone: stoneCount, Iron: ironCount},
+            CanBuild:    libraryCanBuild,
+            Unlockables: libraryUnlockables,
+        },
     }, nil
 }
 
@@ -176,6 +234,41 @@ func BuildForgeHandler(w http.ResponseWriter, r *http.Request) {
             return
         }
         http.Error(w, `{"error":"failed_to_build_forge"}`, http.StatusInternalServerError)
+        return
+    }
+
+    state, err := buildForgeState(userID)
+    if err != nil {
+        http.Error(w, `{"error":"failed_to_load_base_state"}`, http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(state)
+}
+
+func BuildLibraryHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    userID, ok := middleware.GetUserIDFromContext(r.Context())
+    if !ok || userID == 0 {
+        http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+        return
+    }
+
+    if err := repository.BuildLibrary(userID); err != nil {
+        if err.Error() == "library already built" {
+            http.Error(w, `{"error":"library_already_built"}`, http.StatusConflict)
+            return
+        }
+        if err.Error() == "not enough resources" {
+            http.Error(w, `{"error":"not_enough_resources"}`, http.StatusBadRequest)
+            return
+        }
+        http.Error(w, `{"error":"failed_to_build_library"}`, http.StatusInternalServerError)
         return
     }
 

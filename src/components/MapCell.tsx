@@ -26,6 +26,18 @@ function MapCell({
     const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const getCellTooltip = () => {
+        if (cell.structure_type) {
+            const base =
+                cell.structure_type === "scout_tower"
+                    ? "Башня разведки"
+                    : cell.structure_type === "turret"
+                      ? "Турель"
+                      : "Стена";
+            if (cell.is_under_construction) {
+                return `🚧 ${base} (строится)\n⏳ Ходов осталось: ${cell.construction_turns_left ?? 0}`;
+            }
+            return `🏗 ${base}\n❤️ ${cell.structure_health ?? 0}\n🛡 ${cell.structure_defense ?? 0}${cell.structure_attack ? `\n⚔️ ${cell.structure_attack}` : ""}`;
+        }
         if (cell.monster)
             return `👹 Монстр: ${cell.monster.name}\n❤️ ${cell.monster.health}\n⚔️ ${cell.monster.attack}\n🛡 ${cell.monster.defense}`;
         if (cell.resource) return `⛏ Ресурс: ${cell.resource.type}`;
@@ -68,6 +80,19 @@ function MapCell({
         .join(" ");
 
     const renderCellContent = () => {
+        if (cell.structure_type) {
+            const symbol =
+                cell.structure_type === "scout_tower"
+                    ? "🗼"
+                    : cell.structure_type === "turret"
+                      ? "🔫"
+                      : "🧱";
+            return (
+                <span className={styles.symbol}>
+                    {cell.is_under_construction ? "🚧" : symbol}
+                </span>
+            );
+        }
         if (cell.monster?.image) {
             return (
                 <img

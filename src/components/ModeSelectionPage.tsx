@@ -1023,9 +1023,18 @@ export default function ModeSelectionPage() {
                         return (
                             <div
                                 key={m}
-                                className={`${styles.modeBlock} ${
-                                    mode === m ? styles.modeBlockSelected : ""
-                                } ${!modeAllowed ? styles.modeBlockDisabled : ""}`}
+                                className={`${styles.modeBlock} 
+                                    ${mode === m ? styles.modeBlockSelected : ""}
+                                    ${!modeAllowed ? styles.modeBlockDisabled : ""}
+                                    ${
+                                        isMatching &&
+                                        String(partyState?.queueMode) ===
+                                            String(m)
+                                            ? mode === m
+                                                ? styles.modeBlockSelectedMatching
+                                                : styles.modeBlockMatching
+                                            : ""
+                                    }`}
                                 onClick={() => {
                                     if (modeAllowed) {
                                         setMode(m);

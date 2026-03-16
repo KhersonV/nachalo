@@ -74,6 +74,14 @@ type FullCell struct {
 	Monster  *MonsterData  `json:"monster"`  // Монстр (если присутствует)
 	IsPortal bool          `json:"isPortal"` // Портал
 	IsPlayer bool          `json:"isPlayer"` // Флаг наличия игрока
+	StructureType          string `json:"structure_type,omitempty"`
+	StructureOwnerUserID   int    `json:"structure_owner_user_id,omitempty"`
+	StructureHealth        int    `json:"structure_health,omitempty"`
+	StructureDefense       int    `json:"structure_defense,omitempty"`
+	StructureAttack        int    `json:"structure_attack,omitempty"`
+	StructureEnergy        int    `json:"structure_energy,omitempty"`
+	IsUnderConstruction    bool   `json:"is_under_construction"`
+	ConstructionTurnsLeft  int    `json:"construction_turns_left,omitempty"`
 }
 
 

@@ -4,7 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
-import type { BaseState } from "../types";
+import type { BaseState, BuildingState } from "../types";
 import styles from "../styles/ModeSelectionPage.module.css";
 
 const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
@@ -77,6 +77,115 @@ export default function LobbyBasePage() {
         }
     }, [user]);
 
+    const handleBuildLibrary = React.useCallback(async () => {
+        if (!user?.token) return;
+        setBaseBusy(true);
+        setBaseError("");
+        setBaseInfo("");
+        try {
+            const res = await fetch(`${API_GAME}/game/base/library/build`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${user.token}`,
+                },
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                if (text.includes("not_enough_resources")) {
+                    throw new Error(
+                        "Недостаточно ресурсов для постройки библиотеки",
+                    );
+                }
+                if (text.includes("library_already_built")) {
+                    throw new Error("Библиотека уже построена");
+                }
+                throw new Error("Не удалось построить библиотеку");
+            }
+
+            const data: BaseState = await res.json();
+            setBaseState(data);
+            setBaseInfo("Библиотека построена. Открыты исследования.");
+        } catch (e: unknown) {
+            const message =
+                e instanceof Error ? e.message : "Ошибка постройки библиотеки";
+            setBaseError(message);
+        } finally {
+            setBaseBusy(false);
+        }
+    }, [user]);
+
+    const renderBuildingSection = React.useCallback(
+        (
+            title: string,
+            subtitle: string,
+            building: BuildingState,
+            onBuild: () => void,
+            buildLabel: string,
+            unlockablesTitle: string,
+        ) => (
+            <section className={styles.basePanel}>
+                <div className={styles.baseHeader}>
+                    <h3 className={styles.baseTitle}>{title}</h3>
+                    <p className={styles.baseSubtitle}>{subtitle}</p>
+                </div>
+
+                <div className={styles.baseStatusRow}>
+                    <span>
+                        Статус: {building.built ? "Построена" : "Не построена"}
+                    </span>
+                    <span>Уровень: {building.level}</span>
+                </div>
+
+                <div className={styles.baseResourcesGrid}>
+                    <div className={styles.baseResourceCard}>
+                        <strong>Дерево</strong>
+                        <span>
+                            {building.resources.wood} / {building.costs.wood}
+                        </span>
+                    </div>
+                    <div className={styles.baseResourceCard}>
+                        <strong>Камень</strong>
+                        <span>
+                            {building.resources.stone} / {building.costs.stone}
+                        </span>
+                    </div>
+                    <div className={styles.baseResourceCard}>
+                        <strong>Железо</strong>
+                        <span>
+                            {building.resources.iron} / {building.costs.iron}
+                        </span>
+                    </div>
+                </div>
+
+                {!building.built && (
+                    <button
+                        className={styles.baseBuildButton}
+                        onClick={onBuild}
+                        disabled={!building.canBuild || baseBusy}
+                    >
+                        {baseBusy ? "Строим..." : buildLabel}
+                    </button>
+                )}
+
+                {building.built && building.unlockables.length > 0 && (
+                    <div className={styles.baseRecipes}>
+                        <h4>{unlockablesTitle}</h4>
+                        <ul>
+                            {building.unlockables.map((entry) => (
+                                <li key={entry.id}>
+                                    <strong>{entry.name}</strong>:{" "}
+                                    {entry.description}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </section>
+        ),
+        [baseBusy],
+    );
+
     React.useEffect(() => {
         loadBaseState();
     }, [loadBaseState]);
@@ -86,80 +195,34 @@ export default function LobbyBasePage() {
             <LobbyHeader />
             <h2 className={styles.pageTitle}>База</h2>
 
-            <section className={styles.basePanel}>
-                <div className={styles.baseHeader}>
-                    <h3 className={styles.baseTitle}>База: Кузница</h3>
-                    <p className={styles.baseSubtitle}>
-                        Кузница строится в лобби и открывает новые рецепты для
-                        подготовки к матчам.
-                    </p>
-                </div>
+            {baseError && <p className={styles.baseError}>{baseError}</p>}
+            {baseInfo && <p className={styles.baseInfo}>{baseInfo}</p>}
 
-                {baseError && <p className={styles.baseError}>{baseError}</p>}
-                {baseInfo && <p className={styles.baseInfo}>{baseInfo}</p>}
+            {baseState ? (
+                <>
+                    {renderBuildingSection(
+                        "База: Кузница",
+                        "Кузница строится в лобби и открывает новые рецепты для подготовки к матчам.",
+                        baseState.forge,
+                        handleBuildForge,
+                        "Построить кузницу",
+                        "Открытые рецепты",
+                    )}
 
-                {baseState ? (
-                    <>
-                        <div className={styles.baseStatusRow}>
-                            <span>
-                                Статус:{" "}
-                                {baseState.built ? "Построена" : "Не построена"}
-                            </span>
-                            <span>Уровень: {baseState.forgeLevel}</span>
-                        </div>
-
-                        <div className={styles.baseResourcesGrid}>
-                            <div className={styles.baseResourceCard}>
-                                <strong>Дерево</strong>
-                                <span>
-                                    {baseState.resources.wood} /{" "}
-                                    {baseState.costs.wood}
-                                </span>
-                            </div>
-                            <div className={styles.baseResourceCard}>
-                                <strong>Камень</strong>
-                                <span>
-                                    {baseState.resources.stone} /{" "}
-                                    {baseState.costs.stone}
-                                </span>
-                            </div>
-                            <div className={styles.baseResourceCard}>
-                                <strong>Железо</strong>
-                                <span>
-                                    {baseState.resources.iron} /{" "}
-                                    {baseState.costs.iron}
-                                </span>
-                            </div>
-                        </div>
-
-                        {!baseState.built && (
-                            <button
-                                className={styles.baseBuildButton}
-                                onClick={handleBuildForge}
-                                disabled={!baseState.canBuild || baseBusy}
-                            >
-                                {baseBusy ? "Строим..." : "Построить кузницу"}
-                            </button>
-                        )}
-
-                        {baseState.built && (
-                            <div className={styles.baseRecipes}>
-                                <h4>Открытые рецепты</h4>
-                                <ul>
-                                    {baseState.recipes.map((r) => (
-                                        <li key={r.id}>
-                                            <strong>{r.name}</strong>:{" "}
-                                            {r.description}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </>
-                ) : (
+                    {renderBuildingSection(
+                        "База: Библиотека",
+                        "Библиотека строится в лобби и открывает исследования для развития персонажа.",
+                        baseState.library,
+                        handleBuildLibrary,
+                        "Построить библиотеку",
+                        "Открытые исследования",
+                    )}
+                </>
+            ) : (
+                <section className={styles.basePanel}>
                     <p className={styles.baseSubtitle}>Загружаем базу...</p>
-                )}
-            </section>
+                </section>
+            )}
 
             <div className={styles.buttonGroup}>
                 <button

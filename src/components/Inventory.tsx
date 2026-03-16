@@ -14,6 +14,11 @@ import styles from "../styles/Inventory.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
+interface InventoryProps {
+    onBlueprintPlacementStart?: (inventoryKey: string) => void;
+    onRequestClose?: () => void;
+}
+
 const isConsumableResource = (item: RawInventoryItem): boolean => {
     if (item.item_type !== "resource") return false;
     const effect = item.effect || {};
@@ -35,7 +40,10 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
     );
 };
 
-const Inventory: React.FC = () => {
+const Inventory: React.FC<InventoryProps> = ({
+    onBlueprintPlacementStart,
+    onRequestClose,
+}) => {
     const dispatch = useDispatch();
     const state = useSelector((state: RootState) => state.game);
     const { user } = useAuth();
@@ -86,6 +94,7 @@ const Inventory: React.FC = () => {
             description,
             bonus: it.bonus,
             effect: it.effect,
+            inventory_key: keyHint,
         };
     };
 
@@ -127,7 +136,7 @@ const Inventory: React.FC = () => {
             artifacts: Record<string, RawInventoryItem>;
         }>(
             (acc, it) => {
-                const key = `${it.item_type}_${it.item_id}`;
+                const key = it.inventory_key || `${it.item_type}_${it.item_id}`;
                 if (it.item_type === "resource") acc.resources[key] = it;
                 else acc.artifacts[key] = it;
                 return acc;
@@ -142,6 +151,15 @@ const Inventory: React.FC = () => {
         item: RawInventoryItem,
     ) => {
         if (item.item_count <= 0 || !user) return;
+
+        if (key.startsWith("blueprint_")) {
+            onBlueprintPlacementStart?.(key);
+            onRequestClose?.();
+            setFeedback(
+                "Режим строительства: выберите соседнюю свободную клетку.",
+            );
+            return;
+        }
 
         setFeedback("");
 
@@ -204,14 +222,17 @@ const Inventory: React.FC = () => {
                             <div className={styles.itemCount}>
                                 Кол-во: {item.item_count}
                             </div>
-                            {isConsumableResource(item) && (
+                            {(isConsumableResource(item) ||
+                                key.startsWith("blueprint_")) && (
                                 <button
                                     className={styles.useButton}
                                     onClick={() =>
                                         handleUseItem(section, key, item)
                                     }
                                 >
-                                    Использовать
+                                    {key.startsWith("blueprint_")
+                                        ? "Разместить"
+                                        : "Использовать"}
                                 </button>
                             )}
                         </>

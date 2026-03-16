@@ -32,6 +32,227 @@ type EndTurnResponse struct {
 // Константа пополнения энергии при получении хода
 const energyRegen = 10
 
+func progressConstructionByTurn(instanceID string) error {
+	cells, err := repository.LoadMapCells(instanceID)
+	if err != nil {
+		return err
+	}
+
+	changed := make([]UpdatedCellResponse, 0)
+	for i := range cells {
+		if !cells[i].IsUnderConstruction {
+			continue
+		}
+		if cells[i].ConstructionTurnsLeft > 0 {
+			cells[i].ConstructionTurnsLeft--
+		}
+		if cells[i].ConstructionTurnsLeft <= 0 {
+	cells[i].ConstructionTurnsLeft = 0
+	cells[i].IsUnderConstruction = false
+
+	ownerUserID := cells[i].StructureOwnerUserID
+	structureType := cells[i].StructureType
+
+	if ownerUserID > 0 && structureType != "" {
+		if err := repository.IncrementStructureCount(instanceID, ownerUserID, structureType); err != nil {
+			log.Printf("progressConstructionByTurn: IncrementStructureCount failed: instance=%s user=%d type=%s err=%v",
+				instanceID, ownerUserID, structureType, err)
+		}
+
+		if structureType == "scout_tower" {
+			if err := repository.ApplyScoutTowerBonusIfNeeded(instanceID, ownerUserID); err != nil {
+				log.Printf("progressConstructionByTurn: ApplyScoutTowerBonusIfNeeded failed: instance=%s user=%d err=%v",
+					instanceID, ownerUserID, err)
+			}
+		}
+	}
+}
+		changed = append(changed, serialiseUpdatedCell(cells[i]))
+	}
+
+	if len(changed) == 0 {
+		return nil
+	}
+
+	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+		return err
+	}
+
+	for _, updatedCell := range changed {
+		msg := map[string]interface{}{
+			"type": "UPDATE_CELL",
+			"payload": map[string]interface{}{
+				"instanceId":  instanceID,
+				"updatedCell": updatedCell,
+			},
+		}
+		buf, _ := json.Marshal(msg)
+		Broadcast(buf)
+	}
+
+	return nil
+}
+
+
+func applyTurretDamage(instanceID string, ownerUserID int, targetType string, targetID int, turretAttack int, targetDefense int, targetHealth int) {
+	attackerStats := stats{
+		Attack: turretAttack,
+	}
+
+	targetStats := stats{
+		Defense: targetDefense,
+		Health:  targetHealth,
+	}
+
+	targetRes := applyDamage(attackerStats, targetStats)
+
+	// Засчитываем урон владельцу турели
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		ms.RecordDamageEvent(ownerUserID, targetType, targetRes.Damage)
+	}
+
+	saveTargetHealth(
+		instanceID,
+		targetType,
+		targetID,
+		ownerUserID,
+		"player",
+		targetRes,
+	)
+
+	if targetType == "player" && targetRes.NewHealth > 0 {
+		sendUpdatePlayerWS(instanceID, targetID)
+	}
+}
+
+// progressStructuresEffectsByTurn — обработка эффектов построек (турель)
+func progressStructuresEffectsByTurn(instanceID string) error {
+	cells, err := repository.LoadMapCells(instanceID)
+	if err != nil {
+		return err
+	}
+	monsters, err := repository.LoadMatchMonsters(instanceID)
+	if err != nil {
+		return err
+	}
+	players, err := repository.LoadMatchPlayers(instanceID)
+	if err != nil {
+		return err
+	}
+
+	var turretRadius = 2
+	var turretDamage = 15
+	var turretMaxEnergy = 8
+	var turretAttackCost = 6
+
+	for i := range cells {
+		cell := &cells[i]
+		if cell.StructureType != "turret" || cell.IsUnderConstruction {
+			continue
+		}
+		if cell.StructureHealth <= 0 {
+			continue
+		}
+		if cell.StructureOwnerUserID == 0 {
+			continue
+		}
+
+		if cell.StructureAttack == 0 {
+			cell.StructureAttack = turretDamage
+		}
+		if cell.StructureDefense == 0 {
+			cell.StructureDefense = 5
+		}
+
+		// текущая логика: каждый ход турель полностью заряжается
+		if cell.StructureEnergy < turretMaxEnergy {
+			cell.StructureEnergy = turretMaxEnergy
+		}
+
+		ownerGroup := 0
+		for _, p := range players {
+			if p.UserID == cell.StructureOwnerUserID {
+				ownerGroup = p.GroupID
+				break
+			}
+		}
+
+		attacked := false
+
+		// 1) Приоритет — вражеский игрок
+		for _, p := range players {
+			if p.Health <= 0 {
+				continue
+			}
+			if p.UserID == cell.StructureOwnerUserID {
+				continue
+			}
+			if p.GroupID == ownerGroup {
+				continue
+			}
+
+			dx := p.Position.X - cell.X
+			dy := p.Position.Y - cell.Y
+			dist := dx*dx + dy*dy
+			if dist > turretRadius*turretRadius {
+				continue
+			}
+			if cell.StructureEnergy < turretAttackCost {
+				break
+			}
+
+			cell.StructureEnergy -= turretAttackCost
+			applyTurretDamage(
+				instanceID,
+				cell.StructureOwnerUserID,
+				"player",
+				p.UserID,
+				cell.StructureAttack,
+				p.Defense,
+				p.Health,
+			)
+			attacked = true
+			break
+		}
+
+		// 2) Если не атаковали игрока — атакуем монстра
+		if !attacked {
+			for _, m := range monsters {
+				if m.Health <= 0 {
+					continue
+				}
+
+				dx := m.X - cell.X
+				dy := m.Y - cell.Y
+				dist := dx*dx + dy*dy
+				if dist > turretRadius*turretRadius {
+					continue
+				}
+				if cell.StructureEnergy < turretAttackCost {
+					break
+				}
+
+				cell.StructureEnergy -= turretAttackCost
+				applyTurretDamage(
+					instanceID,
+					cell.StructureOwnerUserID,
+					"monster",
+					m.MonsterInstanceID,
+					cell.StructureAttack,
+					m.Defense,
+					m.Health,
+					)
+				break
+			}
+		}
+	}
+
+	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // Можно оставить energyRegen = 10 как дефолтное значение, а в функцию передавать явно нужное значение.
 func regenEnergyForNextPlayer(instanceID string, userID int, regenEnergy int) error {
@@ -103,6 +324,14 @@ func startTurnTimer(instanceID string, userID int) {
 // doEndTurn executes the turn-change logic without an HTTP context (used by both
 // the timer goroutine and EndTurnHandler to avoid duplication).
 func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
+	if err := progressConstructionByTurn(instanceID); err != nil {
+		log.Printf("[doEndTurn] progressConstructionByTurn error: %v", err)
+	}
+	// Эффекты построек
+	if err := progressStructuresEffectsByTurn(instanceID); err != nil {
+		log.Printf("[doEndTurn] progressStructuresEffectsByTurn error: %v", err)
+	}
+
 	nextUserID, err := ms.EndTurn(userID)
 	if err != nil {
 		log.Printf("[doEndTurn] EndTurn error for user %d: %v", userID, err)
@@ -160,6 +389,17 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Завершаем ход (логика выбора следующего игрока находится в EndTurn)
+	if err := progressConstructionByTurn(req.InstanceID); err != nil {
+		log.Printf("Ошибка прогресса строительства: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := progressStructuresEffectsByTurn(req.InstanceID); err != nil {
+	log.Printf("Ошибка эффектов построек: %v", err)
+	http.Error(w, "Internal server error", http.StatusInternalServerError)
+	return
+}
+
 	nextUserID, err := matchState.EndTurn(req.UserID)
 	if err != nil {
 		log.Printf("Ошибка завершения хода: %v", err)

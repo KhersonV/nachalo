@@ -68,6 +68,10 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildForgeHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/base/library/build",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildLibraryHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
 	).Methods("GET")
@@ -119,6 +123,10 @@ func main() {
 	// === Эндпоинты для инвентаря ===
 	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")
 	router.HandleFunc("/game/player/{id}/inventory/use", handlers.UseInventoryHandler).Methods("POST")
+	router.Handle(
+		"/game/blueprint/place",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceBlueprintHandler)),
+	).Methods("POST")
 
 	// === Эндпоинты для матчей ===
 	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")

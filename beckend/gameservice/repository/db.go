@@ -60,6 +60,8 @@ func InitDB() {
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
 
+	CreateMatchPlayerStructuresTable()
+
 	// Восстанавливаем state матчей
 	if err := RestoreMatchStates(); err != nil {
 		log.Fatalf("Ошибка восстановления матчей: %v", err)

@@ -22,6 +22,7 @@ export type RawInventoryItem = {
     description: string; // соответствует item_description на бэке
     bonus?: BonusAttributes;
     effect?: Record<string, number>;
+    inventory_key?: string;
 };
 
 // Типизированный инвентарь уже с разделением
@@ -88,6 +89,13 @@ export interface Cell {
     monster: MonsterType | null;
     isPortal: boolean;
     isPlayer: boolean;
+    structure_type?: string;
+    structure_owner_user_id?: number;
+    structure_health?: number;
+    structure_defense?: number;
+    structure_attack?: number;
+    is_under_construction?: boolean;
+    construction_turns_left?: number;
 }
 
 export type GameState = {

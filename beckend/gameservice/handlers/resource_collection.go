@@ -32,6 +32,44 @@ type UpdatedCellResponse struct {
 	Monster  interface{} `json:"monster"`
 	IsPortal bool        `json:"isPortal"`
 	IsPlayer bool        `json:"isPlayer"`
+	StructureType         string `json:"structure_type,omitempty"`
+	StructureOwnerUserID  int    `json:"structure_owner_user_id,omitempty"`
+	StructureHealth       int    `json:"structure_health,omitempty"`
+	StructureDefense      int    `json:"structure_defense,omitempty"`
+	StructureAttack       int    `json:"structure_attack,omitempty"`
+	IsUnderConstruction   bool   `json:"is_under_construction"`
+	ConstructionTurnsLeft int    `json:"construction_turns_left,omitempty"`
+}
+
+func asInt(v interface{}) int {
+	switch val := v.(type) {
+	case int:
+		return val
+	case int32:
+		return int(val)
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	default:
+		return 0
+	}
+}
+
+func asString(v interface{}) string {
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+func asBool(v interface{}) bool {
+	b, ok := v.(bool)
+	if !ok {
+		return false
+	}
+	return b
 }
 
 // CollectResourceHandler обрабатывает и сбор ресурсов, и открытие бочек.
@@ -140,6 +178,13 @@ if err := repository.AddInventoryItem(
 		Monster:  target["monster"],
 		IsPortal: target["isPortal"].(bool),
 		IsPlayer: target["isPlayer"].(bool),
+		StructureType:         asString(target["structure_type"]),
+		StructureOwnerUserID:  asInt(target["structure_owner_user_id"]),
+		StructureHealth:       asInt(target["structure_health"]),
+		StructureDefense:      asInt(target["structure_defense"]),
+		StructureAttack:       asInt(target["structure_attack"]),
+		IsUnderConstruction:   asBool(target["is_under_construction"]),
+		ConstructionTurnsLeft: asInt(target["construction_turns_left"]),
 	}
 	playerResp, _ := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
 

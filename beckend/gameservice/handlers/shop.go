@@ -17,14 +17,76 @@ const (
 	waterUnitPrice = 8
 )
 
+type blueprintCatalogItem struct {
+	ID           int
+	Type         string
+	Name         string
+	Description  string
+	Image        string
+	Effect       map[string]int
+	Price        int
+	InventoryKey string
+	RequiresForge bool
+}
+
+var blueprintCatalog = map[string]blueprintCatalogItem{
+	"scout_tower_blueprint": {
+		ID:          1001,
+		Type:        "scout_tower_blueprint",
+		Name:        "Чертеж башни разведки",
+		Description: "Даёт +1 к обзору игрока. Постройка в матче: защита 5, здоровье 30.",
+		Image:       "/ui-icons/base.png",
+		Effect: map[string]int{
+			"sight_bonus":       1,
+			"structure_defense": 5,
+			"structure_health":  30,
+		},
+		Price:        55,
+		InventoryKey: "blueprint_scout_tower",
+		RequiresForge: true,
+	},
+	"turret_blueprint": {
+		ID:          1002,
+		Type:        "turret_blueprint",
+		Name:        "Чертеж турели",
+		Description: "Турель в конце каждого хода атакует врагов. Базовый урон 10, здоровье 30.",
+		Image:       "/ui-icons/base.png",
+		Effect: map[string]int{
+			"turret_damage":    10,
+			"structure_health": 30,
+		},
+		Price:        75,
+		InventoryKey: "blueprint_turret",
+		RequiresForge: true,
+	},
+	"wall_blueprint": {
+		ID:          1003,
+		Type:        "wall_blueprint",
+		Name:        "Чертеж стены",
+		Description: "Стена блокирует проход. Прочность 30 HP, защита 8.",
+		Image:       "/ui-icons/base.png",
+		Effect: map[string]int{
+			"structure_blocking": 1,
+			"structure_health":   30,
+			"structure_defense":  8,
+		},
+		Price:        60,
+		InventoryKey: "blueprint_wall",
+		RequiresForge: true,
+	},
+}
+
 type shopItem struct {
 	ID          int            `json:"id"`
 	Type        string         `json:"type"`
+	Category    string         `json:"category"`
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Image       string         `json:"image"`
 	Effect      map[string]int `json:"effect"`
 	Price       int            `json:"price"`
+	InventoryKey string        `json:"inventoryKey"`
+	RequiresForge bool         `json:"requiresForge"`
 }
 
 type buyShopItemRequest struct {
@@ -67,17 +129,39 @@ func getShopItem(resourceType string) (*shopItem, error) {
 	return &shopItem{
 		ID:          res.ID,
 		Type:        res.Type,
+		Category:    "resource",
 		Name:        resourceDisplayName(res.Type),
 		Description: res.Description,
 		Image:       res.Image,
 		Effect:      res.Effect,
 		Price:       price,
+		InventoryKey: "",
+		RequiresForge: false,
 	}, nil
+}
+
+func getBlueprintItem(itemType string) (*shopItem, bool) {
+	bp, ok := blueprintCatalog[itemType]
+	if !ok {
+		return nil, false
+	}
+	return &shopItem{
+		ID:           bp.ID,
+		Type:         bp.Type,
+		Category:     "blueprint",
+		Name:         bp.Name,
+		Description:  bp.Description,
+		Image:        bp.Image,
+		Effect:       bp.Effect,
+		Price:        bp.Price,
+		InventoryKey: bp.InventoryKey,
+		RequiresForge: bp.RequiresForge,
+	}, true
 }
 
 // GetShopItemsHandler возвращает доступные товары магазина подготовки.
 func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
-	items := make([]shopItem, 0, 2)
+	items := make([]shopItem, 0, 5)
 	for _, resourceType := range []string{"food", "water"} {
 		item, err := getShopItem(resourceType)
 		if err != nil {
@@ -85,6 +169,11 @@ func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		items = append(items, *item)
+	}
+	for _, itemType := range []string{"scout_tower_blueprint", "turret_blueprint", "wall_blueprint"} {
+		if bp, ok := getBlueprintItem(itemType); ok {
+			items = append(items, *bp)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -120,16 +209,38 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	itemType := strings.ToLower(strings.TrimSpace(req.ItemType))
-	unitPrice, supported := shopPrice(itemType)
-	if !supported {
-		http.Error(w, "unsupported shop item", http.StatusBadRequest)
-		return
-	}
+	var (
+		item      *shopItem
+		err       error
+		unitPrice int
+	)
 
-	item, err := getShopItem(itemType)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to load item: %v", err), http.StatusInternalServerError)
-		return
+	if bp, ok := getBlueprintItem(itemType); ok {
+		item = bp
+		unitPrice = item.Price
+		if item.RequiresForge {
+			forgeLevel, ferr := repository.GetForgeLevel(req.PlayerID)
+			if ferr != nil {
+				http.Error(w, "failed to check forge level", http.StatusInternalServerError)
+				return
+			}
+			if forgeLevel <= 0 {
+				http.Error(w, "forge_required", http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		var supported bool
+		unitPrice, supported = shopPrice(itemType)
+		if !supported {
+			http.Error(w, "unsupported shop item", http.StatusBadRequest)
+			return
+		}
+		item, err = getShopItem(itemType)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to load item: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	player, err := repository.GetPlayerByUserID(req.PlayerID)
@@ -151,7 +262,10 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	key := "resource_" + strconv.Itoa(item.ID)
+	key := item.InventoryKey
+	if key == "" {
+		key = "resource_" + strconv.Itoa(item.ID)
+	}
 	entry, exists := inv[key]
 	if !exists {
 		entry = map[string]interface{}{

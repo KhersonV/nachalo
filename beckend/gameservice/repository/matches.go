@@ -14,7 +14,184 @@ import (
 	"gameservice/models"
 )
 
-// InsertMatch – сохраняет матч в таблице matches.
+
+func LoadMatchMonsters(instanceID string) ([]MatchMonster, error) {
+	rows, err := DB.Query(`
+		SELECT
+			instance_id,
+			monster_instance_id,
+			monster_ref_id,
+			pos_x,
+			pos_y,
+			health,
+			max_health,
+			attack,
+			defense,
+			speed,
+			maneuverability,
+			vision,
+			image
+		FROM match_monsters
+		WHERE instance_id = $1
+		ORDER BY monster_instance_id
+	`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var monsters []MatchMonster
+
+	for rows.Next() {
+		var m MatchMonster
+
+		err := rows.Scan(
+			&m.InstanceID,
+			&m.MonsterInstanceID,
+			&m.RefID,
+			&m.X,
+			&m.Y,
+			&m.Health,
+			&m.MaxHealth,
+			&m.Attack,
+			&m.Defense,
+			&m.Speed,
+			&m.Maneuverability,
+			&m.Vision,
+			&m.Image,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		monsters = append(monsters, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return monsters, nil
+}
+
+func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
+	rows, err := DB.Query(`
+		SELECT
+			mp.user_id,
+			mp.name,
+			mp.image,
+			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.position,
+			mp.energy,
+			mp.max_energy,
+			mp.health,
+			mp.max_health,
+			mp.level,
+			mp.experience,
+			mp.max_experience,
+			mp.attack,
+			mp.defense,
+			mp.mobility,
+			mp.agility,
+			mp.sight_range,
+			mp.is_ranged,
+			mp.attack_range,
+			mp.balance,
+			mp.group_id,
+			mp.inventory
+		FROM match_players mp
+		LEFT JOIN players p ON p.user_id = mp.user_id
+		WHERE mp.instance_id = $1
+		ORDER BY mp.user_id
+	`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var players []models.PlayerResponse
+
+	for rows.Next() {
+		var p models.PlayerResponse
+		var positionRaw []byte
+		var inventoryRaw []byte
+
+		err := rows.Scan(
+			&p.UserID,
+			&p.Name,
+			&p.Image,
+			&p.CharacterType,
+			&positionRaw,
+			&p.Energy,
+			&p.MaxEnergy,
+			&p.Health,
+			&p.MaxHealth,
+			&p.Level,
+			&p.Experience,
+			&p.MaxExperience,
+			&p.Attack,
+			&p.Defense,
+			&p.Mobility,
+			&p.Agility,
+			&p.SightRange,
+			&p.IsRanged,
+			&p.AttackRange,
+			&p.Balance,
+			&p.GroupID,
+			&inventoryRaw,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// position JSONB -> struct { X, Y }
+		if len(positionRaw) > 0 {
+			var pos struct {
+				X int `json:"x"`
+				Y int `json:"y"`
+			}
+			if err := json.Unmarshal(positionRaw, &pos); err == nil {
+				p.Position.X = pos.X
+				p.Position.Y = pos.Y
+			}
+		}
+
+		// inventory JSONB -> string
+		if len(inventoryRaw) > 0 && json.Valid(inventoryRaw) {
+			p.Inventory = string(inventoryRaw)
+		} else {
+			p.Inventory = "{}"
+		}
+
+		players = append(players, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return players, nil
+}
+
+func UpdateMatchPlayerHealth(instanceID string, userID int, newHP int) error {
+	_, err := DB.Exec(`
+		UPDATE match_players
+		SET health = $1
+		WHERE instance_id = $2 AND user_id = $3
+	`, newHP, instanceID, userID)
+	return err
+}
+
+
+func UpdateMatchPlayerInventory(instanceID string, userID int, inventory string) error {
+	_, err := DB.Exec(`
+		UPDATE match_players
+		SET inventory = $1
+		WHERE instance_id = $2 AND user_id = $3
+	`, inventory, instanceID, userID)
+	return err
+}
+
 // InsertMatch – сохраняет или обновляет матч в таблице matches.
 func InsertMatch(
 	instanceID string,

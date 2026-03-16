@@ -35,6 +35,13 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 		Monster:  cell.Monster,
 		IsPortal: cell.IsPortal,
 		IsPlayer: cell.IsPlayer,
+		StructureType:         cell.StructureType,
+		StructureOwnerUserID:  cell.StructureOwnerUserID,
+		StructureHealth:       cell.StructureHealth,
+		StructureDefense:      cell.StructureDefense,
+		StructureAttack:       cell.StructureAttack,
+		IsUnderConstruction:   cell.IsUnderConstruction,
+		ConstructionTurnsLeft: cell.ConstructionTurnsLeft,
 	}
 }
 

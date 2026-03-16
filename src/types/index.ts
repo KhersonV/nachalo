@@ -2,6 +2,7 @@ export type {
     ShopItem,
     PlayerShopState,
     ForgeRecipe,
+    BuildingState,
     BaseState,
 } from "./LobbyTypes";
 

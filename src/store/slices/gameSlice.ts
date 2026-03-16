@@ -142,7 +142,10 @@ const gameSlice = createSlice({
             );
 
             if (index !== -1) {
-                state.grid[index] = uc;
+                state.grid[index] = {
+                    ...state.grid[index],
+                    ...uc,
+                };
             }
         },
 

@@ -9,6 +9,31 @@ import styles from "../styles/ModeSelectionPage.module.css";
 
 const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
+const EFFECT_LABELS: Record<string, string> = {
+    health: "HP",
+    energy: "Энергия",
+    sight_bonus: "Обзор",
+    structure_health: "Здоровье постройки",
+    structure_defense: "Защита постройки",
+    turret_damage: "Урон турели",
+    structure_blocking: "Блок прохода",
+};
+
+function formatEffect(effect: Record<string, number>): string {
+    const entries = Object.entries(effect || {});
+    if (!entries.length) return "Нет";
+    return entries
+        .map(([key, value]) => {
+            const label = EFFECT_LABELS[key] ?? key;
+            if (key === "structure_blocking") {
+                return `${label}: ${value > 0 ? "Да" : "Нет"}`;
+            }
+            const sign = value > 0 ? "+" : "";
+            return `${label}: ${sign}${value}`;
+        })
+        .join("; ");
+}
+
 export default function LobbyShopPage() {
     const router = useRouter();
     const { user } = useAuth();
@@ -23,6 +48,7 @@ export default function LobbyShopPage() {
     const [shopBusyType, setShopBusyType] = React.useState<string | null>(null);
     const [shopError, setShopError] = React.useState("");
     const [shopInfo, setShopInfo] = React.useState("");
+    const [forgeBuilt, setForgeBuilt] = React.useState(false);
 
     const loadShopData = React.useCallback(async () => {
         if (!user) return;
@@ -31,6 +57,20 @@ export default function LobbyShopPage() {
                 fetch(`${API_GAME}/game/shop/items`),
                 fetch(`${API_GAME}/game/player/${user.id}`),
             ]);
+
+            if (user?.token) {
+                const baseRes = await fetch(`${API_GAME}/game/base/state`, {
+                    headers: {
+                        Authorization: `Bearer ${user.token}`,
+                    },
+                });
+                if (baseRes.ok) {
+                    const baseData = await baseRes.json();
+                    setForgeBuilt(
+                        Boolean(baseData?.forge?.built ?? baseData?.built),
+                    );
+                }
+            }
 
             if (itemsRes.ok) {
                 const itemsData = await itemsRes.json();
@@ -61,14 +101,14 @@ export default function LobbyShopPage() {
     }, [user]);
 
     const getItemCountFromInventory = React.useCallback(
-        (itemId: number) => {
+        (item: ShopItem) => {
             if (!shopPlayer?.inventory) return 0;
             try {
                 const parsed =
                     typeof shopPlayer.inventory === "string"
                         ? JSON.parse(shopPlayer.inventory)
                         : shopPlayer.inventory;
-                const key = `resource_${itemId}`;
+                const key = item.inventoryKey || `resource_${item.id}`;
                 const entry = parsed?.[key];
                 if (!entry) return 0;
                 const val = entry.item_count;
@@ -113,6 +153,11 @@ export default function LobbyShopPage() {
 
                 if (!res.ok) {
                     const text = await res.text();
+                    if (text.includes("forge_required")) {
+                        throw new Error(
+                            "Для покупки чертежей нужно построить кузницу",
+                        );
+                    }
                     throw new Error(text || "Ошибка покупки");
                 }
 
@@ -194,10 +239,14 @@ export default function LobbyShopPage() {
 
                 <div className={styles.shopGrid}>
                     {shopItems.map((item) => {
-                        const owned = getItemCountFromInventory(item.id);
+                        const owned = getItemCountFromInventory(item);
                         const currentCount = shopCounts[item.type] ?? 1;
                         const totalCost = item.price * currentCount;
-                        const canBuy = (shopPlayer?.balance ?? 0) >= totalCost;
+                        const canAfford =
+                            (shopPlayer?.balance ?? 0) >= totalCost;
+                        const blockedByForge =
+                            item.requiresForge && !forgeBuilt;
+                        const canBuy = canAfford && !blockedByForge;
 
                         return (
                             <article
@@ -213,18 +262,17 @@ export default function LobbyShopPage() {
                                     <strong>{item.name}</strong>
                                     <span>{item.description}</span>
                                     <span>
-                                        Эффект:{" "}
-                                        {item.effect.health
-                                            ? `+${item.effect.health} HP`
-                                            : ""}
-                                        {item.effect.energy
-                                            ? `+${item.effect.energy} Energy`
-                                            : ""}
+                                        Эффект: {formatEffect(item.effect)}
                                     </span>
                                     <span>Цена за 1: {item.price}</span>
+                                    {item.requiresForge && !forgeBuilt && (
+                                        <span className={styles.shopCostWarn}>
+                                            Требуется построенная кузница
+                                        </span>
+                                    )}
                                     <span
                                         className={
-                                            canBuy
+                                            canAfford
                                                 ? styles.shopCostOk
                                                 : styles.shopCostWarn
                                         }
@@ -336,7 +384,9 @@ export default function LobbyShopPage() {
                                 >
                                     {shopBusyType === item.type
                                         ? "Покупка..."
-                                        : "Купить"}
+                                        : blockedByForge
+                                          ? "Нужна кузница"
+                                          : "Купить"}
                                 </button>
                             </article>
                         );

@@ -24,6 +24,19 @@ import {
 import { usePlayerActions } from "../hooks/usePlayerActions";
 import { useGameKeyboard } from "../hooks/useGameKeyboard";
 
+type PlacementStructureType = "scout_tower" | "turret" | "wall";
+
+type PlacementModeState = {
+    blueprintKey: string;
+    structureType: PlacementStructureType;
+};
+
+const structureTypeByBlueprintKey: Record<string, PlacementStructureType> = {
+    blueprint_scout_tower: "scout_tower",
+    blueprint_turret: "turret",
+    blueprint_wall: "wall",
+};
+
 interface GameControllerProps {
     instanceId: string;
 }
@@ -43,6 +56,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     }, [instanceId, dispatch, state.instanceId]);
 
     const [showInventory, setShowInventory] = useState(false);
+    const [placementMode, setPlacementMode] =
+        useState<PlacementModeState | null>(null);
     const [showTurnModal, setShowTurnModal] = useState(false);
     const prevIsMyTurnRef = React.useRef(false);
     const turnModalTimerRef = React.useRef<ReturnType<
@@ -229,6 +244,16 @@ export default function GameController({ instanceId }: GameControllerProps) {
         setShowQuestFoundAlert(true);
     }, [state.questFoundNotification]);
 
+    const handleBlueprintPlacementStart = useCallback(
+        (blueprintKey: string) => {
+            const structureType = structureTypeByBlueprintKey[blueprintKey];
+            if (!structureType) return;
+            setPlacementMode({ blueprintKey, structureType });
+            setShowInventory(false);
+        },
+        [],
+    );
+
     const {
         myPlayer,
         isMyTurn,
@@ -238,7 +263,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
         openBarrel,
         collectResource,
         fightMonster,
-    } = usePlayerActions(instanceId, user, state);
+    } = usePlayerActions(instanceId, user, state, {
+        blueprintKey: placementMode?.blueprintKey ?? null,
+        structureType: placementMode?.structureType ?? null,
+        onPlaced: () => setPlacementMode(null),
+        onError: (message: string) => {
+            alert(message);
+        },
+    });
 
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
@@ -488,6 +520,16 @@ export default function GameController({ instanceId }: GameControllerProps) {
             >
                 {isMyTurn ? "ТВОЙ ХОД" : "ОЖИДАНИЕ ХОДА"}
             </div>
+            {placementMode && (
+                <div className={styles.turnStatusFloating}>
+                    Режим строительства: выберите соседнюю клетку для
+                    {placementMode.structureType === "scout_tower"
+                        ? " башни"
+                        : placementMode.structureType === "turret"
+                          ? " турели"
+                          : " стены"}
+                </div>
+            )}
             <button
                 type="button"
                 className={`${styles.inventoryFab} ${showInventory ? styles.inventoryFabActive : ""}`}
@@ -633,7 +675,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     />
                 </div>
             )}
-            {showInventory && <Inventory />}
+            {showInventory && (
+                <Inventory
+                    onBlueprintPlacementStart={handleBlueprintPlacementStart}
+                    onRequestClose={() => setShowInventory(false)}
+                />
+            )}
             {showQuestAlert && (
                 <QuestArtifactAlert
                     artifactId={state.questArtifactId}

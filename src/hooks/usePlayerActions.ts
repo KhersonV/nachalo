@@ -20,10 +20,20 @@ type MoveDirection = keyof typeof DELTAS;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
+type PlacementStructureType = "scout_tower" | "turret" | "wall";
+
+type PlacementModeOptions = {
+    blueprintKey: string | null;
+    structureType: PlacementStructureType | null;
+    onPlaced: () => void;
+    onError: (message: string) => void;
+};
+
 export function usePlayerActions(
     instanceId: string,
     user: User | null,
     state: RootState["game"],
+    placementMode?: PlacementModeOptions,
 ): {
     myPlayer: PlayerState | undefined;
     isMyTurn: boolean;
@@ -157,6 +167,16 @@ export function usePlayerActions(
                 monster: data.updatedCell.monster ?? null,
                 isPortal: data.updatedCell.isPortal,
                 isPlayer: data.updatedCell.isPlayer ?? false,
+                structure_type: data.updatedCell.structure_type,
+                structure_owner_user_id:
+                    data.updatedCell.structure_owner_user_id,
+                structure_health: data.updatedCell.structure_health,
+                structure_defense: data.updatedCell.structure_defense,
+                structure_attack: data.updatedCell.structure_attack,
+                is_under_construction:
+                    data.updatedCell.is_under_construction ?? false,
+                construction_turns_left:
+                    data.updatedCell.construction_turns_left,
             };
             const mappedPlayer: PlayerState = data.updatedPlayer as PlayerState;
             dispatch(updateCell({ instanceId, updatedCell: mappedCell }));
@@ -186,6 +206,67 @@ export function usePlayerActions(
             });
         },
         [instanceId, user, myPlayerId],
+    );
+
+    const placeBlueprintAtCell = useCallback(
+        async (cellX: number, cellY: number) => {
+            if (!placementMode?.blueprintKey || !myPlayerId || !user?.token) {
+                return;
+            }
+
+            const response = await fetch(`${API_BASE}/game/blueprint/place`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${user.token}`,
+                },
+                body: JSON.stringify({
+                    instance_id: instanceId,
+                    user_id: myPlayerId,
+                    cell_x: cellX,
+                    cell_y: cellY,
+                    blueprint_key: placementMode.blueprintKey,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText =
+                    (await response.text()) ||
+                    "Не удалось начать строительство";
+                placementMode.onError(errorText);
+                return;
+            }
+
+            const data = await response.json();
+            if (data?.updatedCell) {
+                dispatch(
+                    updateCell({
+                        instanceId,
+                        updatedCell: {
+                            ...data.updatedCell,
+                            resource: data.updatedCell.resource ?? null,
+                            barbel: data.updatedCell.barbel ?? null,
+                            monster: data.updatedCell.monster ?? null,
+                            isPortal: !!data.updatedCell.isPortal,
+                            isPlayer: !!data.updatedCell.isPlayer,
+                            is_under_construction:
+                                !!data.updatedCell.is_under_construction,
+                        } as Cell,
+                    }),
+                );
+            }
+            if (data?.updatedPlayer) {
+                dispatch(
+                    updatePlayer({
+                        instanceId,
+                        player: data.updatedPlayer as PlayerState,
+                    }),
+                );
+            }
+
+            placementMode.onPlaced();
+        },
+        [dispatch, instanceId, myPlayerId, placementMode, user?.token],
     );
 
     const handleMoveOrAttack = useCallback(
@@ -271,6 +352,18 @@ export function usePlayerActions(
         async (cell: Cell) => {
             if (!myPlayer || !isMyTurn) return;
 
+            if (placementMode?.blueprintKey && placementMode.structureType) {
+                const distance = getDistance(cell.x, cell.y);
+                if (distance !== 1) {
+                    placementMode.onError(
+                        "Строить можно только в соседней клетке (вверх/вниз/влево/вправо)",
+                    );
+                    return;
+                }
+                await placeBlueprintAtCell(cell.x, cell.y);
+                return;
+            }
+
             const distance = getDistance(cell.x, cell.y);
             const targetPlayer = state.players.find(
                 (player) =>
@@ -316,6 +409,8 @@ export function usePlayerActions(
             movePlayer,
             collectResource,
             openBarrel,
+            placementMode,
+            placeBlueprintAtCell,
         ],
     );
 
