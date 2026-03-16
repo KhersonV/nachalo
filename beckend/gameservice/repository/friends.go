@@ -148,7 +148,7 @@ func ListIncomingFriendRequests(userID int) ([]FriendRequestSummary, error) {
         }
         item.Image = image.String
         if item.Image == "" {
-            item.Image = "/player-1.webp"
+            item.Image = "/ranger/ranger.webp"
         }
         item.CharacterType = characterType.String
         if item.CharacterType == "" {
@@ -192,7 +192,7 @@ func ListOutgoingFriendRequests(userID int) ([]FriendRequestSummary, error) {
         }
         item.Image = image.String
         if item.Image == "" {
-            item.Image = "/player-1.webp"
+            item.Image = "/ranger/ranger.webp"
         }
         item.CharacterType = characterType.String
         if item.CharacterType == "" {
@@ -349,7 +349,7 @@ func SearchPlayersByName(query string, limit int) ([]PlayerSearchSummary, error)
         }
         item.Image = image.String
         if item.Image == "" {
-            item.Image = "/player-1.webp"
+            item.Image = "/ranger/ranger.webp"
         }
         item.CharacterType = characterType.String
         if item.CharacterType == "" {
@@ -393,7 +393,7 @@ func ListFriends(userID int) ([]FriendSummary, error) {
         }
         item.Image = image.String
         if item.Image == "" {
-            item.Image = "/player-1.webp"
+            item.Image = "/ranger/ranger.webp"
         }
         item.CharacterType = characterType.String
         if item.CharacterType == "" {

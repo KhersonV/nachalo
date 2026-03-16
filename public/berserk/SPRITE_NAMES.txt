@@ -1,4 +1,4 @@
-Put player-2 sprites here using these names:
+Put berserk-character sprites here using these names:
 
 walk-right-2.png
 walk-left-2.png

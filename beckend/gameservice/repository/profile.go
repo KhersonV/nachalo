@@ -80,7 +80,7 @@ func GetPlayerIdentityDefaults(userID int) (string, string, error) {
 
     resolvedImage := image.String
     if resolvedImage == "" {
-        resolvedImage = "/player-1.webp"
+        resolvedImage = "/ranger/ranger.webp"
     }
 
     return resolvedName, resolvedImage, nil

@@ -134,7 +134,7 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.Name = "Player"
 	}
 	if req.Image == "" {
-		req.Image = "/player-1.webp"
+		req.Image = "/ranger/ranger.webp"
 	}
 
 	template := resolveCharacterTemplate(req.CharacterType)

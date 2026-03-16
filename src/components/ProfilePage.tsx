@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
+import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 import styles from "../styles/ProfilePage.module.css";
 
 type ProfileApiResponse = {
@@ -207,7 +208,7 @@ export default function ProfilePage() {
             if (!data) return;
             setProfile(data);
             setEditName(data.player.name || "");
-            setEditImage(data.player.image || "");
+            setEditImage(normalizeAvatarPath(data.player.image));
         } catch (e: any) {
             setError(e?.message || "Ошибка загрузки профиля");
         } finally {
@@ -878,7 +879,7 @@ export default function ProfilePage() {
                 <div className={styles.identityRow}>
                     <img
                         className={styles.avatar}
-                        src={activePlayer.image || "/player-1.webp"}
+                        src={normalizeAvatarPath(activePlayer.image)}
                         alt="avatar"
                     />
                     <div className={styles.identityMeta}>
@@ -1008,7 +1009,7 @@ export default function ProfilePage() {
                                 >
                                     <img
                                         className={styles.friendAvatar}
-                                        src={p.image || "/player-1.webp"}
+                                        src={normalizeAvatarPath(p.image)}
                                         alt="search avatar"
                                     />
                                     <div className={styles.friendMeta}>
@@ -1041,10 +1042,9 @@ export default function ProfilePage() {
                             <div className={styles.identityRow}>
                                 <img
                                     className={styles.avatar}
-                                    src={
-                                        viewedProfile.player.image ||
-                                        "/player-1.webp"
-                                    }
+                                    src={normalizeAvatarPath(
+                                        viewedProfile.player.image,
+                                    )}
                                     alt="viewed avatar"
                                 />
                                 <div className={styles.identityMeta}>
@@ -1201,7 +1201,7 @@ export default function ProfilePage() {
                                 >
                                     <img
                                         className={styles.friendAvatar}
-                                        src={req.image || "/player-1.webp"}
+                                        src={normalizeAvatarPath(req.image)}
                                         alt="request avatar"
                                     />
                                     <div className={styles.friendMeta}>
@@ -1272,7 +1272,7 @@ export default function ProfilePage() {
                                 >
                                     <img
                                         className={styles.friendAvatar}
-                                        src={req.image || "/player-1.webp"}
+                                        src={normalizeAvatarPath(req.image)}
                                         alt="outgoing request avatar"
                                     />
                                     <div className={styles.friendMeta}>
@@ -1333,7 +1333,7 @@ export default function ProfilePage() {
                                 >
                                     <img
                                         className={styles.friendAvatar}
-                                        src={f.image || "/player-1.webp"}
+                                        src={normalizeAvatarPath(f.image)}
                                         alt="friend avatar"
                                     />
                                     <div className={styles.friendMeta}>

@@ -124,7 +124,7 @@ func CreatePlayersTable() {
 	CREATE TABLE IF NOT EXISTS players (
 		user_id SERIAL PRIMARY KEY,
 		name TEXT DEFAULT 'Unnamed Player',
-		image TEXT DEFAULT '/player-1.webp',
+		image TEXT DEFAULT '/ranger/ranger.webp',
 		character_type TEXT DEFAULT 'adventurer',
 		energy INTEGER DEFAULT 100,
 		max_energy INTEGER DEFAULT 100,

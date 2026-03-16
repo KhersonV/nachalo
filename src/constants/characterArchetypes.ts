@@ -14,7 +14,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Линия фронта",
         description:
             "Живучий боец для тех, кто любит выдерживать урон и дожимать соперника вблизи.",
-        image: "/Character_1.webp",
+        image: "/guardian/guardian.webp",
         stats: [
             { label: "HP", value: "130" },
             { label: "Энергия", value: "90" },
@@ -36,7 +36,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Агрессивный урон",
         description:
             "Максимум давления в короткой дистанции: высокий урон, но слабее защита и обзор.",
-        image: "/Character_2.webp",
+        image: "/berserk/berserk.webp",
         stats: [
             { label: "HP", value: "100" },
             { label: "Энергия", value: "100" },
@@ -58,7 +58,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Дальний выстрел",
         description:
             "Мобильный дальник. Бьет на 2 клетки без контратаки, но не получает лишний обзор.",
-        image: "/player-1.webp",
+        image: "/ranger/ranger.webp",
         stats: [
             { label: "HP", value: "92" },
             { label: "Энергия", value: "105" },
@@ -80,7 +80,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Контроль темпа",
         description:
             "Тактический дальник. Атакует на 3 клетки без контратаки, но видит как остальные.",
-        image: "/player-2.webp",
+        image: "/mag/mag.webp",
         stats: [
             { label: "HP", value: "95" },
             { label: "Энергия", value: "125" },

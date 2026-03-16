@@ -21,6 +21,7 @@ import type {
     QueueSizeResponse,
 } from "../types";
 import LobbyHeader from "./LobbyHeader";
+import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 
 import styles from "../styles/ModeSelectionPage.module.css";
 
@@ -874,7 +875,7 @@ export default function ModeSelectionPage() {
                                 className={styles.partyMemberCard}
                             >
                                 <img
-                                    src={member.image || "/player-1.webp"}
+                                    src={normalizeAvatarPath(member.image)}
                                     alt={member.name}
                                     className={styles.partyAvatar}
                                 />

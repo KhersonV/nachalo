@@ -13,6 +13,7 @@ import type { Cell, PlayerState } from "../types";
 import { useInfoModal } from "./InfoModal";
 import { cellToGameObject, playerToGameObject } from "../utils/toGameObject";
 import { useCombatFloaters } from "../hooks/useCombatFloaters";
+import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 import styles from "../styles/Map.module.css";
 
 interface MapWithCameraProps {
@@ -75,42 +76,74 @@ type ResolveActiveSpritePoseInput = {
 
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
     {
-        imageKey: "Character_1",
-        rightWalkSpriteSrc: "/Character_1/walk-right-1.png",
+        imageKey: "guardian",
+        rightWalkSpriteSrc: "/guardian/walk-right-1.png",
         rightWalkFrames: 1,
-        leftWalkSpriteSrc: "/Character_1/walk-left-1.png",
+        leftWalkSpriteSrc: "/guardian/walk-left-1.png",
         leftWalkFrames: 1,
-        idleSideRightSpriteSrc: "/Character_1/idle-side-right-1.png",
-        idleSideLeftSpriteSrc: "/Character_1/idle-side-left-1.png",
-        downWalkSpriteSrc: "/Character_1/walk-down-1.png",
+        idleSideRightSpriteSrc: "/guardian/idle-side-right-1.png",
+        idleSideLeftSpriteSrc: "/guardian/idle-side-left-1.png",
+        downWalkSpriteSrc: "/guardian/walk-down-1.png",
         downWalkFrames: 1,
-        idleFrontSpriteSrc: "/Character_1/idle-front-1.png",
-        upWalkSpriteSrc: "/Character_1/walk-up-1.png",
+        idleFrontSpriteSrc: "/guardian/idle-front-1.png",
+        upWalkSpriteSrc: "/guardian/walk-up-1.png",
         upWalkFrames: 1,
-        idleBackSpriteSrc: "/Character_1/idle-back-1.png",
+        idleBackSpriteSrc: "/guardian/idle-back-1.png",
     },
     {
-        imageKey: "player-1",
-        rightWalkSpriteSrc: "/player-1/walk-right-1.png",
+        imageKey: "ranger",
+        rightWalkSpriteSrc: "/ranger/walk-right-1.png",
         rightWalkFrames: 1,
-        leftWalkSpriteSrc: "/player-1/walk-left-1.png",
+        leftWalkSpriteSrc: "/ranger/walk-left-1.png",
         leftWalkFrames: 1,
-        idleSideRightSpriteSrc: "/player-1/idle-side-right-1.png",
-        idleSideLeftSpriteSrc: "/player-1/idle-side-left-1.png",
-        downWalkSpriteSrc: "/player-1/walk-down-1.webp",
+        idleSideRightSpriteSrc: "/ranger/idle-side-right-1.png",
+        idleSideLeftSpriteSrc: "/ranger/idle-side-left-1.png",
+        downWalkSpriteSrc: "/ranger/walk-down-1.png",
         downWalkFrames: 1,
-        idleFrontSpriteSrc: "/player-1/idle-front-1.png",
-        upWalkSpriteSrc: "/player-1/walk-up-1.png",
+        idleFrontSpriteSrc: "/ranger/idle-front-1.png",
+        upWalkSpriteSrc: "/ranger/walk-up-1.png",
         upWalkFrames: 1,
-        idleBackSpriteSrc: "/player-1/idle-back-1.png",
+        idleBackSpriteSrc: "/ranger/idle-back-1.png",
+    },
+    {
+        imageKey: "berserk",
+        rightWalkSpriteSrc: "/berserk/walk-right-2.png",
+        rightWalkFrames: 1,
+        leftWalkSpriteSrc: "/berserk/walk-left-2.png",
+        leftWalkFrames: 1,
+        idleSideRightSpriteSrc: "/berserk/idle-side-right-2.png",
+        idleSideLeftSpriteSrc: "/berserk/idle-side-left-2.png",
+        downWalkSpriteSrc: "/berserk/walk-down-2.png",
+        downWalkFrames: 1,
+        idleFrontSpriteSrc: "/berserk/idle-front-2.png",
+        upWalkSpriteSrc: "/berserk/walk-up-2.png",
+        upWalkFrames: 1,
+        idleBackSpriteSrc: "/berserk/idle-back-2.png",
+    },
+    {
+        imageKey: "mag.webp",
+        rightWalkSpriteSrc: "/mag/mag-walk-right-2.png",
+        rightWalkFrames: 1,
+        leftWalkSpriteSrc: "/mag/mag-walk-left-2.png",
+        leftWalkFrames: 1,
+        idleSideRightSpriteSrc: "/mag/mag-idle-side-right-2.png",
+        idleSideLeftSpriteSrc: "/mag/mag-idle-side-left-2.png",
+        downWalkSpriteSrc: "/mag/mag-walk-down-2.png",
+        downWalkFrames: 1,
+        idleFrontSpriteSrc: "/mag/mag-idle-front-2.png",
+        upWalkSpriteSrc: "/mag/mag-walk-up-2.png",
+        upWalkFrames: 1,
+        idleBackSpriteSrc: "/mag/mag-idle-back-2.png",
     },
 ];
 
 function getSpriteConfig(playerImage?: string): CharacterSpriteConfig | null {
-    if (!playerImage) return null;
+    const normalizedPlayerImage = normalizeAvatarPath(playerImage);
+    if (!normalizedPlayerImage) return null;
     return (
-        CHARACTER_SPRITES.find((cfg) => playerImage.includes(cfg.imageKey)) ??
-        null
+        CHARACTER_SPRITES.find((cfg) =>
+            normalizedPlayerImage.includes(cfg.imageKey),
+        ) ?? null
     );
 }
 
@@ -569,7 +602,7 @@ export default function MapWithCamera({
                                 />
                             ) : (
                                 <img
-                                    src={player.image}
+                                    src={normalizeAvatarPath(player.image)}
                                     alt={player.name}
                                     draggable={false}
                                     style={{
