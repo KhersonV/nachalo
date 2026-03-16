@@ -774,6 +774,11 @@ export default function ModeSelectionPage() {
         }
     }
 
+    function openPlayerProfile(userId: number) {
+        if (!userId) return;
+        router.push(`/profile?view=${userId}&from=lobby`);
+    }
+
     return (
         <div className={styles.pageRoot}>
             <LobbyHeader />
@@ -820,6 +825,17 @@ export default function ModeSelectionPage() {
                                     <span>Уровень: {invite.leader.level}</span>
                                 </div>
                                 <div className={styles.partyActionsRow}>
+                                    <button
+                                        type="button"
+                                        className={styles.partySecondaryButton}
+                                        onClick={() =>
+                                            openPlayerProfile(
+                                                invite.leader.user_id,
+                                            )
+                                        }
+                                    >
+                                        Профиль
+                                    </button>
                                     <button
                                         type="button"
                                         className={styles.partyActionButton}
@@ -877,6 +893,15 @@ export default function ModeSelectionPage() {
                                         </span>
                                     )}
                                 </div>
+                                <button
+                                    type="button"
+                                    className={styles.partySecondaryButton}
+                                    onClick={() =>
+                                        openPlayerProfile(member.user_id)
+                                    }
+                                >
+                                    Профиль
+                                </button>
                                 {canKick && (
                                     <button
                                         type="button"
@@ -950,6 +975,21 @@ export default function ModeSelectionPage() {
                                             <span>Уровень {friend.level}</span>
                                             <span>{friend.activityStatus}</span>
                                         </div>
+                                        <button
+                                            type="button"
+                                            className={
+                                                styles.partySecondaryButton
+                                            }
+                                            onClick={() =>
+                                                openPlayerProfile(friend.userId)
+                                            }
+                                            disabled={
+                                                partyBusyUserId ===
+                                                friend.userId
+                                            }
+                                        >
+                                            Профиль
+                                        </button>
                                         <button
                                             type="button"
                                             className={styles.partyActionButton}

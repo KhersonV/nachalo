@@ -240,7 +240,7 @@ func SyncPersistentInventoryFromMatchResources(instanceID string, userID int) er
 	}
 
 	finalInv := make(map[string]map[string]interface{})
-	if matchPlayer.Health > 0 && matchPlayer.Inventory != "" && matchPlayer.Inventory != "{}" {
+	if matchPlayer.Inventory != "" && matchPlayer.Inventory != "{}" {
 		if err := json.Unmarshal([]byte(matchPlayer.Inventory), &finalInv); err != nil {
 			finalInv = make(map[string]map[string]interface{})
 		}

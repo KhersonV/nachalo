@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import styles from "../styles/ProfilePage.module.css";
@@ -133,6 +133,7 @@ const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 export default function ProfilePage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user } = useAuth();
 
     const [profile, setProfile] = useState<ProfileApiResponse["data"] | null>(
@@ -435,6 +436,19 @@ export default function ProfilePage() {
         },
         [loadPublicProfileById],
     );
+
+    useEffect(() => {
+        if (!user?.token) return;
+
+        const viewParam = searchParams.get("view");
+        if (!viewParam) return;
+
+        const parsedId = Number.parseInt(viewParam, 10);
+        if (!Number.isFinite(parsedId) || parsedId <= 0) return;
+
+        setLookupId(String(parsedId));
+        void loadPublicProfileById(parsedId);
+    }, [user, searchParams, loadPublicProfileById]);
 
     const addFriend = useCallback(async () => {
         if (!user?.token || !viewedProfile) return;
@@ -781,12 +795,29 @@ export default function ProfilePage() {
         return <div className={styles.page}>Профиль недоступен</div>;
     }
 
-    const expPercent = profile.player.maxExperience
+    const viewedUserParamRaw = searchParams.get("view");
+    const viewedUserParam = viewedUserParamRaw
+        ? Number.parseInt(viewedUserParamRaw, 10)
+        : NaN;
+    const fromParam = searchParams.get("from") || "";
+    const returnInstanceId = searchParams.get("instance_id") || "";
+    const isExternalProfileMode =
+        Number.isFinite(viewedUserParam) && viewedUserParam > 0;
+
+    const activePlayer =
+        isExternalProfileMode && viewedProfile
+            ? viewedProfile.player
+            : profile.player;
+    const activeProgress =
+        isExternalProfileMode && viewedProfile
+            ? viewedProfile.progress
+            : profile.progress;
+
+    const expPercent = activePlayer.maxExperience
         ? Math.min(
               100,
               Math.round(
-                  (profile.player.experience / profile.player.maxExperience) *
-                      100,
+                  (activePlayer.experience / activePlayer.maxExperience) * 100,
               ),
           )
         : 0;
@@ -805,52 +836,71 @@ export default function ProfilePage() {
               ? styles.statusInLobby
               : styles.statusOffline;
 
-    const activityLabel = getActivityLabel(profile.player.activityStatus);
-    const activityClass = getActivityClass(profile.player.activityStatus);
+    const activityLabel = getActivityLabel(activePlayer.activityStatus);
+    const activityClass = getActivityClass(activePlayer.activityStatus);
+    const isViewingFromRoute = !!searchParams.get("view");
+
+    const handleBack = () => {
+        if (isExternalProfileMode && fromParam === "game" && returnInstanceId) {
+            router.push(
+                `/game?instance_id=${encodeURIComponent(returnInstanceId)}`,
+            );
+            return;
+        }
+        router.push("/mode");
+    };
 
     return (
         <div className={styles.page}>
-            <div style={{ marginBottom: "0.95rem" }}>
-                <LobbyHeader />
-            </div>
+            {!isExternalProfileMode && (
+                <div style={{ marginBottom: "0.95rem" }}>
+                    <LobbyHeader />
+                </div>
+            )}
             <div className={styles.topRow}>
                 <h2 className={styles.title}>Профиль игрока</h2>
-                <button
-                    className={styles.backBtn}
-                    onClick={() => router.push("/mode")}
-                >
-                    К режимам
+                <button className={styles.backBtn} onClick={handleBack}>
+                    {isExternalProfileMode && fromParam === "game"
+                        ? "Назад в игру"
+                        : "К режимам"}
                 </button>
             </div>
+
+            {isViewingFromRoute && (
+                <div className={styles.info}>
+                    {viewedProfile
+                        ? `Просмотр профиля: ${viewedProfile.player.name}`
+                        : "Загружаем профиль игрока..."}
+                </div>
+            )}
 
             <section className={styles.card}>
                 <div className={styles.identityRow}>
                     <img
                         className={styles.avatar}
-                        src={profile.player.image || "/player-1.webp"}
+                        src={activePlayer.image || "/player-1.webp"}
                         alt="avatar"
                     />
                     <div className={styles.identityMeta}>
-                        <div className={styles.name}>{profile.player.name}</div>
+                        <div className={styles.name}>{activePlayer.name}</div>
                         <div
                             className={`${styles.statusBadge} ${activityClass}`}
                         >
                             {activityLabel}
                         </div>
                         <div className={styles.subline}>
-                            Класс: {profile.player.characterType}
+                            Класс: {activePlayer.characterType}
                         </div>
                         <div className={styles.subline}>
-                            Баланс: {profile.player.balance}
+                            Баланс: {activePlayer.balance}
                         </div>
                     </div>
                 </div>
 
                 <div className={styles.expWrap}>
                     <div className={styles.expLabel}>
-                        Уровень {profile.player.level} •{" "}
-                        {profile.player.experience}/
-                        {profile.player.maxExperience} XP
+                        Уровень {activePlayer.level} • {activePlayer.experience}
+                        /{activePlayer.maxExperience} XP
                     </div>
                     <div className={styles.expBarTrack}>
                         <div
@@ -860,538 +910,594 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                <div className={styles.editGrid}>
-                    <label className={styles.label}>
-                        Ник
-                        <input
-                            className={styles.input}
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            maxLength={32}
-                        />
-                    </label>
-                    <label className={styles.label}>
-                        URL аватара
-                        <input
-                            className={styles.input}
-                            value={editImage}
-                            onChange={(e) => setEditImage(e.target.value)}
-                            maxLength={512}
-                        />
-                    </label>
-                </div>
-
-                <div className={styles.inlineActions}>
-                    <button
-                        className={styles.primaryBtn}
-                        onClick={saveProfile}
-                        disabled={saving}
-                    >
-                        {saving ? "Сохраняем..." : "Сохранить"}
-                    </button>
-                    {info && <span className={styles.info}>{info}</span>}
-                    {error && <span className={styles.error}>{error}</span>}
-                </div>
-            </section>
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>Профили других игроков</h3>
-                <div className={styles.lookupRow}>
-                    <input
-                        className={styles.input}
-                        value={lookupId}
-                        onChange={(e) => setLookupId(e.target.value)}
-                        placeholder="Введите ID игрока"
-                        inputMode="numeric"
-                    />
-                    <button
-                        className={styles.primaryBtn}
-                        onClick={viewOtherProfile}
-                        disabled={lookupLoading}
-                    >
-                        {lookupLoading ? "Ищем..." : "Открыть профиль"}
-                    </button>
-                </div>
-                <div className={styles.lookupRow}>
-                    <input
-                        className={styles.input}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Поиск игроков по нику"
-                    />
-                    <button
-                        className={styles.primaryBtn}
-                        onClick={searchPlayers}
-                        disabled={searchingPlayers}
-                    >
-                        {searchingPlayers ? "Ищем..." : "Найти"}
-                    </button>
-                </div>
-                {lookupError && (
-                    <div className={styles.error}>{lookupError}</div>
-                )}
-                {friendInfo && <div className={styles.info}>{friendInfo}</div>}
-
-                {searchResults.length > 0 && (
-                    <div className={styles.friendList}>
-                        {searchResults.map((p) => (
-                            <div
-                                key={`search-${p.userId}`}
-                                className={styles.friendItem}
-                            >
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={p.image || "/player-1.webp"}
-                                    alt="search avatar"
+                {!isExternalProfileMode && (
+                    <>
+                        <div className={styles.editGrid}>
+                            <label className={styles.label}>
+                                Ник
+                                <input
+                                    className={styles.input}
+                                    value={editName}
+                                    onChange={(e) =>
+                                        setEditName(e.target.value)
+                                    }
+                                    maxLength={32}
                                 />
-                                <div className={styles.friendMeta}>
-                                    <strong>{p.name}</strong>
-                                    <span>
-                                        ID: {p.userId} • Ур. {p.level} •{" "}
-                                        {p.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(p.activityStatus)}`}
-                                >
-                                    {getActivityLabel(p.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.backBtn}
-                                    onClick={() => openFriendProfile(p.userId)}
-                                >
-                                    Открыть
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {viewedProfile && (
-                    <div className={styles.previewCard}>
-                        <div className={styles.identityRow}>
-                            <img
-                                className={styles.avatar}
-                                src={
-                                    viewedProfile.player.image ||
-                                    "/player-1.webp"
-                                }
-                                alt="viewed avatar"
-                            />
-                            <div className={styles.identityMeta}>
-                                <div className={styles.name}>
-                                    {viewedProfile.player.name}
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(viewedProfile.player.activityStatus)}`}
-                                >
-                                    {getActivityLabel(
-                                        viewedProfile.player.activityStatus,
-                                    )}
-                                </div>
-                                <div className={styles.subline}>
-                                    ID: {viewedProfile.player.userId} • Класс:{" "}
-                                    {viewedProfile.player.characterType}
-                                </div>
-                                <div className={styles.subline}>
-                                    Уровень: {viewedProfile.player.level} •
-                                    Winrate: {viewedProfile.progress.winRate}%
-                                </div>
-                            </div>
+                            </label>
+                            <label className={styles.label}>
+                                URL аватара
+                                <input
+                                    className={styles.input}
+                                    value={editImage}
+                                    onChange={(e) =>
+                                        setEditImage(e.target.value)
+                                    }
+                                    maxLength={512}
+                                />
+                            </label>
                         </div>
 
-                        {viewedProfile.player.userId !== user?.id && (
-                            <div className={styles.inlineActions}>
-                                <button
-                                    className={styles.primaryBtn}
-                                    onClick={addFriend}
-                                    disabled={
-                                        addingFriend ||
-                                        viewedProfile.friendRelation !== "none"
-                                    }
+                        <div className={styles.inlineActions}>
+                            <button
+                                className={styles.primaryBtn}
+                                onClick={saveProfile}
+                                disabled={saving}
+                            >
+                                {saving ? "Сохраняем..." : "Сохранить"}
+                            </button>
+                            {info && (
+                                <span className={styles.info}>{info}</span>
+                            )}
+                            {error && (
+                                <span className={styles.error}>{error}</span>
+                            )}
+                        </div>
+                    </>
+                )}
+            </section>
+
+            {!isExternalProfileMode && (
+                <section className={styles.card}>
+                    <h3 className={styles.sectionTitle}>
+                        Профили других игроков
+                    </h3>
+                    <div className={styles.lookupRow}>
+                        <input
+                            className={styles.input}
+                            value={lookupId}
+                            onChange={(e) => setLookupId(e.target.value)}
+                            placeholder="Введите ID игрока"
+                            inputMode="numeric"
+                        />
+                        <button
+                            className={styles.primaryBtn}
+                            onClick={viewOtherProfile}
+                            disabled={lookupLoading}
+                        >
+                            {lookupLoading ? "Ищем..." : "Открыть профиль"}
+                        </button>
+                    </div>
+                    <div className={styles.lookupRow}>
+                        <input
+                            className={styles.input}
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Поиск игроков по нику"
+                        />
+                        <button
+                            className={styles.primaryBtn}
+                            onClick={searchPlayers}
+                            disabled={searchingPlayers}
+                        >
+                            {searchingPlayers ? "Ищем..." : "Найти"}
+                        </button>
+                    </div>
+                    {lookupError && (
+                        <div className={styles.error}>{lookupError}</div>
+                    )}
+                    {friendInfo && (
+                        <div className={styles.info}>{friendInfo}</div>
+                    )}
+
+                    {searchResults.length > 0 && (
+                        <div className={styles.friendList}>
+                            {searchResults.map((p) => (
+                                <div
+                                    key={`search-${p.userId}`}
+                                    className={styles.friendItem}
                                 >
-                                    {viewedProfile.friendRelation === "friend"
-                                        ? "Уже в друзьях"
-                                        : viewedProfile.friendRelation ===
-                                            "outgoing"
-                                          ? "Заявка отправлена"
-                                          : viewedProfile.friendRelation ===
-                                              "incoming"
-                                            ? "Входящая заявка"
-                                            : addingFriend
-                                              ? "Отправляем..."
-                                              : "Отправить заявку"}
-                                </button>
-                                {viewedProfile.friendRelation === "friend" && (
+                                    <img
+                                        className={styles.friendAvatar}
+                                        src={p.image || "/player-1.webp"}
+                                        alt="search avatar"
+                                    />
+                                    <div className={styles.friendMeta}>
+                                        <strong>{p.name}</strong>
+                                        <span>
+                                            ID: {p.userId} • Ур. {p.level} •{" "}
+                                            {p.characterType}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={`${styles.statusBadge} ${getActivityClass(p.activityStatus)}`}
+                                    >
+                                        {getActivityLabel(p.activityStatus)}
+                                    </div>
                                     <button
-                                        className={styles.dangerBtn}
+                                        className={styles.backBtn}
                                         onClick={() =>
-                                            removeFriend(
-                                                viewedProfile.player.userId,
-                                            )
-                                        }
-                                        disabled={
-                                            removingFriendUserId ===
-                                            viewedProfile.player.userId
+                                            openFriendProfile(p.userId)
                                         }
                                     >
-                                        {removingFriendUserId ===
-                                        viewedProfile.player.userId
-                                            ? "Удаляем..."
-                                            : "Удалить из друзей"}
+                                        Открыть
                                     </button>
-                                )}
-                                {viewedProfile.friendRelation ===
-                                    "incoming" && (
-                                    <>
-                                        <button
-                                            className={styles.primaryBtn}
-                                            onClick={() =>
-                                                acceptFriendRequest(
-                                                    viewedProfile.player.userId,
-                                                )
-                                            }
-                                            disabled={
-                                                processingRequestUserId ===
-                                                viewedProfile.player.userId
-                                            }
-                                        >
-                                            {processingRequestUserId ===
-                                            viewedProfile.player.userId
-                                                ? "Обработка..."
-                                                : "Принять заявку"}
-                                        </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {viewedProfile && (
+                        <div className={styles.previewCard}>
+                            <div className={styles.identityRow}>
+                                <img
+                                    className={styles.avatar}
+                                    src={
+                                        viewedProfile.player.image ||
+                                        "/player-1.webp"
+                                    }
+                                    alt="viewed avatar"
+                                />
+                                <div className={styles.identityMeta}>
+                                    <div className={styles.name}>
+                                        {viewedProfile.player.name}
+                                    </div>
+                                    <div
+                                        className={`${styles.statusBadge} ${getActivityClass(viewedProfile.player.activityStatus)}`}
+                                    >
+                                        {getActivityLabel(
+                                            viewedProfile.player.activityStatus,
+                                        )}
+                                    </div>
+                                    <div className={styles.subline}>
+                                        ID: {viewedProfile.player.userId} •
+                                        Класс:{" "}
+                                        {viewedProfile.player.characterType}
+                                    </div>
+                                    <div className={styles.subline}>
+                                        Уровень: {viewedProfile.player.level} •
+                                        Winrate:{" "}
+                                        {viewedProfile.progress.winRate}%
+                                    </div>
+                                </div>
+                            </div>
+
+                            {viewedProfile.player.userId !== user?.id && (
+                                <div className={styles.inlineActions}>
+                                    <button
+                                        className={styles.primaryBtn}
+                                        onClick={addFriend}
+                                        disabled={
+                                            addingFriend ||
+                                            viewedProfile.friendRelation !==
+                                                "none"
+                                        }
+                                    >
+                                        {viewedProfile.friendRelation ===
+                                        "friend"
+                                            ? "Уже в друзьях"
+                                            : viewedProfile.friendRelation ===
+                                                "outgoing"
+                                              ? "Заявка отправлена"
+                                              : viewedProfile.friendRelation ===
+                                                  "incoming"
+                                                ? "Входящая заявка"
+                                                : addingFriend
+                                                  ? "Отправляем..."
+                                                  : "Отправить заявку"}
+                                    </button>
+                                    {viewedProfile.friendRelation ===
+                                        "friend" && (
                                         <button
                                             className={styles.dangerBtn}
                                             onClick={() =>
-                                                rejectFriendRequest(
+                                                removeFriend(
                                                     viewedProfile.player.userId,
                                                 )
                                             }
                                             disabled={
-                                                processingRequestUserId ===
+                                                removingFriendUserId ===
                                                 viewedProfile.player.userId
                                             }
                                         >
-                                            Отклонить заявку
+                                            {removingFriendUserId ===
+                                            viewedProfile.player.userId
+                                                ? "Удаляем..."
+                                                : "Удалить из друзей"}
                                         </button>
-                                    </>
-                                )}
-                                {viewedProfile.friendRelation ===
-                                    "outgoing" && (
+                                    )}
+                                    {viewedProfile.friendRelation ===
+                                        "incoming" && (
+                                        <>
+                                            <button
+                                                className={styles.primaryBtn}
+                                                onClick={() =>
+                                                    acceptFriendRequest(
+                                                        viewedProfile.player
+                                                            .userId,
+                                                    )
+                                                }
+                                                disabled={
+                                                    processingRequestUserId ===
+                                                    viewedProfile.player.userId
+                                                }
+                                            >
+                                                {processingRequestUserId ===
+                                                viewedProfile.player.userId
+                                                    ? "Обработка..."
+                                                    : "Принять заявку"}
+                                            </button>
+                                            <button
+                                                className={styles.dangerBtn}
+                                                onClick={() =>
+                                                    rejectFriendRequest(
+                                                        viewedProfile.player
+                                                            .userId,
+                                                    )
+                                                }
+                                                disabled={
+                                                    processingRequestUserId ===
+                                                    viewedProfile.player.userId
+                                                }
+                                            >
+                                                Отклонить заявку
+                                            </button>
+                                        </>
+                                    )}
+                                    {viewedProfile.friendRelation ===
+                                        "outgoing" && (
+                                        <button
+                                            className={styles.dangerBtn}
+                                            onClick={() =>
+                                                cancelOutgoingRequest(
+                                                    viewedProfile.player.userId,
+                                                )
+                                            }
+                                            disabled={
+                                                cancelingOutgoingUserId ===
+                                                viewedProfile.player.userId
+                                            }
+                                        >
+                                            {cancelingOutgoingUserId ===
+                                            viewedProfile.player.userId
+                                                ? "Отменяем..."
+                                                : "Отменить заявку"}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {!isExternalProfileMode && (
+                <section className={styles.card}>
+                    <h3 className={styles.sectionTitle}>
+                        Входящие заявки в друзья
+                    </h3>
+                    {requestsError && (
+                        <div className={styles.error}>{requestsError}</div>
+                    )}
+                    {incomingRequests.length === 0 ? (
+                        <div className={styles.subline}>
+                            Нет входящих заявок
+                        </div>
+                    ) : (
+                        <div className={styles.friendList}>
+                            {incomingRequests.map((req) => (
+                                <div
+                                    key={`request-${req.userId}`}
+                                    className={styles.friendItem}
+                                >
+                                    <img
+                                        className={styles.friendAvatar}
+                                        src={req.image || "/player-1.webp"}
+                                        alt="request avatar"
+                                    />
+                                    <div className={styles.friendMeta}>
+                                        <strong>{req.name}</strong>
+                                        <span>
+                                            ID: {req.userId} • Ур. {req.level} •{" "}
+                                            {req.characterType}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
+                                    >
+                                        {getActivityLabel(req.activityStatus)}
+                                    </div>
+                                    <button
+                                        className={styles.primaryBtn}
+                                        onClick={() =>
+                                            acceptFriendRequest(req.userId)
+                                        }
+                                        disabled={
+                                            processingRequestUserId ===
+                                            req.userId
+                                        }
+                                    >
+                                        {processingRequestUserId === req.userId
+                                            ? "Обработка..."
+                                            : "Принять"}
+                                    </button>
                                     <button
                                         className={styles.dangerBtn}
                                         onClick={() =>
-                                            cancelOutgoingRequest(
-                                                viewedProfile.player.userId,
-                                            )
+                                            rejectFriendRequest(req.userId)
+                                        }
+                                        disabled={
+                                            processingRequestUserId ===
+                                            req.userId
+                                        }
+                                    >
+                                        Отклонить
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {!isExternalProfileMode && (
+                <section className={styles.card}>
+                    <h3 className={styles.sectionTitle}>
+                        Исходящие заявки в друзья
+                    </h3>
+                    {outgoingRequestsError && (
+                        <div className={styles.error}>
+                            {outgoingRequestsError}
+                        </div>
+                    )}
+                    {outgoingRequests.length === 0 ? (
+                        <div className={styles.subline}>
+                            Нет исходящих заявок
+                        </div>
+                    ) : (
+                        <div className={styles.friendList}>
+                            {outgoingRequests.map((req) => (
+                                <div
+                                    key={`outgoing-${req.userId}`}
+                                    className={styles.friendItem}
+                                >
+                                    <img
+                                        className={styles.friendAvatar}
+                                        src={req.image || "/player-1.webp"}
+                                        alt="outgoing request avatar"
+                                    />
+                                    <div className={styles.friendMeta}>
+                                        <strong>{req.name}</strong>
+                                        <span>
+                                            ID: {req.userId} • Ур. {req.level} •{" "}
+                                            {req.characterType}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
+                                    >
+                                        {getActivityLabel(req.activityStatus)}
+                                    </div>
+                                    <button
+                                        className={styles.backBtn}
+                                        onClick={() =>
+                                            openFriendProfile(req.userId)
+                                        }
+                                    >
+                                        Открыть
+                                    </button>
+                                    <button
+                                        className={styles.dangerBtn}
+                                        onClick={() =>
+                                            cancelOutgoingRequest(req.userId)
                                         }
                                         disabled={
                                             cancelingOutgoingUserId ===
-                                            viewedProfile.player.userId
+                                            req.userId
                                         }
                                     >
-                                        {cancelingOutgoingUserId ===
-                                        viewedProfile.player.userId
+                                        {cancelingOutgoingUserId === req.userId
                                             ? "Отменяем..."
-                                            : "Отменить заявку"}
+                                            : "Отменить"}
                                     </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
-            </section>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            )}
 
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>
-                    Входящие заявки в друзья
-                </h3>
-                {requestsError && (
-                    <div className={styles.error}>{requestsError}</div>
-                )}
-                {incomingRequests.length === 0 ? (
-                    <div className={styles.subline}>Нет входящих заявок</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {incomingRequests.map((req) => (
-                            <div
-                                key={`request-${req.userId}`}
-                                className={styles.friendItem}
-                            >
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={req.image || "/player-1.webp"}
-                                    alt="request avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{req.name}</strong>
-                                    <span>
-                                        ID: {req.userId} • Ур. {req.level} •{" "}
-                                        {req.characterType}
-                                    </span>
-                                </div>
+            {!isExternalProfileMode && (
+                <section className={styles.card}>
+                    <h3 className={styles.sectionTitle}>Друзья</h3>
+                    {friendsError && (
+                        <div className={styles.error}>{friendsError}</div>
+                    )}
+                    {friends.length === 0 ? (
+                        <div className={styles.subline}>Список друзей пуст</div>
+                    ) : (
+                        <div className={styles.friendList}>
+                            {friends.map((f) => (
                                 <div
-                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
+                                    key={f.userId}
+                                    className={styles.friendItem}
                                 >
-                                    {getActivityLabel(req.activityStatus)}
+                                    <img
+                                        className={styles.friendAvatar}
+                                        src={f.image || "/player-1.webp"}
+                                        alt="friend avatar"
+                                    />
+                                    <div className={styles.friendMeta}>
+                                        <strong>{f.name}</strong>
+                                        <span>
+                                            ID: {f.userId} • Ур. {f.level} •{" "}
+                                            {f.characterType}
+                                        </span>
+                                    </div>
+                                    <div
+                                        className={`${styles.statusBadge} ${getActivityClass(f.activityStatus)}`}
+                                    >
+                                        {getActivityLabel(f.activityStatus)}
+                                    </div>
+                                    <button
+                                        className={styles.backBtn}
+                                        onClick={() =>
+                                            openFriendProfile(f.userId)
+                                        }
+                                    >
+                                        Быстрый просмотр
+                                    </button>
+                                    <button
+                                        className={styles.dangerBtn}
+                                        onClick={() => removeFriend(f.userId)}
+                                        disabled={
+                                            removingFriendUserId === f.userId
+                                        }
+                                    >
+                                        {removingFriendUserId === f.userId
+                                            ? "Удаляем..."
+                                            : "Удалить"}
+                                    </button>
                                 </div>
-                                <button
-                                    className={styles.primaryBtn}
-                                    onClick={() =>
-                                        acceptFriendRequest(req.userId)
-                                    }
-                                    disabled={
-                                        processingRequestUserId === req.userId
-                                    }
-                                >
-                                    {processingRequestUserId === req.userId
-                                        ? "Обработка..."
-                                        : "Принять"}
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() =>
-                                        rejectFriendRequest(req.userId)
-                                    }
-                                    disabled={
-                                        processingRequestUserId === req.userId
-                                    }
-                                >
-                                    Отклонить
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>
-                    Исходящие заявки в друзья
-                </h3>
-                {outgoingRequestsError && (
-                    <div className={styles.error}>{outgoingRequestsError}</div>
-                )}
-                {outgoingRequests.length === 0 ? (
-                    <div className={styles.subline}>Нет исходящих заявок</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {outgoingRequests.map((req) => (
-                            <div
-                                key={`outgoing-${req.userId}`}
-                                className={styles.friendItem}
-                            >
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={req.image || "/player-1.webp"}
-                                    alt="outgoing request avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{req.name}</strong>
-                                    <span>
-                                        ID: {req.userId} • Ур. {req.level} •{" "}
-                                        {req.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
-                                >
-                                    {getActivityLabel(req.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.backBtn}
-                                    onClick={() =>
-                                        openFriendProfile(req.userId)
-                                    }
-                                >
-                                    Открыть
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() =>
-                                        cancelOutgoingRequest(req.userId)
-                                    }
-                                    disabled={
-                                        cancelingOutgoingUserId === req.userId
-                                    }
-                                >
-                                    {cancelingOutgoingUserId === req.userId
-                                        ? "Отменяем..."
-                                        : "Отменить"}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>Друзья</h3>
-                {friendsError && (
-                    <div className={styles.error}>{friendsError}</div>
-                )}
-                {friends.length === 0 ? (
-                    <div className={styles.subline}>Список друзей пуст</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {friends.map((f) => (
-                            <div key={f.userId} className={styles.friendItem}>
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={f.image || "/player-1.webp"}
-                                    alt="friend avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{f.name}</strong>
-                                    <span>
-                                        ID: {f.userId} • Ур. {f.level} •{" "}
-                                        {f.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(f.activityStatus)}`}
-                                >
-                                    {getActivityLabel(f.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.backBtn}
-                                    onClick={() => openFriendProfile(f.userId)}
-                                >
-                                    Быстрый просмотр
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() => removeFriend(f.userId)}
-                                    disabled={removingFriendUserId === f.userId}
-                                >
-                                    {removingFriendUserId === f.userId
-                                        ? "Удаляем..."
-                                        : "Удалить"}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            )}
 
             <section className={styles.grid}>
                 <article className={styles.card}>
                     <h3 className={styles.sectionTitle}>Прогресс</h3>
                     <div className={styles.statRow}>
                         <span>Матчей</span>
-                        <strong>{profile.progress.matchesPlayed}</strong>
+                        <strong>{activeProgress.matchesPlayed}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Побед</span>
-                        <strong>{profile.progress.wins}</strong>
+                        <strong>{activeProgress.wins}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Winrate</span>
-                        <strong>{profile.progress.winRate}%</strong>
+                        <strong>{activeProgress.winRate}%</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>XP за матчи</span>
-                        <strong>{profile.progress.totalExpGained}</strong>
+                        <strong>{activeProgress.totalExpGained}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Убийств игроков</span>
-                        <strong>{profile.progress.playerKills}</strong>
+                        <strong>{activeProgress.playerKills}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Убийств монстров</span>
-                        <strong>{profile.progress.monsterKills}</strong>
+                        <strong>{activeProgress.monsterKills}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Общий урон</span>
-                        <strong>{profile.progress.damageTotal}</strong>
+                        <strong>{activeProgress.damageTotal}</strong>
                     </div>
                 </article>
 
-                <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Ресурсы</h3>
-                    <div className={styles.statRow}>
-                        <span>Еда</span>
-                        <strong>{profile.resources.food}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Вода</span>
-                        <strong>{profile.resources.water}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Дерево</span>
-                        <strong>{profile.resources.wood}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Камень</span>
-                        <strong>{profile.resources.stone}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Железо</span>
-                        <strong>{profile.resources.iron}</strong>
-                    </div>
-                </article>
+                {!isExternalProfileMode && (
+                    <article className={styles.card}>
+                        <h3 className={styles.sectionTitle}>Ресурсы</h3>
+                        <div className={styles.statRow}>
+                            <span>Еда</span>
+                            <strong>{profile.resources.food}</strong>
+                        </div>
+                        <div className={styles.statRow}>
+                            <span>Вода</span>
+                            <strong>{profile.resources.water}</strong>
+                        </div>
+                        <div className={styles.statRow}>
+                            <span>Дерево</span>
+                            <strong>{profile.resources.wood}</strong>
+                        </div>
+                        <div className={styles.statRow}>
+                            <span>Камень</span>
+                            <strong>{profile.resources.stone}</strong>
+                        </div>
+                        <div className={styles.statRow}>
+                            <span>Железо</span>
+                            <strong>{profile.resources.iron}</strong>
+                        </div>
+                    </article>
+                )}
 
-                <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>База</h3>
-                    <div className={styles.statRow}>
-                        <span>Кузница</span>
-                        <strong>
-                            {profile.base.built
-                                ? `Построена (ур. ${profile.base.forgeLevel})`
-                                : "Не построена"}
-                        </strong>
-                    </div>
-                    {!profile.base.built && (
-                        <div className={styles.requirements}>
-                            Нужно: дерево {profile.base.costs.wood}, камень{" "}
-                            {profile.base.costs.stone}, железо{" "}
-                            {profile.base.costs.iron}
+                {!isExternalProfileMode && (
+                    <article className={styles.card}>
+                        <h3 className={styles.sectionTitle}>База</h3>
+                        <div className={styles.statRow}>
+                            <span>Кузница</span>
+                            <strong>
+                                {profile.base.built
+                                    ? `Построена (ур. ${profile.base.forgeLevel})`
+                                    : "Не построена"}
+                            </strong>
                         </div>
-                    )}
-                    {profile.base.recipes.length > 0 && (
-                        <div className={styles.recipeList}>
-                            {profile.base.recipes.map((r) => (
-                                <div key={r.id} className={styles.recipeItem}>
-                                    <strong>{r.name}</strong>
-                                    <span>{r.description}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </article>
+                        {!profile.base.built && (
+                            <div className={styles.requirements}>
+                                Нужно: дерево {profile.base.costs.wood}, камень{" "}
+                                {profile.base.costs.stone}, железо{" "}
+                                {profile.base.costs.iron}
+                            </div>
+                        )}
+                        {profile.base.recipes.length > 0 && (
+                            <div className={styles.recipeList}>
+                                {profile.base.recipes.map((r) => (
+                                    <div
+                                        key={r.id}
+                                        className={styles.recipeItem}
+                                    >
+                                        <strong>{r.name}</strong>
+                                        <span>{r.description}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </article>
+                )}
 
                 <article className={styles.card}>
                     <h3 className={styles.sectionTitle}>Боевые статы</h3>
                     <div className={styles.statRow}>
                         <span>Атака</span>
-                        <strong>{profile.player.attack}</strong>
+                        <strong>{activePlayer.attack}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Защита</span>
-                        <strong>{profile.player.defense}</strong>
+                        <strong>{activePlayer.defense}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Мобильность</span>
-                        <strong>{profile.player.mobility}</strong>
+                        <strong>{activePlayer.mobility}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Ловкость</span>
-                        <strong>{profile.player.agility}</strong>
+                        <strong>{activePlayer.agility}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Обзор</span>
-                        <strong>{profile.player.sightRange}</strong>
+                        <strong>{activePlayer.sightRange}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Тип боя</span>
                         <strong>
-                            {profile.player.isRanged ? "Дальний" : "Ближний"}
+                            {activePlayer.isRanged ? "Дальний" : "Ближний"}
                         </strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Дистанция атаки</span>
-                        <strong>{profile.player.attackRange}</strong>
+                        <strong>{activePlayer.attackRange}</strong>
                     </div>
                 </article>
             </section>

@@ -46,6 +46,8 @@ type CharacterSpriteConfig = {
     imageKey: string;
     rightWalkSpriteSrc?: string;
     rightWalkFrames?: number;
+    leftWalkSpriteSrc?: string;
+    leftWalkFrames?: number;
     idleSideRightSpriteSrc?: string;
     idleSideLeftSpriteSrc?: string;
     downWalkSpriteSrc?: string;
@@ -62,6 +64,7 @@ type ResolveActiveSpritePoseInput = {
     facingDir: MoveDirection;
     spriteCfg: CharacterSpriteConfig | null;
     horizontalLayout: SpriteLayout | null;
+    leftWalkLayout: SpriteLayout | null;
     downLayout: SpriteLayout | null;
     upLayout: SpriteLayout | null;
     idleFrontLayout: SpriteLayout | null;
@@ -73,29 +76,33 @@ type ResolveActiveSpritePoseInput = {
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
     {
         imageKey: "Character_1",
-        rightWalkSpriteSrc: "/walk-right.png",
+        rightWalkSpriteSrc: "/Character_1/walk-right-1.png",
         rightWalkFrames: 1,
-        idleSideRightSpriteSrc: "/side-idle-right.png",
-        idleSideLeftSpriteSrc: "/side-idle-left.png",
-        downWalkSpriteSrc: "/walk-down.webp",
+        leftWalkSpriteSrc: "/Character_1/walk-left-1.png",
+        leftWalkFrames: 1,
+        idleSideRightSpriteSrc: "/Character_1/idle-side-right-1.png",
+        idleSideLeftSpriteSrc: "/Character_1/idle-side-left-1.png",
+        downWalkSpriteSrc: "/Character_1/walk-down-1.png",
         downWalkFrames: 1,
-        idleFrontSpriteSrc: "/idle-front.png",
-        upWalkSpriteSrc: "/walk-up.png",
+        idleFrontSpriteSrc: "/Character_1/idle-front-1.png",
+        upWalkSpriteSrc: "/Character_1/walk-up-1.png",
         upWalkFrames: 1,
-        idleBackSpriteSrc: "/idle-back.png",
+        idleBackSpriteSrc: "/Character_1/idle-back-1.png",
     },
     {
         imageKey: "player-1",
-        rightWalkSpriteSrc: "/walk-right.png",
+        rightWalkSpriteSrc: "/player-1/walk-right-1.png",
         rightWalkFrames: 1,
-        idleSideRightSpriteSrc: "/side-idle-right.png",
-        idleSideLeftSpriteSrc: "/side-idle-left.png",
-        downWalkSpriteSrc: "/walk-down.webp",
+        leftWalkSpriteSrc: "/player-1/walk-left-1.png",
+        leftWalkFrames: 1,
+        idleSideRightSpriteSrc: "/player-1/idle-side-right-1.png",
+        idleSideLeftSpriteSrc: "/player-1/idle-side-left-1.png",
+        downWalkSpriteSrc: "/player-1/walk-down-1.webp",
         downWalkFrames: 1,
-        idleFrontSpriteSrc: "/idle-front.png",
-        upWalkSpriteSrc: "/walk-up.png",
+        idleFrontSpriteSrc: "/player-1/idle-front-1.png",
+        upWalkSpriteSrc: "/player-1/walk-up-1.png",
         upWalkFrames: 1,
-        idleBackSpriteSrc: "/idle-back.png",
+        idleBackSpriteSrc: "/player-1/idle-back-1.png",
     },
 ];
 
@@ -121,6 +128,7 @@ function resolveActiveSpritePose({
     facingDir,
     spriteCfg,
     horizontalLayout,
+    leftWalkLayout,
     downLayout,
     upLayout,
     idleFrontLayout,
@@ -134,9 +142,15 @@ function resolveActiveSpritePose({
 
     if (isMoving) {
         if (activeDir === "left" || activeDir === "right") {
-            activeSpriteSrc = spriteCfg?.rightWalkSpriteSrc;
-            activeLayout = horizontalLayout;
-            shouldMirror = activeDir === "left";
+            if (activeDir === "left" && spriteCfg?.leftWalkSpriteSrc) {
+                activeSpriteSrc = spriteCfg.leftWalkSpriteSrc;
+                activeLayout = leftWalkLayout;
+                shouldMirror = false;
+            } else {
+                activeSpriteSrc = spriteCfg?.rightWalkSpriteSrc;
+                activeLayout = horizontalLayout;
+                shouldMirror = activeDir === "left";
+            }
         } else if (activeDir === "down") {
             activeSpriteSrc = spriteCfg?.downWalkSpriteSrc;
             activeLayout = downLayout;
@@ -214,6 +228,7 @@ export default function MapWithCamera({
                 new Set(
                     CHARACTER_SPRITES.flatMap((cfg) => [
                         cfg.rightWalkSpriteSrc,
+                        cfg.leftWalkSpriteSrc,
                         cfg.idleSideRightSpriteSrc,
                         cfg.idleSideLeftSpriteSrc,
                         cfg.downWalkSpriteSrc,
@@ -444,6 +459,10 @@ export default function MapWithCamera({
                         spriteCfg?.rightWalkSpriteSrc,
                         spriteCfg?.rightWalkFrames ?? 1,
                     );
+                    const leftWalkLayout = getSpriteLayout(
+                        spriteCfg?.leftWalkSpriteSrc,
+                        spriteCfg?.leftWalkFrames ?? 1,
+                    );
                     const downLayout = getSpriteLayout(
                         spriteCfg?.downWalkSpriteSrc,
                         spriteCfg?.downWalkFrames ?? 1,
@@ -476,6 +495,7 @@ export default function MapWithCamera({
                             facingDir,
                             spriteCfg,
                             horizontalLayout,
+                            leftWalkLayout,
                             downLayout,
                             upLayout,
                             idleFrontLayout,

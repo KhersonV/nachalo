@@ -15,6 +15,7 @@ import PlayerHUD from "./PlayerHUD";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import type { RootState } from "../store";
+import type { PlayerState } from "../types";
 import {
     setInstanceId,
     setActiveUser,
@@ -238,6 +239,31 @@ export default function GameController({ instanceId }: GameControllerProps) {
         collectResource,
         fightMonster,
     } = usePlayerActions(instanceId, user, state);
+
+    const handleMapPlayerClick = useCallback(
+        async (targetPlayer: PlayerState) => {
+            if (!myPlayer || targetPlayer.user_id === myPlayer.user_id) return;
+
+            const distance =
+                Math.abs(myPlayer.position.x - targetPlayer.position.x) +
+                Math.abs(myPlayer.position.y - targetPlayer.position.y);
+            const canAttack =
+                isMyTurn &&
+                (distance === 1 ||
+                    (!!myPlayer.isRanged &&
+                        distance <= (myPlayer.attackRange ?? 1)));
+
+            if (canAttack) {
+                await handlePlayerClick(targetPlayer);
+                return;
+            }
+
+            router.push(
+                `/profile?view=${targetPlayer.user_id}&from=game&instance_id=${instanceId}`,
+            );
+        },
+        [myPlayer, isMyTurn, handlePlayerClick, router, instanceId],
+    );
 
     // Show centered "YOUR TURN" modal when turn transitions to the current player
     useEffect(() => {
@@ -488,7 +514,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
                         onCellClick={handleCellClick}
-                        onPlayerClick={handlePlayerClick}
+                        onPlayerClick={handleMapPlayerClick}
                     />
                 ) : (
                     <p className={styles.mapLoading}>Загрузка карты...</p>
@@ -517,14 +543,34 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         >
                             {turnTimerText}
                         </div>
+                        <div className={styles.endTurnInlineDesktop}>
+                            <EndTurnButton
+                                playerId={myPlayer?.user_id!}
+                                instanceId={instanceId}
+                                onTurnEnded={handleTurnEnded}
+                            />
+                        </div>
                         <button
                             type="button"
-                            className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
+                            className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
                             onClick={() => setShowInventory((v) => !v)}
+                            aria-label={
+                                showInventory
+                                    ? "Закрыть инвентарь"
+                                    : "Открыть инвентарь"
+                            }
+                            title={
+                                showInventory
+                                    ? "Закрыть инвентарь"
+                                    : "Открыть инвентарь"
+                            }
                         >
-                            {showInventory
-                                ? "Закрыть инвентарь"
-                                : "Открыть инвентарь"}
+                            <img
+                                src="/ui-icons/backpack.png"
+                                alt="Инвентарь"
+                                className={styles.inventoryFabIcon}
+                                draggable={false}
+                            />
                         </button>
                     </>
                 ) : (
@@ -550,12 +596,25 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         </div>
                         <button
                             type="button"
-                            className={`${styles.inventoryButton} ${showInventory ? styles.inventoryButtonActive : ""}`}
+                            className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
                             onClick={() => setShowInventory((v) => !v)}
+                            aria-label={
+                                showInventory
+                                    ? "Закрыть инвентарь"
+                                    : "Открыть инвентарь"
+                            }
+                            title={
+                                showInventory
+                                    ? "Закрыть инвентарь"
+                                    : "Открыть инвентарь"
+                            }
                         >
-                            {showInventory
-                                ? "Закрыть инвентарь"
-                                : "Открыть инвентарь"}
+                            <img
+                                src="/ui-icons/backpack.png"
+                                alt="Инвентарь"
+                                className={styles.inventoryFabIcon}
+                                draggable={false}
+                            />
                         </button>
                     </div>
                 )}

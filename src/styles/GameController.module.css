@@ -302,6 +302,10 @@
     display: none;
 }
 
+.endTurnInlineDesktop {
+    display: inline-flex;
+}
+
 .turnTimerWarn {
     color: #f87171;
     border-color: rgba(248, 113, 113, 0.6);
@@ -365,41 +369,34 @@
     color: #fecaca;
 }
 
-.inventoryButton {
-    height: 42px;
-    border: 1px solid rgba(148, 163, 184, 0.38);
-    border-radius: 12px;
-    background: linear-gradient(
-        150deg,
-        rgba(9, 20, 35, 0.94),
-        rgba(7, 14, 24, 0.98)
-    );
-    color: var(--text-main);
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    padding: 0 14px;
-    cursor: pointer;
-    transition:
-        border-color 0.2s ease,
-        transform 0.12s ease,
-        box-shadow 0.2s ease;
-}
-
-.inventoryButton:hover {
-    border-color: rgba(56, 189, 248, 0.72);
-}
-
-.inventoryButton:active {
-    transform: translateY(1px);
-}
-
-.inventoryButtonActive {
-    border-color: rgba(20, 184, 166, 0.75);
-    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15) inset;
-}
-
 .inventoryFab {
     display: none;
+}
+
+.inventoryDockButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.34);
+    border-radius: 12px;
+    background: rgba(8, 14, 24, 0.82);
+    cursor: pointer;
+    transition:
+        transform 0.12s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+}
+
+.inventoryDockButton:hover {
+    border-color: rgba(56, 189, 248, 0.72);
+    background: rgba(8, 14, 24, 0.9);
+}
+
+.inventoryDockButton:active {
+    transform: translateY(1px);
 }
 
 .inventoryFabIcon {
@@ -456,7 +453,7 @@
     .controlsContainer {
         position: fixed;
         left: 8px;
-        right: auto;
+        right: 132px;
         bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
         z-index: 80;
         margin: 0;
@@ -471,7 +468,7 @@
         box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
         transform: none;
         width: auto;
-        max-width: calc(100vw - 132px);
+        max-width: none;
     }
 
     .controlsContainerHiddenMobile {
@@ -489,9 +486,13 @@
     .turnIndicator,
     .turnPrompt,
     .endTurnButton,
-    .inventoryButton {
+    .inventoryDockButton {
         width: 100%;
         min-width: 0;
+    }
+
+    .endTurnInlineDesktop {
+        display: none;
     }
 
     .turnIndicator {
@@ -585,14 +586,13 @@
         background: rgba(42, 12, 18, 0.92);
     }
 
-    .endTurnButton,
-    .inventoryButton {
+    .endTurnButton {
         height: 34px;
         font-size: 12px;
         padding: 0 8px;
     }
 
-    .inventoryButton {
+    .inventoryDockButton {
         display: none;
     }
 
@@ -684,8 +684,7 @@
         display: none;
     }
 
-    .endTurnButton,
-    .inventoryButton {
+    .endTurnButton {
         height: 32px;
         font-size: 11px;
     }
@@ -701,6 +700,10 @@
     .turnActionDock {
         right: 6px;
         width: 108px;
+    }
+
+    .controlsContainer {
+        right: 120px;
     }
 
     .turnActionDock .endTurnButton {
