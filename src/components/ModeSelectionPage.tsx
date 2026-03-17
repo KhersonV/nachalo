@@ -204,6 +204,7 @@ export default function ModeSelectionPage() {
     const [pendingInstanceId, setPendingInstanceId] = useState<string | null>(
         null,
     );
+
     const [redirectAtMs, setRedirectAtMs] = useState<number | null>(null);
     const [partyState, setPartyState] = useState<PartyStateResponse | null>(
         null,
@@ -660,6 +661,8 @@ export default function ModeSelectionPage() {
         return () => clearTimeout(t);
     }, [pendingInstanceId, redirectAtMs, router]);
 
+    // modal is handled globally by GlobalMatchListener
+
     const token = user?.token;
 
     function isTokenExpired(token: string) {
@@ -1091,29 +1094,7 @@ export default function ModeSelectionPage() {
                 </button>
             </div>
 
-            {pendingInstanceId && (
-                <div className={styles.matchReadyBox}>
-                    <div className={styles.matchReadyTitle}>Матч готов</div>
-                    <div className={styles.matchReadyText}>
-                        Можно докупить предметы. Автостарт через{" "}
-                        {Math.max(
-                            1,
-                            Math.ceil((redirectAtMs! - Date.now()) / 1000),
-                        )}{" "}
-                        сек.
-                    </div>
-                    <button
-                        className={styles.queueButton}
-                        onClick={() =>
-                            router.push(
-                                `/game?instance_id=${pendingInstanceId}`,
-                            )
-                        }
-                    >
-                        Начать матч сейчас
-                    </button>
-                </div>
-            )}
+            {/* Modal moved to global listener mounted in layout */}
         </div>
     );
 }

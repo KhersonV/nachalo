@@ -1093,6 +1093,26 @@ func createMatch(mode string, group []QueueEntry, groupAssignments map[int]int) 
 		}
 	}
 	matchMu.Unlock()
+
+	// Broadcast match notification to involved players (SSE)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered in BroadcastMatch: %v", r)
+			}
+		}()
+		// build a copy of match info to broadcast
+		matchMu.Lock()
+		m, ok := currentMatches[instanceID]
+		matchMu.Unlock()
+		if ok {
+			playerIDs := make([]int, 0, len(m.Players))
+			for _, p := range m.Players {
+				playerIDs = append(playerIDs, p.PlayerID)
+			}
+			BroadcastMatchToPlayers(playerIDs, m)
+		}
+	}()
 }
 
 // Простая CORS-обёртка
@@ -1121,6 +1141,7 @@ func main() {
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/currentMatch", currentMatchHandler).Methods("GET")
+	r.HandleFunc("/matchmaking/stream", sseHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/match", matchHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/inQueue", inQueueHandler).Methods("GET")
 	r.HandleFunc("/matchmaking/party", partyHandler).Methods("GET")
