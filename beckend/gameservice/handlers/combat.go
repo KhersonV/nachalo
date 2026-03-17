@@ -473,11 +473,34 @@ func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) e
 		}
 	}
 
+	// Build updatedCell as a map so we always include structure fields
+	// (empty string / zero) — struct tags with `omitempty` would drop
+	// empty values and client would not clear the structure.
+	uc := serialiseUpdatedCell(*cell)
+	updatedCellPayload := map[string]interface{}{
+		"cell_id": uc.CellID,
+		"x": uc.X,
+		"y": uc.Y,
+		"tileCode": uc.TileCode,
+		"resource": uc.Resource,
+		"barbel": uc.Barbel,
+		"monster": uc.Monster,
+		"isPortal": uc.IsPortal,
+		"isPlayer": uc.IsPlayer,
+		// always include structure fields explicitly
+		"structure_type": uc.StructureType,
+		"structure_owner_user_id": uc.StructureOwnerUserID,
+		"structure_health": uc.StructureHealth,
+		"structure_defense": uc.StructureDefense,
+		"structure_attack": uc.StructureAttack,
+		"is_under_construction": uc.IsUnderConstruction,
+		"construction_turns_left": uc.ConstructionTurnsLeft,
+	}
 	update := map[string]interface{}{
 		"type": "UPDATE_CELL",
 		"payload": map[string]interface{}{
 			"instanceId":  instanceID,
-			"updatedCell": serialiseUpdatedCell(*cell),
+			"updatedCell": updatedCellPayload,
 		},
 	}
 	buf, _ := json.Marshal(update)

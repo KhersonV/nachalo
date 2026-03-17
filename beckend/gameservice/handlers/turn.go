@@ -280,8 +280,12 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 		for i := range latest {
 			key := fmt.Sprintf("%d:%d", latest[i].X, latest[i].Y)
 			if s, ok := src[key]; ok {
-				latest[i].StructureType = s.StructureType
-				latest[i].StructureOwnerUserID = s.StructureOwnerUserID
+				// If the latest snapshot no longer has this structure (was removed by
+				// another routine), do not re-apply fields from our earlier snapshot.
+				// Also avoid overwriting if the structure type changed in the meantime.
+				if latest[i].StructureType == "" || latest[i].StructureType != s.StructureType {
+					continue
+				}
 				latest[i].StructureHealth = s.StructureHealth
 				latest[i].StructureDefense = s.StructureDefense
 				latest[i].StructureAttack = s.StructureAttack

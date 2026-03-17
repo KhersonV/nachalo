@@ -36,6 +36,7 @@ export function useCombatFloaters(
     const [flashes, setFlashes] = useState<CombatFlash[]>([]);
     const prevPlayerHealthRef = useRef<Map<number, number>>(new Map());
     const prevMonsterHealthRef = useRef<Map<string, number>>(new Map());
+    const prevStructureHealthRef = useRef<Map<string, number>>(new Map());
 
     useEffect(() => {
         const prevPlayer = prevPlayerHealthRef.current;
@@ -68,6 +69,7 @@ export function useCombatFloaters(
         }
 
         const nextMonsterHealth = new Map<string, number>();
+        const nextStructureHealth = new Map<string, number>();
         for (const cell of grid) {
             if (!cell.monster) continue;
             const monsterKey = getMonsterKey(cell);
@@ -97,6 +99,36 @@ export function useCombatFloaters(
         }
 
         prevMonsterHealthRef.current = nextMonsterHealth;
+
+        // Structures: track structure health changes (e.g. turret)
+        for (const cell of grid) {
+            if (!cell.structure_type) continue;
+            const key = `s-${cell.x}-${cell.y}`;
+            if (typeof cell.structure_health === "number") {
+                nextStructureHealth.set(key, cell.structure_health);
+
+                const prevHp = prevStructureHealthRef.current.get(key);
+                if (prevHp !== undefined && prevHp !== cell.structure_health) {
+                    const delta = cell.structure_health - prevHp;
+                    const uid = `${key}-${now}-${Math.random().toString(36).slice(2)}`;
+                    newFloaters.push({
+                        id: uid,
+                        x: cell.x,
+                        y: cell.y,
+                        value: Math.abs(delta),
+                        isHeal: delta > 0,
+                    });
+                    if (delta < 0) {
+                        newFlashes.push({
+                            id: `fl-${uid}`,
+                            x: cell.x,
+                            y: cell.y,
+                        });
+                    }
+                }
+            }
+        }
+        prevStructureHealthRef.current = nextStructureHealth;
 
         if (newFloaters.length === 0) return;
 

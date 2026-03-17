@@ -235,7 +235,14 @@ export default function ModeSelectionPage() {
                 fetchFriends(user.token),
                 fetchPartyInvites(user.id, user.token),
             ]);
-            setPartyState(party);
+            setPartyState((prev) =>
+                prev
+                    ? {
+                          ...party,
+                          queueMode: prev.queueMode || party.queueMode || "",
+                      }
+                    : party,
+            );
             setPartyFriends(friends);
             setPartyInvites(invites);
         } catch (e: any) {
@@ -254,7 +261,14 @@ export default function ModeSelectionPage() {
                 fetchPartyState(user.id, user.token),
                 fetchPartyInvites(user.id, user.token),
             ]);
-            setPartyState(party);
+            setPartyState((prev) =>
+                prev
+                    ? {
+                          ...party,
+                          queueMode: prev.queueMode || party.queueMode || "",
+                      }
+                    : party,
+            );
             setPartyInvites(invites);
         } catch {
             // Silent refresh keeps current UI state on transient network errors.
@@ -284,7 +298,15 @@ export default function ModeSelectionPage() {
                 );
             }
             const nextParty: PartyStateResponse = await res.json();
-            setPartyState(nextParty);
+            setPartyState((prev) =>
+                prev
+                    ? {
+                          ...nextParty,
+                          queueMode:
+                              prev.queueMode || nextParty.queueMode || "",
+                      }
+                    : nextParty,
+            );
             if (successMessage) {
                 setPartyInfo(successMessage);
             }
@@ -356,7 +378,14 @@ export default function ModeSelectionPage() {
                 );
             }
             const party: PartyStateResponse = await res.json();
-            setPartyState(party);
+            setPartyState((prev) =>
+                prev
+                    ? {
+                          ...party,
+                          queueMode: prev.queueMode || party.queueMode || "",
+                      }
+                    : party,
+            );
             setPartyInvites([]);
             setPartyInfo("Вы вступили в пати");
         } catch (e: any) {
@@ -612,6 +641,9 @@ export default function ModeSelectionPage() {
         }
 
         checkQueueStatus();
+        return () => {
+            /* no-op cleanup: removed frequent polling to avoid extra requests */
+        };
     }, [user]);
 
     useEffect(() => {
@@ -698,7 +730,15 @@ export default function ModeSelectionPage() {
                 fetchPartyState(user!.id, token),
                 fetchPartyInvites(user!.id, token),
             ]);
-            setPartyState(freshParty);
+            setPartyState((prev) =>
+                prev
+                    ? {
+                          ...freshParty,
+                          queueMode:
+                              prev.queueMode || freshParty.queueMode || "",
+                      }
+                    : freshParty,
+            );
             setPartyInvites(freshInvites);
 
             const effectivePartySize = freshParty?.partySize ?? 1;
@@ -722,13 +762,21 @@ export default function ModeSelectionPage() {
                 playerId: user!.id,
                 level: user!.level,
             };
-            // передаём токен
-            const instanceId = await startMatchmaking(mode, playerInfo, token);
+            // отправляем запрос в очередь и при успешном ответе обновляем UI сразу
+            await joinQueue(mode, playerInfo, token);
+            setPartyState((prev) =>
+                prev
+                    ? { ...prev, queueMode: mode }
+                    : ({ queueMode: mode } as any),
+            );
+            setMode(mode);
+            // теперь ждём создания матча
+            const instanceId = await pollCurrentMatch(
+                playerInfo.playerId,
+                token,
+            );
             setPendingInstanceId(instanceId);
             setRedirectAtMs(Date.now() + PREP_REDIRECT_MS);
-            setPartyState((prev) =>
-                prev ? { ...prev, queueMode: mode } : prev,
-            );
         } catch (err) {
             console.error(err);
             setIsMatching(false);

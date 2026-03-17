@@ -105,6 +105,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const questAlertShownRef = React.useRef(false);
     const turnStartMsRef = React.useRef<number>(Date.now());
     const autoEndTurnInFlightRef = React.useRef(false);
+    const [profileModalUserId, setProfileModalUserId] = useState<number | null>(
+        null,
+    );
+    const [profileModalData, setProfileModalData] = useState<any | null>(null);
+    const [profileModalLoading, setProfileModalLoading] = useState(false);
+    const [profileModalError, setProfileModalError] = useState("");
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -197,11 +203,80 @@ export default function GameController({ instanceId }: GameControllerProps) {
         };
     }, []);
 
+    // Load public profile for modal when requested
+    useEffect(() => {
+        if (!profileModalUserId) {
+            setProfileModalData(null);
+            setProfileModalError("");
+            setProfileModalLoading(false);
+            return;
+        }
+
+        let alive = true;
+        setProfileModalLoading(true);
+        setProfileModalError("");
+        setProfileModalData(null);
+
+        (async () => {
+            try {
+                const res = await fetch(
+                    `${API_BASE}/game/profile/${profileModalUserId}`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${user?.token}`,
+                        },
+                        cache: "no-store",
+                    },
+                );
+                if (!res.ok) {
+                    const t = await res.text();
+                    throw new Error(t || "Не удалось загрузить профиль");
+                }
+                const data = await res.json();
+                if (!alive) return;
+                setProfileModalData(data.data ?? data);
+            } catch (e: any) {
+                if (!alive) return;
+                setProfileModalError(e?.message || "Ошибка загрузки профиля");
+            } finally {
+                if (!alive) return;
+                setProfileModalLoading(false);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
+    }, [profileModalUserId, user?.token]);
+
     // Reset local turn countdown whenever turn ownership changes.
     useEffect(() => {
         turnStartMsRef.current = Date.now();
         autoEndTurnInFlightRef.current = false;
     }, [state.active_user, state.turnNumber]);
+
+    // Persist turn start time across navigation/refresh so client-side timer
+    // doesn't reset when GameController unmounts/remounts.
+    useEffect(() => {
+        const key = `turnStartMs:${instanceId}`;
+        if (typeof window !== "undefined") {
+            try {
+                const v = sessionStorage.getItem(key);
+                if (v) turnStartMsRef.current = Number(v);
+            } catch (e) {
+                // ignore
+            }
+        }
+        return () => {
+            if (typeof window !== "undefined") {
+                try {
+                    sessionStorage.setItem(key, String(turnStartMsRef.current));
+                } catch (e) {
+                    // ignore
+                }
+            }
+        };
+    }, [instanceId]);
 
     useEffect(() => {
         const onDisconnected = (event: Event) => {
@@ -668,8 +743,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                 onProfileClick={
                                     base.type === "player" && base.userId
                                         ? () => {
-                                              router.push(
-                                                  `/profile?view=${base.userId}&from=game&instance_id=${instanceId}`,
+                                              setProfileModalUserId(
+                                                  base.userId ?? null,
                                               );
                                               setObjectHUD(null);
                                           }
@@ -679,6 +754,132 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             />
                         );
                     })()}
+                </div>
+            )}
+            {profileModalUserId !== null && (
+                <div
+                    style={{
+                        position: "fixed",
+                        inset: 0,
+                        background: "rgba(0,0,0,0.6)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 1200,
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div
+                        style={{
+                            width: 720,
+                            maxWidth: "96%",
+                            maxHeight: "90%",
+                            overflow: "auto",
+                            background: "#111",
+                            border: "1px solid #444",
+                            padding: 16,
+                            borderRadius: 8,
+                        }}
+                    >
+                        <div
+                            style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                marginBottom: 8,
+                            }}
+                        >
+                            <h3 style={{ margin: 0 }}>
+                                {profileModalData?.player?.name ??
+                                    `Игрок ${profileModalUserId}`}
+                            </h3>
+                            <button
+                                onClick={() => setProfileModalUserId(null)}
+                                style={{
+                                    background: "transparent",
+                                    color: "#fff",
+                                    border: "1px solid #444",
+                                    padding: "6px 10px",
+                                    borderRadius: 4,
+                                }}
+                            >
+                                Закрыть
+                            </button>
+                        </div>
+
+                        {profileModalLoading && <div>Загрузка...</div>}
+                        {profileModalError && (
+                            <div style={{ color: "#f88" }}>
+                                {profileModalError}
+                            </div>
+                        )}
+                        {!profileModalLoading &&
+                            !profileModalError &&
+                            profileModalData && (
+                                <div style={{ display: "flex", gap: 16 }}>
+                                    <div style={{ width: 160 }}>
+                                        <img
+                                            src={
+                                                profileModalData.player.image ||
+                                                "/ui-icons/avatar-default.png"
+                                            }
+                                            alt="avatar"
+                                            style={{
+                                                width: 160,
+                                                height: 160,
+                                                objectFit: "cover",
+                                                borderRadius: 8,
+                                            }}
+                                        />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div>
+                                            Уровень:{" "}
+                                            {profileModalData.player.level}
+                                        </div>
+                                        <div>
+                                            Класс:{" "}
+                                            {
+                                                profileModalData.player
+                                                    .characterType
+                                            }
+                                        </div>
+                                        <div>
+                                            Опыт:{" "}
+                                            {profileModalData.player.experience}{" "}
+                                            /{" "}
+                                            {
+                                                profileModalData.player
+                                                    .maxExperience
+                                            }
+                                        </div>
+                                        <hr
+                                            style={{
+                                                borderColor: "#333",
+                                                margin: "8px 0",
+                                            }}
+                                        />
+                                        <div>
+                                            Атака:{" "}
+                                            {profileModalData.player.attack}
+                                        </div>
+                                        <div>
+                                            Защита:{" "}
+                                            {profileModalData.player.defense}
+                                        </div>
+                                        <div>
+                                            Подвижность:{" "}
+                                            {profileModalData.player.mobility}
+                                        </div>
+                                        <div>
+                                            Зрение:{" "}
+                                            {profileModalData.player.sightRange}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                    </div>
                 </div>
             )}
             {disconnectedPlayers.length > 0 && (
