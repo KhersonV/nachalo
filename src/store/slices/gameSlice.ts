@@ -1,6 +1,10 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import type { GameState, PlayerState, Inventory, Cell } from "../../types";
 
+// Fast lookup index for cells by "x:y" → index in state.grid.
+// Kept at module level for minimal changes (O(1) updates).
+let gridIndex: Record<string, number> = {};
+
 const initialState: GameState = {
     instanceId: "",
     mode: "",
@@ -54,6 +58,14 @@ const gameSlice = createSlice({
             // Ставим isMapLoaded только если карта уже есть
             if (state.grid.length > 0 && state.mapWidth && state.mapHeight) {
                 state.isMapLoaded = true;
+            }
+            // Rebuild grid index for quick cell lookups
+            gridIndex = {};
+            for (let i = 0; i < state.grid.length; i++) {
+                const c = state.grid[i] as any;
+                if (typeof c.x === "number" && typeof c.y === "number") {
+                    gridIndex[`${c.x}:${c.y}`] = i;
+                }
             }
             console.log("[gameSlice/setMatchData] payload:", action.payload);
             console.log("[gameSlice/setMatchData] new state:", {
@@ -137,15 +149,53 @@ const gameSlice = createSlice({
 
             const uc = action.payload.updatedCell;
 
-            const index = state.grid.findIndex(
-                (cell) => cell.x === uc.x && cell.y === uc.y,
-            );
+            const key = `${uc.x}:${uc.y}`;
+            let index = gridIndex[key];
+            if (
+                index === undefined ||
+                index === null ||
+                index < 0 ||
+                index >= state.grid.length
+            ) {
+                // Fallback to findIndex if index missing/out-of-sync
+                index = state.grid.findIndex(
+                    (cell) => cell.x === uc.x && cell.y === uc.y,
+                );
+            }
 
             if (index !== -1) {
-                state.grid[index] = {
-                    ...state.grid[index],
-                    ...uc,
-                };
+                // Merge incoming updatedCell into existing cell but
+                // ensure destroyed/removed structures are cleared so
+                // they don't persist in UI when backend sends partial
+                // updates or health <= 0.
+                const existing = state.grid[index];
+                const merged: any = { ...existing, ...uc };
+
+                // If backend explicitly cleared structure_type (empty string/null)
+                // or reported structure_health <= 0 — remove structure fields.
+                const structType = (uc as any).structure_type;
+                const structHealth = (uc as any).structure_health;
+                if (
+                    structType === "" ||
+                    structType === null ||
+                    (typeof structHealth === "number" && structHealth <= 0)
+                ) {
+                    merged.structure_type = undefined;
+                    merged.structure_owner_user_id = undefined;
+                    merged.structure_health = undefined;
+                    merged.structure_defense = undefined;
+                    merged.structure_attack = undefined;
+                    merged.is_under_construction = false;
+                    merged.construction_turns_left = undefined;
+                }
+
+                state.grid[index] = merged;
+                // maintain index
+                gridIndex[key] = index;
+            } else {
+                // New cell — append and index it
+                state.grid.push(uc as any);
+                gridIndex[key] = state.grid.length - 1;
             }
         },
 

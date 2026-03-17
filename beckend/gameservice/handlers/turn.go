@@ -6,6 +6,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"gameservice/game"
 	"gameservice/middleware"
 	"gameservice/repository"
@@ -145,6 +146,10 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 	var turretMaxEnergy = 8
 	var turretAttackCost = 6
 
+	// Track which cells we modified (structure fields) so we can merge
+	// changes into the latest map snapshot before saving — this avoids
+	// overwriting monster deletions performed by saveTargetHealth.
+	modified := map[string]bool{}
 	for i := range cells {
 		cell := &cells[i]
 		if cell.StructureType != "turret" || cell.IsUnderConstruction {
@@ -159,14 +164,17 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 
 		if cell.StructureAttack == 0 {
 			cell.StructureAttack = turretDamage
+			modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
 		}
 		if cell.StructureDefense == 0 {
 			cell.StructureDefense = 5
+			modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
 		}
 
 		// текущая логика: каждый ход турель полностью заряжается
 		if cell.StructureEnergy < turretMaxEnergy {
 			cell.StructureEnergy = turretMaxEnergy
+			modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
 		}
 
 		ownerGroup := 0
@@ -201,8 +209,9 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 				break
 			}
 
-			cell.StructureEnergy -= turretAttackCost
-			applyTurretDamage(
+				cell.StructureEnergy -= turretAttackCost
+				modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
+				applyTurretDamage(
 				instanceID,
 				cell.StructureOwnerUserID,
 				"player",
@@ -233,6 +242,7 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 				}
 
 				cell.StructureEnergy -= turretAttackCost
+				modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
 				applyTurretDamage(
 					instanceID,
 					cell.StructureOwnerUserID,
@@ -247,8 +257,57 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 		}
 	}
 
-	if err := repository.SaveMapCells(instanceID, cells); err != nil {
-		return err
+	// Merge only structure-related fields into the latest map snapshot
+	// so that deletions (e.g., dead monsters) saved by other routines are
+	// not overwritten by this function's original snapshot.
+	if len(modified) > 0 {
+		latest, err := repository.LoadMapCells(instanceID)
+		if err != nil {
+			return err
+		}
+
+		// Build lookup for our modified cells
+		src := map[string]game.FullCell{}
+		for i := range cells {
+			key := fmt.Sprintf("%d:%d", cells[i].X, cells[i].Y)
+			if modified[key] {
+				src[key] = cells[i]
+			}
+		}
+
+		// Apply structure fields from src into latest
+		changed := make([]game.FullCell, 0)
+		for i := range latest {
+			key := fmt.Sprintf("%d:%d", latest[i].X, latest[i].Y)
+			if s, ok := src[key]; ok {
+				latest[i].StructureType = s.StructureType
+				latest[i].StructureOwnerUserID = s.StructureOwnerUserID
+				latest[i].StructureHealth = s.StructureHealth
+				latest[i].StructureDefense = s.StructureDefense
+				latest[i].StructureAttack = s.StructureAttack
+				latest[i].StructureEnergy = s.StructureEnergy
+				latest[i].IsUnderConstruction = s.IsUnderConstruction
+				latest[i].ConstructionTurnsLeft = s.ConstructionTurnsLeft
+				changed = append(changed, latest[i])
+			}
+		}
+
+		if err := repository.SaveMapCells(instanceID, latest); err != nil {
+			return err
+		}
+
+		// Broadcast updated cells so clients refresh structure stats
+		for _, c := range changed {
+			upd := map[string]interface{}{
+				"type": "UPDATE_CELL",
+				"payload": map[string]interface{}{
+					"instanceId":  instanceID,
+					"updatedCell": serialiseUpdatedCell(c),
+				},
+			}
+			b, _ := json.Marshal(upd)
+			Broadcast(b)
+		}
 	}
 
 	return nil

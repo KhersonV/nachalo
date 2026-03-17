@@ -172,12 +172,28 @@ export default function LobbyBasePage() {
                     <div className={styles.baseRecipes}>
                         <h4>{unlockablesTitle}</h4>
                         <ul>
-                            {building.unlockables.map((entry) => (
-                                <li key={entry.id}>
-                                    <strong>{entry.name}</strong>:{" "}
-                                    {entry.description}
-                                </li>
-                            ))}
+                            {building.unlockables.map((entry) => {
+                                // Известные чертежи строений
+                                let desc = entry.description;
+                                if (entry.name === "Башня разведки") {
+                                    desc =
+                                        "Увеличивает обзор игрока на 1 клетку (максимум 5). Можно построить только одну башню.";
+                                } else if (entry.name === "Турель") {
+                                    desc =
+                                        "Автоматически атакует монстров рядом с базой, расходует энергию. Приоритет: игроки, затем монстры.";
+                                } else if (entry.name === "Библиотека") {
+                                    desc =
+                                        "Открывает исследования для развития персонажа.";
+                                } else if (entry.name === "Кузница") {
+                                    desc =
+                                        "Позволяет создавать новые чертежи и предметы для подготовки к матчам.";
+                                }
+                                return (
+                                    <li key={entry.id}>
+                                        <strong>{entry.name}</strong>: {desc}
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </div>
                 )}

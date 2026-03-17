@@ -123,19 +123,19 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
     if forgeBuilt {
         forgeUnlockables = []forgeRecipeResponse{
             {
-                ID:          "fortified_blade",
-                Name:        "Укрепленный клинок",
-                Description: "Открыт рецепт: +урон в матче на первые 3 хода.",
+                ID:          "scout_tower",
+                Name:        "Башня разведки",
+                Description: "Чертёж: увеличивает обзор игрока на 1 клетку (максимум 5). Статы: +1 к обзору.",
             },
             {
-                ID:          "field_armor",
-                Name:        "Полевой доспех",
-                Description: "Открыт рецепт: +защита в матче на первые 3 хода.",
+                ID:          "turret",
+                Name:        "Турель",
+                Description: "Чертёж: автоматически атакует врагов в радиусе действия Статы: атака 15, защита 5, энергия 8, радиус 2, стоимость атаки 6. хп 20.",
             },
             {
-                ID:          "repair_kit",
-                Name:        "Ремкомплект",
-                Description: "Открыт рецепт: одноразовый ремонт снаряжения в матче.",
+                ID:          "wall",
+                Name:        "Стена",
+                Description: "Чертёж: не дает врагу и вам пройти. Статы: защита 5, прочность 20. Можно строить на свободной клетке.",
             },
         }
     }

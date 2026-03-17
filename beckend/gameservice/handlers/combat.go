@@ -831,16 +831,35 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 		_ = Combat.SaveMap(instanceID, cells)
 	}
 
+	// Broadcast the full serialized cell so clients receive a complete,
+	// consistent snapshot (prevents partial updates leaving stale data).
+	var updated interface{} = nil
+	if cells != nil {
+		for i := range cells {
+			if cells[i].X == x && cells[i].Y == y {
+				updated = serialiseUpdatedCell(cells[i])
+				break
+			}
+		}
+	}
+
+	// Fallback to minimal payload if for some reason we don't have the full cell
+	// (shouldn't happen, but be defensive).
+	updatedCellPayload := updated
+	if updatedCellPayload == nil {
+		updatedCellPayload = map[string]interface{}{
+			"x":        x,
+			"y":        y,
+			"tileCode": 48,
+			"monster":  nil,
+		}
+	}
+
 	update := map[string]interface{}{
 		"type": "UPDATE_CELL",
 		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"updatedCell": map[string]interface{}{
-				"x":        x,
-				"y":        y,
-				"tileCode": 48,
-				"monster":  nil,
-			},
+			"instanceId":  instanceID,
+			"updatedCell": updatedCellPayload,
 		},
 	}
 	buf, _ := json.Marshal(update)

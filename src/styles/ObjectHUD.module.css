@@ -1,0 +1,176 @@
+.objectHudPanel {
+    position: fixed;
+    top: 14px;
+    left: 294px;
+    z-index: 120;
+    min-width: 240px;
+    max-width: 300px;
+    border: 1.5px solid var(--panel-line, #a0b8ce);
+    border-radius: 12px;
+    background: var(--panel-bg, rgba(12, 22, 34, 0.92));
+    color: var(--text-main, #e6eef6);
+    padding: 10px 14px 10px 14px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.32);
+    font-size: 13px;
+    pointer-events: auto;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 8px;
+}
+
+.typeBadge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    white-space: nowrap;
+}
+
+.name {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.closeBtn {
+    background: none;
+    border: none;
+    color: var(--text-muted, #94a3b8);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 2px;
+    flex-shrink: 0;
+}
+
+.closeBtn:hover {
+    color: #f87171;
+}
+
+.statRow {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    font-size: 12px;
+}
+
+/* Make HP row match PlayerHUD layout */
+
+.hudRow {
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.statLabel {
+    color: var(--text-muted, #94a3b8);
+    font-size: 11px;
+}
+
+.statValue {
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.progressBar {
+    height: 8px;
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progressFill {
+    height: 100%;
+    transition: width 0.2s ease;
+    border-radius: 999px;
+}
+
+.progressFillHealth {
+    background: linear-gradient(90deg, #22c55e, #86efac);
+}
+
+.progressFillHealthLow {
+    background: linear-gradient(90deg, #ef4444, #fca5a5);
+}
+
+.progressFillHealthMid {
+    background: linear-gradient(90deg, #f59e0b, #fde68a);
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid rgba(160, 184, 206, 0.15);
+    margin: 7px 0;
+}
+
+.smallStatGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+    margin-bottom: 4px;
+}
+
+.smallStat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 7px;
+    padding: 4px 6px;
+}
+
+.smallStatLabel {
+    font-size: 10px;
+    color: var(--text-muted, #94a3b8);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.smallStatValue {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main, #e6eef6);
+}
+
+.details {
+    font-size: 11px;
+    color: var(--text-muted, #94a3b8);
+    margin-bottom: 4px;
+}
+
+.profileBtn {
+    width: 100%;
+    margin-top: 8px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 7px;
+    color: #38bdf8;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 0;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.profileBtn:hover {
+    background: rgba(56, 189, 248, 0.22);
+}

@@ -10,8 +10,6 @@ import { shallowEqual } from "react-redux";
 import type { RootState } from "@/store";
 import Map from "./Map";
 import type { Cell, PlayerState } from "../types";
-import { useInfoModal } from "./InfoModal";
-import { cellToGameObject, playerToGameObject } from "../utils/toGameObject";
 import { useCombatFloaters } from "../hooks/useCombatFloaters";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 import styles from "../styles/Map.module.css";
@@ -252,7 +250,6 @@ export default function MapWithCamera({
     const playerImageOffsetX = 2;
     const playerImageOffsetY = 2;
 
-    const { open, Modal } = useInfoModal();
     const { floaters, flashes } = useCombatFloaters(players, grid);
 
     const spriteSources = React.useMemo(
@@ -565,7 +562,8 @@ export default function MapWithCamera({
                                     onPlayerClick(player);
                                     return;
                                 }
-                                open(playerToGameObject(player));
+                                // Do nothing for self-clicks to avoid opening the legacy modal
+                                // (ObjectHUD handles player info now in the parent)
                             }}
                             style={{
                                 position: "absolute",
@@ -650,7 +648,7 @@ export default function MapWithCamera({
                 ))}
             </div>
 
-            <Modal />
+            {/* legacy InfoModal removed: ObjectHUD is used by parent component */}
         </div>
     );
 }

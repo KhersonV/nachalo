@@ -2,8 +2,31 @@
 // src/utils/toGameObject.ts
 //==========================
 
-import { GameObject } from "../components/InfoModal";
 import type { Cell, PlayerState } from "../types";
+
+export type GameObject =
+    | {
+          type: "monster";
+          name: string;
+          hp?: number;
+          health?: number;
+          aggressive: boolean;
+          attack: number;
+          defense: number;
+      }
+    | { type: "resource"; name: string; description: string; effects: string[] }
+    | {
+          type: "player";
+          name: string;
+          hp?: number;
+          health?: number;
+          defense: number;
+          attack: number;
+      }
+    | { type: "portal"; requirement: string }
+    | { type: "cell"; x: number; y: number }
+    | { type: "empty"; x: number; y: number }
+    | { type: "wall"; x: number; y: number };
 
 export function cellToGameObject(cell: Cell): GameObject {
     if (cell.monster) {

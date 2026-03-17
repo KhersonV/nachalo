@@ -12,8 +12,10 @@ import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import PlayerHUD from "./PlayerHUD";
+import { ObjectHUD } from "./ObjectHUD";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
+import objectHudStyles from "../styles/ObjectHUD.module.css";
 import type { RootState } from "../store";
 import type { PlayerState } from "../types";
 import {
@@ -37,6 +39,13 @@ const structureTypeByBlueprintKey: Record<string, PlacementStructureType> = {
     blueprint_wall: "wall",
 };
 
+// Default max HP for structures when backend doesn't expose maxHealth
+const STRUCTURE_DEFAULT_MAX_HEALTH: Record<PlacementStructureType, number> = {
+    scout_tower: 30,
+    turret: 30,
+    wall: 30,
+};
+
 interface GameControllerProps {
     instanceId: string;
 }
@@ -58,6 +67,24 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const [showInventory, setShowInventory] = useState(false);
     const [placementMode, setPlacementMode] =
         useState<PlacementModeState | null>(null);
+
+    // HUD для объектов (монстры, постройки, другие игроки)
+    const [objectHUD, setObjectHUD] = useState<{
+        type: "monster" | "structure" | "player" | "object";
+        name: string;
+        details?: string;
+        health?: number;
+        maxHealth?: number;
+        energy?: number;
+        maxEnergy?: number;
+        attack?: number;
+        defense?: number;
+        sightRange?: number;
+        structureType?: "scout_tower" | "turret" | "wall";
+        userId?: number;
+        x?: number;
+        y?: number;
+    } | null>(null);
     const [showTurnModal, setShowTurnModal] = useState(false);
     const prevIsMyTurnRef = React.useRef(false);
     const turnModalTimerRef = React.useRef<ReturnType<
@@ -263,6 +290,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         openBarrel,
         collectResource,
         fightMonster,
+        fightPlayer,
     } = usePlayerActions(instanceId, user, state, {
         blueprintKey: placementMode?.blueprintKey ?? null,
         structureType: placementMode?.structureType ?? null,
@@ -275,26 +303,27 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
             if (!myPlayer || targetPlayer.user_id === myPlayer.user_id) return;
-
-            const distance =
+            const attackRange = myPlayer.attackRange ?? 1;
+            const dist =
                 Math.abs(myPlayer.position.x - targetPlayer.position.x) +
                 Math.abs(myPlayer.position.y - targetPlayer.position.y);
-            const canAttack =
-                isMyTurn &&
-                (distance === 1 ||
-                    (!!myPlayer.isRanged &&
-                        distance <= (myPlayer.attackRange ?? 1)));
-
-            if (canAttack) {
-                await handlePlayerClick(targetPlayer);
+            if (isMyTurn && dist <= attackRange) {
+                await fightPlayer(targetPlayer.user_id);
                 return;
             }
-
-            router.push(
-                `/profile?view=${targetPlayer.user_id}&from=game&instance_id=${instanceId}`,
-            );
+            setObjectHUD({
+                type: "player",
+                name: targetPlayer.name,
+                health: targetPlayer.health,
+                maxHealth: targetPlayer.maxHealth,
+                energy: targetPlayer.energy,
+                maxEnergy: targetPlayer.maxEnergy,
+                attack: targetPlayer.attack,
+                defense: targetPlayer.defense,
+                userId: targetPlayer.user_id,
+            });
         },
-        [myPlayer, isMyTurn, handlePlayerClick, router, instanceId],
+        [myPlayer, isMyTurn, fightPlayer],
     );
 
     // Show centered "YOUR TURN" modal when turn transitions to the current player
@@ -480,8 +509,178 @@ export default function GameController({ instanceId }: GameControllerProps) {
         })
         .filter((p) => p.remainingSec > 0);
 
+    // Close the object HUD if the referenced target no longer exists in state
+    useEffect(() => {
+        if (!objectHUD) return;
+
+        // Monster disappeared or died
+        if (
+            objectHUD.type === "monster" &&
+            typeof objectHUD.x === "number" &&
+            typeof objectHUD.y === "number"
+        ) {
+            const cell = state.grid.find(
+                (c: any) => c.x === objectHUD.x && c.y === objectHUD.y,
+            );
+            if (!cell || !cell.monster) {
+                setObjectHUD(null);
+                return;
+            }
+            // If monster exists but HP dropped to 0 or less, close HUD to avoid constant re-renders
+            if (
+                cell.monster &&
+                typeof cell.monster.health === "number" &&
+                cell.monster.health <= 0
+            ) {
+                setObjectHUD(null);
+                return;
+            }
+        }
+
+        // Structure removed
+        if (
+            objectHUD.type === "structure" &&
+            typeof objectHUD.x === "number" &&
+            typeof objectHUD.y === "number"
+        ) {
+            const cell = state.grid.find(
+                (c: any) => c.x === objectHUD.x && c.y === objectHUD.y,
+            );
+            if (!cell || !cell.structure_type) {
+                setObjectHUD(null);
+                return;
+            }
+            // Close HUD when structure health is zero or below
+            if (
+                typeof cell.structure_health === "number" &&
+                cell.structure_health <= 0
+            ) {
+                setObjectHUD(null);
+                return;
+            }
+        }
+
+        // Player left or disconnected and removed
+        if (objectHUD.type === "player" && objectHUD.userId) {
+            const pl = state.players.find(
+                (p) => p.user_id === objectHUD.userId,
+            );
+            if (!pl) {
+                setObjectHUD(null);
+                return;
+            }
+            // Close HUD when player HP <= 0
+            if (typeof pl.health === "number" && pl.health <= 0) {
+                setObjectHUD(null);
+                return;
+            }
+        }
+    }, [state.grid, state.players, objectHUD]);
+
     return (
         <div className={styles.container}>
+            {/* HUD для выбранного объекта (монстр, постройка, игрок) */}
+            {objectHUD && (
+                <div className={objectHudStyles.objectHudPanel}>
+                    {(() => {
+                        // Derive up-to-date stats from the global game state so
+                        // the HUD reflects damage/changes immediately.
+                        const base = { ...objectHUD } as any;
+                        if (
+                            objectHUD.type === "monster" &&
+                            typeof (objectHUD as any).x === "number"
+                        ) {
+                            const cell = state.grid.find(
+                                (c: any) =>
+                                    c.x === (objectHUD as any).x &&
+                                    c.y === (objectHUD as any).y,
+                            );
+                            if (cell && cell.monster) {
+                                base.name = cell.monster.name ?? base.name;
+                                base.health = cell.monster.health;
+                                // Preserve monster's original maxHealth so the
+                                // HP bar remains relative to the true maximum.
+                                if (
+                                    typeof cell.monster.maxHealth === "number"
+                                ) {
+                                    base.maxHealth = cell.monster.maxHealth;
+                                } else if (typeof base.maxHealth !== "number") {
+                                    // Initialize maxHealth only once from current health
+                                    base.maxHealth = cell.monster.health;
+                                }
+                                base.attack = cell.monster.attack;
+                                base.defense = cell.monster.defense;
+                            }
+                        } else if (
+                            objectHUD.type === "structure" &&
+                            typeof (objectHUD as any).x === "number"
+                        ) {
+                            const cell = state.grid.find(
+                                (c: any) =>
+                                    c.x === (objectHUD as any).x &&
+                                    c.y === (objectHUD as any).y,
+                            );
+                            if (cell && cell.structure_type) {
+                                base.name =
+                                    base.name ||
+                                    (cell.structure_type === "scout_tower"
+                                        ? "Башня разведки"
+                                        : cell.structure_type === "turret"
+                                          ? "Турель"
+                                          : "Стена");
+                                base.health = cell.structure_health;
+                                base.maxHealth =
+                                    typeof cell.structure_health === "number"
+                                        ? Math.max(
+                                              cell.structure_health,
+                                              STRUCTURE_DEFAULT_MAX_HEALTH[
+                                                  cell.structure_type as PlacementStructureType
+                                              ] ?? cell.structure_health,
+                                          )
+                                        : STRUCTURE_DEFAULT_MAX_HEALTH[
+                                              cell.structure_type as PlacementStructureType
+                                          ];
+                                base.defense = cell.structure_defense;
+                                base.attack = cell.structure_attack;
+                                base.structureType = cell.structure_type;
+                            }
+                        } else if (
+                            objectHUD.type === "player" &&
+                            objectHUD.userId
+                        ) {
+                            const pl = state.players.find(
+                                (p) => p.user_id === objectHUD.userId,
+                            );
+                            if (pl) {
+                                base.name = pl.name ?? base.name;
+                                base.health = pl.health;
+                                base.maxHealth = pl.maxHealth;
+                                base.energy = pl.energy;
+                                base.maxEnergy = pl.maxEnergy;
+                                base.attack = pl.attack;
+                                base.defense = pl.defense;
+                            }
+                        }
+
+                        return (
+                            <ObjectHUD
+                                {...base}
+                                onProfileClick={
+                                    base.type === "player" && base.userId
+                                        ? () => {
+                                              router.push(
+                                                  `/profile?view=${base.userId}&from=game&instance_id=${instanceId}`,
+                                              );
+                                              setObjectHUD(null);
+                                          }
+                                        : undefined
+                                }
+                                onClose={() => setObjectHUD(null)}
+                            />
+                        );
+                    })()}
+                </div>
+            )}
             {disconnectedPlayers.length > 0 && (
                 <div className={styles.disconnectBanner}>
                     <div className={styles.disconnectTitle}>
@@ -555,7 +754,119 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
-                        onCellClick={handleCellClick}
+                        onCellClick={async (cell) => {
+                            if (!myPlayer) return;
+                            const distance =
+                                Math.abs(myPlayer.position.x - cell.x) +
+                                Math.abs(myPlayer.position.y - cell.y);
+                            const attackRange = myPlayer.attackRange ?? 1;
+                            // Монстр
+                            if (cell.monster) {
+                                if (isMyTurn && distance <= attackRange) {
+                                    await fightMonster(cell.x, cell.y);
+                                    return;
+                                }
+                                // Иначе показываем HUD
+                                setObjectHUD({
+                                    type: "monster",
+                                    x: cell.x,
+                                    y: cell.y,
+                                    name: cell.monster.name,
+                                    health: cell.monster.health,
+                                    maxHealth:
+                                        cell.monster.maxHealth ??
+                                        cell.monster.health,
+                                    attack: cell.monster.attack,
+                                    defense: cell.monster.defense,
+                                });
+                                return;
+                            }
+                            // Постройка
+                            if (cell.structure_type) {
+                                // Бэкенд позволяет атаковать только соседние постройки (manhattan == 1)
+                                // и только чужие, не строящиеся
+                                const isOwnStructure =
+                                    cell.structure_owner_user_id ===
+                                    myPlayer.user_id;
+                                if (
+                                    isMyTurn &&
+                                    distance === 1 &&
+                                    !isOwnStructure &&
+                                    !cell.is_under_construction
+                                ) {
+                                    await handleCellClick(cell);
+                                    return;
+                                }
+                                setObjectHUD({
+                                    type: "structure",
+                                    x: cell.x,
+                                    y: cell.y,
+                                    name:
+                                        cell.structure_type === "scout_tower"
+                                            ? "Башня разведки"
+                                            : cell.structure_type === "turret"
+                                              ? "Турель"
+                                              : "Стена",
+                                    health: cell.structure_health,
+                                    maxHealth:
+                                        STRUCTURE_DEFAULT_MAX_HEALTH[
+                                            cell.structure_type as PlacementStructureType
+                                        ] ?? cell.structure_health,
+                                    defense: cell.structure_defense,
+                                    attack: cell.structure_attack,
+                                    structureType: cell.structure_type as any,
+                                    sightRange:
+                                        cell.structure_type === "scout_tower"
+                                            ? 1
+                                            : undefined,
+                                });
+                                return;
+                            }
+                            // Ресурс
+                            if (cell.resource) {
+                                if (isMyTurn && distance === 1) {
+                                    await handleCellClick(cell);
+                                    return;
+                                }
+                                setObjectHUD({
+                                    type: "object",
+                                    name: `Ресурс: ${cell.resource.type}`,
+                                    details:
+                                        cell.resource.description ||
+                                        "Полезный ресурс",
+                                });
+                                return;
+                            }
+                            // Бочка
+                            if (cell.barbel) {
+                                if (isMyTurn && distance === 1) {
+                                    await handleCellClick(cell);
+                                    return;
+                                }
+                                setObjectHUD({
+                                    type: "object",
+                                    name: "Бочка",
+                                    details: "Можно открыть и получить награду",
+                                });
+                                return;
+                            }
+                            // Портал
+                            if (cell.isPortal) {
+                                setObjectHUD({
+                                    type: "object",
+                                    name: "Портал",
+                                    details:
+                                        "Точка выхода из матча после выполнения условий",
+                                });
+                                return;
+                            }
+                            // Пустая клетка — если можно дойти, двигаемся
+                            if (isMyTurn && distance === 1) {
+                                await handleCellClick(cell);
+                                return;
+                            }
+                            // В остальных случаях HUD не нужен
+                        }}
                         onPlayerClick={handleMapPlayerClick}
                     />
                 ) : (
