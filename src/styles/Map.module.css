@@ -67,10 +67,24 @@
     cursor: pointer;
 }
 
-.interactive:hover {
-    transform: translateY(-1px) scale(1.03);
-    filter: brightness(1.08) saturate(1.08);
-    z-index: 2;
+@media (hover: hover) and (pointer: fine) {
+    .interactive:hover {
+        transform: translateY(-1px) scale(1.03);
+        filter: brightness(1.08) saturate(1.08);
+        z-index: 2;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .interactive:hover {
+        transform: none;
+        filter: none;
+    }
+
+    .interactive:active {
+        transform: scale(0.98);
+        filter: brightness(1.04);
+    }
 }
 
 .currentPlayerCell {

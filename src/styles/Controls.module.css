@@ -1,7 +1,8 @@
 .controlsContainer {
     display: grid;
-    gap: 8px;
+    gap: 6px;
     justify-items: center;
+    pointer-events: auto;
 }
 
 .buttonRow {
@@ -11,25 +12,32 @@
 }
 
 .controlButton {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 10px;
+    border-radius: 12px;
     background: linear-gradient(
         170deg,
-        rgba(15, 23, 37, 0.95),
-        rgba(11, 17, 29, 0.98)
+        rgba(15, 23, 37, 0.72),
+        rgba(11, 17, 29, 0.82)
     );
+    backdrop-filter: blur(8px);
     color: #e2e8f0;
     font-size: 18px;
     cursor: pointer;
     transition:
         transform 0.12s ease,
-        border-color 0.2s ease;
+        border-color 0.2s ease,
+        background 0.2s ease;
 }
 
 .controlButton:hover {
     border-color: rgba(56, 189, 248, 0.7);
+    background: linear-gradient(
+        170deg,
+        rgba(20, 30, 45, 0.82),
+        rgba(12, 18, 32, 0.9)
+    );
 }
 
 .controlButton:active {
@@ -38,56 +46,88 @@
 
 .actionRow {
     margin-top: 4px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
 }
 
 .actionButton {
-    min-width: 132px;
-    height: 44px;
+    min-width: 148px;
+    height: 46px;
     border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 10px;
+    border-radius: 12px;
     background: linear-gradient(
         135deg,
-        rgba(20, 184, 166, 0.8),
-        rgba(14, 165, 233, 0.8)
+        rgba(20, 184, 166, 0.74),
+        rgba(14, 165, 233, 0.74)
     );
-    color: #052126;
+    backdrop-filter: blur(8px);
+    color: #ecfeff;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.02em;
     cursor: pointer;
-    transition: filter 0.2s ease;
+    transition:
+        filter 0.2s ease,
+        transform 0.12s ease;
 }
 
 .actionButton:hover {
-    filter: brightness(1.05);
+    filter: brightness(1.06);
+}
+
+.actionButton:active {
+    transform: translateY(1px);
 }
 
 @media (max-width: 760px) {
     .controlsContainer {
         width: 100%;
-        gap: 3px;
+        gap: 6px;
     }
 
     .buttonRow {
-        gap: 4px;
+        gap: 6px;
     }
 
     .controlButton {
-        width: 32px;
-        height: 32px;
-        font-size: 14px;
-        border-radius: 8px;
+        width: 44px;
+        height: 44px;
+        font-size: 16px;
+        border-radius: 10px;
     }
 
     .actionRow {
         width: 100%;
-        margin-top: 0;
+        margin-top: 2px;
     }
 
     .actionButton {
         width: 100%;
         min-width: 0;
-        height: 32px;
+        height: 40px;
+        font-size: 12px;
+        border-radius: 10px;
+    }
+}
+
+@media (max-width: 920px) and (orientation: landscape) {
+    .controlsContainer {
+        gap: 4px;
+    }
+
+    .buttonRow {
+        gap: 5px;
+    }
+
+    .controlButton {
+        width: 42px;
+        height: 42px;
+        font-size: 15px;
+    }
+
+    .actionButton {
+        height: 38px;
         font-size: 11px;
     }
 }

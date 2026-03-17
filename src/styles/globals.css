@@ -28,14 +28,12 @@ html, body {
 }
 
 button {
-  padding: 10px 20px;
-  margin: 5px;
+  font: inherit;
+  color: inherit;
+  background: none;
   border: none;
-  border-radius: 5px;
-  background-color: var(--primary-color);
-  color: var(--text-color);
-  cursor: pointer;
-  transition: background-color 0.3s ease;
+  padding: 0;
+  margin: 0;
 }
 
 button:hover {

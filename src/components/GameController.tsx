@@ -135,10 +135,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
             // Keep the same logical map window for all devices and only scale
             // the rendered result on small screens.
-            const horizontalPadding = 18;
-            const verticalReserved = 190;
-            const availableWidth = Math.max(280, screenW - horizontalPadding);
-            const availableHeight = Math.max(220, screenH - verticalReserved);
+        
+            const availableWidth = screenW;
+			const availableHeight = screenH;
 
             const scale = Math.max(
                 0.42,
@@ -868,14 +867,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                             Защита:{" "}
                                             {profileModalData.player.defense}
                                         </div>
-                                        <div>
-                                            Подвижность:{" "}
-                                            {profileModalData.player.mobility}
-                                        </div>
-                                        <div>
-                                            Зрение:{" "}
-                                            {profileModalData.player.sightRange}
-                                        </div>
+										<div className="">
+											группа:{" "}
+											{profileModalData.player.group_id}
+										</div>
                                     </div>
                                 </div>
                             )}
@@ -1053,6 +1048,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             }
                             // Портал
                             if (cell.isPortal) {
+                                if (isMyTurn && distance === 1) {
+                                    await handleCellClick(cell);
+                                    return;
+                                }
                                 setObjectHUD({
                                     type: "object",
                                     name: "Портал",
