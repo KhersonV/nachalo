@@ -1,7 +1,10 @@
 .inventoryContainer {
     position: absolute;
     top: 10%;
-    right: 10%;
+    /* keep the inventory away from the right edge so it doesn't cover the
+       floating inventory button (fab). Uses clamp to prefer 10% but never
+       allow it to be closer than 72px to the right edge on wide screens */
+    right: clamp(72px, 10%, 22%);
     background: linear-gradient(135deg, #1e1e1e, #383838);
     color: #f0f0f0;
     padding: 20px;
@@ -164,7 +167,9 @@
         left: 8px;
         right: 8px;
         top: auto;
-        bottom: max(8px, env(safe-area-inset-bottom));
+        /* keep the sheet clear of the floating inventory FAB by adding
+           the fab height + margin to the bottom offset */
+        bottom: calc(max(8px, env(safe-area-inset-bottom)) + 66px);
         width: auto;
         max-width: none;
         max-height: min(78dvh, 680px);
@@ -180,7 +185,8 @@
         backdrop-filter: blur(12px);
         animation: inventorySheetIn 0.22s ease-out;
         overflow-y: auto;
-        z-index: 300;
+        /* keep mobile sheet below the fab so the button remains tappable */
+        z-index: 128;
     }
 
     .title {

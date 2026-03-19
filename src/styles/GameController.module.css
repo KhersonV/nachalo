@@ -288,7 +288,9 @@
 
 .turnStatusFloating {
     position: fixed;
-    top: max(12px, env(safe-area-inset-top));
+    /* push the floating status below the player HUD to avoid overlap
+       on large screens (HUD height ~56px) */
+    top: calc(max(12px, env(safe-area-inset-top)) + 64px);
     left: 50%;
     transform: translateX(-50%);
     z-index: 128;
