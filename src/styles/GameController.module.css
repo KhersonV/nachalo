@@ -180,6 +180,57 @@
     animation: disconnectPulse 1s ease-in-out infinite;
 }
 
+.disconnectCloseButton {
+    background: transparent;
+    border: none;
+    color: #f3f4f6;
+    font-size: 0.95rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition:
+        background 0.12s,
+        color 0.12s;
+}
+
+.disconnectCloseButton:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #fde68a;
+}
+
+.disconnectMinimized {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    z-index: 140;
+    background: rgba(20, 24, 28, 0.9);
+    color: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    padding: 8px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    font-weight: 700;
+}
+
+@media (min-width: 1181px) {
+    /* Place disconnect banner to the right of the Player HUD on large screens */
+    .disconnectBanner {
+        right: auto;
+        left: calc(max(12px, env(safe-area-inset-left)) + min(320px, 30vw));
+        top: max(12px, env(safe-area-inset-top));
+        /* keep it above most UI but below full-screen modals */
+        z-index: 140;
+    }
+
+    .disconnectMinimized {
+        right: auto;
+        left: calc(max(12px, env(safe-area-inset-left)) + min(320px, 30vw));
+        top: max(12px, env(safe-area-inset-top));
+        z-index: 140;
+    }
+}
+
 /* =========================================================
    WAITING / TURN UI
    ========================================================= */

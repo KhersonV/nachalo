@@ -124,7 +124,14 @@ function MapCell({
             );
         }
         if (cell.isPortal) {
-            return <span className={styles.symbol}>🌀</span>;
+            return (
+                <img
+                    src="/portal.png"
+                    alt="portal"
+                    className={styles.image}
+                    style={imageStyle}
+                />
+            );
         }
         if (cell.monster) {
             return <span className={styles.symbol}>👹</span>;

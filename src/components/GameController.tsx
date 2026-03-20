@@ -82,20 +82,20 @@ export default function GameController({ instanceId }: GameControllerProps) {
         sightRange?: number;
         structureType?: "scout_tower" | "turret" | "wall";
         userId?: number;
+        groupId?: number;
         x?: number;
         y?: number;
     } | null>(null);
     const [showTurnModal, setShowTurnModal] = useState(false);
     const prevIsMyTurnRef = React.useRef(false);
-    const turnModalTimerRef = React.useRef<ReturnType<
-        typeof setTimeout
-    > | null>(null);
+    const turnModalTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const [showQuestAlert, setShowQuestAlert] = useState(false);
     const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
     const [canOpenStats, setCanOpenStats] = useState(false);
     const [disconnectedDeadlines, setDisconnectedDeadlines] = useState<
         Record<number, number>
     >({});
+    const [showDisconnectPanel, setShowDisconnectPanel] = useState(true);
     const [nowMs, setNowMs] = useState<number>(Date.now());
     const [mapViewport, setMapViewport] = useState({
         width: 800,
@@ -111,6 +111,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const [profileModalData, setProfileModalData] = useState<any | null>(null);
     const [profileModalLoading, setProfileModalLoading] = useState(false);
     const [profileModalError, setProfileModalError] = useState("");
+    const [profileModalFriendLoading, setProfileModalFriendLoading] =
+        useState(false);
+    const [profileModalOutgoingSent, setProfileModalOutgoingSent] = useState(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -208,6 +211,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             setProfileModalData(null);
             setProfileModalError("");
             setProfileModalLoading(false);
+            setProfileModalOutgoingSent(false);
             return;
         }
 
@@ -390,6 +394,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     attack: myPlayer.attack,
                     defense: myPlayer.defense,
                     userId: myPlayer.user_id,
+                    groupId: myPlayer.group_id,
                 });
                 return;
             }
@@ -411,6 +416,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 attack: targetPlayer.attack,
                 defense: targetPlayer.defense,
                 userId: targetPlayer.user_id,
+                groupId: targetPlayer.group_id,
             });
         },
         [myPlayer, isMyTurn, fightPlayer],
@@ -749,6 +755,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                 base.maxEnergy = pl.maxEnergy;
                                 base.attack = pl.attack;
                                 base.defense = pl.defense;
+                                base.groupId = (pl as any).group_id;
                             }
                         }
 
@@ -883,23 +890,115 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                             Защита:{" "}
                                             {profileModalData.player.defense}
                                         </div>
-                                        <div className="">
-                                            группа:{" "}
-                                            {profileModalData.player.group_id}
-                                        </div>
+
+                                        {user?.id !== profileModalUserId && (
+                                            <div style={{ marginTop: 12 }}>
+                                                {!profileModalData.isFriend ? (
+                                                    (profileModalOutgoingSent || profileModalData?.friendRelation === "outgoing") ? (
+                                                        <span style={{ color: "#9f9" }}>
+                                                            Заявка в друзья отправлена
+                                                        </span>
+                                                    ) : (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!user?.token) return;
+                                                                setProfileModalFriendLoading(true);
+                                                                try {
+                                                                    const res = await fetch(
+                                                                        `${API_BASE}/game/friends/add`,
+                                                                        {
+                                                                            method: "POST",
+                                                                            headers: {
+                                                                                "Content-Type": "application/json",
+                                                                                Authorization: `Bearer ${user?.token}`,
+                                                                            },
+                                                                            body: JSON.stringify({
+                                                                                friendUserId: profileModalUserId,
+                                                                            }),
+                                                                        },
+                                                                    );
+                                                                    if (!res.ok) {
+                                                                        const t = await res.text().catch(() => null);
+                                                                        alert(t || "Не удалось отправить запрос");
+                                                                    } else {
+                                                                        // Mark as outgoing request locally
+                                                                        setProfileModalData((d: any) => ({
+                                                                            ...d,
+                                                                            isFriend: false,
+                                                                            friendRelation: "outgoing",
+                                                                        }));
+                                                                        setProfileModalOutgoingSent(true);
+                                                                        try {
+                                                                            const refetch = await fetch(`${API_BASE}/game/profile/${profileModalUserId}`, {
+                                                                                headers: {
+                                                                                    Authorization: `Bearer ${user?.token}`,
+                                                                                },
+                                                                                cache: "no-store",
+                                                                            });
+                                                                            if (refetch.ok) {
+                                                                                const pdata = await refetch.json();
+                                                                                setProfileModalData(pdata.data ?? pdata);
+                                                                            }
+                                                                        } catch (e) {
+                                                                            // ignore refetch errors; local state already set
+                                                                        }
+                                                                    }
+                                                                } catch (e) {
+                                                                    console.error(e);
+                                                                } finally {
+                                                                    setProfileModalFriendLoading(false);
+                                                                }
+                                                            }}
+                                                            disabled={profileModalFriendLoading}
+                                                            style={{ padding: "8px 12px", borderRadius: 6 }}
+                                                        >
+                                                            {profileModalFriendLoading ? "Отправка..." : "Добавить в друзья"}
+                                                        </button>
+                                                    )
+                                                ) : (
+                                                    <span style={{ color: "#9f9" }}>В друзьях</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
                     </div>
                 </div>
             )}
-            {disconnectedPlayers.length > 0 && (
-                <div className={styles.disconnectBanner}>
-                    <div className={styles.disconnectTitle}>
-                        Отключение игрока: дается 3:00 на переподключение
-                    </div>
-                    <div className={styles.disconnectHint}>
-                        Если таймер истечет, игрок погибнет от удара молнии.
+            {disconnectedPlayers.length > 0 && showDisconnectPanel && (
+                <div
+                    className={styles.disconnectBanner}
+                    role="status"
+                    aria-live="polite"
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                            gap: 8,
+                        }}
+                    >
+                        <div style={{ flex: 1 }}>
+                            <div className={styles.disconnectTitle}>
+                                Отключение игрока: дается 3:00 на
+                                переподключение
+                            </div>
+                            <div className={styles.disconnectHint}>
+                                Если таймер истечет, игрок погибнет от удара
+                                молнии.
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            className={styles.disconnectCloseButton}
+                            onClick={() => setShowDisconnectPanel(false)}
+                            aria-label="Свернуть уведомление об отключении"
+                            title="Свернуть"
+                        >
+                            ▾
+                        </button>
                     </div>
                     {disconnectedPlayers.map((p) => (
                         <div
@@ -916,6 +1015,18 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     ))}
                 </div>
             )}
+
+            {disconnectedPlayers.length > 0 && !showDisconnectPanel && (
+                <button
+                    type="button"
+                    className={styles.disconnectMinimized}
+                    onClick={() => setShowDisconnectPanel(true)}
+                    aria-label="Показать уведомление об отключении"
+                    title="Показать"
+                >
+                    Отключения игроков ▸
+                </button>
+            )}
             {myPlayer && (
                 <PlayerHUD
                     health={myPlayer.health}
@@ -924,6 +1035,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     maxEnergy={myPlayer.maxEnergy}
                     isRanged={myPlayer.isRanged}
                     attackRange={myPlayer.attackRange}
+                    groupId={myPlayer.group_id}
                 />
             )}
             <div

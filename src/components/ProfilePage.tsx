@@ -965,22 +965,6 @@ export default function ProfilePage() {
                     <div className={styles.lookupRow}>
                         <input
                             className={styles.input}
-                            value={lookupId}
-                            onChange={(e) => setLookupId(e.target.value)}
-                            placeholder="Введите ID игрока"
-                            inputMode="numeric"
-                        />
-                        <button
-                            className={styles.primaryBtn}
-                            onClick={viewOtherProfile}
-                            disabled={lookupLoading}
-                        >
-                            {lookupLoading ? "Ищем..." : "Открыть профиль"}
-                        </button>
-                    </div>
-                    <div className={styles.lookupRow}>
-                        <input
-                            className={styles.input}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Поиск игроков по нику"
@@ -1207,7 +1191,7 @@ export default function ProfilePage() {
                                     <div className={styles.friendMeta}>
                                         <strong>{req.name}</strong>
                                         <span>
-                                            ID: {req.userId} • Ур. {req.level} •{" "}
+                                            • Ур. {req.level} •{" "}
                                             {req.characterType}
                                         </span>
                                     </div>
@@ -1278,7 +1262,7 @@ export default function ProfilePage() {
                                     <div className={styles.friendMeta}>
                                         <strong>{req.name}</strong>
                                         <span>
-                                            ID: {req.userId} • Ур. {req.level} •{" "}
+                                             • Ур. {req.level} •{" "}
                                             {req.characterType}
                                         </span>
                                     </div>

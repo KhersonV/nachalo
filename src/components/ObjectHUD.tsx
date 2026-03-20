@@ -11,6 +11,7 @@ export interface ObjectHUDProps {
     type: "monster" | "structure" | "player" | "object";
     name: string;
     details?: string;
+    groupId?: number;
     health?: number;
     maxHealth?: number;
     energy?: number;
@@ -72,6 +73,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
     defense,
     sightRange,
     structureType,
+    groupId,
     onProfileClick,
     onClose,
 }) => {
@@ -120,6 +122,14 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
             )}
 
             {hasStats && <hr className={styles.divider} />}
+
+            {typeof groupId === "number" && (
+                <div className={styles.statRow}>
+                    <span className={styles.statLabel}>Группа</span>
+                    <div />
+                    <span className={styles.statValue}>{groupId}</span>
+                </div>
+            )}
 
             {hasStats && (
                 <div className={styles.smallStatGrid}>
