@@ -109,15 +109,6 @@ export function useGameSocket(
     const router = useRouter();
     const { user } = useAuth();
 
-    useEffect(() => {
-        console.log(
-            "[useGameSocket] MOUNTED for",
-            options?.instanceId,
-            user?.token,
-        );
-        return () =>
-            console.log("[useGameSocket] UNMOUNT for", options?.instanceId);
-    }, [options?.instanceId, user?.token]);
 
     // Всегда актуальный обработчик
     useEffect(() => {
@@ -145,10 +136,7 @@ export function useGameSocket(
         allowReconnectRef.current = true;
 
         const connect = () => {
-            console.log("Connecting to WS with:", {
-                token,
-                instanceId,
-            });
+           
             if (!token || !instanceId || disposed || !connectionKey) return;
 
             // Global guard: only one WebSocket open per instanceId+token at a time.

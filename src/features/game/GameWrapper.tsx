@@ -11,6 +11,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/store";
 import { resetState } from "@/store/slices/gameSlice";
 import { useGameSocket } from "@/hooks/useGameSocket";
+import { debugLog } from "@/utils/log";
 import type { ResourceType, MonsterType } from "@/types/GameTypes";
 import { createWsHandlers } from "./createWsHandlers";
 
@@ -25,7 +26,6 @@ export default function GameWrapper({
     instanceId,
     children,
 }: GameWrapperProps) {
-    console.log("[GameWrapper] РЕНДЕР! instanceId:", instanceId);
     const dispatch = useDispatch<AppDispatch>();
     const router = useRouter();
     const { user, isLoading } = useAuth();
@@ -66,9 +66,6 @@ export default function GameWrapper({
             setResources(resources);
             setMonsters(monsters);
 
-            console.log("[GameWrapper] user:", user);
-            console.log("[GameWrapper] fetch match...");
-
             const res = await fetch(
                 `${API_BASE}/game/match?instance_id=${instanceId}`,
                 { headers: { Authorization: `Bearer ${user.token}` } },
@@ -78,7 +75,6 @@ export default function GameWrapper({
                 throw new Error(`match ${res.status}: ${text}`);
             }
             const data = await res.json();
-            console.log("[GameWrapper] match data:", data);
 
             const players = data.players.map((p: any) => ({
                 ...p,
@@ -96,18 +92,6 @@ export default function GameWrapper({
                 return;
             }
 
-            console.log("[DISPATCH setMatchData] SOURCE: fetchAll", {
-                payload: {
-                    instanceId: data.instance_id,
-                    mode: data.mode,
-                    grid: data.map,
-                    mapWidth: data.map_width,
-                    mapHeight: data.map_height,
-                    players,
-                    active_user,
-                    turnNumber: data.turn_number,
-                },
-            });
             dispatch({
                 type: "game/setMatchData",
                 payload: {
@@ -133,19 +117,8 @@ export default function GameWrapper({
     }
     useEffect(() => {
         if (isLoading) return;
-        console.log(
-            "[GameWrapper/useEffect] user:",
-            user,
-            "token:",
-            user?.token,
-            "isMapLoaded:",
-            state.isMapLoaded,
-            "instanceId:",
-            instanceId,
-        );
 
         if (!user) {
-            console.log("[GameWrapper/useEffect] Нет user, уходим на /login");
             router.replace("/login");
             return;
         }
@@ -153,18 +126,14 @@ export default function GameWrapper({
             prevInstanceIdRef.current &&
             prevInstanceIdRef.current !== instanceId
         ) {
-            console.log(
-                "[GameWrapper/useEffect] Новый instanceId, resetState()",
-            );
             dispatch(resetState());
         }
         prevInstanceIdRef.current = instanceId;
 
         if (!state.isMapLoaded && user && user.token) {
-            console.log("[GameWrapper/useEffect] Запускаем fetchAll");
             fetchAll();
         } else {
-            console.log(
+            debugLog(
                 "[GameWrapper/useEffect] НЕ запускаем fetchAll (isMapLoaded:",
                 state.isMapLoaded,
                 ")",

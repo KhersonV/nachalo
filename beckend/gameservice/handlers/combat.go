@@ -1000,6 +1000,26 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Prevent friendly fire: if both are players and belong to same non-zero group
+	if req.AttackerType == "player" && req.TargetType == "player" {
+		atkP, aerr := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		if aerr != nil {
+			log.Printf("[DEBUG] UniversalAttackHandler: load attacker player error: %v", aerr)
+			http.Error(w, "failed to load attacker player", http.StatusInternalServerError)
+			return
+		}
+		tgtP, terr := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		if terr != nil {
+			log.Printf("[DEBUG] UniversalAttackHandler: load target player error: %v", terr)
+			http.Error(w, "failed to load target player", http.StatusInternalServerError)
+			return
+		}
+		if atkP.GroupID != 0 && atkP.GroupID == tgtP.GroupID {
+			http.Error(w, "Нельзя атаковать союзника", http.StatusBadRequest)
+			return
+		}
+	}
+
 	// --- ENERGY COST FOR ATTACK ---
 	if req.AttackerType == "player" {
 		player, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)

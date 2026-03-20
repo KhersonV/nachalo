@@ -5,6 +5,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { debugLog } from "../utils/log";
 import { useRouter } from "next/navigation";
 
 const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_BASE || "http://localhost:8000";
@@ -77,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const { exp } = parseJwt(u.token);
                 if (exp && Date.now() >= exp * 1000) {
                     // просрочен
-                    console.log("Токен истёк, вынужденный logout");
+                    debugLog("Токен истёк, вынужденный logout");
                     localStorage.removeItem("user");
                     setUser(null);
                 } else {

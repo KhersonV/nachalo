@@ -67,13 +67,7 @@ const gameSlice = createSlice({
                     gridIndex[`${c.x}:${c.y}`] = i;
                 }
             }
-            console.log("[gameSlice/setMatchData] payload:", action.payload);
-            console.log("[gameSlice/setMatchData] new state:", {
-                players: state.players,
-                active_user: state.active_user,
-                instanceId: state.instanceId,
-                isMapLoaded: state.isMapLoaded,
-            });
+         
         },
 
         movePlayer(

@@ -30,9 +30,6 @@ export function createWsHandlers(
     return {
         // --- MATCH UPDATE ---
         MATCH_UPDATE: (payload: any) => {
-            console.log("[DISPATCH setMatchData] SOURCE: WS MATCH_UPDATE", {
-                payload,
-            });
             dispatch(setMatchData(payload));
         },
 

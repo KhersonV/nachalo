@@ -40,7 +40,6 @@ const LoginPage = () => {
             }
 
             const data = await res.json();
-            console.log("Received login response:", data);
             login(data);
         } catch (err: any) {
             setError(err.message || "Что-то пошло не так");

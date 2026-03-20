@@ -5,8 +5,7 @@
 "use client";
 
 import React from "react";
-import { useSelector } from "react-redux";
-import { shallowEqual } from "react-redux";
+import { useSelector, shallowEqual } from "react-redux";
 import type { RootState } from "@/store";
 import Map from "./Map";
 import type { Cell, PlayerState } from "../types";
@@ -57,6 +56,8 @@ type CharacterSpriteConfig = {
     idleBackSpriteSrc?: string;
 };
 
+type MoveDirection = "left" | "right" | "up" | "down";
+
 type ResolveActiveSpritePoseInput = {
     isMoving: boolean;
     activeDir: MoveDirection;
@@ -70,6 +71,26 @@ type ResolveActiveSpritePoseInput = {
     idleBackLayout: SpriteLayout | null;
     idleSideRightLayout: SpriteLayout | null;
     idleSideLeftLayout: SpriteLayout | null;
+};
+
+type StepAnim = {
+    dir: MoveDirection;
+    startMs: number;
+    durationMs: number;
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+};
+
+type PreparedPlayerRenderData = {
+    player: PlayerState;
+    renderLeft: number;
+    renderTop: number;
+    renderWidth: number;
+    renderHeight: number;
+    activeSpriteSrc?: string;
+    activeLayout: SpriteLayout | null;
+    shouldMirror: boolean;
+    isActiveUser: boolean;
 };
 
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
@@ -138,14 +159,13 @@ const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
 function getSpriteConfig(playerImage?: string): CharacterSpriteConfig | null {
     const normalizedPlayerImage = normalizeAvatarPath(playerImage);
     if (!normalizedPlayerImage) return null;
+
     return (
         CHARACTER_SPRITES.find((cfg) =>
             normalizedPlayerImage.includes(cfg.imageKey),
         ) ?? null
     );
 }
-
-type MoveDirection = "left" | "right" | "up" | "down";
 
 function easeInOutCubic(progress: number) {
     return progress < 0.5
@@ -214,8 +234,6 @@ export default function MapWithCamera({
     onCellClick,
     onPlayerClick,
 }: MapWithCameraProps) {
-    // console.log("🔄 MapWithCamera rerendered");
-
     const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
         (state: RootState) => ({
             grid: state.game.grid,
@@ -234,18 +252,40 @@ export default function MapWithCamera({
     const safeMapHeight = Number(mapHeight) || 15;
     const gap = 1;
 
-    let offsetX =
-        viewportWidth / 2 -
-        (playerPosition.x * (tileSize + gap) + tileSize / 2);
-    let offsetY =
-        viewportHeight / 2 -
-        (playerPosition.y * (tileSize + gap) + tileSize / 2);
+    const { offsetX, offsetY } = React.useMemo(() => {
+        let nextOffsetX =
+            viewportWidth / 2 -
+            (playerPosition.x * (tileSize + gap) + tileSize / 2);
+        let nextOffsetY =
+            viewportHeight / 2 -
+            (playerPosition.y * (tileSize + gap) + tileSize / 2);
 
-    const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
-    const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
+        const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
+        const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
 
-    offsetX = Math.min(0, Math.max(viewportWidth - totalWidth, offsetX));
-    offsetY = Math.min(0, Math.max(viewportHeight - totalHeight, offsetY));
+        nextOffsetX = Math.min(
+            0,
+            Math.max(viewportWidth - totalWidth, nextOffsetX),
+        );
+        nextOffsetY = Math.min(
+            0,
+            Math.max(viewportHeight - totalHeight, nextOffsetY),
+        );
+
+        return {
+            offsetX: nextOffsetX,
+            offsetY: nextOffsetY,
+        };
+    }, [
+        viewportWidth,
+        viewportHeight,
+        playerPosition.x,
+        playerPosition.y,
+        tileSize,
+        gap,
+        safeMapWidth,
+        safeMapHeight,
+    ]);
 
     const playerImageOffsetX = 2;
     const playerImageOffsetY = 2;
@@ -270,19 +310,25 @@ export default function MapWithCamera({
             ),
         [],
     );
+
     const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
         Record<string, SpriteImageMeta>
     >({});
 
     React.useEffect(() => {
         let cancelled = false;
+
         spriteSources.forEach((src) => {
             if (spriteMetaBySrc[src]) return;
+
             const image = new Image();
+
             image.onload = () => {
                 if (cancelled) return;
+
                 setSpriteMetaBySrc((old) => {
                     if (old[src]) return old;
+
                     return {
                         ...old,
                         [src]: {
@@ -292,8 +338,10 @@ export default function MapWithCamera({
                     };
                 });
             };
+
             image.src = src;
         });
+
         return () => {
             cancelled = true;
         };
@@ -303,30 +351,28 @@ export default function MapWithCamera({
         globalThis.Map<number, { x: number; y: number }>
     >(new globalThis.Map());
 
-    type StepAnim = {
-        dir: MoveDirection;
-        startMs: number;
-        durationMs: number;
-        from: { x: number; y: number };
-        to: { x: number; y: number };
-    };
-
     const [stepAnimByPlayer, setStepAnimByPlayer] = React.useState<
         globalThis.Map<number, StepAnim>
     >(new globalThis.Map());
+
     const [facingDirByPlayer, setFacingDirByPlayer] = React.useState<
         globalThis.Map<number, MoveDirection>
     >(new globalThis.Map());
-    const [, setAnimTick] = React.useState(0);
+
+    const [animTick, setAnimTick] = React.useState(0);
 
     React.useEffect(() => {
         if (stepAnimByPlayer.size === 0) return;
+
         let frameId = 0;
+
         const tick = () => {
             setAnimTick((v) => v + 1);
             frameId = window.requestAnimationFrame(tick);
         };
+
         frameId = window.requestAnimationFrame(tick);
+
         return () => window.cancelAnimationFrame(frameId);
     }, [stepAnimByPlayer]);
 
@@ -341,12 +387,15 @@ export default function MapWithCamera({
 
         for (const p of players) {
             const last = prev.get(p.user_id);
+
             if (last && (last.x !== p.position.x || last.y !== p.position.y)) {
                 let dir: MoveDirection = "down";
+
                 if (p.position.x < last.x) dir = "left";
                 else if (p.position.x > last.x) dir = "right";
                 else if (p.position.y < last.y) dir = "up";
                 else if (p.position.y > last.y) dir = "down";
+
                 movedNow.push({
                     id: p.user_id,
                     dir,
@@ -354,6 +403,7 @@ export default function MapWithCamera({
                     to: { x: p.position.x, y: p.position.y },
                 });
             }
+
             prev.set(p.user_id, { x: p.position.x, y: p.position.y });
         }
 
@@ -363,6 +413,7 @@ export default function MapWithCamera({
 
         setStepAnimByPlayer((old) => {
             const next = new globalThis.Map(old);
+
             movedNow.forEach(({ id, dir, from, to }) => {
                 next.set(id, {
                     dir,
@@ -372,6 +423,7 @@ export default function MapWithCamera({
                     to,
                 });
             });
+
             return next;
         });
 
@@ -392,24 +444,29 @@ export default function MapWithCamera({
         return () => window.clearTimeout(timer);
     }, [players]);
 
-    const getStepProgress = React.useCallback((step?: StepAnim) => {
-        if (!step) return 1;
-        const elapsed = Math.max(0, Date.now() - step.startMs);
-        return easeInOutCubic(Math.min(1, elapsed / step.durationMs));
-    }, []);
+    const getStepProgress = React.useCallback(
+        (step?: StepAnim, nowMs?: number) => {
+            if (!step) return 1;
+
+            const elapsed = Math.max(0, (nowMs ?? Date.now()) - step.startMs);
+            return easeInOutCubic(Math.min(1, elapsed / step.durationMs));
+        },
+        [],
+    );
 
     const getSpriteLayout = React.useCallback(
         (src: string | undefined, frames: number): SpriteLayout | null => {
             if (!src) return null;
+
             const meta = spriteMetaBySrc[src];
             if (!meta) return null;
-            const frameWidth = meta.width / Math.max(1, frames);
+
+            const safeFrames = Math.max(1, frames);
+            const frameWidth = meta.width / safeFrames;
             const frameHeight = meta.height;
             const maxRenderWidth = tileSize * SPRITE_MAX_WIDTH_FACTOR;
             const maxRenderHeight = tileSize * SPRITE_MAX_HEIGHT_FACTOR;
 
-            // Keep a stable perceived character height across directions.
-            // Width is clamped only when needed to avoid oversized side frames.
             const scaleByHeight = maxRenderHeight / Math.max(1, frameHeight);
             const widthAtHeightScale = frameWidth * scaleByHeight;
             const scale =
@@ -427,6 +484,145 @@ export default function MapWithCamera({
         },
         [spriteMetaBySrc, tileSize],
     );
+
+    const preparedPlayers = React.useMemo<PreparedPlayerRenderData[]>(() => {
+        const now = Date.now();
+        const layoutCache = new globalThis.Map<string, SpriteLayout | null>();
+        const result: PreparedPlayerRenderData[] = [];
+
+        const getCachedLayout = (src: string | undefined, frames: number) => {
+            const key = `${src ?? "none"}::${frames}`;
+
+            if (layoutCache.has(key)) {
+                return layoutCache.get(key) ?? null;
+            }
+
+            const layout = getSpriteLayout(src, frames);
+            layoutCache.set(key, layout);
+            return layout;
+        };
+
+        for (const player of players) {
+            const dx = Math.abs(player.position.x - playerPosition.x);
+            const dy = Math.abs(player.position.y - playerPosition.y);
+            const playerVisible = dx <= sightRange && dy <= sightRange;
+
+            if (!playerVisible) continue;
+
+            const spriteCfg = getSpriteConfig(player.image);
+            const stepAnim = stepAnimByPlayer.get(player.user_id);
+            const isMoving =
+                !!stepAnim && now - stepAnim.startMs < stepAnim.durationMs;
+            const facingDir = facingDirByPlayer.get(player.user_id) ?? "down";
+
+            const activeDir: MoveDirection =
+                isMoving && stepAnim ? stepAnim.dir : facingDir;
+
+            const stepProgress = getStepProgress(stepAnim, now);
+
+            const renderPos = stepAnim
+                ? {
+                      x:
+                          stepAnim.from.x +
+                          (stepAnim.to.x - stepAnim.from.x) * stepProgress,
+                      y:
+                          stepAnim.from.y +
+                          (stepAnim.to.y - stepAnim.from.y) * stepProgress,
+                  }
+                : player.position;
+
+            const horizontalLayout = getCachedLayout(
+                spriteCfg?.rightWalkSpriteSrc,
+                spriteCfg?.rightWalkFrames ?? 1,
+            );
+            const leftWalkLayout = getCachedLayout(
+                spriteCfg?.leftWalkSpriteSrc,
+                spriteCfg?.leftWalkFrames ?? 1,
+            );
+            const downLayout = getCachedLayout(
+                spriteCfg?.downWalkSpriteSrc,
+                spriteCfg?.downWalkFrames ?? 1,
+            );
+            const upLayout = getCachedLayout(
+                spriteCfg?.upWalkSpriteSrc,
+                spriteCfg?.upWalkFrames ?? 1,
+            );
+            const idleFrontLayout = getCachedLayout(
+                spriteCfg?.idleFrontSpriteSrc,
+                1,
+            );
+            const idleBackLayout = getCachedLayout(
+                spriteCfg?.idleBackSpriteSrc,
+                1,
+            );
+            const idleSideRightLayout = getCachedLayout(
+                spriteCfg?.idleSideRightSpriteSrc,
+                1,
+            );
+            const idleSideLeftLayout = getCachedLayout(
+                spriteCfg?.idleSideLeftSpriteSrc,
+                1,
+            );
+
+            const { activeSpriteSrc, activeLayout, shouldMirror } =
+                resolveActiveSpritePose({
+                    isMoving,
+                    activeDir,
+                    facingDir,
+                    spriteCfg,
+                    horizontalLayout,
+                    leftWalkLayout,
+                    downLayout,
+                    upLayout,
+                    idleFrontLayout,
+                    idleBackLayout,
+                    idleSideRightLayout,
+                    idleSideLeftLayout,
+                });
+
+            const renderWidth = activeLayout?.width ?? tileSize;
+            const renderHeight = activeLayout?.height ?? tileSize;
+            const renderLeft =
+                renderPos.x * (tileSize + gap) +
+                tileSize / 2 -
+                renderWidth / 2 +
+                playerImageOffsetX;
+            const renderTop =
+                renderPos.y * (tileSize + gap) +
+                tileSize -
+                renderHeight +
+                playerImageOffsetY;
+
+            result.push({
+                player,
+                renderLeft,
+                renderTop,
+                renderWidth,
+                renderHeight,
+                activeSpriteSrc,
+                activeLayout,
+                shouldMirror,
+                isActiveUser: player.user_id === active_user,
+            });
+        }
+
+        return result;
+    }, [
+        players,
+        playerPosition.x,
+        playerPosition.y,
+        sightRange,
+        stepAnimByPlayer,
+        facingDirByPlayer,
+        active_user,
+        tileSize,
+        gap,
+        playerImageOffsetX,
+        playerImageOffsetY,
+        getStepProgress,
+        getSpriteLayout,
+        animTick,
+    ]);
 
     return (
         <div
@@ -455,102 +651,21 @@ export default function MapWithCamera({
                     sightRange={sightRange}
                     playerPosition={playerPosition}
                     onCellClick={onCellClick}
+                    players={players}
                 />
 
-                {players.map((player) => {
-                    const dx = Math.abs(player.position.x - playerPosition.x);
-                    const dy = Math.abs(player.position.y - playerPosition.y);
-                    const playerVisible = dx <= sightRange && dy <= sightRange;
-                    const spriteCfg = getSpriteConfig(player.image);
-                    const stepAnim = stepAnimByPlayer.get(player.user_id);
-                    const isMoving =
-                        !!stepAnim &&
-                        Date.now() - stepAnim.startMs < stepAnim.durationMs;
-                    const facingDir =
-                        facingDirByPlayer.get(player.user_id) ?? "down";
-
-                    const activeDir: MoveDirection =
-                        isMoving && stepAnim ? stepAnim.dir : facingDir;
-                    const stepProgress = getStepProgress(stepAnim);
-                    const renderPos = stepAnim
-                        ? {
-                              x:
-                                  stepAnim.from.x +
-                                  (stepAnim.to.x - stepAnim.from.x) *
-                                      stepProgress,
-                              y:
-                                  stepAnim.from.y +
-                                  (stepAnim.to.y - stepAnim.from.y) *
-                                      stepProgress,
-                          }
-                        : player.position;
-
-                    const horizontalLayout = getSpriteLayout(
-                        spriteCfg?.rightWalkSpriteSrc,
-                        spriteCfg?.rightWalkFrames ?? 1,
-                    );
-                    const leftWalkLayout = getSpriteLayout(
-                        spriteCfg?.leftWalkSpriteSrc,
-                        spriteCfg?.leftWalkFrames ?? 1,
-                    );
-                    const downLayout = getSpriteLayout(
-                        spriteCfg?.downWalkSpriteSrc,
-                        spriteCfg?.downWalkFrames ?? 1,
-                    );
-                    const upLayout = getSpriteLayout(
-                        spriteCfg?.upWalkSpriteSrc,
-                        spriteCfg?.upWalkFrames ?? 1,
-                    );
-                    const idleFrontLayout = getSpriteLayout(
-                        spriteCfg?.idleFrontSpriteSrc,
-                        1,
-                    );
-                    const idleBackLayout = getSpriteLayout(
-                        spriteCfg?.idleBackSpriteSrc,
-                        1,
-                    );
-                    const idleSideRightLayout = getSpriteLayout(
-                        spriteCfg?.idleSideRightSpriteSrc,
-                        1,
-                    );
-                    const idleSideLeftLayout = getSpriteLayout(
-                        spriteCfg?.idleSideLeftSpriteSrc,
-                        1,
-                    );
-
-                    const { activeSpriteSrc, activeLayout, shouldMirror } =
-                        resolveActiveSpritePose({
-                            isMoving,
-                            activeDir,
-                            facingDir,
-                            spriteCfg,
-                            horizontalLayout,
-                            leftWalkLayout,
-                            downLayout,
-                            upLayout,
-                            idleFrontLayout,
-                            idleBackLayout,
-                            idleSideRightLayout,
-                            idleSideLeftLayout,
-                        });
-
-                    const renderWidth = activeLayout?.width ?? tileSize;
-                    const renderHeight = activeLayout?.height ?? tileSize;
-                    const renderLeft =
-                        renderPos.x * (tileSize + gap) +
-                        tileSize / 2 -
-                        renderWidth / 2 +
-                        playerImageOffsetX;
-                    const renderTop =
-                        renderPos.y * (tileSize + gap) +
-                        tileSize -
-                        renderHeight +
-                        playerImageOffsetY;
-
-                    // Игрок вне зоны видимости — не рендерим совсем
-                    if (!playerVisible) return null;
-
-                    return (
+                {preparedPlayers.map(
+                    ({
+                        player,
+                        renderLeft,
+                        renderTop,
+                        renderWidth,
+                        renderHeight,
+                        activeSpriteSrc,
+                        activeLayout,
+                        shouldMirror,
+                        isActiveUser,
+                    }) => (
                         <div
                             key={player.user_id}
                             title={player.name}
@@ -565,10 +680,7 @@ export default function MapWithCamera({
                                 top: renderTop,
                                 width: renderWidth,
                                 height: renderHeight,
-                                border:
-                                    player.user_id === active_user
-                                        ? "2px solid gold"
-                                        : "none",
+                                border: isActiveUser ? "2px solid gold" : "none",
                                 boxSizing: "border-box",
                                 zIndex: 10,
                                 overflow: "hidden",
@@ -606,10 +718,9 @@ export default function MapWithCamera({
                                 />
                             )}
                         </div>
-                    );
-                })}
+                    ),
+                )}
 
-                {/* ---- Боевые вспышки на клетках ---- */}
                 {flashes.map((fl) => (
                     <div
                         key={fl.id}
@@ -623,7 +734,6 @@ export default function MapWithCamera({
                     />
                 ))}
 
-                {/* ---- Всплывающие числа урона / лечения ---- */}
                 {floaters.map((fl) => (
                     <div
                         key={fl.id}
@@ -641,8 +751,6 @@ export default function MapWithCamera({
                     </div>
                 ))}
             </div>
-
-            {/* legacy InfoModal removed: ObjectHUD is used by parent component */}
         </div>
     );
 }
