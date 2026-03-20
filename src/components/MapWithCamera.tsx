@@ -555,12 +555,9 @@ export default function MapWithCamera({
                             key={player.user_id}
                             title={player.name}
                             onClick={() => {
-                                if (onPlayerClick && player.user_id !== myPlayer.user_id) {
+                                if (onPlayerClick) {
                                     onPlayerClick(player);
-                                    return;
                                 }
-                                // Do nothing for self-clicks to avoid opening the legacy modal
-                                // (ObjectHUD handles player info now in the parent)
                             }}
                             style={{
                                 position: "absolute",

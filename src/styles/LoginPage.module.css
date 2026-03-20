@@ -123,17 +123,18 @@
 }
 
 .passwordWrap {
-    position: relative;
+    display: flex;
+    gap: 8px;
+    align-items: center;
 }
 
 .passwordWrap .input {
-    padding-right: 94px;
+    padding-right: 12px;
+    flex: 1 1 auto;
+    min-width: 0; /* allow flex children to shrink on small screens */
 }
 
 .passwordToggle {
-    position: absolute;
-    top: 6px;
-    right: 6px;
     height: 32px;
     border-radius: 9px;
     border: 1px solid var(--line);
@@ -142,6 +143,7 @@
     padding: 0 12px;
     font-size: 12px;
     cursor: pointer;
+    flex: 0 0 auto;
 }
 
 .passwordToggle:hover {

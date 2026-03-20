@@ -135,9 +135,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
             // Keep the same logical map window for all devices and only scale
             // the rendered result on small screens.
-        
+
             const availableWidth = screenW;
-			const availableHeight = screenH;
+            const availableHeight = screenH;
 
             const scale = Math.max(
                 0.42,
@@ -376,7 +376,23 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
-            if (!myPlayer || targetPlayer.user_id === myPlayer.user_id) return;
+            if (!myPlayer) return;
+            // If the clicked player is ourselves, open the object HUD showing
+            // our current stats so the user can view profile/HUD by click.
+            if (targetPlayer.user_id === myPlayer.user_id) {
+                setObjectHUD({
+                    type: "player",
+                    name: myPlayer.name,
+                    health: myPlayer.health,
+                    maxHealth: myPlayer.maxHealth,
+                    energy: myPlayer.energy,
+                    maxEnergy: myPlayer.maxEnergy,
+                    attack: myPlayer.attack,
+                    defense: myPlayer.defense,
+                    userId: myPlayer.user_id,
+                });
+                return;
+            }
             const attackRange = myPlayer.attackRange ?? 1;
             const dist =
                 Math.abs(myPlayer.position.x - targetPlayer.position.x) +
@@ -867,10 +883,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                             Защита:{" "}
                                             {profileModalData.player.defense}
                                         </div>
-										<div className="">
-											группа:{" "}
-											{profileModalData.player.group_id}
-										</div>
+                                        <div className="">
+                                            группа:{" "}
+                                            {profileModalData.player.group_id}
+                                        </div>
                                     </div>
                                 </div>
                             )}
