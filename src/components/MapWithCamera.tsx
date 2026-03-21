@@ -28,6 +28,35 @@ const SPRITE_MAX_HEIGHT_FACTOR = 1.18;
 const PLAYER_IMAGE_OFFSET_X = 2;
 const PLAYER_IMAGE_OFFSET_Y = 2;
 
+const CAMERA_FRAME_STYLE: React.CSSProperties = {
+    overflow: "hidden",
+    position: "relative",
+    border: "2px solid #000",
+};
+
+const MAP_LAYER_BASE_STYLE: React.CSSProperties = {
+    position: "absolute",
+};
+
+const PLAYER_SPRITE_BASE_STYLE: React.CSSProperties = {
+    transformOrigin: "center",
+    imageRendering: "pixelated",
+    backgroundRepeat: "no-repeat",
+};
+
+const PLAYER_FALLBACK_IMAGE_STYLE: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    pointerEvents: "none",
+};
+
+const EFFECTS_LAYER_STYLE: React.CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    pointerEvents: "none",
+};
+
 type SpriteImageMeta = {
     width: number;
     height: number;
@@ -95,14 +124,31 @@ type PreparedPlayerRenderData = {
 };
 
 type PlayerLayerProps = {
-    players: PlayerState[];
-    playerPosition: { x: number; y: number };
-    sightRange: number;
+    allPlayers: PlayerState[];
+    visiblePlayers: PlayerState[];
     tileSize: number;
     gap: number;
     active_user: number | null | undefined;
     onPlayerClick?: (player: PlayerState) => void;
     spriteMetaBySrc: Record<string, SpriteImageMeta>;
+};
+
+type CombatEffect = {
+    id: string | number;
+    x: number;
+    y: number;
+};
+
+type CombatFloater = CombatEffect & {
+    value: number;
+    isHeal?: boolean;
+};
+
+type CombatEffectsLayerProps = {
+    flashes: CombatEffect[];
+    floaters: CombatFloater[];
+    tileSize: number;
+    gap: number;
 };
 
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
@@ -239,9 +285,8 @@ function resolveActiveSpritePose({
 }
 
 const PlayerLayer = React.memo(function PlayerLayer({
-    players,
-    playerPosition,
-    sightRange,
+    allPlayers,
+    visiblePlayers,
     tileSize,
     gap,
     active_user,
@@ -286,7 +331,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
             to: { x: number; y: number };
         }> = [];
 
-        for (const p of players) {
+        for (const p of allPlayers) {
             const last = prev.get(p.user_id);
 
             if (last && (last.x !== p.position.x || last.y !== p.position.y)) {
@@ -343,7 +388,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
         }, STEP_ANIM_MS + 30);
 
         return () => window.clearTimeout(timer);
-    }, [players]);
+    }, [allPlayers]);
 
     const getStepProgress = React.useCallback(
         (step?: StepAnim, nowMs?: number) => {
@@ -403,13 +448,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
             return layout;
         };
 
-        for (const player of players) {
-            const dx = Math.abs(player.position.x - playerPosition.x);
-            const dy = Math.abs(player.position.y - playerPosition.y);
-            const playerVisible = dx <= sightRange && dy <= sightRange;
-
-            if (!playerVisible) continue;
-
+        for (const player of visiblePlayers) {
             const spriteCfg = getSpriteConfig(player.image);
             const stepAnim = stepAnimByPlayer.get(player.user_id);
             const isMoving =
@@ -509,18 +548,15 @@ const PlayerLayer = React.memo(function PlayerLayer({
 
         return result;
     }, [
-        players,
-        playerPosition.x,
-        playerPosition.y,
-        sightRange,
-        stepAnimByPlayer,
-        facingDirByPlayer,
+        visiblePlayers,
         active_user,
         tileSize,
         gap,
         getStepProgress,
         getSpriteLayout,
         animTick,
+        facingDirByPlayer,
+        stepAnimByPlayer,
     ]);
 
     return (
@@ -536,58 +572,97 @@ const PlayerLayer = React.memo(function PlayerLayer({
                     activeLayout,
                     shouldMirror,
                     isActiveUser,
-                }) => (
-                    <div
-                        key={player.user_id}
-                        title={player.name}
-                        onClick={() => onPlayerClick?.(player)}
-                        style={{
-                            position: "absolute",
-                            left: renderLeft,
-                            top: renderTop,
-                            width: renderWidth,
-                            height: renderHeight,
-                            border: isActiveUser ? "2px solid gold" : "none",
-                            boxSizing: "border-box",
-                            zIndex: 10,
-                            overflow: "hidden",
-                            borderRadius: 4,
-                        }}
-                    >
-                        {activeLayout && activeSpriteSrc ? (
-                            <div
-                                aria-label={player.name}
-                                style={{
-                                    width: activeLayout.width,
-                                    height: activeLayout.height,
-                                    backgroundImage: `url(${activeSpriteSrc})`,
-                                    backgroundRepeat: "no-repeat",
-                                    backgroundSize: `${activeLayout.stripWidth}px ${activeLayout.height}px`,
-                                    backgroundPositionX: "0px",
-                                    transform: shouldMirror
-                                        ? "scaleX(-1)"
-                                        : "none",
-                                    transformOrigin: "center",
-                                    imageRendering: "pixelated",
-                                }}
-                            />
-                        ) : (
-                            <img
-                                src={normalizeAvatarPath(player.image)}
-                                alt={player.name}
-                                draggable={false}
-                                style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    objectFit: "contain",
-                                    pointerEvents: "none",
-                                }}
-                            />
-                        )}
-                    </div>
-                ),
+                }) => {
+                    const wrapperStyle: React.CSSProperties = {
+                        position: "absolute",
+                        left: renderLeft,
+                        top: renderTop,
+                        width: renderWidth,
+                        height: renderHeight,
+                        border: isActiveUser ? "2px solid gold" : "none",
+                        boxSizing: "border-box",
+                        zIndex: 10,
+                        overflow: "hidden",
+                        borderRadius: 4,
+                    };
+
+                    const spriteStyle: React.CSSProperties = {
+                        ...PLAYER_SPRITE_BASE_STYLE,
+                        width: activeLayout?.width ?? renderWidth,
+                        height: activeLayout?.height ?? renderHeight,
+                        backgroundImage: activeSpriteSrc
+                            ? `url(${activeSpriteSrc})`
+                            : undefined,
+                        backgroundSize: activeLayout
+                            ? `${activeLayout.stripWidth}px ${activeLayout.height}px`
+                            : undefined,
+                        backgroundPositionX: "0px",
+                        transform: shouldMirror ? "scaleX(-1)" : "none",
+                    };
+
+                    return (
+                        <div
+                            key={player.user_id}
+                            title={player.name}
+                            onClick={() => onPlayerClick?.(player)}
+                            style={wrapperStyle}
+                        >
+                            {activeLayout && activeSpriteSrc ? (
+                                <div aria-label={player.name} style={spriteStyle} />
+                            ) : (
+                                <img
+                                    src={normalizeAvatarPath(player.image)}
+                                    alt={player.name}
+                                    draggable={false}
+                                    style={PLAYER_FALLBACK_IMAGE_STYLE}
+                                />
+                            )}
+                        </div>
+                    );
+                },
             )}
         </>
+    );
+});
+
+const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
+    flashes,
+    floaters,
+    tileSize,
+    gap,
+}: CombatEffectsLayerProps) {
+    return (
+        <div style={EFFECTS_LAYER_STYLE}>
+            {flashes.map((fl) => (
+                <div
+                    key={fl.id}
+                    className={styles.combatFlash}
+                    style={{
+                        left: fl.x * (tileSize + gap),
+                        top: fl.y * (tileSize + gap),
+                        width: tileSize,
+                        height: tileSize,
+                    }}
+                />
+            ))}
+
+            {floaters.map((fl) => (
+                <div
+                    key={fl.id}
+                    className={`${styles.combatFloater} ${
+                        fl.isHeal
+                            ? styles.combatFloaterHeal
+                            : styles.combatFloaterDamage
+                    }`}
+                    style={{
+                        left: fl.x * (tileSize + gap) + tileSize / 2,
+                        top: fl.y * (tileSize + gap) - 2,
+                    }}
+                >
+                    {fl.isHeal ? `+${fl.value}` : `-${fl.value}`}
+                </div>
+            ))}
+        </div>
     );
 });
 
@@ -616,6 +691,14 @@ export default function MapWithCamera({
     const safeMapWidth = Number(mapWidth) || 15;
     const safeMapHeight = Number(mapHeight) || 15;
     const gap = 1;
+
+    const visiblePlayers = React.useMemo(() => {
+        return players.filter((player) => {
+            const dx = Math.abs(player.position.x - playerPosition.x);
+            const dy = Math.abs(player.position.y - playerPosition.y);
+            return dx <= sightRange && dy <= sightRange;
+        });
+    }, [players, playerPosition.x, playerPosition.y, sightRange]);
 
     const { offsetX, offsetY } = React.useMemo(() => {
         let nextOffsetX =
@@ -651,6 +734,25 @@ export default function MapWithCamera({
         safeMapWidth,
         safeMapHeight,
     ]);
+
+    const layerStyle = React.useMemo<React.CSSProperties>(
+        () => ({
+            ...MAP_LAYER_BASE_STYLE,
+            top: offsetY,
+            left: offsetX,
+            transition: "top 0.3s, left 0.3s",
+        }),
+        [offsetX, offsetY],
+    );
+
+    const frameStyle = React.useMemo<React.CSSProperties>(
+        () => ({
+            ...CAMERA_FRAME_STYLE,
+            width: viewportWidth,
+            height: viewportHeight,
+        }),
+        [viewportWidth, viewportHeight],
+    );
 
     const { floaters, flashes } = useCombatFloaters(players, grid);
 
@@ -710,23 +812,8 @@ export default function MapWithCamera({
     }, [spriteMetaBySrc, spriteSources]);
 
     return (
-        <div
-            style={{
-                width: viewportWidth,
-                height: viewportHeight,
-                overflow: "hidden",
-                position: "relative",
-                border: "2px solid #000",
-            }}
-        >
-            <div
-                style={{
-                    position: "absolute",
-                    top: offsetY,
-                    left: offsetX,
-                    transition: "top 0.3s, left 0.3s",
-                }}
-            >
+        <div style={frameStyle}>
+            <div style={layerStyle}>
                 <Map
                     grid={grid}
                     mapWidth={safeMapWidth}
@@ -736,13 +823,12 @@ export default function MapWithCamera({
                     sightRange={sightRange}
                     playerPosition={playerPosition}
                     onCellClick={onCellClick}
-                    players={players}
+                    players={visiblePlayers}
                 />
 
                 <PlayerLayer
-                    players={players}
-                    playerPosition={playerPosition}
-                    sightRange={sightRange}
+                    allPlayers={players}
+                    visiblePlayers={visiblePlayers}
                     tileSize={tileSize}
                     gap={gap}
                     active_user={active_user}
@@ -750,35 +836,12 @@ export default function MapWithCamera({
                     spriteMetaBySrc={spriteMetaBySrc}
                 />
 
-                {flashes.map((fl) => (
-                    <div
-                        key={fl.id}
-                        className={styles.combatFlash}
-                        style={{
-                            left: fl.x * (tileSize + gap),
-                            top: fl.y * (tileSize + gap),
-                            width: tileSize,
-                            height: tileSize,
-                        }}
-                    />
-                ))}
-
-                {floaters.map((fl) => (
-                    <div
-                        key={fl.id}
-                        className={`${styles.combatFloater} ${
-                            fl.isHeal
-                                ? styles.combatFloaterHeal
-                                : styles.combatFloaterDamage
-                        }`}
-                        style={{
-                            left: fl.x * (tileSize + gap) + tileSize / 2,
-                            top: fl.y * (tileSize + gap) - 2,
-                        }}
-                    >
-                        {fl.isHeal ? `+${fl.value}` : `-${fl.value}`}
-                    </div>
-                ))}
+                <CombatEffectsLayer
+                    flashes={flashes}
+                    floaters={floaters}
+                    tileSize={tileSize}
+                    gap={gap}
+                />
             </div>
         </div>
     );
