@@ -23,9 +23,10 @@ interface MapWithCameraProps {
 }
 
 const STEP_ANIM_MS = 260;
-
 const SPRITE_MAX_WIDTH_FACTOR = 1.05;
 const SPRITE_MAX_HEIGHT_FACTOR = 1.18;
+const PLAYER_IMAGE_OFFSET_X = 2;
+const PLAYER_IMAGE_OFFSET_Y = 2;
 
 type SpriteImageMeta = {
     width: number;
@@ -91,6 +92,17 @@ type PreparedPlayerRenderData = {
     activeLayout: SpriteLayout | null;
     shouldMirror: boolean;
     isActiveUser: boolean;
+};
+
+type PlayerLayerProps = {
+    players: PlayerState[];
+    playerPosition: { x: number; y: number };
+    sightRange: number;
+    tileSize: number;
+    gap: number;
+    active_user: number | null | undefined;
+    onPlayerClick?: (player: PlayerState) => void;
+    spriteMetaBySrc: Record<string, SpriteImageMeta>;
 };
 
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
@@ -226,127 +238,16 @@ function resolveActiveSpritePose({
     return { activeSpriteSrc, activeLayout, shouldMirror };
 }
 
-export default function MapWithCamera({
-    tileSize: inputTileSize,
-    viewportWidth,
-    viewportHeight,
-    myPlayer,
-    onCellClick,
+const PlayerLayer = React.memo(function PlayerLayer({
+    players,
+    playerPosition,
+    sightRange,
+    tileSize,
+    gap,
+    active_user,
     onPlayerClick,
-}: MapWithCameraProps) {
-    const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
-        (state: RootState) => ({
-            grid: state.game.grid,
-            mapWidth: state.game.mapWidth,
-            mapHeight: state.game.mapHeight,
-            players: state.game.players,
-            active_user: state.game.active_user,
-        }),
-        shallowEqual,
-    );
-
-    const playerPosition = myPlayer?.position || { x: 0, y: 0 };
-    const sightRange = myPlayer?.sightRange ?? 3;
-    const tileSize = Number(inputTileSize) || 60;
-    const safeMapWidth = Number(mapWidth) || 15;
-    const safeMapHeight = Number(mapHeight) || 15;
-    const gap = 1;
-
-    const { offsetX, offsetY } = React.useMemo(() => {
-        let nextOffsetX =
-            viewportWidth / 2 -
-            (playerPosition.x * (tileSize + gap) + tileSize / 2);
-        let nextOffsetY =
-            viewportHeight / 2 -
-            (playerPosition.y * (tileSize + gap) + tileSize / 2);
-
-        const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
-        const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
-
-        nextOffsetX = Math.min(
-            0,
-            Math.max(viewportWidth - totalWidth, nextOffsetX),
-        );
-        nextOffsetY = Math.min(
-            0,
-            Math.max(viewportHeight - totalHeight, nextOffsetY),
-        );
-
-        return {
-            offsetX: nextOffsetX,
-            offsetY: nextOffsetY,
-        };
-    }, [
-        viewportWidth,
-        viewportHeight,
-        playerPosition.x,
-        playerPosition.y,
-        tileSize,
-        gap,
-        safeMapWidth,
-        safeMapHeight,
-    ]);
-
-    const playerImageOffsetX = 2;
-    const playerImageOffsetY = 2;
-
-    const { floaters, flashes } = useCombatFloaters(players, grid);
-
-    const spriteSources = React.useMemo(
-        () =>
-            Array.from(
-                new Set(
-                    CHARACTER_SPRITES.flatMap((cfg) => [
-                        cfg.rightWalkSpriteSrc,
-                        cfg.leftWalkSpriteSrc,
-                        cfg.idleSideRightSpriteSrc,
-                        cfg.idleSideLeftSpriteSrc,
-                        cfg.downWalkSpriteSrc,
-                        cfg.idleFrontSpriteSrc,
-                        cfg.upWalkSpriteSrc,
-                        cfg.idleBackSpriteSrc,
-                    ]).filter((src): src is string => !!src),
-                ),
-            ),
-        [],
-    );
-
-    const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
-        Record<string, SpriteImageMeta>
-    >({});
-
-    React.useEffect(() => {
-        let cancelled = false;
-
-        spriteSources.forEach((src) => {
-            if (spriteMetaBySrc[src]) return;
-
-            const image = new Image();
-
-            image.onload = () => {
-                if (cancelled) return;
-
-                setSpriteMetaBySrc((old) => {
-                    if (old[src]) return old;
-
-                    return {
-                        ...old,
-                        [src]: {
-                            width: image.naturalWidth,
-                            height: image.naturalHeight,
-                        },
-                    };
-                });
-            };
-
-            image.src = src;
-        });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [spriteMetaBySrc, spriteSources]);
-
+    spriteMetaBySrc,
+}: PlayerLayerProps) {
     const previousPositionsRef = React.useRef<
         globalThis.Map<number, { x: number; y: number }>
     >(new globalThis.Map());
@@ -586,12 +487,12 @@ export default function MapWithCamera({
                 renderPos.x * (tileSize + gap) +
                 tileSize / 2 -
                 renderWidth / 2 +
-                playerImageOffsetX;
+                PLAYER_IMAGE_OFFSET_X;
             const renderTop =
                 renderPos.y * (tileSize + gap) +
                 tileSize -
                 renderHeight +
-                playerImageOffsetY;
+                PLAYER_IMAGE_OFFSET_Y;
 
             result.push({
                 player,
@@ -617,12 +518,196 @@ export default function MapWithCamera({
         active_user,
         tileSize,
         gap,
-        playerImageOffsetX,
-        playerImageOffsetY,
         getStepProgress,
         getSpriteLayout,
         animTick,
     ]);
+
+    return (
+        <>
+            {preparedPlayers.map(
+                ({
+                    player,
+                    renderLeft,
+                    renderTop,
+                    renderWidth,
+                    renderHeight,
+                    activeSpriteSrc,
+                    activeLayout,
+                    shouldMirror,
+                    isActiveUser,
+                }) => (
+                    <div
+                        key={player.user_id}
+                        title={player.name}
+                        onClick={() => onPlayerClick?.(player)}
+                        style={{
+                            position: "absolute",
+                            left: renderLeft,
+                            top: renderTop,
+                            width: renderWidth,
+                            height: renderHeight,
+                            border: isActiveUser ? "2px solid gold" : "none",
+                            boxSizing: "border-box",
+                            zIndex: 10,
+                            overflow: "hidden",
+                            borderRadius: 4,
+                        }}
+                    >
+                        {activeLayout && activeSpriteSrc ? (
+                            <div
+                                aria-label={player.name}
+                                style={{
+                                    width: activeLayout.width,
+                                    height: activeLayout.height,
+                                    backgroundImage: `url(${activeSpriteSrc})`,
+                                    backgroundRepeat: "no-repeat",
+                                    backgroundSize: `${activeLayout.stripWidth}px ${activeLayout.height}px`,
+                                    backgroundPositionX: "0px",
+                                    transform: shouldMirror
+                                        ? "scaleX(-1)"
+                                        : "none",
+                                    transformOrigin: "center",
+                                    imageRendering: "pixelated",
+                                }}
+                            />
+                        ) : (
+                            <img
+                                src={normalizeAvatarPath(player.image)}
+                                alt={player.name}
+                                draggable={false}
+                                style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "contain",
+                                    pointerEvents: "none",
+                                }}
+                            />
+                        )}
+                    </div>
+                ),
+            )}
+        </>
+    );
+});
+
+export default function MapWithCamera({
+    tileSize: inputTileSize,
+    viewportWidth,
+    viewportHeight,
+    myPlayer,
+    onCellClick,
+    onPlayerClick,
+}: MapWithCameraProps) {
+    const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
+        (state: RootState) => ({
+            grid: state.game.grid,
+            mapWidth: state.game.mapWidth,
+            mapHeight: state.game.mapHeight,
+            players: state.game.players,
+            active_user: state.game.active_user,
+        }),
+        shallowEqual,
+    );
+
+    const playerPosition = myPlayer?.position || { x: 0, y: 0 };
+    const sightRange = myPlayer?.sightRange ?? 3;
+    const tileSize = Number(inputTileSize) || 60;
+    const safeMapWidth = Number(mapWidth) || 15;
+    const safeMapHeight = Number(mapHeight) || 15;
+    const gap = 1;
+
+    const { offsetX, offsetY } = React.useMemo(() => {
+        let nextOffsetX =
+            viewportWidth / 2 -
+            (playerPosition.x * (tileSize + gap) + tileSize / 2);
+        let nextOffsetY =
+            viewportHeight / 2 -
+            (playerPosition.y * (tileSize + gap) + tileSize / 2);
+
+        const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
+        const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
+
+        nextOffsetX = Math.min(
+            0,
+            Math.max(viewportWidth - totalWidth, nextOffsetX),
+        );
+        nextOffsetY = Math.min(
+            0,
+            Math.max(viewportHeight - totalHeight, nextOffsetY),
+        );
+
+        return {
+            offsetX: nextOffsetX,
+            offsetY: nextOffsetY,
+        };
+    }, [
+        viewportWidth,
+        viewportHeight,
+        playerPosition.x,
+        playerPosition.y,
+        tileSize,
+        gap,
+        safeMapWidth,
+        safeMapHeight,
+    ]);
+
+    const { floaters, flashes } = useCombatFloaters(players, grid);
+
+    const spriteSources = React.useMemo(
+        () =>
+            Array.from(
+                new Set(
+                    CHARACTER_SPRITES.flatMap((cfg) => [
+                        cfg.rightWalkSpriteSrc,
+                        cfg.leftWalkSpriteSrc,
+                        cfg.idleSideRightSpriteSrc,
+                        cfg.idleSideLeftSpriteSrc,
+                        cfg.downWalkSpriteSrc,
+                        cfg.idleFrontSpriteSrc,
+                        cfg.upWalkSpriteSrc,
+                        cfg.idleBackSpriteSrc,
+                    ]).filter((src): src is string => !!src),
+                ),
+            ),
+        [],
+    );
+
+    const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
+        Record<string, SpriteImageMeta>
+    >({});
+
+    React.useEffect(() => {
+        let cancelled = false;
+
+        spriteSources.forEach((src) => {
+            if (spriteMetaBySrc[src]) return;
+
+            const image = new Image();
+
+            image.onload = () => {
+                if (cancelled) return;
+
+                setSpriteMetaBySrc((old) => {
+                    if (old[src]) return old;
+
+                    return {
+                        ...old,
+                        [src]: {
+                            width: image.naturalWidth,
+                            height: image.naturalHeight,
+                        },
+                    };
+                });
+            };
+
+            image.src = src;
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [spriteMetaBySrc, spriteSources]);
 
     return (
         <div
@@ -654,72 +739,16 @@ export default function MapWithCamera({
                     players={players}
                 />
 
-                {preparedPlayers.map(
-                    ({
-                        player,
-                        renderLeft,
-                        renderTop,
-                        renderWidth,
-                        renderHeight,
-                        activeSpriteSrc,
-                        activeLayout,
-                        shouldMirror,
-                        isActiveUser,
-                    }) => (
-                        <div
-                            key={player.user_id}
-                            title={player.name}
-                            onClick={() => {
-                                if (onPlayerClick) {
-                                    onPlayerClick(player);
-                                }
-                            }}
-                            style={{
-                                position: "absolute",
-                                left: renderLeft,
-                                top: renderTop,
-                                width: renderWidth,
-                                height: renderHeight,
-                                border: isActiveUser ? "2px solid gold" : "none",
-                                boxSizing: "border-box",
-                                zIndex: 10,
-                                overflow: "hidden",
-                                borderRadius: 4,
-                            }}
-                        >
-                            {activeLayout && activeSpriteSrc ? (
-                                <div
-                                    aria-label={player.name}
-                                    style={{
-                                        width: activeLayout.width,
-                                        height: activeLayout.height,
-                                        backgroundImage: `url(${activeSpriteSrc})`,
-                                        backgroundRepeat: "no-repeat",
-                                        backgroundSize: `${activeLayout.stripWidth}px ${activeLayout.height}px`,
-                                        backgroundPositionX: "0px",
-                                        transform: shouldMirror
-                                            ? "scaleX(-1)"
-                                            : "none",
-                                        transformOrigin: "center",
-                                        imageRendering: "pixelated",
-                                    }}
-                                />
-                            ) : (
-                                <img
-                                    src={normalizeAvatarPath(player.image)}
-                                    alt={player.name}
-                                    draggable={false}
-                                    style={{
-                                        width: "100%",
-                                        height: "100%",
-                                        objectFit: "contain",
-                                        pointerEvents: "none",
-                                    }}
-                                />
-                            )}
-                        </div>
-                    ),
-                )}
+                <PlayerLayer
+                    players={players}
+                    playerPosition={playerPosition}
+                    sightRange={sightRange}
+                    tileSize={tileSize}
+                    gap={gap}
+                    active_user={active_user}
+                    onPlayerClick={onPlayerClick}
+                    spriteMetaBySrc={spriteMetaBySrc}
+                />
 
                 {flashes.map((fl) => (
                     <div
