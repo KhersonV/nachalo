@@ -20,13 +20,12 @@ interface QuestArtifactAlertProps {
 }
 
 const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
-    artifactId,
     name,
     image,
     description,
-    badgeText = "Квест",
-    hintText = "Найдите этот артефакт, чтобы покинуть уровень через портал.",
-    confirmLabel = "Понятно",
+    badgeText = "Quest",
+    hintText = "Find this artifact to exit the level through the portal.",
+    confirmLabel = "Got it",
     onClose,
 }) => {
     useEffect(() => {
@@ -60,7 +59,7 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
                     <button
                         className={styles.close}
                         onClick={onClose}
-                        aria-label="Закрыть"
+                        aria-label="Close"
                     >
                         ✕
                     </button>

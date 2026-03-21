@@ -33,8 +33,8 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 	"scout_tower_blueprint": {
 		ID:          1001,
 		Type:        "scout_tower_blueprint",
-		Name:        "Чертеж башни разведки",
-		Description: "Даёт +1 к обзору игрока. Постройка в матче: защита 5, здоровье 30.",
+		Name:        "Scout Tower Blueprint",
+		Description: "Gives +1 to player's sight. In-match stats: defense 5, health 30.",
 		Image:       "/ui-icons/base.png",
 		Effect: map[string]int{
 			"sight_bonus":       1,
@@ -48,8 +48,8 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 	"turret_blueprint": {
 		ID:          1002,
 		Type:        "turret_blueprint",
-		Name:        "Чертеж турели",
-		Description: "Турель в конце каждого хода атакует врагов. Базовый урон 10, здоровье 30.",
+		Name:        "Turret Blueprint",
+		Description: "Turret attacks enemies at the end of each turn. Base damage 10, health 30.",
 		Image:       "/ui-icons/base.png",
 		Effect: map[string]int{
 			"turret_damage":    10,
@@ -62,8 +62,8 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 	"wall_blueprint": {
 		ID:          1003,
 		Type:        "wall_blueprint",
-		Name:        "Чертеж стены",
-		Description: "Стена блокирует проход. Прочность 30 HP, защита 8.",
+		Name:        "Wall Blueprint",
+		Description: "Wall blocks passage. Durability 30 HP, defense 8.",
 		Image:       "/ui-icons/base.png",
 		Effect: map[string]int{
 			"structure_blocking": 1,
@@ -159,7 +159,7 @@ func getBlueprintItem(itemType string) (*shopItem, bool) {
 	}, true
 }
 
-// GetShopItemsHandler возвращает доступные товары магазина подготовки.
+// GetShopItemsHandler returns available preparatory shop items.
 func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 	items := make([]shopItem, 0, 5)
 	for _, resourceType := range []string{"food", "water"} {
@@ -180,7 +180,7 @@ func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"items": items})
 }
 
-// BuyShopItemHandler покупает еду/воду за баланс игрока до старта матча.
+// BuyShopItemHandler purchases food/water using player's balance before match start.
 func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 	userIDFromToken, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {

@@ -18,7 +18,7 @@ import {
     setQuestFoundNotification,
 } from "@/store/slices/gameSlice";
 
-// Тип user можно импортировать из своего AuthContext
+// The User type can be imported from your AuthContext
 type User = { id: number } | null;
 
 export function createWsHandlers(
@@ -71,7 +71,7 @@ export function createWsHandlers(
                     player: payload.player,
                 }),
             ),
-        // --- BOOTLE/RESOURCE ---
+        // --- BARREL/RESOURCE ---
         RESOURCE_COLLECTED: (payload: any) => {
             dispatch(
                 updateCell({ instanceId, updatedCell: payload.updatedCell }),
@@ -152,19 +152,35 @@ export function createWsHandlers(
             router.replace("/mode");
         },
         QUEST_ARTIFACT_FOUND: (payload: any) => {
-            const msg = `Игрок ${payload.playerName} нашел нужный артефакт в клетке (${payload.x}, ${payload.y})`;
-            dispatch(setQuestFoundNotification(msg));
+            dispatch(
+                setQuestFoundNotification({
+                    eventType: "QUEST_ARTIFACT_FOUND",
+                    message: `Player ${payload.playerName} found the quest artifact at cell (${payload.x}, ${payload.y}).`,
+                    instanceId: payload.instanceId,
+                    playerName: payload.playerName,
+                    x: payload.x,
+                    y: payload.y,
+                }),
+            );
         },
         PLAYER_LEFT_PORTAL: (payload: any) => {
-            const msg = `Игрок ${payload.playerName} покинул поле боя через портал в клетке (${payload.x}, ${payload.y})`;
-            dispatch(setQuestFoundNotification(msg));
+            dispatch(
+                setQuestFoundNotification({
+                    eventType: "PLAYER_LEFT_PORTAL",
+                    message: `Player ${payload.playerName} left the battlefield through the portal at cell (${payload.x}, ${payload.y}).`,
+                    instanceId: payload.instanceId,
+                    playerName: payload.playerName,
+                    x: payload.x,
+                    y: payload.y,
+                }),
+            );
         },
         PLAYER_DISCONNECTED: () => {
-            // Обрабатывается локально в GameController через window events.
+            // Handled locally in GameController via window events.
         },
         PLAYER_RECONNECTED: () => {
-            // Обрабатывается локально в GameController через window events.
+            // Handled locally in GameController via window events.
         },
-        // ... любые другие новые типы событий!
+        // ... any other new event types!
     };
 }

@@ -124,18 +124,18 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
         forgeUnlockables = []forgeRecipeResponse{
             {
                 ID:          "scout_tower",
-                Name:        "Башня разведки",
-                Description: "Чертёж: увеличивает обзор игрока на 1 клетку (максимум 5). Статы: +1 к обзору.",
+                Name:        "Scout Tower",
+                Description: "Blueprint: increases player's sight by 1 tile (max 5). Stats: +1 sight.",
             },
             {
                 ID:          "turret",
-                Name:        "Турель",
-                Description: "Чертёж: автоматически атакует врагов в радиусе действия Статы: атака 15, защита 5, энергия 8, радиус 2, стоимость атаки 6. хп 20.",
+                Name:        "Turret",
+                Description: "Blueprint: automatically attacks enemies within range. Stats: attack 15, defense 5, energy 8, radius 2, attack cost 6, HP 20.",
             },
             {
                 ID:          "wall",
-                Name:        "Стена",
-                Description: "Чертёж: не дает врагу и вам пройти. Статы: защита 5, прочность 20. Можно строить на свободной клетке.",
+                Name:        "Wall",
+                Description: "Blueprint: blocks passage for both enemies and you. Stats: defense 5, durability 20. Can be built on a free tile.",
             },
         }
     }
@@ -145,18 +145,18 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
         libraryUnlockables = []forgeRecipeResponse{
             {
                 ID:          "cartographer_notes",
-                Name:        "Записи картографа",
-                Description: "Открыт бонус: +1 к обзору в начале матча.",
+                Name:        "Cartographer's Notes",
+                Description: "Unlocks bonus: +1 sight at the start of the match.",
             },
             {
                 ID:          "battle_treatise",
-                Name:        "Боевой трактат",
-                Description: "Открыт бонус: +1 к атаке на первые 2 хода.",
+                Name:        "Battle Treatise",
+                Description: "Unlocks bonus: +1 attack for the first 2 turns.",
             },
             {
                 ID:          "field_manual",
-                Name:        "Полевой устав",
-                Description: "Открыт бонус: -1 к стоимости первой атаки в матче.",
+                Name:        "Field Manual",
+                Description: "Unlocks bonus: -1 to the cost of the first attack in the match.",
             },
         }
     }

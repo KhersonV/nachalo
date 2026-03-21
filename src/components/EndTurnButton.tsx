@@ -25,13 +25,13 @@ function EndTurnButton({
 }: EndTurnButtonProps) {
     const handleEndTurn = async () => {
         if (!instanceId) {
-            console.error("instance_id отсутствует");
+            console.error("instance_id is missing");
             return;
         }
         const storedUser = localStorage.getItem("user");
         const token = storedUser ? JSON.parse(storedUser).token : "";
         if (!token) {
-            console.error("Токен не найден в localStorage");
+            console.error("Token not found in localStorage");
             return;
         }
         try {
@@ -49,26 +49,26 @@ function EndTurnButton({
 
             if (!response.ok) {
                 const errorMsg = await response.text();
-                console.error("Ошибка завершения хода:", errorMsg);
+                console.error("End turn error:", errorMsg);
                 return;
             }
 
             const data = await response.json();
-            debugLog("Ответ от сервера на завершение хода:", data);
-            // Вызовем onTurnEnded с данными, чтобы обновить состояние на фронте
+            debugLog("Server response to end turn:", data);
+            // Call onTurnEnded with the data to update front-end state
             onTurnEnded({
                 active_user: data.active_user,
                 turnNumber: data.turn_number,
                 energy: data.energy,
             });
         } catch (error) {
-            console.error("Ошибка при выполнении запроса:", error);
+            console.error("Error performing request:", error);
         }
     };
 
     return (
         <button className={styles.endTurnButton} onClick={handleEndTurn}>
-            Конец хода
+            End Turn
         </button>
     );
 }

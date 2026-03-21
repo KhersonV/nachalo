@@ -44,7 +44,7 @@ export default function GameWrapper({
 
         try {
             if (!user || !user.token) {
-                console.warn("[GameWrapper] Нет user или токена — выход");
+                console.warn("[GameWrapper] No user or token — exiting");
                 return;
             }
             const [resourcesRes, monstersRes] = await Promise.all([
@@ -107,7 +107,7 @@ export default function GameWrapper({
             });
         } catch (e) {
             console.error(
-                "Ошибка загрузки данных матча, ресурсов или монстров",
+                "Failed to load match, resources, or monsters",
                 e,
             );
             router.replace("/mode");
@@ -193,7 +193,7 @@ export default function GameWrapper({
             if (handler) {
                 handler(normalizedPayload);
             } else {
-                console.warn("[WS] Неизвестный тип события:", data.type, data);
+                console.warn("[WS] Unknown event type:", data.type, data);
             }
         },
         { instanceId, enabled: !!user },

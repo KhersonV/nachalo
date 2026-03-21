@@ -65,7 +65,7 @@ async function fetchQueueSize(mode: GameMode): Promise<number> {
             cache: "no-store",
         },
     );
-    if (!res.ok) throw new Error("Не удалось получить размер очереди");
+    if (!res.ok) throw new Error("Failed to get queue size");
     const data: QueueSizeResponse = await res.json();
     if (!Array.isArray(data) && typeof data?.totalPlayers === "number") {
         return data.totalPlayers;
@@ -90,7 +90,7 @@ async function fetchPartyState(
         },
     );
     if (!res.ok) {
-        throw new Error("Не удалось загрузить пати");
+        throw new Error("Failed to load party");
     }
     return res.json();
 }
@@ -103,7 +103,7 @@ async function fetchFriends(token: string): Promise<FriendSummary[]> {
         cache: "no-store",
     });
     if (!res.ok) {
-        throw new Error("Не удалось загрузить друзей");
+        throw new Error("Failed to load friends");
     }
     const data = await res.json();
     return data.data || [];
@@ -125,7 +125,7 @@ async function fetchPartyInvites(
         },
     );
     if (!res.ok) {
-        throw new Error("Не удалось загрузить инвайты в пати");
+        throw new Error("Failed to load party invites");
     }
     const data: PartyInvitesResponse = await res.json();
     return data.invites || [];
@@ -149,9 +149,7 @@ async function joinQueue(
         }),
     });
     if (!res.ok) {
-        throw new Error(
-            (await res.text()) || "Ошибка при вступлении в очередь",
-        );
+        throw new Error((await res.text()) || "Failed to join queue");
     }
 }
 
@@ -246,7 +244,7 @@ export default function ModeSelectionPage() {
             setPartyFriends(friends);
             setPartyInvites(invites);
         } catch (e: any) {
-            setPartyError(e?.message || "Не удалось загрузить пати");
+            setPartyError(e?.message || "Failed to load party");
         } finally {
             setPartyLoading(false);
         }
@@ -293,9 +291,7 @@ export default function ModeSelectionPage() {
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
-                throw new Error(
-                    (await res.text()) || "Не удалось обновить пати",
-                );
+                throw new Error((await res.text()) || "Failed to update party");
             }
             const nextParty: PartyStateResponse = await res.json();
             setPartyState((prev) =>
@@ -340,12 +336,12 @@ export default function ModeSelectionPage() {
                 );
                 if (!res.ok) {
                     throw new Error(
-                        (await res.text()) || "Не удалось отправить инвайт",
+                        (await res.text()) || "Failed to send invite",
                     );
                 }
-                setPartyInfo("Инвайт в пати отправлен");
+                setPartyInfo("Party invite sent");
             } catch (e: any) {
-                setPartyError(e?.message || "Не удалось отправить инвайт");
+                setPartyError(e?.message || "Failed to send invite");
             } finally {
                 setPartyBusyUserId(null);
                 setPartyBusyAction(null);
@@ -374,7 +370,7 @@ export default function ModeSelectionPage() {
             );
             if (!res.ok) {
                 throw new Error(
-                    (await res.text()) || "Не удалось принять инвайт",
+                    (await res.text()) || "Failed to accept invite",
                 );
             }
             const party: PartyStateResponse = await res.json();
@@ -387,9 +383,9 @@ export default function ModeSelectionPage() {
                     : party,
             );
             setPartyInvites([]);
-            setPartyInfo("Вы вступили в пати");
+            setPartyInfo("You joined the party");
         } catch (e: any) {
-            setPartyError(e?.message || "Не удалось принять инвайт");
+            setPartyError(e?.message || "Failed to accept invite");
         } finally {
             setPartyBusyUserId(null);
             setPartyBusyAction(null);
@@ -416,13 +412,13 @@ export default function ModeSelectionPage() {
             );
             if (!res.ok) {
                 throw new Error(
-                    (await res.text()) || "Не удалось отклонить инвайт",
+                    (await res.text()) || "Failed to reject invite",
                 );
             }
             setPartyInvites([]);
-            setPartyInfo("Инвайт отклонен");
+            setPartyInfo("Invite rejected");
         } catch (e: any) {
-            setPartyError(e?.message || "Не удалось отклонить инвайт");
+            setPartyError(e?.message || "Failed to reject invite");
         } finally {
             setPartyBusyUserId(null);
             setPartyBusyAction(null);
@@ -440,10 +436,10 @@ export default function ModeSelectionPage() {
                 await mutateParty(
                     "/matchmaking/party/remove",
                     { leader_id: user.id, member_id: memberId },
-                    "Игрок исключён из пати",
+                    "Player removed from party",
                 );
             } catch (e: any) {
-                setPartyError(e?.message || "Не удалось исключить игрока");
+                setPartyError(e?.message || "Failed to remove player");
             } finally {
                 setPartyBusyUserId(null);
                 setPartyBusyAction(null);
@@ -462,10 +458,10 @@ export default function ModeSelectionPage() {
             await mutateParty(
                 "/matchmaking/party/leave",
                 { player_id: user.id },
-                "Вы вышли из пати",
+                "You left the party",
             );
         } catch (e: any) {
-            setPartyError(e?.message || "Не удалось выйти из пати");
+            setPartyError(e?.message || "Failed to leave party");
         } finally {
             setPartyBusyUserId(null);
             setPartyBusyAction(null);
@@ -482,10 +478,10 @@ export default function ModeSelectionPage() {
             await mutateParty(
                 "/matchmaking/party/disband",
                 { leader_id: user.id },
-                "Пати распущена",
+                "Party disbanded",
             );
         } catch (e: any) {
-            setPartyError(e?.message || "Не удалось распустить пати");
+            setPartyError(e?.message || "Failed to disband party");
         } finally {
             setPartyBusyUserId(null);
             setPartyBusyAction(null);
@@ -581,7 +577,7 @@ export default function ModeSelectionPage() {
         if (fallbackMode && fallbackMode !== mode) {
             setMode(fallbackMode);
             setPartyInfo(
-                `Режим ${mode} недоступен для текущего размера пати, выбран ${fallbackMode}`,
+                `Mode ${mode} is unavailable for the current party size, switched to ${fallbackMode}`,
             );
         }
     }, [mode, canPlayMode, isMatching]);
@@ -714,14 +710,14 @@ export default function ModeSelectionPage() {
 
     async function handleStart() {
         if (!token) {
-            alert("Сначала выполните вход");
+            alert("Please log in first");
             router.push("/login");
             return;
         }
         // Проверка по времени
         if (isTokenExpired(token)) {
-            alert("Сессия истекла, пожалуйста, войдите снова");
-            localStorage.removeItem("user"); // Очистим устаревшие данные
+            alert("Session expired, please log in again");
+            localStorage.removeItem("user"); // Clear stale data
             router.push("/login");
             return;
         }
@@ -746,13 +742,11 @@ export default function ModeSelectionPage() {
                 !freshParty?.inParty || freshParty.isLeader;
 
             if (!effectiveIsLeader) {
-                throw new Error(
-                    "Только лидер пати может запустить поиск матча",
-                );
+                throw new Error("Only the party leader can start matchmaking");
             }
             if (effectivePartySize > TEAM_SIZE[mode]) {
                 throw new Error(
-                    "Размер пати больше доступной команды для выбранного режима",
+                    "Party size exceeds available team size for the selected mode",
                 );
             }
             setIsMatching(true);
@@ -781,9 +775,7 @@ export default function ModeSelectionPage() {
             console.error(err);
             setIsMatching(false);
             alert(
-                err instanceof Error
-                    ? err.message
-                    : "Ошибка при подборе игроков",
+                err instanceof Error ? err.message : "Error during matchmaking",
             );
         }
     }
@@ -792,7 +784,7 @@ export default function ModeSelectionPage() {
         const token = user?.token;
         const playerId = user?.id;
         if (!token || !playerId) {
-            alert("Сначала выполните вход");
+            alert("Please log in first");
             router.push("/login");
             return;
         }
@@ -817,12 +809,12 @@ export default function ModeSelectionPage() {
             if (!res.ok) {
                 setIsMatching(true);
                 const text = await res.text();
-                throw new Error(text || "Не удалось выйти из очереди");
+                throw new Error(text || "Failed to leave the queue");
             }
             setPartyState((prev) => (prev ? { ...prev, queueMode: "" } : prev));
         } catch (error) {
             console.error(error);
-            alert(`Ошибка при выходе из очереди: ${error}`);
+            alert(`Error leaving the queue: ${error}`);
         }
     }
 
@@ -834,20 +826,20 @@ export default function ModeSelectionPage() {
     return (
         <div className={styles.pageRoot}>
             <LobbyHeader />
-            <h2 className={styles.pageTitle}>Выберите режим:</h2>
+            <h2 className={styles.pageTitle}>Choose a mode:</h2>
             <section className={styles.partyPanel}>
                 <div className={styles.partyHeaderRow}>
                     <div>
-                        <h3 className={styles.partyTitle}>Пати</h3>
+                        <h3 className={styles.partyTitle}>Party</h3>
                         <p className={styles.partySubtitle}>
-                            Лидер ставит в очередь всю группу. Участники пати
-                            попадут в одну команду.
+                            The leader queues the whole group. Party members
+                            will be placed on the same team.
                         </p>
                     </div>
                     <div className={styles.partyMeta}>
-                        {partyState?.partySize ?? 1} игрок(а)
+                        {partyState?.partySize ?? 1} players
                         {partyState?.queueMode
-                            ? ` • очередь ${partyState.queueMode}`
+                            ? ` • queue ${partyState.queueMode}`
                             : ""}
                     </div>
                 </div>
@@ -856,13 +848,13 @@ export default function ModeSelectionPage() {
                 )}
                 {partyInfo && <p className={styles.partyInfo}>{partyInfo}</p>}
                 {partyLoading && (
-                    <p className={styles.partyMuted}>Загрузка пати...</p>
+                    <p className={styles.partyMuted}>Loading party...</p>
                 )}
 
                 {!partyState?.inParty && partyInvites.length > 0 && (
                     <div className={styles.partyInviteSection}>
                         <h4 className={styles.partyInviteTitle}>
-                            Входящий инвайт в пати
+                            Incoming party invite
                         </h4>
                         {partyInvites.map((invite) => (
                             <article
@@ -872,9 +864,9 @@ export default function ModeSelectionPage() {
                                 <div className={styles.partyInviteMeta}>
                                     <strong>{invite.leader.name}</strong>
                                     <span>
-                                        Класс: {invite.leader.characterType}
+                                        Class: {invite.leader.characterType}
                                     </span>
-                                    <span>Уровень: {invite.leader.level}</span>
+                                    <span>Level: {invite.leader.level}</span>
                                 </div>
                                 <div className={styles.partyActionsRow}>
                                     <button
@@ -886,7 +878,7 @@ export default function ModeSelectionPage() {
                                             )
                                         }
                                     >
-                                        Профиль
+                                        Profile
                                     </button>
                                     <button
                                         type="button"
@@ -896,7 +888,7 @@ export default function ModeSelectionPage() {
                                             partyBusyAction === "acceptInvite"
                                         }
                                     >
-                                        Принять
+                                        Accept
                                     </button>
                                     <button
                                         type="button"
@@ -906,7 +898,7 @@ export default function ModeSelectionPage() {
                                             partyBusyAction === "rejectInvite"
                                         }
                                     >
-                                        Отклонить
+                                        Reject
                                     </button>
                                 </div>
                             </article>
@@ -935,13 +927,13 @@ export default function ModeSelectionPage() {
                                     <span>
                                         {member.characterType || "adventurer"}
                                     </span>
-                                    <span>Уровень {member.level}</span>
+                                    <span>Level {member.level}</span>
                                     {member.user_id ===
                                         partyState?.leaderId && (
                                         <span
                                             className={styles.partyLeaderBadge}
                                         >
-                                            Лидер
+                                            Leader
                                         </span>
                                     )}
                                 </div>
@@ -952,7 +944,7 @@ export default function ModeSelectionPage() {
                                         openPlayerProfile(member.user_id)
                                     }
                                 >
-                                    Профиль
+                                    Profile
                                 </button>
                                 {canKick && (
                                     <button
@@ -965,7 +957,7 @@ export default function ModeSelectionPage() {
                                         }
                                         disabled={busy}
                                     >
-                                        Исключить
+                                        Remove
                                     </button>
                                 )}
                             </article>
@@ -985,7 +977,7 @@ export default function ModeSelectionPage() {
                                     partyBusyAction === "disband"
                                 }
                             >
-                                Распустить пати
+                                Disband party
                             </button>
                         )}
                     {partyState?.inParty && !partyState.isLeader && (
@@ -997,14 +989,14 @@ export default function ModeSelectionPage() {
                                 !!isMatching || partyBusyAction === "leave"
                             }
                         >
-                            Выйти из пати
+                            Leave party
                         </button>
                     )}
                 </div>
                 {partyState?.isLeader && !isMatching && (
                     <div className={styles.partyInviteSection}>
                         <h4 className={styles.partyInviteTitle}>
-                            Друзья для пати
+                            Friends for party
                         </h4>
                         <div className={styles.partyInviteGrid}>
                             {partyFriends
@@ -1024,7 +1016,7 @@ export default function ModeSelectionPage() {
                                         <div className={styles.partyInviteMeta}>
                                             <strong>{friend.name}</strong>
                                             <span>{friend.characterType}</span>
-                                            <span>Уровень {friend.level}</span>
+                                            <span>Level {friend.level}</span>
                                             <span>{friend.activityStatus}</span>
                                         </div>
                                         <button
@@ -1040,7 +1032,7 @@ export default function ModeSelectionPage() {
                                                 friend.userId
                                             }
                                         >
-                                            Профиль
+                                            Profile
                                         </button>
                                         <button
                                             type="button"
@@ -1054,14 +1046,14 @@ export default function ModeSelectionPage() {
                                                 (partyState.partySize ?? 1) >= 5
                                             }
                                         >
-                                            Пригласить
+                                            Invite
                                         </button>
                                     </article>
                                 ))}
                         </div>
                         {partyFriends.length === 0 && (
                             <p className={styles.partyMuted}>
-                                Добавь друзей в профиле, чтобы собирать пати.
+                                Add friends in your profile to build parties.
                             </p>
                         )}
                     </div>
@@ -1110,7 +1102,7 @@ export default function ModeSelectionPage() {
                                             fontSize: "0.8rem",
                                         }}
                                     >
-                                        Недоступно для пати из{" "}
+                                        Unavailable for party of{" "}
                                         {currentPartySize}
                                     </div>
                                 )}
@@ -1131,14 +1123,14 @@ export default function ModeSelectionPage() {
                         !canPlayMode(mode)
                     }
                 >
-                    Вступить в очередь
+                    Join Queue
                 </button>
                 <button
                     className={styles.queueButton}
                     onClick={handleCancel}
                     disabled={!isMatching || !!pendingInstanceId}
                 >
-                    Выйти из очереди
+                    Leave Queue
                 </button>
             </div>
 

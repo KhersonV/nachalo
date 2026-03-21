@@ -48,7 +48,7 @@ export default function Controls({ onMove, onAction }: ControlsProps) {
                     className={styles.actionButton}
                     onClick={() => onAction("attack")}
                 >
-                    Пробел
+                    Space
                 </button>
             </div>
         </div>

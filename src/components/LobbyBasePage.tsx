@@ -28,13 +28,13 @@ export default function LobbyBasePage() {
                 },
             });
             if (!res.ok) {
-                throw new Error("Не удалось загрузить состояние базы");
+                throw new Error("Failed to load base state");
             }
             const data: BaseState = await res.json();
             setBaseState(data);
         } catch (e: unknown) {
             const message =
-                e instanceof Error ? e.message : "Не удалось загрузить базу";
+                e instanceof Error ? e.message : "Failed to load base";
             setBaseError(message);
         }
     }, [user]);
@@ -56,21 +56,21 @@ export default function LobbyBasePage() {
                 const text = await res.text();
                 if (text.includes("not_enough_resources")) {
                     throw new Error(
-                        "Недостаточно ресурсов для постройки кузницы",
+                        "Not enough resources to build the forge",
                     );
                 }
                 if (text.includes("forge_already_built")) {
-                    throw new Error("Кузница уже построена");
+                    throw new Error("Forge is already built");
                 }
-                throw new Error("Не удалось построить кузницу");
+                throw new Error("Failed to build the forge");
             }
 
             const data: BaseState = await res.json();
             setBaseState(data);
-            setBaseInfo("Кузница построена. Новые рецепты открыты.");
+            setBaseInfo("Forge built. New recipes unlocked.");
         } catch (e: unknown) {
             const message =
-                e instanceof Error ? e.message : "Ошибка постройки кузницы";
+                e instanceof Error ? e.message : "Forge build error";
             setBaseError(message);
         } finally {
             setBaseBusy(false);
@@ -94,21 +94,21 @@ export default function LobbyBasePage() {
                 const text = await res.text();
                 if (text.includes("not_enough_resources")) {
                     throw new Error(
-                        "Недостаточно ресурсов для постройки библиотеки",
+                        "Not enough resources to build the library",
                     );
                 }
                 if (text.includes("library_already_built")) {
-                    throw new Error("Библиотека уже построена");
+                    throw new Error("Library is already built");
                 }
-                throw new Error("Не удалось построить библиотеку");
+                throw new Error("Failed to build the library");
             }
 
             const data: BaseState = await res.json();
             setBaseState(data);
-            setBaseInfo("Библиотека построена. Открыты исследования.");
+            setBaseInfo("Library built. Research unlocked.");
         } catch (e: unknown) {
             const message =
-                e instanceof Error ? e.message : "Ошибка постройки библиотеки";
+                e instanceof Error ? e.message : "Library build error";
             setBaseError(message);
         } finally {
             setBaseBusy(false);
@@ -132,26 +132,26 @@ export default function LobbyBasePage() {
 
                 <div className={styles.baseStatusRow}>
                     <span>
-                        Статус: {building.built ? "Построена" : "Не построена"}
+                        Status: {building.built ? "Built" : "Not built"}
                     </span>
-                    <span>Уровень: {building.level}</span>
+                    <span>Level: {building.level}</span>
                 </div>
 
                 <div className={styles.baseResourcesGrid}>
                     <div className={styles.baseResourceCard}>
-                        <strong>Дерево</strong>
+                        <strong>Wood</strong>
                         <span>
                             {building.resources.wood} / {building.costs.wood}
                         </span>
                     </div>
                     <div className={styles.baseResourceCard}>
-                        <strong>Камень</strong>
+                        <strong>Stone</strong>
                         <span>
                             {building.resources.stone} / {building.costs.stone}
                         </span>
                     </div>
                     <div className={styles.baseResourceCard}>
-                        <strong>Железо</strong>
+                        <strong>Iron</strong>
                         <span>
                             {building.resources.iron} / {building.costs.iron}
                         </span>
@@ -164,7 +164,7 @@ export default function LobbyBasePage() {
                         onClick={onBuild}
                         disabled={!building.canBuild || baseBusy}
                     >
-                        {baseBusy ? "Строим..." : buildLabel}
+                        {baseBusy ? "Building..." : buildLabel}
                     </button>
                 )}
 
@@ -173,24 +173,28 @@ export default function LobbyBasePage() {
                         <h4>{unlockablesTitle}</h4>
                         <ul>
                             {building.unlockables.map((entry) => {
-                                // Известные чертежи строений
+                                // Known building blueprints — translate known names/descriptions
                                 let desc = entry.description;
+                                let displayName = entry.name;
                                 if (entry.name === "Башня разведки") {
+                                    displayName = "Watchtower";
                                     desc =
-                                        "Увеличивает обзор игрока на 1 клетку (максимум 5). Можно построить только одну башню.";
+                                        "Increases player's sight by 1 cell (max 5). Only one watchtower can be built.";
                                 } else if (entry.name === "Турель") {
+                                    displayName = "Turret";
                                     desc =
-                                        "Автоматически атакует монстров рядом с базой, расходует энергию. Приоритет: игроки, затем монстры.";
+                                        "Automatically attacks monsters near the base, consumes energy. Priority: players, then monsters.";
                                 } else if (entry.name === "Библиотека") {
-                                    desc =
-                                        "Открывает исследования для развития персонажа.";
+                                    displayName = "Library";
+                                    desc = "Opens research for character development.";
                                 } else if (entry.name === "Кузница") {
+                                    displayName = "Forge";
                                     desc =
-                                        "Позволяет создавать новые чертежи и предметы для подготовки к матчам.";
+                                        "Allows crafting new blueprints and items to prepare for matches.";
                                 }
                                 return (
                                     <li key={entry.id}>
-                                        <strong>{entry.name}</strong>: {desc}
+                                        <strong>{displayName}</strong>: {desc}
                                     </li>
                                 );
                             })}
@@ -209,7 +213,7 @@ export default function LobbyBasePage() {
     return (
         <div className={styles.pageRoot}>
             <LobbyHeader />
-            <h2 className={styles.pageTitle}>База</h2>
+            <h2 className={styles.pageTitle}>Base</h2>
 
             {baseError && <p className={styles.baseError}>{baseError}</p>}
             {baseInfo && <p className={styles.baseInfo}>{baseInfo}</p>}
@@ -217,26 +221,26 @@ export default function LobbyBasePage() {
             {baseState ? (
                 <>
                     {renderBuildingSection(
-                        "База: Кузница",
-                        "Кузница строится в лобби и открывает новые рецепты для подготовки к матчам.",
+                        "Base: Forge",
+                        "The forge is built in the lobby and unlocks new recipes for match preparation.",
                         baseState.forge,
                         handleBuildForge,
-                        "Построить кузницу",
-                        "Открытые рецепты",
+                        "Build Forge",
+                        "Unlocked Recipes",
                     )}
 
                     {renderBuildingSection(
-                        "База: Библиотека",
-                        "Библиотека строится в лобби и открывает исследования для развития персонажа.",
+                        "Base: Library",
+                        "The library is built in the lobby and unlocks research for character development.",
                         baseState.library,
                         handleBuildLibrary,
-                        "Построить библиотеку",
-                        "Открытые исследования",
+                        "Build Library",
+                        "Unlocked Research",
                     )}
                 </>
             ) : (
                 <section className={styles.basePanel}>
-                    <p className={styles.baseSubtitle}>Загружаем базу...</p>
+                    <p className={styles.baseSubtitle}>Loading base...</p>
                 </section>
             )}
 
@@ -245,7 +249,7 @@ export default function LobbyBasePage() {
                     className={styles.queueButton}
                     onClick={() => router.push("/mode")}
                 >
-                    К режимам
+                    Back to Modes
                 </button>
             </div>
         </div>

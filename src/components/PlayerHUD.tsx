@@ -28,7 +28,7 @@ export default React.memo(function PlayerHUD({
 }: PlayerHUDProps) {
     const healthPercent = Math.round((health / maxHealth) * 100);
     const energyPercent = Math.round((energy / maxEnergy) * 100);
-    const attackTypeLabel = isRanged ? "Дальний" : "Ближний";
+    const attackTypeLabel = isRanged ? "Ranged" : "Melee";
     const attackRangeLabel = isRanged ? (attackRange ?? 1) : 1;
 
     return (
@@ -58,16 +58,16 @@ export default React.memo(function PlayerHUD({
                 </span>
             </div>
             <div className={styles.hudMetaRow}>
-                <span className={styles.hudMetaLabel}>Тип боя</span>
+                <span className={styles.hudMetaLabel}>Attack Type</span>
                 <span className={styles.hudMetaValue}>{attackTypeLabel}</span>
             </div>
             <div className={styles.hudMetaRow}>
-                <span className={styles.hudMetaLabel}>Дальность</span>
+                <span className={styles.hudMetaLabel}>Range</span>
                 <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>
             {typeof groupId === "number" && (
                 <div className={styles.hudMetaRow}>
-                    <span className={styles.hudMetaLabel}>Группа</span>
+                    <span className={styles.hudMetaLabel}>Group</span>
                     <span className={styles.hudMetaValue}>{groupId}</span>
                 </div>
             )}

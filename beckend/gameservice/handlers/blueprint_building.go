@@ -36,7 +36,7 @@ func resolveBlueprintStats(key string) (structureStats, int, error) {
 	case "blueprint_wall":
 		return structureStats{StructureType: "wall", Health: 30, Defense: 8, Attack: 0}, 1003, nil
 	default:
-		return structureStats{}, 0, fmt.Errorf("неизвестный чертеж")
+		return structureStats{}, 0, fmt.Errorf("unknown blueprint")
 	}
 }
 
@@ -78,12 +78,12 @@ func decrementInventoryBlueprint(player *models.PlayerResponse, blueprintKey str
 
 	entry, ok := inv[blueprintKey]
 	if !ok {
-		return fmt.Errorf("чертеж не найден в инвентаре")
+		return fmt.Errorf("blueprint not found in inventory")
 	}
 
 	countAny, ok := entry["item_count"]
 	if !ok {
-		return fmt.Errorf("некорректная запись инвентаря")
+		return fmt.Errorf("invalid inventory entry")
 	}
 
 	count := 0
@@ -95,11 +95,11 @@ func decrementInventoryBlueprint(player *models.PlayerResponse, blueprintKey str
 	case int64:
 		count = int(v)
 	default:
-		return fmt.Errorf("некорректное количество в инвентаре")
+		return fmt.Errorf("invalid item count in inventory")
 	}
 
 	if count <= 0 {
-		return fmt.Errorf("чертеж закончился")
+		return fmt.Errorf("blueprint depleted")
 	}
 
 	if count == 1 {
@@ -117,7 +117,7 @@ func decrementInventoryBlueprint(player *models.PlayerResponse, blueprintKey str
 	return nil
 }
 
-// PlaceBlueprintHandler запускает строительство на соседней свободной клетке.
+// PlaceBlueprintHandler starts construction on a neighboring free cell.
 func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -131,7 +131,7 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.InstanceID == "" || req.UserID == 0 || req.BlueprintKey == "" {
-		http.Error(w, "instance_id, user_id и blueprint_key обязательны", http.StatusBadRequest)
+		http.Error(w, "instance_id, user_id and blueprint_key are required", http.StatusBadRequest)
 		return
 	}
 	if req.UserID != tokenUserID {
@@ -145,7 +145,7 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if matchState.ActiveUserID != req.UserID {
-		http.Error(w, "сейчас не ваш ход", http.StatusBadRequest)
+		http.Error(w, "it's not your turn", http.StatusBadRequest)
 		return
 	}
 
@@ -162,7 +162,7 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if manhattan(player.Position.X, player.Position.Y, req.CellX, req.CellY) != 1 {
-		http.Error(w, "строить можно только в соседней клетке", http.StatusBadRequest)
+		http.Error(w, "can only build on an adjacent cell", http.StatusBadRequest)
 		return
 	}
 
@@ -180,11 +180,11 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cellIdx == -1 {
-		http.Error(w, "клетка не найдена", http.StatusBadRequest)
+		http.Error(w, "cell not found", http.StatusBadRequest)
 		return
 	}
 	if !isBuildableOrdinaryCell(cells[cellIdx]) {
-		http.Error(w, "строить можно только на обычной свободной клетке", http.StatusBadRequest)
+		http.Error(w, "can only build on an ordinary free cell", http.StatusBadRequest)
 		return
 	}
 

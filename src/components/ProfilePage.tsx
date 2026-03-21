@@ -192,7 +192,7 @@ export default function ProfilePage() {
             cache: "no-store",
         });
         if (!res.ok) {
-            throw new Error("Не удалось загрузить профиль");
+            throw new Error("Failed to load profile");
         }
         const data: ProfileApiResponse = await res.json();
         return data.data;
@@ -210,7 +210,7 @@ export default function ProfilePage() {
             setEditName(data.player.name || "");
             setEditImage(normalizeAvatarPath(data.player.image));
         } catch (e: any) {
-            setError(e?.message || "Ошибка загрузки профиля");
+            setError(e?.message || "Profile load error");
         } finally {
             setLoading(false);
         }
@@ -225,7 +225,7 @@ export default function ProfilePage() {
             cache: "no-store",
         });
         if (!res.ok) {
-            throw new Error("Не удалось загрузить друзей");
+            throw new Error("Failed to load friends");
         }
         const data: FriendsApiResponse = await res.json();
         return data.data;
@@ -240,7 +240,7 @@ export default function ProfilePage() {
             cache: "no-store",
         });
         if (!res.ok) {
-            throw new Error("Не удалось загрузить входящие заявки");
+            throw new Error("Failed to load incoming requests");
         }
         const data: IncomingFriendRequestsApiResponse = await res.json();
         return data.data;
@@ -255,7 +255,7 @@ export default function ProfilePage() {
             cache: "no-store",
         });
         if (!res.ok) {
-            throw new Error("Не удалось загрузить исходящие заявки");
+            throw new Error("Failed to load outgoing requests");
         }
         const data: OutgoingFriendRequestsApiResponse = await res.json();
         return data.data;
@@ -277,7 +277,7 @@ export default function ProfilePage() {
                 setFriendsError("");
             } catch (e: any) {
                 if (!alive) return;
-                setFriendsError(e?.message || "Ошибка загрузки друзей");
+                setFriendsError(e?.message || "Failed to load friends");
             }
         })();
 
@@ -298,7 +298,7 @@ export default function ProfilePage() {
                 setRequestsError("");
             } catch (e: any) {
                 if (!alive) return;
-                setRequestsError(e?.message || "Ошибка загрузки заявок");
+                setRequestsError(e?.message || "Failed to load requests");
             }
         })();
 
@@ -320,7 +320,7 @@ export default function ProfilePage() {
             } catch (e: any) {
                 if (!alive) return;
                 setOutgoingRequestsError(
-                    e?.message || "Ошибка загрузки исходящих заявок",
+                    e?.message || "Failed to load outgoing requests",
                 );
             }
         })();
@@ -387,7 +387,7 @@ export default function ProfilePage() {
             if (!user?.token) return;
 
             if (!Number.isFinite(userId) || userId <= 0) {
-                setLookupError("Введите корректный ID игрока");
+                setLookupError("Enter a valid player ID");
                 return;
             }
 
@@ -405,14 +405,14 @@ export default function ProfilePage() {
                 if (!res.ok) {
                     const text = await res.text();
                     throw new Error(
-                        text || "Не удалось загрузить профиль игрока",
+                        text || "Failed to load player profile",
                     );
                 }
                 const data: PublicProfileApiResponse = await res.json();
                 setViewedProfile(data.data);
             } catch (e: any) {
                 setViewedProfile(null);
-                setLookupError(e?.message || "Ошибка загрузки профиля игрока");
+                setLookupError(e?.message || "Failed to load player profile");
             } finally {
                 setLookupLoading(false);
             }
@@ -423,7 +423,7 @@ export default function ProfilePage() {
     const viewOtherProfile = useCallback(async () => {
         const parsed = Number.parseInt(lookupId.trim(), 10);
         if (!Number.isFinite(parsed) || parsed <= 0) {
-            setLookupError("Введите корректный ID игрока");
+            setLookupError("Enter a valid player ID");
             return;
         }
 
@@ -454,7 +454,7 @@ export default function ProfilePage() {
     const addFriend = useCallback(async () => {
         if (!user?.token || !viewedProfile) return;
         if (viewedProfile.player.userId === user.id) {
-            setLookupError("Нельзя добавить себя в друзья");
+            setLookupError("You cannot add yourself as a friend");
             return;
         }
 
@@ -472,9 +472,9 @@ export default function ProfilePage() {
                     friendUserId: viewedProfile.player.userId,
                 }),
             });
-            if (!res.ok) {
+                if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || "Не удалось добавить в друзья");
+                throw new Error(text || "Failed to add friend");
             }
 
             setViewedProfile((prev) =>
@@ -501,9 +501,9 @@ export default function ProfilePage() {
                         : item,
                 ),
             );
-            setFriendInfo("Заявка в друзья отправлена");
+            setFriendInfo("Friend request sent");
         } catch (e: any) {
-            setLookupError(e?.message || "Ошибка добавления в друзья");
+            setLookupError(e?.message || "Failed to add friend");
         } finally {
             setAddingFriend(false);
         }
@@ -527,9 +527,9 @@ export default function ProfilePage() {
                         },
                     },
                 );
-                if (!res.ok) {
+                    if (!res.ok) {
                     const text = await res.text();
-                    throw new Error(text || "Не удалось удалить из друзей");
+                    throw new Error(text || "Failed to remove friend");
                 }
 
                 const friendsData = await fetchFriends();
@@ -550,9 +550,9 @@ export default function ProfilePage() {
                         ? { ...prev, isFriend: false, friendRelation: "none" }
                         : prev,
                 );
-                setFriendInfo("Игрок удален из друзей");
+                setFriendInfo("Friend removed");
             } catch (e: any) {
-                setLookupError(e?.message || "Ошибка удаления из друзей");
+                setLookupError(e?.message || "Failed to remove friend");
             } finally {
                 setRemovingFriendUserId(null);
             }
@@ -565,7 +565,7 @@ export default function ProfilePage() {
 
         const q = searchQuery.trim();
         if (q.length < 2) {
-            setLookupError("Введите минимум 2 символа для поиска");
+            setLookupError("Enter at least 2 characters to search");
             return;
         }
 
@@ -584,16 +584,16 @@ export default function ProfilePage() {
             );
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || "Не удалось выполнить поиск");
+                throw new Error(text || "Failed to perform search");
             }
 
             const data: SearchPlayersApiResponse = await res.json();
             setSearchResults(data.data);
             if (data.data.length === 0) {
-                setFriendInfo("По вашему запросу игроки не найдены");
+                setFriendInfo("No players found for your query");
             }
         } catch (e: any) {
-            setLookupError(e?.message || "Ошибка поиска игроков");
+            setLookupError(e?.message || "Player search error");
         } finally {
             setSearchingPlayers(false);
         }
@@ -618,7 +618,7 @@ export default function ProfilePage() {
                 );
                 if (!res.ok) {
                     const text = await res.text();
-                    throw new Error(text || "Не удалось принять заявку");
+                    throw new Error(text || "Failed to accept request");
                 }
 
                 const [friendsData, incomingData] = await Promise.all([
@@ -643,9 +643,9 @@ export default function ProfilePage() {
                         ? { ...prev, isFriend: true, friendRelation: "friend" }
                         : prev,
                 );
-                setFriendInfo("Заявка принята");
+                setFriendInfo("Request accepted");
             } catch (e: any) {
-                setLookupError(e?.message || "Ошибка принятия заявки");
+                setLookupError(e?.message || "Failed to accept request");
             } finally {
                 setProcessingRequestUserId(null);
             }
@@ -672,7 +672,7 @@ export default function ProfilePage() {
                 );
                 if (!res.ok) {
                     const text = await res.text();
-                    throw new Error(text || "Не удалось отклонить заявку");
+                    throw new Error(text || "Failed to decline request");
                 }
 
                 const incomingData = await fetchIncomingRequests();
@@ -693,9 +693,9 @@ export default function ProfilePage() {
                         ? { ...prev, isFriend: false, friendRelation: "none" }
                         : prev,
                 );
-                setFriendInfo("Заявка отклонена");
+                setFriendInfo("Request declined");
             } catch (e: any) {
-                setLookupError(e?.message || "Ошибка отклонения заявки");
+                setLookupError(e?.message || "Failed to decline request");
             } finally {
                 setProcessingRequestUserId(null);
             }
@@ -722,7 +722,7 @@ export default function ProfilePage() {
                 );
                 if (!res.ok) {
                     const text = await res.text();
-                    throw new Error(text || "Не удалось отменить заявку");
+                    throw new Error(text || "Failed to cancel request");
                 }
 
                 const outgoingData = await fetchOutgoingRequests();
@@ -743,9 +743,9 @@ export default function ProfilePage() {
                         ? { ...prev, isFriend: false, friendRelation: "none" }
                         : prev,
                 );
-                setFriendInfo("Заявка отменена");
+                setFriendInfo("Request canceled");
             } catch (e: any) {
-                setLookupError(e?.message || "Ошибка отмены заявки");
+                setLookupError(e?.message || "Failed to cancel request");
             } finally {
                 setCancelingOutgoingUserId(null);
             }
@@ -772,28 +772,28 @@ export default function ProfilePage() {
             });
             if (!res.ok) {
                 const text = await res.text();
-                throw new Error(text || "Не удалось сохранить профиль");
+                throw new Error(text || "Failed to save profile");
             }
             const data: ProfileApiResponse = await res.json();
             setProfile(data.data);
-            setInfo("Профиль сохранен");
+            setInfo("Profile saved");
         } catch (e: any) {
-            setError(e?.message || "Ошибка сохранения профиля");
+            setError(e?.message || "Profile save error");
         } finally {
             setSaving(false);
         }
     }, [user, editName, editImage]);
 
     if (loading) {
-        return <div className={styles.page}>Загрузка профиля...</div>;
+        return <div className={styles.page}>Loading profile...</div>;
     }
 
     if (error && !profile) {
-        return <div className={styles.page}>Ошибка: {error}</div>;
+        return <div className={styles.page}>Error: {error}</div>;
     }
 
     if (!profile) {
-        return <div className={styles.page}>Профиль недоступен</div>;
+        return <div className={styles.page}>Profile unavailable</div>;
     }
 
     const viewedUserParamRaw = searchParams.get("view");
@@ -825,10 +825,10 @@ export default function ProfilePage() {
 
     const getActivityLabel = (status: "in_match" | "in_lobby" | "offline") =>
         status === "in_match"
-            ? "В игре"
+            ? "In Match"
             : status === "in_lobby"
-              ? "В лобби"
-              : "Офлайн";
+              ? "In Lobby"
+              : "Offline";
 
     const getActivityClass = (status: "in_match" | "in_lobby" | "offline") =>
         status === "in_match"
@@ -859,19 +859,19 @@ export default function ProfilePage() {
                 </div>
             )}
             <div className={styles.topRow}>
-                <h2 className={styles.title}>Профиль игрока</h2>
+                <h2 className={styles.title}>Player Profile</h2>
                 <button className={styles.backBtn} onClick={handleBack}>
                     {isExternalProfileMode && fromParam === "game"
-                        ? "Назад в игру"
-                        : "К режимам"}
+                        ? "Back to Game"
+                        : "To Modes"}
                 </button>
             </div>
 
             {isViewingFromRoute && (
                 <div className={styles.info}>
                     {viewedProfile
-                        ? `Просмотр профиля: ${viewedProfile.player.name}`
-                        : "Загружаем профиль игрока..."}
+                        ? `Viewing profile: ${viewedProfile.player.name}`
+                        : "Loading player profile..."}
                 </div>
             )}
 
@@ -890,18 +890,18 @@ export default function ProfilePage() {
                             {activityLabel}
                         </div>
                         <div className={styles.subline}>
-                            Класс: {activePlayer.characterType}
+                            Class: {activePlayer.characterType}
                         </div>
                         <div className={styles.subline}>
-                            Баланс: {activePlayer.balance}
+                            Balance: {activePlayer.balance}
                         </div>
                     </div>
                 </div>
 
                 <div className={styles.expWrap}>
                     <div className={styles.expLabel}>
-                        Уровень {activePlayer.level} • {activePlayer.experience}
-                        /{activePlayer.maxExperience} XP
+                        Level {activePlayer.level} • {activePlayer.experience}/
+                        {activePlayer.maxExperience} XP
                     </div>
                     <div className={styles.expBarTrack}>
                         <div
@@ -915,7 +915,7 @@ export default function ProfilePage() {
                     <>
                         <div className={styles.editGrid}>
                             <label className={styles.label}>
-                                Ник
+                                Nickname
                                 <input
                                     className={styles.input}
                                     value={editName}
@@ -926,7 +926,7 @@ export default function ProfilePage() {
                                 />
                             </label>
                             <label className={styles.label}>
-                                URL аватара
+                                Avatar URL
                                 <input
                                     className={styles.input}
                                     value={editImage}
@@ -944,7 +944,7 @@ export default function ProfilePage() {
                                 onClick={saveProfile}
                                 disabled={saving}
                             >
-                                {saving ? "Сохраняем..." : "Сохранить"}
+                                {saving ? "Saving..." : "Save"}
                             </button>
                             {info && (
                                 <span className={styles.info}>{info}</span>
@@ -960,23 +960,24 @@ export default function ProfilePage() {
             {!isExternalProfileMode && (
                 <section className={styles.card}>
                     <h3 className={styles.sectionTitle}>
-                        Профили других игроков
+                        Other player profiles
                     </h3>
                     <div className={styles.lookupRow}>
                         <input
                             className={styles.input}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Поиск игроков по нику"
+                            placeholder="Search players by name"
                         />
                         <button
                             className={styles.primaryBtn}
                             onClick={searchPlayers}
                             disabled={searchingPlayers}
                         >
-                            {searchingPlayers ? "Ищем..." : "Найти"}
+                            {searchingPlayers ? "Searching..." : "Search"}
                         </button>
                     </div>
+
                     {lookupError && (
                         <div className={styles.error}>{lookupError}</div>
                     )}
@@ -999,7 +1000,7 @@ export default function ProfilePage() {
                                     <div className={styles.friendMeta}>
                                         <strong>{p.name}</strong>
                                         <span>
-                                            ID: {p.userId} • Ур. {p.level} •{" "}
+                                            ID: {p.userId} • Lv. {p.level} •{" "}
                                             {p.characterType}
                                         </span>
                                     </div>
@@ -1014,7 +1015,7 @@ export default function ProfilePage() {
                                             openFriendProfile(p.userId)
                                         }
                                     >
-                                        Открыть
+                                        Open
                                     </button>
                                 </div>
                             ))}
@@ -1044,11 +1045,11 @@ export default function ProfilePage() {
                                     </div>
                                     <div className={styles.subline}>
                                         ID: {viewedProfile.player.userId} •
-                                        Класс:{" "}
+                                        Class:{" "}
                                         {viewedProfile.player.characterType}
                                     </div>
                                     <div className={styles.subline}>
-                                        Уровень: {viewedProfile.player.level} •
+                                        Level: {viewedProfile.player.level} •
                                         Winrate:{" "}
                                         {viewedProfile.progress.winRate}%
                                     </div>
@@ -1068,17 +1069,18 @@ export default function ProfilePage() {
                                     >
                                         {viewedProfile.friendRelation ===
                                         "friend"
-                                            ? "Уже в друзьях"
+                                            ? "Already friends"
                                             : viewedProfile.friendRelation ===
                                                 "outgoing"
-                                              ? "Заявка отправлена"
+                                              ? "Request sent"
                                               : viewedProfile.friendRelation ===
                                                   "incoming"
-                                                ? "Входящая заявка"
+                                                ? "Incoming request"
                                                 : addingFriend
-                                                  ? "Отправляем..."
-                                                  : "Отправить заявку"}
+                                                  ? "Sending..."
+                                                  : "Send request"}
                                     </button>
+
                                     {viewedProfile.friendRelation ===
                                         "friend" && (
                                         <button
@@ -1095,10 +1097,11 @@ export default function ProfilePage() {
                                         >
                                             {removingFriendUserId ===
                                             viewedProfile.player.userId
-                                                ? "Удаляем..."
-                                                : "Удалить из друзей"}
+                                                ? "Removing..."
+                                                : "Remove friend"}
                                         </button>
                                     )}
+
                                     {viewedProfile.friendRelation ===
                                         "incoming" && (
                                         <>
@@ -1117,8 +1120,8 @@ export default function ProfilePage() {
                                             >
                                                 {processingRequestUserId ===
                                                 viewedProfile.player.userId
-                                                    ? "Обработка..."
-                                                    : "Принять заявку"}
+                                                    ? "Processing..."
+                                                    : "Accept request"}
                                             </button>
                                             <button
                                                 className={styles.dangerBtn}
@@ -1133,10 +1136,11 @@ export default function ProfilePage() {
                                                     viewedProfile.player.userId
                                                 }
                                             >
-                                                Отклонить заявку
+                                                Reject request
                                             </button>
                                         </>
                                     )}
+
                                     {viewedProfile.friendRelation ===
                                         "outgoing" && (
                                         <button
@@ -1153,8 +1157,8 @@ export default function ProfilePage() {
                                         >
                                             {cancelingOutgoingUserId ===
                                             viewedProfile.player.userId
-                                                ? "Отменяем..."
-                                                : "Отменить заявку"}
+                                                ? "Cancelling..."
+                                                : "Cancel"}
                                         </button>
                                     )}
                                 </div>
@@ -1164,209 +1168,185 @@ export default function ProfilePage() {
                 </section>
             )}
 
-            {!isExternalProfileMode && (
-                <section className={styles.card}>
-                    <h3 className={styles.sectionTitle}>
-                        Входящие заявки в друзья
-                    </h3>
-                    {requestsError && (
-                        <div className={styles.error}>{requestsError}</div>
-                    )}
-                    {incomingRequests.length === 0 ? (
-                        <div className={styles.subline}>
-                            Нет входящих заявок
-                        </div>
-                    ) : (
-                        <div className={styles.friendList}>
-                            {incomingRequests.map((req) => (
-                                <div
-                                    key={`request-${req.userId}`}
-                                    className={styles.friendItem}
-                                >
-                                    <img
-                                        className={styles.friendAvatar}
-                                        src={normalizeAvatarPath(req.image)}
-                                        alt="request avatar"
-                                    />
-                                    <div className={styles.friendMeta}>
-                                        <strong>{req.name}</strong>
-                                        <span>
-                                            • Ур. {req.level} •{" "}
-                                            {req.characterType}
-                                        </span>
-                                    </div>
-                                    <div
-                                        className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
-                                    >
-                                        {getActivityLabel(req.activityStatus)}
-                                    </div>
-                                    <button
-                                        className={styles.primaryBtn}
-                                        onClick={() =>
-                                            acceptFriendRequest(req.userId)
-                                        }
-                                        disabled={
-                                            processingRequestUserId ===
-                                            req.userId
-                                        }
-                                    >
-                                        {processingRequestUserId === req.userId
-                                            ? "Обработка..."
-                                            : "Принять"}
-                                    </button>
-                                    <button
-                                        className={styles.dangerBtn}
-                                        onClick={() =>
-                                            rejectFriendRequest(req.userId)
-                                        }
-                                        disabled={
-                                            processingRequestUserId ===
-                                            req.userId
-                                        }
-                                    >
-                                        Отклонить
-                                    </button>
+            <section className={styles.card}>
+                <h3 className={styles.sectionTitle}>
+                    Incoming friend requests
+                </h3>
+                {requestsError && (
+                    <div className={styles.error}>{requestsError}</div>
+                )}
+                {incomingRequests.length === 0 ? (
+                    <div className={styles.subline}>No incoming requests</div>
+                ) : (
+                    <div className={styles.friendList}>
+                        {incomingRequests.map((req) => (
+                            <div
+                                key={`request-${req.userId}`}
+                                className={styles.friendItem}
+                            >
+                                <img
+                                    className={styles.friendAvatar}
+                                    src={normalizeAvatarPath(req.image)}
+                                    alt="request avatar"
+                                />
+                                <div className={styles.friendMeta}>
+                                    <strong>{req.name}</strong>
+                                    <span>
+                                        Lv. {req.level} • {req.characterType}
+                                    </span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-            )}
+                                <div
+                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
+                                >
+                                    {getActivityLabel(req.activityStatus)}
+                                </div>
+                                <button
+                                    className={styles.primaryBtn}
+                                    onClick={() =>
+                                        acceptFriendRequest(req.userId)
+                                    }
+                                    disabled={
+                                        processingRequestUserId === req.userId
+                                    }
+                                >
+                                    {processingRequestUserId === req.userId
+                                        ? "Processing..."
+                                        : "Accept"}
+                                </button>
+                                <button
+                                    className={styles.dangerBtn}
+                                    onClick={() =>
+                                        rejectFriendRequest(req.userId)
+                                    }
+                                    disabled={
+                                        processingRequestUserId === req.userId
+                                    }
+                                >
+                                    Reject
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
 
-            {!isExternalProfileMode && (
-                <section className={styles.card}>
-                    <h3 className={styles.sectionTitle}>
-                        Исходящие заявки в друзья
-                    </h3>
-                    {outgoingRequestsError && (
-                        <div className={styles.error}>
-                            {outgoingRequestsError}
-                        </div>
-                    )}
-                    {outgoingRequests.length === 0 ? (
-                        <div className={styles.subline}>
-                            Нет исходящих заявок
-                        </div>
-                    ) : (
-                        <div className={styles.friendList}>
-                            {outgoingRequests.map((req) => (
-                                <div
-                                    key={`outgoing-${req.userId}`}
-                                    className={styles.friendItem}
-                                >
-                                    <img
-                                        className={styles.friendAvatar}
-                                        src={normalizeAvatarPath(req.image)}
-                                        alt="outgoing request avatar"
-                                    />
-                                    <div className={styles.friendMeta}>
-                                        <strong>{req.name}</strong>
-                                        <span>
-                                             • Ур. {req.level} •{" "}
-                                            {req.characterType}
-                                        </span>
-                                    </div>
-                                    <div
-                                        className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
-                                    >
-                                        {getActivityLabel(req.activityStatus)}
-                                    </div>
-                                    <button
-                                        className={styles.backBtn}
-                                        onClick={() =>
-                                            openFriendProfile(req.userId)
-                                        }
-                                    >
-                                        Открыть
-                                    </button>
-                                    <button
-                                        className={styles.dangerBtn}
-                                        onClick={() =>
-                                            cancelOutgoingRequest(req.userId)
-                                        }
-                                        disabled={
-                                            cancelingOutgoingUserId ===
-                                            req.userId
-                                        }
-                                    >
-                                        {cancelingOutgoingUserId === req.userId
-                                            ? "Отменяем..."
-                                            : "Отменить"}
-                                    </button>
+            <section className={styles.card}>
+                <h3 className={styles.sectionTitle}>
+                    Outgoing friend requests
+                </h3>
+                {outgoingRequestsError && (
+                    <div className={styles.error}>{outgoingRequestsError}</div>
+                )}
+                {outgoingRequests.length === 0 ? (
+                    <div className={styles.subline}>No outgoing requests</div>
+                ) : (
+                    <div className={styles.friendList}>
+                        {outgoingRequests.map((req) => (
+                            <div
+                                key={`outgoing-${req.userId}`}
+                                className={styles.friendItem}
+                            >
+                                <img
+                                    className={styles.friendAvatar}
+                                    src={normalizeAvatarPath(req.image)}
+                                    alt="outgoing request avatar"
+                                />
+                                <div className={styles.friendMeta}>
+                                    <strong>{req.name}</strong>
+                                    <span>
+                                        Lv. {req.level} • {req.characterType}
+                                    </span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-            )}
+                                <div
+                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
+                                >
+                                    {getActivityLabel(req.activityStatus)}
+                                </div>
+                                <button
+                                    className={styles.backBtn}
+                                    onClick={() =>
+                                        openFriendProfile(req.userId)
+                                    }
+                                >
+                                    Open
+                                </button>
+                                <button
+                                    className={styles.dangerBtn}
+                                    onClick={() =>
+                                        cancelOutgoingRequest(req.userId)
+                                    }
+                                    disabled={
+                                        cancelingOutgoingUserId === req.userId
+                                    }
+                                >
+                                    {cancelingOutgoingUserId === req.userId
+                                        ? "Cancelling..."
+                                        : "Cancel"}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
 
-            {!isExternalProfileMode && (
-                <section className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Друзья</h3>
-                    {friendsError && (
-                        <div className={styles.error}>{friendsError}</div>
-                    )}
-                    {friends.length === 0 ? (
-                        <div className={styles.subline}>Список друзей пуст</div>
-                    ) : (
-                        <div className={styles.friendList}>
-                            {friends.map((f) => (
-                                <div
-                                    key={f.userId}
-                                    className={styles.friendItem}
-                                >
-                                    <img
-                                        className={styles.friendAvatar}
-                                        src={normalizeAvatarPath(f.image)}
-                                        alt="friend avatar"
-                                    />
-                                    <div className={styles.friendMeta}>
-                                        <strong>{f.name}</strong>
-                                        <span>
-                                            ID: {f.userId} • Ур. {f.level} •{" "}
-                                            {f.characterType}
-                                        </span>
-                                    </div>
-                                    <div
-                                        className={`${styles.statusBadge} ${getActivityClass(f.activityStatus)}`}
-                                    >
-                                        {getActivityLabel(f.activityStatus)}
-                                    </div>
-                                    <button
-                                        className={styles.backBtn}
-                                        onClick={() =>
-                                            openFriendProfile(f.userId)
-                                        }
-                                    >
-                                        Быстрый просмотр
-                                    </button>
-                                    <button
-                                        className={styles.dangerBtn}
-                                        onClick={() => removeFriend(f.userId)}
-                                        disabled={
-                                            removingFriendUserId === f.userId
-                                        }
-                                    >
-                                        {removingFriendUserId === f.userId
-                                            ? "Удаляем..."
-                                            : "Удалить"}
-                                    </button>
+            <section className={styles.card}>
+                <h3 className={styles.sectionTitle}>Friends</h3>
+                {friendsError && (
+                    <div className={styles.error}>{friendsError}</div>
+                )}
+                {friends.length === 0 ? (
+                    <div className={styles.subline}>Friend list is empty</div>
+                ) : (
+                    <div className={styles.friendList}>
+                        {friends.map((f) => (
+                            <div key={f.userId} className={styles.friendItem}>
+                                <img
+                                    className={styles.friendAvatar}
+                                    src={normalizeAvatarPath(f.image)}
+                                    alt="friend avatar"
+                                />
+                                <div className={styles.friendMeta}>
+                                    <strong>{f.name}</strong>
+                                    <span>
+                                        ID: {f.userId} • Lv. {f.level} •{" "}
+                                        {f.characterType}
+                                    </span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-            )}
+                                <div
+                                    className={`${styles.statusBadge} ${getActivityClass(f.activityStatus)}`}
+                                >
+                                    {getActivityLabel(f.activityStatus)}
+                                </div>
+                                <button
+                                    className={styles.backBtn}
+                                    onClick={() => openFriendProfile(f.userId)}
+                                >
+                                    Quick view
+                                </button>
+                                <button
+                                    className={styles.dangerBtn}
+                                    onClick={() => removeFriend(f.userId)}
+                                    disabled={removingFriendUserId === f.userId}
+                                >
+                                    {removingFriendUserId === f.userId
+                                        ? "Removing..."
+                                        : "Remove"}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
 
             <section className={styles.grid}>
                 <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Прогресс</h3>
+                    <h3 className={styles.sectionTitle}>Progress</h3>
                     <div className={styles.statRow}>
-                        <span>Матчей</span>
+                        <span>Matches</span>
                         <strong>{activeProgress.matchesPlayed}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Побед</span>
+                        <span>Wins</span>
                         <strong>{activeProgress.wins}</strong>
                     </div>
                     <div className={styles.statRow}>
@@ -1374,44 +1354,44 @@ export default function ProfilePage() {
                         <strong>{activeProgress.winRate}%</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>XP за матчи</span>
+                        <span>XP from matches</span>
                         <strong>{activeProgress.totalExpGained}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Убийств игроков</span>
+                        <span>Player kills</span>
                         <strong>{activeProgress.playerKills}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Убийств монстров</span>
+                        <span>Monster kills</span>
                         <strong>{activeProgress.monsterKills}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Общий урон</span>
+                        <span>Total damage</span>
                         <strong>{activeProgress.damageTotal}</strong>
                     </div>
                 </article>
 
                 {!isExternalProfileMode && (
                     <article className={styles.card}>
-                        <h3 className={styles.sectionTitle}>Ресурсы</h3>
+                        <h3 className={styles.sectionTitle}>Resources</h3>
                         <div className={styles.statRow}>
-                            <span>Еда</span>
+                            <span>Food</span>
                             <strong>{profile.resources.food}</strong>
                         </div>
                         <div className={styles.statRow}>
-                            <span>Вода</span>
+                            <span>Water</span>
                             <strong>{profile.resources.water}</strong>
                         </div>
                         <div className={styles.statRow}>
-                            <span>Дерево</span>
+                            <span>Wood</span>
                             <strong>{profile.resources.wood}</strong>
                         </div>
                         <div className={styles.statRow}>
-                            <span>Камень</span>
+                            <span>Stone</span>
                             <strong>{profile.resources.stone}</strong>
                         </div>
                         <div className={styles.statRow}>
-                            <span>Железо</span>
+                            <span>Iron</span>
                             <strong>{profile.resources.iron}</strong>
                         </div>
                     </article>
@@ -1419,19 +1399,19 @@ export default function ProfilePage() {
 
                 {!isExternalProfileMode && (
                     <article className={styles.card}>
-                        <h3 className={styles.sectionTitle}>База</h3>
+                        <h3 className={styles.sectionTitle}>Base</h3>
                         <div className={styles.statRow}>
-                            <span>Кузница</span>
+                            <span>Forge</span>
                             <strong>
                                 {profile.base.built
-                                    ? `Построена (ур. ${profile.base.forgeLevel})`
-                                    : "Не построена"}
+                                    ? `Built (lvl ${profile.base.forgeLevel})`
+                                    : "Not built"}
                             </strong>
                         </div>
                         {!profile.base.built && (
                             <div className={styles.requirements}>
-                                Нужно: дерево {profile.base.costs.wood}, камень{" "}
-                                {profile.base.costs.stone}, железо{" "}
+                                Requires: wood {profile.base.costs.wood}, stone{" "}
+                                {profile.base.costs.stone}, iron{" "}
                                 {profile.base.costs.iron}
                             </div>
                         )}
@@ -1452,35 +1432,35 @@ export default function ProfilePage() {
                 )}
 
                 <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Боевые статы</h3>
+                    <h3 className={styles.sectionTitle}>Combat stats</h3>
                     <div className={styles.statRow}>
-                        <span>Атака</span>
+                        <span>Attack</span>
                         <strong>{activePlayer.attack}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Защита</span>
+                        <span>Defense</span>
                         <strong>{activePlayer.defense}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Мобильность</span>
+                        <span>Mobility</span>
                         <strong>{activePlayer.mobility}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Ловкость</span>
+                        <span>Agility</span>
                         <strong>{activePlayer.agility}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Обзор</span>
+                        <span>Sight</span>
                         <strong>{activePlayer.sightRange}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Тип боя</span>
+                        <span>Combat type</span>
                         <strong>
-                            {activePlayer.isRanged ? "Дальний" : "Ближний"}
+                            {activePlayer.isRanged ? "Ranged" : "Melee"}
                         </strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Дистанция атаки</span>
+                        <span>Attack range</span>
                         <strong>{activePlayer.attackRange}</strong>
                     </div>
                 </article>

@@ -11,22 +11,22 @@ const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 const EFFECT_LABELS: Record<string, string> = {
     health: "HP",
-    energy: "Энергия",
-    sight_bonus: "Обзор",
-    structure_health: "Здоровье постройки",
-    structure_defense: "Защита постройки",
-    turret_damage: "Урон турели",
-    structure_blocking: "Блок прохода",
+    energy: "Energy",
+    sight_bonus: "Sight",
+    structure_health: "Structure HP",
+    structure_defense: "Structure Defense",
+    turret_damage: "Turret Damage",
+    structure_blocking: "Blocks Passage",
 };
 
 function formatEffect(effect: Record<string, number>): string {
     const entries = Object.entries(effect || {});
-    if (!entries.length) return "Нет";
+    if (!entries.length) return "None";
     return entries
         .map(([key, value]) => {
             const label = EFFECT_LABELS[key] ?? key;
             if (key === "structure_blocking") {
-                return `${label}: ${value > 0 ? "Да" : "Нет"}`;
+                return `${label}: ${value > 0 ? "Yes" : "No"}`;
             }
             const sign = value > 0 ? "+" : "";
             return `${label}: ${sign}${value}`;
@@ -128,7 +128,7 @@ export default function LobbyShopPage() {
             const safeCount = Math.max(1, Math.min(99, count));
             const totalCost = item.price * safeCount;
             if (shopPlayer.balance < totalCost) {
-                setShopError("Недостаточно монет для покупки");
+                setShopError("Not enough coins to buy");
                 setShopInfo("");
                 return;
             }
@@ -155,10 +155,10 @@ export default function LobbyShopPage() {
                     const text = await res.text();
                     if (text.includes("forge_required")) {
                         throw new Error(
-                            "Для покупки чертежей нужно построить кузницу",
+                            "Forge required to purchase blueprints",
                         );
                     }
-                    throw new Error(text || "Ошибка покупки");
+                    throw new Error(text || "Purchase error");
                 }
 
                 const data = await res.json();
@@ -167,12 +167,10 @@ export default function LobbyShopPage() {
                     balance: Number(data.player.balance ?? 0),
                     inventory: data.player.inventory ?? "{}",
                 });
-                setShopInfo(`Куплено: ${item.name} x${safeCount}`);
+                setShopInfo(`Purchased: ${item.name} x${safeCount}`);
             } catch (e: unknown) {
                 const message =
-                    e instanceof Error
-                        ? e.message
-                        : "Не удалось купить предмет";
+                    e instanceof Error ? e.message : "Failed to buy item";
                 setShopError(message);
             } finally {
                 setShopBusyType(null);
@@ -220,17 +218,14 @@ export default function LobbyShopPage() {
     return (
         <div className={styles.pageRoot}>
             <LobbyHeader />
-            <h2 className={styles.pageTitle}>Магазин</h2>
+            <h2 className={styles.pageTitle}>Shop</h2>
 
             <section className={styles.shopPanel}>
                 <div className={styles.shopHeader}>
-                    <h3 className={styles.shopTitle}>Магазин подготовки</h3>
-                    <p className={styles.shopSubtitle}>
-                        Пока стоишь в очереди, можно закупиться едой и водой
-                        перед стартом.
-                    </p>
+                    <h3 className={styles.shopTitle}>Preparation Shop</h3>
+                    <p className={styles.shopSubtitle}>Waiting for the match to start.</p>
                     <div className={styles.shopBalance}>
-                        Баланс: {shopPlayer?.balance ?? 0}
+                        Balance: {shopPlayer?.balance ?? 0}
                     </div>
                 </div>
 
@@ -262,12 +257,12 @@ export default function LobbyShopPage() {
                                     <strong>{item.name}</strong>
                                     <span>{item.description}</span>
                                     <span>
-                                        Эффект: {formatEffect(item.effect)}
+                                        Effect: {formatEffect(item.effect)}
                                     </span>
-                                    <span>Цена за 1: {item.price}</span>
+                                    <span>Price per 1: {item.price}</span>
                                     {item.requiresForge && !forgeBuilt && (
                                         <span className={styles.shopCostWarn}>
-                                            Требуется построенная кузница
+                                            Forge required
                                         </span>
                                     )}
                                     <span
@@ -277,14 +272,14 @@ export default function LobbyShopPage() {
                                                 : styles.shopCostWarn
                                         }
                                     >
-                                        Сумма: {totalCost}
+                                        Total: {totalCost}
                                     </span>
-                                    <span>В инвентаре: {owned}</span>
+                                    <span>In inventory: {owned}</span>
                                 </div>
 
                                 <div className={styles.shopQtyRow}>
                                     <span className={styles.shopQtyLabel}>
-                                        Кол-во:
+                                        Qty:
                                     </span>
                                     <div className={styles.shopQtyActions}>
                                         <button
@@ -383,10 +378,10 @@ export default function LobbyShopPage() {
                                     }
                                 >
                                     {shopBusyType === item.type
-                                        ? "Покупка..."
+                                        ? "Buying..."
                                         : blockedByForge
-                                          ? "Нужна кузница"
-                                          : "Купить"}
+                                          ? "Forge required"
+                                          : "Buy"}
                                 </button>
                             </article>
                         );
@@ -399,7 +394,7 @@ export default function LobbyShopPage() {
                     className={styles.queueButton}
                     onClick={() => router.push("/mode")}
                 >
-                    К режимам
+                    Back to Modes
                 </button>
             </div>
         </div>

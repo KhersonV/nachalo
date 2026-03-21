@@ -233,14 +233,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 );
                 if (!res.ok) {
                     const t = await res.text();
-                    throw new Error(t || "Не удалось загрузить профиль");
+                    throw new Error(t || "Failed to load profile");
                 }
                 const data = await res.json();
                 if (!alive) return;
                 setProfileModalData(data.data ?? data);
             } catch (e: any) {
                 if (!alive) return;
-                setProfileModalError(e?.message || "Ошибка загрузки профиля");
+                setProfileModalError(e?.message || "Failed to load profile");
             } finally {
                 if (!alive) return;
                 setProfileModalLoading(false);
@@ -317,19 +317,23 @@ export default function GameController({ instanceId }: GameControllerProps) {
     }, []);
 
     useEffect(() => {
-        const onMyDefeat = () => {
-            dispatch(
-                setQuestFoundNotification(
-                    'Ваш персонаж погиб. Нажмите "К статистике", чтобы открыть экран результатов.',
-                ),
-            );
-        };
+    const onMyDefeat = () => {
+        dispatch(
+            setQuestFoundNotification({
+                eventType: "MY_PLAYER_DEFEATED",
+                message:
+                    'Your character has died. Click "To Stats" to open the results screen.',
+                instanceId,
+                userId: user?.id,
+            }),
+        );
+    };
 
         window.addEventListener("my-player-defeated", onMyDefeat);
         return () => {
             window.removeEventListener("my-player-defeated", onMyDefeat);
         };
-    }, [dispatch]);
+   }, [dispatch, instanceId, user?.id]);
 
     // Show the quest artifact alert once when the map loads
     useEffect(() => {
@@ -455,8 +459,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         });
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-            if (data?.error === "quest_artifact_missing") {
-                alert("Нужно найти квест-артефакт перед выходом через портал!");
+                if (data?.error === "quest_artifact_missing") {
+                alert("You need to find the quest artifact before exiting through the portal!");
             } else {
                 console.error("[Portal] finishMatch error", res.status, data);
             }
@@ -519,15 +523,17 @@ export default function GameController({ instanceId }: GameControllerProps) {
         [dispatch, instanceId],
     );
 
-    const isPortalExitNotification = !!state.questFoundNotification?.includes(
-        "покинул поле боя через портал",
-    );
-    const isDeathNotification =
-        !!state.questFoundNotification?.includes("Ваш персонаж погиб");
+  const notificationEventType = state.questFoundNotification?.eventType;
+
+const isPortalExitNotification =
+    notificationEventType === "PLAYER_LEFT_PORTAL";
+
+const isDeathNotification =
+    notificationEventType === "MY_PLAYER_DEFEATED";
     const questFoundConfirmLabel =
         isDeathNotification || (isPortalExitNotification && canOpenStats)
-            ? "К статистике"
-            : "Понятно";
+            ? "To Stats"
+            : "Got it";
 
     const TURN_SECS = 60;
     const turnSecsLeft = Math.max(
@@ -594,7 +600,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             const seconds = remainingSec % 60;
             const playerName =
                 state.players.find((p) => p.user_id === userId)?.name ??
-                `Игрок ${userId}`;
+                `Player ${userId}`;
             return {
                 userId,
                 playerName,
@@ -719,11 +725,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             if (cell && cell.structure_type) {
                                 base.name =
                                     base.name ||
-                                    (cell.structure_type === "scout_tower"
-                                        ? "Башня разведки"
-                                        : cell.structure_type === "turret"
-                                          ? "Турель"
-                                          : "Стена");
+                                                                        (cell.structure_type === "scout_tower"
+                                                                                ? "Scout Tower"
+                                                                                : cell.structure_type === "turret"
+                                                                                    ? "Turret"
+                                                                                    : "Wall");
                                 base.health = cell.structure_health;
                                 base.maxHealth =
                                     typeof cell.structure_health === "number"
@@ -814,7 +820,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         >
                             <h3 style={{ margin: 0 }}>
                                 {profileModalData?.player?.name ??
-                                    `Игрок ${profileModalUserId}`}
+                                    `Player ${profileModalUserId}`}
                             </h3>
                             <button
                                 onClick={() => setProfileModalUserId(null)}
@@ -826,11 +832,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                     borderRadius: 4,
                                 }}
                             >
-                                Закрыть
+                                Close
                             </button>
                         </div>
 
-                        {profileModalLoading && <div>Загрузка...</div>}
+                        {profileModalLoading && <div>Loading...</div>}
                         {profileModalError && (
                             <div style={{ color: "#f88" }}>
                                 {profileModalError}
@@ -857,18 +863,18 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <div>
-                                            Уровень:{" "}
+                                            Level:{" "}
                                             {profileModalData.player.level}
                                         </div>
                                         <div>
-                                            Класс:{" "}
+                                            Class:{" "}
                                             {
                                                 profileModalData.player
                                                     .characterType
                                             }
                                         </div>
                                         <div>
-                                            Опыт:{" "}
+                                            Experience:{" "}
                                             {profileModalData.player.experience}{" "}
                                             /{" "}
                                             {
@@ -883,11 +889,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                             }}
                                         />
                                         <div>
-                                            Атака:{" "}
+                                            Attack:{" "}
                                             {profileModalData.player.attack}
                                         </div>
                                         <div>
-                                            Защита:{" "}
+                                            Defense:{" "}
                                             {profileModalData.player.defense}
                                         </div>
 
@@ -896,7 +902,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                                 {!profileModalData.isFriend ? (
                                                     (profileModalOutgoingSent || profileModalData?.friendRelation === "outgoing") ? (
                                                         <span style={{ color: "#9f9" }}>
-                                                            Заявка в друзья отправлена
+                                                            Friend request sent
                                                         </span>
                                                     ) : (
                                                         <button
@@ -919,7 +925,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                                                     );
                                                                     if (!res.ok) {
                                                                         const t = await res.text().catch(() => null);
-                                                                        alert(t || "Не удалось отправить запрос");
+                                                                        alert(t || "Failed to send request");
                                                                     } else {
                                                                         // Mark as outgoing request locally
                                                                         setProfileModalData((d: any) => ({
@@ -952,11 +958,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                                             disabled={profileModalFriendLoading}
                                                             style={{ padding: "8px 12px", borderRadius: 6 }}
                                                         >
-                                                            {profileModalFriendLoading ? "Отправка..." : "Добавить в друзья"}
+                                                            {profileModalFriendLoading ? "Sending..." : "Add Friend"}
                                                         </button>
                                                     )
                                                 ) : (
-                                                    <span style={{ color: "#9f9" }}>В друзьях</span>
+                                                    <span style={{ color: "#9f9" }}>Friends</span>
                                                 )}
                                             </div>
                                         )}
@@ -982,20 +988,18 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     >
                         <div style={{ flex: 1 }}>
                             <div className={styles.disconnectTitle}>
-                                Отключение игрока: дается 3:00 на
-                                переподключение
+                                Player disconnected: 3:00 to reconnect
                             </div>
                             <div className={styles.disconnectHint}>
-                                Если таймер истечет, игрок погибнет от удара
-                                молнии.
+                                If the timer runs out, the player will die from a lightning strike.
                             </div>
                         </div>
                         <button
                             type="button"
                             className={styles.disconnectCloseButton}
                             onClick={() => setShowDisconnectPanel(false)}
-                            aria-label="Свернуть уведомление об отключении"
-                            title="Свернуть"
+                            aria-label="Collapse disconnect notification"
+                            title="Collapse"
                         >
                             ▾
                         </button>
@@ -1021,10 +1025,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     type="button"
                     className={styles.disconnectMinimized}
                     onClick={() => setShowDisconnectPanel(true)}
-                    aria-label="Показать уведомление об отключении"
-                    title="Показать"
+                    aria-label="Show disconnect notification"
+                    title="Show"
                 >
-                    Отключения игроков ▸
+                    Player disconnects ▸
                 </button>
             )}
             {myPlayer && (
@@ -1041,16 +1045,16 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <div
                 className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
             >
-                {isMyTurn ? "ТВОЙ ХОД" : "ОЖИДАНИЕ ХОДА"}
+                {isMyTurn ? "YOUR TURN" : "WAITING FOR TURN"}
             </div>
             {placementMode && (
                 <div className={styles.turnStatusFloating}>
-                    Режим строительства: выберите соседнюю клетку для
-                    {placementMode.structureType === "scout_tower"
-                        ? " башни"
-                        : placementMode.structureType === "turret"
-                          ? " турели"
-                          : " стены"}
+                                        Build mode: select an adjacent cell to
+                                        {placementMode.structureType === "scout_tower"
+                                                ? " tower"
+                                                : placementMode.structureType === "turret"
+                                                    ? " turret"
+                                                    : " wall"}
                 </div>
             )}
             <button
@@ -1058,15 +1062,15 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 className={`${styles.inventoryFab} ${showInventory ? styles.inventoryFabActive : ""}`}
                 onClick={() => setShowInventory((v) => !v)}
                 aria-label={
-                    showInventory ? "Закрыть инвентарь" : "Открыть инвентарь"
+                    showInventory ? "Close inventory" : "Open inventory"
                 }
                 title={
-                    showInventory ? "Закрыть инвентарь" : "Открыть инвентарь"
+                    showInventory ? "Close inventory" : "Open inventory"
                 }
             >
                 <img
                     src="/ui-icons/backpack.png"
-                    alt="Инвентарь"
+                    alt="Inventory"
                     className={styles.inventoryFabIcon}
                     draggable={false}
                 />
@@ -1125,12 +1129,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                     type: "structure",
                                     x: cell.x,
                                     y: cell.y,
-                                    name:
+                                        name:
                                         cell.structure_type === "scout_tower"
-                                            ? "Башня разведки"
+                                            ? "Scout Tower"
                                             : cell.structure_type === "turret"
-                                              ? "Турель"
-                                              : "Стена",
+                                                      ? "Turret"
+                                                      : "Wall",
                                     health: cell.structure_health,
                                     maxHealth:
                                         STRUCTURE_DEFAULT_MAX_HEALTH[
@@ -1154,10 +1158,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                 }
                                 setObjectHUD({
                                     type: "object",
-                                    name: `Ресурс: ${cell.resource.type}`,
+                                    name: `Resource: ${cell.resource.type}`,
                                     details:
                                         cell.resource.description ||
-                                        "Полезный ресурс",
+                                        "Useful resource",
                                 });
                                 return;
                             }
@@ -1169,8 +1173,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                 }
                                 setObjectHUD({
                                     type: "object",
-                                    name: "Бочка",
-                                    details: "Можно открыть и получить награду",
+                                    name: "Barrel",
+                                    details: "Can be opened to receive a reward",
                                 });
                                 return;
                             }
@@ -1182,9 +1186,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
                                 }
                                 setObjectHUD({
                                     type: "object",
-                                    name: "Портал",
+                                    name: "Portal",
                                     details:
-                                        "Точка выхода из матча после выполнения условий",
+                                        "Exit point from the match after conditions are met",
                                 });
                                 return;
                             }
@@ -1198,7 +1202,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         onPlayerClick={handleMapPlayerClick}
                     />
                 ) : (
-                    <p className={styles.mapLoading}>Загрузка карты...</p>
+                    <p className={styles.mapLoading}>Loading map...</p>
                 )}
             </div>
             <div
@@ -1208,10 +1212,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     <>
                         <div className={styles.turnPrompt}>
                             <span className={styles.turnPromptBadge}>
-                                ТВОЙ ХОД
+                                YOUR TURN
                             </span>
                             <span className={styles.turnPromptText}>
-                                Выбери действие и заверши ход
+                                Choose an action and end your turn
                             </span>
                         </div>
                         <Controls
@@ -1237,18 +1241,18 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             onClick={() => setShowInventory((v) => !v)}
                             aria-label={
                                 showInventory
-                                    ? "Закрыть инвентарь"
-                                    : "Открыть инвентарь"
+                                    ? "Close inventory"
+                                    : "Open inventory"
                             }
                             title={
                                 showInventory
-                                    ? "Закрыть инвентарь"
-                                    : "Открыть инвентарь"
+                                    ? "Close inventory"
+                                    : "Open inventory"
                             }
                         >
                             <img
                                 src="/ui-icons/backpack.png"
-                                alt="Инвентарь"
+                                alt="Inventory"
                                 className={styles.inventoryFabIcon}
                                 draggable={false}
                             />
@@ -1262,12 +1266,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             <span
                                 className={`${styles.turnPromptBadge} ${styles.turnPromptBadgeWaiting}`}
                             >
-                                ОЖИДАНИЕ ХОДА
+                                WAITING FOR TURN
                             </span>
                             <span
                                 className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
                             >
-                                Сейчас ход другого игрока
+                                It's another player's turn
                             </span>
                         </div>
                         <div
@@ -1281,18 +1285,18 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             onClick={() => setShowInventory((v) => !v)}
                             aria-label={
                                 showInventory
-                                    ? "Закрыть инвентарь"
-                                    : "Открыть инвентарь"
+                                    ? "Close inventory"
+                                    : "Open inventory"
                             }
                             title={
                                 showInventory
-                                    ? "Закрыть инвентарь"
-                                    : "Открыть инвентарь"
+                                    ? "Close inventory"
+                                    : "Open inventory"
                             }
                         >
                             <img
                                 src="/ui-icons/backpack.png"
-                                alt="Инвентарь"
+                                alt="Inventory"
                                 className={styles.inventoryFabIcon}
                                 draggable={false}
                             />
@@ -1335,8 +1339,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     name={state.questArtifactName}
                     image={state.questArtifactImage}
                     description={state.questArtifactDescription}
-                    badgeText="Событие"
-                    hintText={state.questFoundNotification}
+                    badgeText="Event"
+                    hintText={state.questFoundNotification.message}
                     confirmLabel={questFoundConfirmLabel}
                     onClose={() => {
                         if (
@@ -1357,9 +1361,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 >
                     <div className={styles.turnModalCard}>
                         <span className={styles.turnModalIcon}>⚔️</span>
-                        <span className={styles.turnModalTitle}>ТВОЙ ХОД</span>
+                        <span className={styles.turnModalTitle}>YOUR TURN</span>
                         <span className={styles.turnModalSub}>
-                            Выбери действие
+                            Choose an action
                         </span>
                     </div>
                 </div>

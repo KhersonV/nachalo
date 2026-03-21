@@ -52,13 +52,13 @@ const RegisterPage = () => {
 
             if (!res.ok) {
                 const errorText = await res.text();
-                throw new Error(errorText || "Ошибка регистрации");
+                throw new Error(errorText || "Registration error");
             }
 
-            // Можно сразу перейти на страницу логина или автоматически войти
+            // You can navigate to the login page immediately or auto-login
             router.push("/login");
         } catch (err: any) {
-            setError(err.message || "Что-то пошло не так");
+            setError(err.message || "Something went wrong");
         } finally {
             setIsSubmitting(false);
         }
@@ -71,9 +71,9 @@ const RegisterPage = () => {
 
             <div className={styles.card}>
                 <p className={styles.kicker}>Create account</p>
-                <h1 className={styles.title}>Регистрация</h1>
+                <h1 className={styles.title}>Sign Up</h1>
                 <p className={styles.subtitle}>
-                    Создай персонажа и присоединяйся к игре.
+                    Create a character and join the game.
                 </p>
 
                 <form onSubmit={handleSubmit} className={styles.form}>
@@ -90,26 +90,26 @@ const RegisterPage = () => {
                     </div>
 
                     <div className={styles.field}>
-                        <label className={styles.label}>Имя</label>
+                        <label className={styles.label}>Name</label>
                         <input
                             className={styles.input}
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="Твой ник"
+                            placeholder="Your nickname"
                             required
                         />
                     </div>
 
                     <div className={styles.field}>
-                        <label className={styles.label}>Пароль</label>
+                        <label className={styles.label}>Password</label>
                         <div className={styles.passwordWrap}>
                             <input
                                 className={styles.input}
                                 type={showPassword ? "text" : "password"}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Минимум 6 символов"
+                                placeholder="Minimum 6 characters"
                                 minLength={6}
                                 required
                             />
@@ -118,7 +118,7 @@ const RegisterPage = () => {
                                 className={styles.passwordToggle}
                                 onClick={() => setShowPassword((v) => !v)}
                             >
-                                {showPassword ? "Скрыть" : "Показать"}
+                                {showPassword ? "Hide" : "Show"}
                             </button>
                         </div>
                     </div>
@@ -126,39 +126,37 @@ const RegisterPage = () => {
                     <div className={styles.field}>
                         <div className={styles.characterHeader}>
                             <label className={styles.label}>
-                                Выберите архетип персонажа
+                                Choose a character archetype
                             </label>
                             <p className={styles.characterHint}>
-                                Класс определяет стартовые характеристики. Позже
-                                можно будет расширить набор архетипов без
-                                переписывания формы.
+                                Class defines starting stats.
                             </p>
                             <div className={styles.statLegend}>
                                 <p className={styles.statLegendTitle}>
-                                    Как читать параметры:
+                                    How to read stats:
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    HP: запас здоровья персонажа.
+                                    HP: character's health pool.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Энергия: ресурс на действия;
-                                    восстанавливается каждый ход.
+                                    Energy: resource for actions; restores each
+                                    turn.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Атака/Защита: исходящий и входящий урон в
-                                    бою.
+                                    Attack/Defense: outgoing and incoming damage
+                                    in combat.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Мобильность/Ловкость: базовые параметры
-                                    подвижности архетипа.
+                                    Mobility/Agility: base movement-related
+                                    stats of the archetype.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Обзор: сколько клеток вокруг видно на карте.
+                                    Sight: how many tiles are visible around on
+                                    the map.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Тип боя и дальность атаки: ближний или
-                                    дальний режим и максимальная дистанция
-                                    удара.
+                                    Combat type and range: melee or ranged and
+                                    maximum attack distance.
                                 </p>
                             </div>
                         </div>
@@ -216,7 +214,7 @@ const RegisterPage = () => {
                         disabled={isSubmitting}
                         className={styles.submitButton}
                     >
-                        {isSubmitting ? "Создание..." : "Зарегистрироваться"}
+                        {isSubmitting ? "Creating..." : "Register"}
                     </button>
 
                     <button
@@ -224,7 +222,7 @@ const RegisterPage = () => {
                         className={styles.linkButton}
                         onClick={() => router.push("/login")}
                     >
-                        Уже есть аккаунт? Войти
+                        Already have an account? Sign in
                     </button>
                 </form>
             </div>

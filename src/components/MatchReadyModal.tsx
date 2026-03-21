@@ -55,14 +55,14 @@ export default function MatchReadyModal({
             <div className={styles.matchReadyModal}>
                 <button
                     className={styles.modalCloseButton}
-                    aria-label="Закрыть"
+                    aria-label="Close"
                     onClick={onClose}
                 >
                     ✕
                 </button>
-                <div className={styles.matchReadyTitle}>Матч готов</div>
+                <div className={styles.matchReadyTitle}>Match Ready</div>
                 <div className={styles.matchReadyText}>
-                    Можно докупить предметы. Автостарт через {secondsLeft} сек.
+                    Auto-start in {secondsLeft} sec.
                 </div>
                 <div
                     style={{
@@ -72,13 +72,13 @@ export default function MatchReadyModal({
                     }}
                 >
                     <button className={styles.queueButton} onClick={joinNow}>
-                        Начать матч сейчас
+                        Start Match Now
                     </button>
                     <button
                         className={styles.partySecondaryButton}
                         onClick={onClose}
                     >
-                        Закрыть
+                        Close
                     </button>
                 </div>
             </div>

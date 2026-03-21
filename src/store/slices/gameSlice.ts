@@ -3,6 +3,22 @@ import type { GameState, PlayerState, Inventory, Cell } from "../../types";
 
 // Fast lookup index for cells by "x:y" → index in state.grid.
 // Kept at module level for minimal changes (O(1) updates).
+
+export type QuestNotificationType =
+    | "QUEST_ARTIFACT_FOUND"
+    | "PLAYER_LEFT_PORTAL"
+    | "MY_PLAYER_DEFEATED";
+
+export interface QuestFoundNotification {
+    eventType: QuestNotificationType;
+    message: string;
+    instanceId?: string;
+    playerName?: string;
+    x?: number;
+    y?: number;
+    userId?: number;
+}
+
 let gridIndex: Record<string, number> = {};
 
 const initialState: GameState = {
@@ -259,9 +275,12 @@ const gameSlice = createSlice({
         setInstanceId(state, action: PayloadAction<string>) {
             state.instanceId = action.payload;
         },
-        setQuestFoundNotification(state, action: PayloadAction<string | null>) {
-            state.questFoundNotification = action.payload;
-        },
+        setQuestFoundNotification(
+    state,
+    action: PayloadAction<QuestFoundNotification | null>,
+) {
+    state.questFoundNotification = action.payload;
+},
     },
 });
 

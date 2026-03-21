@@ -51,7 +51,7 @@ export function cellToGameObject(cell: Cell): GameObject {
     if (cell.isPortal) {
         return {
             type: "portal",
-            requirement: "Нужен артефакт, чтобы выйти",
+            requirement: "Requires an artifact to exit",
         };
     }
     // простая клетка, пустота или стена — передаём координаты

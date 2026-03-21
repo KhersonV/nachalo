@@ -50,7 +50,7 @@ export default function LobbyHeader() {
     const navItems: NavItem[] = [
         {
             id: "profile",
-            label: "Профиль",
+            label: "Profile",
             iconSrc: "/ui-icons/profile.png",
             iconScale: 1.05,
             iconShiftY: -1,
@@ -58,7 +58,7 @@ export default function LobbyHeader() {
         },
         {
             id: "shop",
-            label: "Магазин",
+            label: "Shop",
             iconSrc: "/ui-icons/shop.png",
             iconScale: 0.98,
             iconShiftY: 0,
@@ -67,7 +67,7 @@ export default function LobbyHeader() {
         },
         {
             id: "base",
-            label: "База",
+            label: "Base",
             iconSrc: "/ui-icons/base.png",
             iconScale: 1.02,
             iconShiftY: 0,
@@ -76,7 +76,7 @@ export default function LobbyHeader() {
         },
         {
             id: "equipment",
-            label: "Рюкзак",
+            label: "Inventory",
             iconSrc: "/ui-icons/backpack.png",
             iconScale: 0.99,
             iconShiftY: 1,
@@ -87,9 +87,9 @@ export default function LobbyHeader() {
     return (
         <header className={styles.header}>
             <div className={styles.headerTitleBlock}>
-                <h1 className={styles.headerTitle}>Лобби</h1>
+                <h1 className={styles.headerTitle}>Lobby</h1>
             </div>
-            <nav className={styles.nav} aria-label="Навигация лобби">
+            <nav className={styles.nav} aria-label="Lobby navigation">
                 {navItems.map((item) => (
                     <NavButton key={item.id} item={item} />
                 ))}

@@ -99,6 +99,21 @@ export interface Cell {
     construction_turns_left?: number;
 }
 
+export type QuestNotificationType =
+    | "QUEST_ARTIFACT_FOUND"
+    | "PLAYER_LEFT_PORTAL"
+    | "MY_PLAYER_DEFEATED";
+
+export interface QuestFoundNotification {
+    eventType: QuestNotificationType;
+    message: string;
+    instanceId?: string;
+    playerName?: string;
+    x?: number;
+    y?: number;
+    userId?: number;
+}
+
 export type GameState = {
     instanceId: string;
     mode: string;
@@ -113,7 +128,7 @@ export type GameState = {
     questArtifactName: string;
     questArtifactImage: string;
     questArtifactDescription: string;
-    questFoundNotification: string | null;
+    questFoundNotification: QuestFoundNotification | null;
 };
 
 // Здесь перечисляем возможные направления

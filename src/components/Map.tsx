@@ -75,7 +75,7 @@ function Map({
         return map;
     }, [players, mapWidth]);
 
-    // Запоминаем исследованные клетки
+    // Track explored cells
     const exploredCellsRef = useRef<Set<number>>(new Set());
     const lastMapKeyRef = useRef<string>("");
 
@@ -93,13 +93,19 @@ function Map({
         const result: RenderCell[] = [];
         const seenKeys = new Set<number>();
 
-        // Видимая область игрока
+        // Player's visible area
         const visibleMinX = Math.max(0, playerPosition.x - sightRange);
-        const visibleMaxX = Math.min(mapWidth - 1, playerPosition.x + sightRange);
+        const visibleMaxX = Math.min(
+            mapWidth - 1,
+            playerPosition.x + sightRange,
+        );
         const visibleMinY = Math.max(0, playerPosition.y - sightRange);
-        const visibleMaxY = Math.min(mapHeight - 1, playerPosition.y + sightRange);
+        const visibleMaxY = Math.min(
+            mapHeight - 1,
+            playerPosition.y + sightRange,
+        );
 
-        // Добавляем видимые клетки и помечаем их как explored
+        // Add visible cells and mark them as explored
         for (let y = visibleMinY; y <= visibleMaxY; y++) {
             for (let x = visibleMinX; x <= visibleMaxX; x++) {
                 const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
@@ -118,16 +124,19 @@ function Map({
         }
 
         /**
-         * ВАЖНО:
-         * Не рендерим все explored клетки всей карты.
-         * Рендерим только локальное окно вокруг игрока.
+         * IMPORTANT:
+         * Do not render all explored cells of the entire map.
+         * Render only a local window around the player.
          */
         const exploredBuffer = 3;
 
         const renderMinX = Math.max(0, visibleMinX - exploredBuffer);
         const renderMaxX = Math.min(mapWidth - 1, visibleMaxX + exploredBuffer);
         const renderMinY = Math.max(0, visibleMinY - exploredBuffer);
-        const renderMaxY = Math.min(mapHeight - 1, visibleMaxY + exploredBuffer);
+        const renderMaxY = Math.min(
+            mapHeight - 1,
+            visibleMaxY + exploredBuffer,
+        );
 
         for (let y = renderMinY; y <= renderMaxY; y++) {
             for (let x = renderMinX; x <= renderMaxX; x++) {

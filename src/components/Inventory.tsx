@@ -32,12 +32,7 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
     const normalizedName = String(item.name || "")
         .trim()
         .toLowerCase();
-    return (
-        normalizedName === "food" ||
-        normalizedName === "water" ||
-        normalizedName === "еда" ||
-        normalizedName === "вода"
-    );
+    return normalizedName === "food" || normalizedName === "water";
 };
 
 const Inventory: React.FC<InventoryProps> = ({
@@ -59,7 +54,7 @@ const Inventory: React.FC<InventoryProps> = ({
     }, [feedback]);
 
     const player = state.players.find((p) => p.user_id === user?.id);
-    if (!player) return <div>Инвентарь недоступен</div>;
+    if (!player) return <div>Inventory unavailable</div>;
 
     const normalize = (it: any, keyHint?: string): RawInventoryItem => {
         let hintType: "resource" | "artifact" | undefined;
@@ -155,9 +150,7 @@ const Inventory: React.FC<InventoryProps> = ({
         if (key.startsWith("blueprint_")) {
             onBlueprintPlacementStart?.(key);
             onRequestClose?.();
-            setFeedback(
-                "Режим строительства: выберите соседнюю свободную клетку.",
-            );
+            setFeedback("Build mode: select an adjacent free cell.");
             return;
         }
 
@@ -170,7 +163,7 @@ const Inventory: React.FC<InventoryProps> = ({
             const stored = localStorage.getItem("user");
             const token = stored ? JSON.parse(stored).token : "";
             if (!token) {
-                setFeedback("Сессия не найдена. Войдите снова.");
+                setFeedback("Session not found. Please log in again.");
                 return;
             }
 
@@ -192,13 +185,13 @@ const Inventory: React.FC<InventoryProps> = ({
             );
             if (!res.ok) {
                 const errorText = await res.text();
-                setFeedback(errorText || "Не удалось использовать предмет");
+                setFeedback(errorText || "Failed to use item");
                 return;
             }
             const updatedPlayer = (await res.json()) as PlayerState;
             dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
         } catch (err) {
-            setFeedback("Ошибка сети при использовании предмета");
+            setFeedback("Network error while using item");
         }
     };
 
@@ -220,7 +213,7 @@ const Inventory: React.FC<InventoryProps> = ({
                     {section === "resources" && (
                         <>
                             <div className={styles.itemCount}>
-                                Кол-во: {item.item_count}
+                                Qty: {item.item_count}
                             </div>
                             {(isConsumableResource(item) ||
                                 key.startsWith("blueprint_")) && (
@@ -231,8 +224,8 @@ const Inventory: React.FC<InventoryProps> = ({
                                     }
                                 >
                                     {key.startsWith("blueprint_")
-                                        ? "Разместить"
-                                        : "Использовать"}
+                                        ? "Place"
+                                        : "Use"}
                                 </button>
                             )}
                         </>
@@ -242,7 +235,7 @@ const Inventory: React.FC<InventoryProps> = ({
 
     return (
         <div className={styles.inventoryContainer}>
-            <h2 className={styles.title}>Инвентарь</h2>
+            <h2 className={styles.title}>Inventory</h2>
             {feedback && (
                 <div className={styles.feedbackRow}>
                     <p className={styles.feedbackError}>{feedback}</p>
@@ -250,8 +243,8 @@ const Inventory: React.FC<InventoryProps> = ({
                         type="button"
                         className={styles.feedbackCloseButton}
                         onClick={() => setFeedback("")}
-                        aria-label="Закрыть сообщение"
-                        title="Закрыть"
+                        aria-label="Close message"
+                        title="Close"
                     >
                         x
                     </button>
@@ -259,16 +252,17 @@ const Inventory: React.FC<InventoryProps> = ({
             )}
             <div className={styles.sections}>
                 <div className={styles.section}>
-                    <h3 className={styles.sectionTitle}>Ресурсы</h3>
+                    <h3 className={styles.sectionTitle}>Resources</h3>
                     <p className={styles.sectionHint}>
-                        Лимиты: еда - 1 раз в 2 хода, вода - до 5 за 2 хода.
+                        Limits: food - 1 time per 2 turns, water - up to 5 per 2
+                        turns.
                     </p>
                     <div className={styles.itemsContainer}>
                         {renderItems("resources", resources)}
                     </div>
                 </div>
                 <div className={styles.section}>
-                    <h3 className={styles.sectionTitle}>Артефакты</h3>
+                    <h3 className={styles.sectionTitle}>Artifacts</h3>
                     <div className={styles.itemsContainer}>
                         {renderItems("artifacts", artifacts)}
                     </div>

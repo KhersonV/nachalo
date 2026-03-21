@@ -36,13 +36,13 @@ const LoginPage = () => {
 
             if (!res.ok) {
                 const errorText = await res.text();
-                throw new Error(errorText || "Ошибка входа");
+                throw new Error(errorText || "Login error");
             }
 
             const data = await res.json();
             login(data);
         } catch (err: any) {
-            setError(err.message || "Что-то пошло не так");
+            setError(err.message || "Something went wrong");
         } finally {
             setIsSubmitting(false);
         }
@@ -55,10 +55,8 @@ const LoginPage = () => {
 
             <div className={styles.card}>
                 <p className={styles.kicker}>Welcome back</p>
-                <h1 className={styles.title}>Вход в систему</h1>
-                <p className={styles.subtitle}>
-                    Продолжи игру с сохраненным прогрессом.
-                </p>
+                <h1 className={styles.title}>Sign In</h1>
+                <p className={styles.subtitle}>Continue your saved progress.</p>
 
                 <form onSubmit={handleSubmit} className={styles.form}>
                     <div className={styles.field}>
@@ -74,14 +72,14 @@ const LoginPage = () => {
                     </div>
 
                     <div className={styles.field}>
-                        <label className={styles.label}>Пароль</label>
+                        <label className={styles.label}>Password</label>
                         <div className={styles.passwordWrap}>
                             <input
                                 className={styles.input}
                                 type={showPassword ? "text" : "password"}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Введите пароль"
+                                placeholder="Enter your password"
                                 required
                             />
                             <button
@@ -89,7 +87,7 @@ const LoginPage = () => {
                                 className={styles.passwordToggle}
                                 onClick={() => setShowPassword((v) => !v)}
                             >
-                                {showPassword ? "Скрыть" : "Показать"}
+                                {showPassword ? "Hide" : "Show"}
                             </button>
                         </div>
                     </div>
@@ -101,7 +99,7 @@ const LoginPage = () => {
                         disabled={isSubmitting}
                         className={styles.submitButton}
                     >
-                        {isSubmitting ? "Вход..." : "Войти"}
+                        {isSubmitting ? "Signing in..." : "Sign In"}
                     </button>
 
                     <button
@@ -109,7 +107,7 @@ const LoginPage = () => {
                         className={styles.linkButton}
                         onClick={() => router.push("/register")}
                     >
-                        Нет аккаунта? Зарегистрироваться
+                        No account? Register
                     </button>
                 </form>
             </div>

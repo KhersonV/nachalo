@@ -264,15 +264,15 @@ export default function GameStatsPage() {
         return (
             <main className={styles.page}>
                 <section className={styles.card}>
-                    <h1 className={styles.title}>Вы погибли</h1>
+                    <h1 className={styles.title}>You Died</h1>
                     {matchEndedWithoutStats ? (
                         <p className={styles.subtitle}>
-                            Матч завершен. Детальная статистика для этого игрока
-                            недоступна.
+                            Match ended. Detailed statistics for this player are
+                            unavailable.
                         </p>
                     ) : (
                         <p className={styles.subtitle}>
-                            Итоговая статистика появится после завершения матча.
+                            Final statistics will appear after the match ends.
                         </p>
                     )}
                     <div className={styles.actions}>
@@ -280,7 +280,7 @@ export default function GameStatsPage() {
                             className={styles.button}
                             onClick={() => router.replace("/mode")}
                         >
-                            В меню режимов
+                            Back to Modes
                         </button>
                     </div>
                 </section>
@@ -289,60 +289,60 @@ export default function GameStatsPage() {
     }
 
     if (!stats) {
-        return <div className={styles.loading}>Загрузка статистики...</div>;
+        return <div className={styles.loading}>Loading statistics...</div>;
     }
 
     const winnerText =
         stats.winnerId > 0
             ? stats.winnerType === "group"
-                ? `Победившая команда: ${stats.winnerId}`
-                : `Победитель: игрок ${stats.winnerId}`
-            : "Победитель не определён";
+                ? `Winning team: ${stats.winnerId}`
+                : `Winner: player ${stats.winnerId}`
+            : "Winner not determined";
 
     return (
         <main className={styles.page}>
             <section className={styles.card}>
-                <h1 className={styles.title}>Статистика за матч</h1>
+                <h1 className={styles.title}>Match Statistics</h1>
                 <p className={styles.subtitle}>{winnerText}</p>
 
                 <div className={styles.playerBlock}>
                     <h2 className={styles.playerName}>{stats.player.name}</h2>
-                    <p className={styles.instance}>Матч: {stats.instanceId}</p>
+                    <p className={styles.instance}>Match: {stats.instanceId}</p>
                 </div>
 
                 <div className={styles.grid}>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Опыт</span>
+                        <span className={styles.label}>Experience</span>
                         <span className={styles.value}>
                             {stats.player.expGained}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Убийства игроков</span>
+                        <span className={styles.label}>Player Kills</span>
                         <span className={styles.value}>
                             {stats.player.playerKills}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Убийства монстров</span>
+                        <span className={styles.label}>Monster Kills</span>
                         <span className={styles.value}>
                             {stats.player.monsterKills}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Общий урон</span>
+                        <span className={styles.label}>Total Damage</span>
                         <span className={styles.value}>
                             {stats.player.damageTotal}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Урон по игрокам</span>
+                        <span className={styles.label}>Damage to Players</span>
                         <span className={styles.value}>
                             {stats.player.damageToPlayers}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Урон по монстрам</span>
+                        <span className={styles.label}>Damage to Monsters</span>
                         <span className={styles.value}>
                             {stats.player.damageToMonsters}
                         </span>
@@ -350,10 +350,10 @@ export default function GameStatsPage() {
                 </div>
 
                 <section className={styles.rewards}>
-                    <h3 className={styles.rewardsTitle}>Награды</h3>
+                    <h3 className={styles.rewardsTitle}>Rewards</h3>
                     {rewards.length === 0 ? (
                         <p className={styles.rewardsEmpty}>
-                            Награды не получены
+                            No rewards received
                         </p>
                     ) : (
                         <ul className={styles.rewardsList}>
@@ -365,9 +365,9 @@ export default function GameStatsPage() {
                                     {(reward.type === "balance" ||
                                     reward.type === "coin" ||
                                     reward.type === "coins"
-                                        ? "Баланс"
+                                        ? "Balance"
                                         : (reward.type ?? "unknown")) +
-                                        ":"}{" "}
+                                        ":"} {" "}
                                     {reward.amount ?? 0}
                                 </li>
                             ))}
@@ -380,7 +380,7 @@ export default function GameStatsPage() {
                         className={styles.button}
                         onClick={() => router.replace("/mode")}
                     >
-                        В меню режимов
+                        Back to Modes
                     </button>
                 </div>
             </section>
