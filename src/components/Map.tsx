@@ -19,8 +19,40 @@ export interface MapProps {
     sightRange: number;
     playerPosition: { x: number; y: number };
     onCellClick?: (cell: Cell) => void;
-    // list of players (passed from parent to avoid internal selectors)
     players?: PlayerState[];
+}
+
+type CellVisibility = "visible" | "explored";
+
+type RenderCell = {
+    cell: Cell;
+    visibility: CellVisibility;
+    player: PlayerState | null;
+};
+
+function getCellAt(
+    grid: Cell[],
+    x: number,
+    y: number,
+    mapWidth: number,
+    mapHeight: number,
+): Cell | null {
+    if (x < 0 || y < 0 || x >= mapWidth || y >= mapHeight) {
+        return null;
+    }
+
+    const index = y * mapWidth + x;
+    const cell = grid[index];
+
+    if (!cell) {
+        return null;
+    }
+
+    if (cell.x !== x || cell.y !== y) {
+        return null;
+    }
+
+    return cell;
 }
 
 function Map({
@@ -37,53 +69,42 @@ function Map({
     const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
     const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
 
-    // ✅ Мемоизированный playerMap — теперь зависит только от переданных players
     const playerMap = useMemo(() => buildPlayerMap(players), [players]);
 
-    // Fog-of-war: запоминаем исследованные клетки (не сбрасываются при ходе)
+    // Запоминаем исследованные клетки
     const exploredCellsRef = useRef<Set<string>>(new Set());
     const lastMapKeyRef = useRef<string>("");
 
-    // ✅ Мемоизированные клетки: только видимая область + explored set
-    const cellsWithVisibility = useMemo(() => {
-        if (!Array.isArray(grid) || grid.length === 0) return [];
+    const cellsWithVisibility = useMemo<RenderCell[]>(() => {
+        if (!Array.isArray(grid) || grid.length === 0) {
+            return [];
+        }
 
-        // Сброс при смене карты (новый матч / другие размеры)
         const mapKey = `${mapWidth}x${mapHeight}`;
         if (mapKey !== lastMapKeyRef.current) {
             lastMapKeyRef.current = mapKey;
             exploredCellsRef.current = new Set<string>();
         }
 
-        // Индекс для быстрого доступа по координатам
-        // Используем глобальный Map через globalThis, чтобы не конфликтовать
-        // с именем компонента `Map` в этом модуле.
-        const index = new globalThis.Map<string, Cell>();
-        for (const c of grid) {
-            index.set(`${c.x}-${c.y}`, c);
-        }
-
-        const result: {
-            cell: Cell;
-            visibility: "visible" | "explored";
-            player: PlayerState | null;
-        }[] = [];
-
+        const result: RenderCell[] = [];
         const seenKeys = new Set<string>();
 
-        // Проходим только по области видимости
-        const minX = Math.max(0, playerPosition.x - sightRange);
-        const maxX = Math.min(mapWidth - 1, playerPosition.x + sightRange);
-        const minY = Math.max(0, playerPosition.y - sightRange);
-        const maxY = Math.min(mapHeight - 1, playerPosition.y + sightRange);
+        // Видимая область игрока
+        const visibleMinX = Math.max(0, playerPosition.x - sightRange);
+        const visibleMaxX = Math.min(mapWidth - 1, playerPosition.x + sightRange);
+        const visibleMinY = Math.max(0, playerPosition.y - sightRange);
+        const visibleMaxY = Math.min(mapHeight - 1, playerPosition.y + sightRange);
 
-        for (let x = minX; x <= maxX; x++) {
-            for (let y = minY; y <= maxY; y++) {
-                const key = `${x}-${y}`;
-                const cell = index.get(key);
+        // Добавляем видимые клетки и помечаем их как explored
+        for (let y = visibleMinY; y <= visibleMaxY; y++) {
+            for (let x = visibleMinX; x <= visibleMaxX; x++) {
+                const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
                 if (!cell) continue;
+
+                const key = `${x}-${y}`;
                 exploredCellsRef.current.add(key);
                 seenKeys.add(key);
+
                 result.push({
                     cell,
                     visibility: "visible",
@@ -92,12 +113,42 @@ function Map({
             }
         }
 
-        // Добавляем explored клетки, которых нет в видимой области
-        for (const key of Array.from(exploredCellsRef.current)) {
-            if (seenKeys.has(key)) continue;
-            const cell = index.get(key);
-            if (!cell) continue;
-            result.push({ cell, visibility: "explored", player: null });
+        /**
+         * ВАЖНО:
+         * Не рендерим все explored клетки всей карты.
+         * Рендерим только локальное окно вокруг игрока.
+         *
+         * Буфер = 1 клетка вокруг видимой зоны,
+         * чтобы explored оставались видимыми рядом и не было ощущения "обрезания".
+         */
+        const exploredBuffer = 3;
+
+        const renderMinX = Math.max(0, visibleMinX - exploredBuffer);
+        const renderMaxX = Math.min(mapWidth - 1, visibleMaxX + exploredBuffer);
+        const renderMinY = Math.max(0, visibleMinY - exploredBuffer);
+        const renderMaxY = Math.min(mapHeight - 1, visibleMaxY + exploredBuffer);
+
+        for (let y = renderMinY; y <= renderMaxY; y++) {
+            for (let x = renderMinX; x <= renderMaxX; x++) {
+                const key = `${x}-${y}`;
+
+                if (seenKeys.has(key)) {
+                    continue;
+                }
+
+                if (!exploredCellsRef.current.has(key)) {
+                    continue;
+                }
+
+                const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
+                if (!cell) continue;
+
+                result.push({
+                    cell,
+                    visibility: "explored",
+                    player: null,
+                });
+            }
         }
 
         return result;
