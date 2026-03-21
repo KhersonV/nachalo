@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo } from "react";
 import { Cell, PlayerState } from "@/types/GameTypes";
 import styles from "@/styles/Map.module.css";
 
@@ -21,65 +21,49 @@ function MapCell({
     isCurrentPlayerCell = false,
     onClick,
 }: MapCellProps) {
-    const [hovered, setHovered] = useState(false);
-    const [showTooltip, setShowTooltip] = useState(false);
-    const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isVisible = visibility === "visible";
+    const isInteractive = isVisible && !!onClick;
 
-    const getCellTooltip = () => {
-        if (cell.structure_type) {
-            const base =
-                cell.structure_type === "scout_tower"
-                    ? "Башня разведки"
-                    : cell.structure_type === "turret"
-                      ? "Турель"
-                      : "Стена";
-            if (cell.is_under_construction) {
-                return `🚧 ${base} (строится)\n⏳ Ходов осталось: ${cell.construction_turns_left ?? 0}`;
-            }
-            return `🏗 ${base}\n❤️ ${cell.structure_health ?? 0}\n🛡 ${cell.structure_defense ?? 0}${cell.structure_attack ? `\n⚔️ ${cell.structure_attack}` : ""}`;
-        }
-        if (cell.monster)
-            return `👹 Монстр: ${cell.monster.name}\n❤️ ${cell.monster.health}\n⚔️ ${cell.monster.attack}\n🛡 ${cell.monster.defense}`;
-        if (cell.resource) return `⛏ Ресурс: ${cell.resource.type}`;
-        if (cell.barbel) return `🪵 Бочка`;
-        if (cell.isPortal) return `🌀 Портал`;
-        if (cell.isPlayer && playerInCell) {
-            return `🧍 Игрок: ${playerInCell.name}\n❤️ ${playerInCell.health}\n⚔️ ${playerInCell.attack}\n🛡 ${playerInCell.defense}`;
-        }
-        return `${cell.x} ${cell.y} `;
-    };
-
-    const imageStyle = {
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",
-    } as React.CSSProperties;
+    const imageStyle = useMemo<React.CSSProperties>(
+        () => ({
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+        }),
+        [],
+    );
 
     const tileStyle = useMemo<React.CSSProperties>(() => {
         return {
             width: tileSize,
             height: tileSize,
             background: getTileBackground(cell),
-            pointerEvents: visibility === "visible" ? "auto" : "none",
-            cursor: visibility === "visible" && onClick ? "pointer" : "default",
+            pointerEvents: isVisible ? "auto" : "none",
+            cursor: isInteractive ? "pointer" : "default",
         };
-    }, [cell, visibility, tileSize, onClick]);
+    }, [cell, tileSize, isVisible, isInteractive]);
 
-    const tileClassName = [
-        styles.cell,
-        visibility === "visible"
-            ? styles.visible
-            : visibility === "explored"
-              ? styles.explored
-              : styles.unknown,
-        visibility === "visible" && onClick ? styles.interactive : "",
-        isCurrentPlayerCell ? styles.currentPlayerCell : "",
-        playerInCell ? styles.hasPlayer : "",
-    ]
-        .filter(Boolean)
-        .join(" ");
+    const tileClassName = useMemo(
+        () =>
+            [
+                styles.cell,
+                isVisible
+                    ? styles.visible
+                    : visibility === "explored"
+                      ? styles.explored
+                      : styles.unknown,
+                isInteractive ? styles.interactive : "",
+                isCurrentPlayerCell ? styles.currentPlayerCell : "",
+                playerInCell ? styles.hasPlayer : "",
+            ]
+                .filter(Boolean)
+                .join(" "),
+        [visibility, isVisible, isInteractive, isCurrentPlayerCell, playerInCell],
+    );
 
-    const renderCellContent = () => {
+    const cellContent = useMemo(() => {
+        if (!isVisible) return null;
+
         if (cell.structure_type) {
             const symbol =
                 cell.structure_type === "scout_tower"
@@ -87,12 +71,14 @@ function MapCell({
                     : cell.structure_type === "turret"
                       ? "🔫"
                       : "🧱";
+
             return (
                 <span className={styles.symbol}>
                     {cell.is_under_construction ? "🚧" : symbol}
                 </span>
             );
         }
+
         if (cell.monster?.image) {
             return (
                 <img
@@ -103,6 +89,7 @@ function MapCell({
                 />
             );
         }
+
         if (cell.resource?.image) {
             return (
                 <img
@@ -113,6 +100,7 @@ function MapCell({
                 />
             );
         }
+
         if (cell.barbel?.image) {
             return (
                 <img
@@ -123,6 +111,7 @@ function MapCell({
                 />
             );
         }
+
         if (cell.isPortal) {
             return (
                 <img
@@ -133,50 +122,30 @@ function MapCell({
                 />
             );
         }
-        if (cell.monster) {
-            return <span className={styles.symbol}>👹</span>;
-        }
-        if (cell.resource) {
-            return <span className={styles.symbol}>⛏</span>;
-        }
-        if (cell.barbel) {
-            return <span className={styles.symbol}>🪵</span>;
-        }
+
+        if (cell.monster) return <span className={styles.symbol}>👹</span>;
+        if (cell.resource) return <span className={styles.symbol}>⛏</span>;
+        if (cell.barbel) return <span className={styles.symbol}>🪵</span>;
+
         return null;
+    }, [cell, imageStyle, isVisible]);
+
+    const handleClick = () => {
+        if (isVisible) {
+            onClick?.(cell);
+        }
     };
 
     return (
         <div
-            key={`${cell.x}-${cell.y}`}
             className={tileClassName}
             style={tileStyle}
-            onClick={() => visibility === "visible" && onClick?.(cell)}
-            onMouseEnter={() => {
-                if (tooltipTimerRef.current) {
-                    clearTimeout(tooltipTimerRef.current);
-                }
-                tooltipTimerRef.current = setTimeout(() => {
-                    setHovered(true);
-                    setShowTooltip(true);
-                }, 450);
-            }}
-            onMouseLeave={() => {
-                if (tooltipTimerRef.current) {
-                    clearTimeout(tooltipTimerRef.current);
-                    tooltipTimerRef.current = null;
-                }
-                setShowTooltip(false);
-                setHovered(false);
-            }}
+            onClick={handleClick}
         >
-            {/* Энтити (монстры, ресурсы) только в зоне видимости */}
-            {visibility === "visible" && renderCellContent()}
-            {visibility === "visible" && (
-                <span className={styles.coords}>{`${cell.x}:${cell.y}`}</span>
-            )}
+            {cellContent}
 
-            {visibility === "visible" && showTooltip && hovered && (
-                <div className={styles.tooltip}>{getCellTooltip()}</div>
+            {isVisible && (
+                <span className={styles.coords}>{`${cell.x}:${cell.y}`}</span>
             )}
         </div>
     );
