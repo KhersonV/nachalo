@@ -27,6 +27,7 @@ const SPRITE_MAX_WIDTH_FACTOR = 1.05;
 const SPRITE_MAX_HEIGHT_FACTOR = 1.18;
 const PLAYER_IMAGE_OFFSET_X = 2;
 const PLAYER_IMAGE_OFFSET_Y = 2;
+const GAP = 1;
 
 const CAMERA_FRAME_STYLE: React.CSSProperties = {
     overflow: "hidden",
@@ -36,6 +37,14 @@ const CAMERA_FRAME_STYLE: React.CSSProperties = {
 
 const MAP_LAYER_BASE_STYLE: React.CSSProperties = {
     position: "absolute",
+};
+
+const PLAYER_WRAPPER_BASE_STYLE: React.CSSProperties = {
+    position: "absolute",
+    boxSizing: "border-box",
+    zIndex: 10,
+    overflow: "hidden",
+    borderRadius: 4,
 };
 
 const PLAYER_SPRITE_BASE_STYLE: React.CSSProperties = {
@@ -124,7 +133,6 @@ type PreparedPlayerRenderData = {
 };
 
 type PlayerLayerProps = {
-    allPlayers: PlayerState[];
     visiblePlayers: PlayerState[];
     tileSize: number;
     gap: number;
@@ -214,15 +222,40 @@ const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
     },
 ];
 
+const SPRITE_SOURCES: string[] = Array.from(
+    new Set(
+        CHARACTER_SPRITES.flatMap((cfg) => [
+            cfg.rightWalkSpriteSrc,
+            cfg.leftWalkSpriteSrc,
+            cfg.idleSideRightSpriteSrc,
+            cfg.idleSideLeftSpriteSrc,
+            cfg.downWalkSpriteSrc,
+            cfg.idleFrontSpriteSrc,
+            cfg.upWalkSpriteSrc,
+            cfg.idleBackSpriteSrc,
+        ]).filter((src): src is string => !!src),
+    ),
+);
+
+const SPRITE_CONFIG_CACHE = new globalThis.Map<
+    string,
+    CharacterSpriteConfig | null
+>();
+
 function getSpriteConfig(playerImage?: string): CharacterSpriteConfig | null {
     const normalizedPlayerImage = normalizeAvatarPath(playerImage);
     if (!normalizedPlayerImage) return null;
 
-    return (
+    const cached = SPRITE_CONFIG_CACHE.get(normalizedPlayerImage);
+    if (cached !== undefined) return cached;
+
+    const found =
         CHARACTER_SPRITES.find((cfg) =>
             normalizedPlayerImage.includes(cfg.imageKey),
-        ) ?? null
-    );
+        ) ?? null;
+
+    SPRITE_CONFIG_CACHE.set(normalizedPlayerImage, found);
+    return found;
 }
 
 function easeInOutCubic(progress: number) {
@@ -284,8 +317,54 @@ function resolveActiveSpritePose({
     return { activeSpriteSrc, activeLayout, shouldMirror };
 }
 
+function areSpriteMetaEqual(
+    prev: Record<string, SpriteImageMeta>,
+    next: Record<string, SpriteImageMeta>,
+) {
+    if (prev === next) return true;
+
+    const prevKeys = Object.keys(prev);
+    const nextKeys = Object.keys(next);
+
+    if (prevKeys.length !== nextKeys.length) return false;
+
+    for (let i = 0; i < prevKeys.length; i++) {
+        const key = prevKeys[i];
+        const prevMeta = prev[key];
+        const nextMeta = next[key];
+
+        if (!nextMeta) return false;
+        if (
+            prevMeta.width !== nextMeta.width ||
+            prevMeta.height !== nextMeta.height
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function areVisiblePlayersEqual(prev: PlayerState[], next: PlayerState[]) {
+    if (prev === next) return true;
+    if (prev.length !== next.length) return false;
+
+    for (let i = 0; i < prev.length; i++) {
+        const a = prev[i];
+        const b = next[i];
+
+        if (a.user_id !== b.user_id) return false;
+        if (a.name !== b.name) return false;
+        if (a.image !== b.image) return false;
+        if (a.position.x !== b.position.x || a.position.y !== b.position.y) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 const PlayerLayer = React.memo(function PlayerLayer({
-    allPlayers,
     visiblePlayers,
     tileSize,
     gap,
@@ -320,7 +399,45 @@ const PlayerLayer = React.memo(function PlayerLayer({
         frameId = window.requestAnimationFrame(tick);
 
         return () => window.cancelAnimationFrame(frameId);
-    }, [stepAnimByPlayer]);
+    }, [stepAnimByPlayer.size]);
+
+    React.useEffect(() => {
+        const visibleIds = new Set(visiblePlayers.map((p) => p.user_id));
+
+        previousPositionsRef.current.forEach((_, id) => {
+            if (!visibleIds.has(id)) {
+                previousPositionsRef.current.delete(id);
+            }
+        });
+
+        setStepAnimByPlayer((old) => {
+            let changed = false;
+            const next = new globalThis.Map(old);
+
+            old.forEach((_, id) => {
+                if (!visibleIds.has(id)) {
+                    next.delete(id);
+                    changed = true;
+                }
+            });
+
+            return changed ? next : old;
+        });
+
+        setFacingDirByPlayer((old) => {
+            let changed = false;
+            const next = new globalThis.Map(old);
+
+            old.forEach((_, id) => {
+                if (!visibleIds.has(id)) {
+                    next.delete(id);
+                    changed = true;
+                }
+            });
+
+            return changed ? next : old;
+        });
+    }, [visiblePlayers]);
 
     React.useEffect(() => {
         const prev = previousPositionsRef.current;
@@ -331,7 +448,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
             to: { x: number; y: number };
         }> = [];
 
-        for (const p of allPlayers) {
+        for (const p of visiblePlayers) {
             const last = prev.get(p.user_id);
 
             if (last && (last.x !== p.position.x || last.y !== p.position.y)) {
@@ -381,14 +498,22 @@ const PlayerLayer = React.memo(function PlayerLayer({
 
         const timer = window.setTimeout(() => {
             setStepAnimByPlayer((old) => {
+                let changed = false;
                 const next = new globalThis.Map(old);
-                movedNow.forEach(({ id }) => next.delete(id));
-                return next;
+
+                movedNow.forEach(({ id }) => {
+                    if (next.has(id)) {
+                        next.delete(id);
+                        changed = true;
+                    }
+                });
+
+                return changed ? next : old;
             });
         }, STEP_ANIM_MS + 30);
 
         return () => window.clearTimeout(timer);
-    }, [allPlayers]);
+    }, [visiblePlayers]);
 
     const getStepProgress = React.useCallback(
         (step?: StepAnim, nowMs?: number) => {
@@ -431,20 +556,24 @@ const PlayerLayer = React.memo(function PlayerLayer({
         [spriteMetaBySrc, tileSize],
     );
 
+    const spriteLayoutCache = React.useMemo(
+        () => new globalThis.Map<string, SpriteLayout | null>(),
+        [tileSize, spriteMetaBySrc],
+    );
+
     const preparedPlayers = React.useMemo<PreparedPlayerRenderData[]>(() => {
         const now = Date.now();
-        const layoutCache = new globalThis.Map<string, SpriteLayout | null>();
         const result: PreparedPlayerRenderData[] = [];
 
         const getCachedLayout = (src: string | undefined, frames: number) => {
             const key = `${src ?? "none"}::${frames}`;
 
-            if (layoutCache.has(key)) {
-                return layoutCache.get(key) ?? null;
+            if (spriteLayoutCache.has(key)) {
+                return spriteLayoutCache.get(key) ?? null;
             }
 
             const layout = getSpriteLayout(src, frames);
-            layoutCache.set(key, layout);
+            spriteLayoutCache.set(key, layout);
             return layout;
         };
 
@@ -554,6 +683,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
         gap,
         getStepProgress,
         getSpriteLayout,
+        spriteLayoutCache,
         animTick,
         facingDirByPlayer,
         stepAnimByPlayer,
@@ -574,16 +704,12 @@ const PlayerLayer = React.memo(function PlayerLayer({
                     isActiveUser,
                 }) => {
                     const wrapperStyle: React.CSSProperties = {
-                        position: "absolute",
+                        ...PLAYER_WRAPPER_BASE_STYLE,
                         left: renderLeft,
                         top: renderTop,
                         width: renderWidth,
                         height: renderHeight,
                         border: isActiveUser ? "2px solid gold" : "none",
-                        boxSizing: "border-box",
-                        zIndex: 10,
-                        overflow: "hidden",
-                        borderRadius: 4,
                     };
 
                     const spriteStyle: React.CSSProperties = {
@@ -623,7 +749,21 @@ const PlayerLayer = React.memo(function PlayerLayer({
             )}
         </>
     );
-});
+}, arePlayerLayerPropsEqual);
+
+function arePlayerLayerPropsEqual(
+    prev: Readonly<PlayerLayerProps>,
+    next: Readonly<PlayerLayerProps>,
+) {
+    return (
+        prev.tileSize === next.tileSize &&
+        prev.gap === next.gap &&
+        prev.active_user === next.active_user &&
+        prev.onPlayerClick === next.onPlayerClick &&
+        areVisiblePlayersEqual(prev.visiblePlayers, next.visiblePlayers) &&
+        areSpriteMetaEqual(prev.spriteMetaBySrc, next.spriteMetaBySrc)
+    );
+}
 
 const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
     flashes,
@@ -690,7 +830,7 @@ export default function MapWithCamera({
     const tileSize = Number(inputTileSize) || 60;
     const safeMapWidth = Number(mapWidth) || 15;
     const safeMapHeight = Number(mapHeight) || 15;
-    const gap = 1;
+    const gap = GAP;
 
     const visiblePlayers = React.useMemo(() => {
         return players.filter((player) => {
@@ -756,60 +896,72 @@ export default function MapWithCamera({
 
     const { floaters, flashes } = useCombatFloaters(players, grid);
 
-    const spriteSources = React.useMemo(
-        () =>
-            Array.from(
-                new Set(
-                    CHARACTER_SPRITES.flatMap((cfg) => [
-                        cfg.rightWalkSpriteSrc,
-                        cfg.leftWalkSpriteSrc,
-                        cfg.idleSideRightSpriteSrc,
-                        cfg.idleSideLeftSpriteSrc,
-                        cfg.downWalkSpriteSrc,
-                        cfg.idleFrontSpriteSrc,
-                        cfg.upWalkSpriteSrc,
-                        cfg.idleBackSpriteSrc,
-                    ]).filter((src): src is string => !!src),
-                ),
-            ),
-        [],
-    );
-
     const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
         Record<string, SpriteImageMeta>
     >({});
 
+    const loadingSpriteSrcRef = React.useRef(new Set<string>());
+
     React.useEffect(() => {
         let cancelled = false;
 
-        spriteSources.forEach((src) => {
-            if (spriteMetaBySrc[src]) return;
+        const missingSources = SPRITE_SOURCES.filter(
+            (src) =>
+                !spriteMetaBySrc[src] && !loadingSpriteSrcRef.current.has(src),
+        );
 
-            const image = new Image();
+        if (missingSources.length === 0) return;
 
-            image.onload = () => {
-                if (cancelled) return;
+        missingSources.forEach((src) => loadingSpriteSrcRef.current.add(src));
 
-                setSpriteMetaBySrc((old) => {
-                    if (old[src]) return old;
+        Promise.all(
+            missingSources.map(
+                (src) =>
+                    new Promise<[string, SpriteImageMeta] | null>((resolve) => {
+                        const image = new Image();
 
-                    return {
-                        ...old,
-                        [src]: {
-                            width: image.naturalWidth,
-                            height: image.naturalHeight,
-                        },
-                    };
-                });
-            };
+                        image.onload = () => {
+                            resolve([
+                                src,
+                                {
+                                    width: image.naturalWidth,
+                                    height: image.naturalHeight,
+                                },
+                            ]);
+                        };
 
-            image.src = src;
+                        image.onerror = () => resolve(null);
+                        image.src = src;
+                    }),
+            ),
+        ).then((entries) => {
+            if (cancelled) return;
+
+            const validEntries = entries.filter(
+                (entry): entry is [string, SpriteImageMeta] => !!entry,
+            );
+
+            if (validEntries.length === 0) return;
+
+            setSpriteMetaBySrc((old) => {
+                let changed = false;
+                const next = { ...old };
+
+                for (const [src, meta] of validEntries) {
+                    if (!next[src]) {
+                        next[src] = meta;
+                        changed = true;
+                    }
+                }
+
+                return changed ? next : old;
+            });
         });
 
         return () => {
             cancelled = true;
         };
-    }, [spriteMetaBySrc, spriteSources]);
+    }, [spriteMetaBySrc]);
 
     return (
         <div style={frameStyle}>
@@ -827,7 +979,6 @@ export default function MapWithCamera({
                 />
 
                 <PlayerLayer
-                    allPlayers={players}
                     visiblePlayers={visiblePlayers}
                     tileSize={tileSize}
                     gap={gap}

@@ -1,4 +1,9 @@
-import React, { useMemo } from "react";
+
+//==================================
+// src/components/MapCell.tsx
+//==================================
+
+import React from "react";
 import { Cell, PlayerState } from "@/types/GameTypes";
 import styles from "@/styles/Map.module.css";
 
@@ -13,6 +18,12 @@ interface MapCellProps {
     onClick?: (cell: Cell) => void;
 }
 
+const IMAGE_STYLE: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+};
+
 function MapCell({
     cell,
     playerInCell,
@@ -22,113 +33,94 @@ function MapCell({
     onClick,
 }: MapCellProps) {
     const isVisible = visibility === "visible";
+    const isExplored = visibility === "explored";
     const isInteractive = isVisible && !!onClick;
 
-    const imageStyle = useMemo<React.CSSProperties>(
-        () => ({
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-        }),
-        [],
-    );
+    const structureType = cell.structure_type;
+    const isUnderConstruction = cell.is_under_construction;
+    const monsterImage = cell.monster?.image;
+    const resourceImage = cell.resource?.image;
+    const barrelImage = cell.barbel?.image;
+    const hasMonster = !!cell.monster;
+    const hasResource = !!cell.resource;
+    const hasBarrel = !!cell.barbel;
+    const isPortal = !!cell.isPortal;
 
-    const tileStyle = useMemo<React.CSSProperties>(() => {
-        return {
-            width: tileSize,
-            height: tileSize,
-            background: getTileBackground(cell),
-            pointerEvents: isVisible ? "auto" : "none",
-            cursor: isInteractive ? "pointer" : "default",
-        };
-    }, [cell, tileSize, isVisible, isInteractive]);
+    const tileStyle: React.CSSProperties = {
+        width: tileSize,
+        height: tileSize,
+        background: getTileBackground(cell),
+        pointerEvents: isVisible ? "auto" : "none",
+        cursor: isInteractive ? "pointer" : "default",
+    };
 
-    const tileClassName = useMemo(
-        () =>
-            [
-                styles.cell,
-                isVisible
-                    ? styles.visible
-                    : visibility === "explored"
-                      ? styles.explored
-                      : styles.unknown,
-                isInteractive ? styles.interactive : "",
-                isCurrentPlayerCell ? styles.currentPlayerCell : "",
-                playerInCell ? styles.hasPlayer : "",
-            ]
-                .filter(Boolean)
-                .join(" "),
-        [visibility, isVisible, isInteractive, isCurrentPlayerCell, playerInCell],
-    );
+    const tileClassName =
+        `${styles.cell} ` +
+        `${isVisible ? styles.visible : isExplored ? styles.explored : styles.unknown} ` +
+        `${isInteractive ? styles.interactive : ""} ` +
+        `${isCurrentPlayerCell ? styles.currentPlayerCell : ""} ` +
+        `${playerInCell ? styles.hasPlayer : ""}`;
 
-    const cellContent = useMemo(() => {
-        if (!isVisible) return null;
+    let cellContent: React.ReactNode = null;
 
-        if (cell.structure_type) {
+    if (isVisible) {
+        if (structureType) {
             const symbol =
-                cell.structure_type === "scout_tower"
+                structureType === "scout_tower"
                     ? "🗼"
-                    : cell.structure_type === "turret"
+                    : structureType === "turret"
                       ? "🔫"
                       : "🧱";
 
-            return (
+            cellContent = (
                 <span className={styles.symbol}>
-                    {cell.is_under_construction ? "🚧" : symbol}
+                    {isUnderConstruction ? "🚧" : symbol}
                 </span>
             );
-        }
-
-        if (cell.monster?.image) {
-            return (
+        } else if (monsterImage) {
+            cellContent = (
                 <img
-                    src={cell.monster.image}
+                    src={monsterImage}
                     alt="monster"
                     className={styles.image}
-                    style={imageStyle}
+                    style={IMAGE_STYLE}
                 />
             );
-        }
-
-        if (cell.resource?.image) {
-            return (
+        } else if (resourceImage) {
+            cellContent = (
                 <img
-                    src={cell.resource.image}
+                    src={resourceImage}
                     alt="resource"
                     className={styles.image}
-                    style={imageStyle}
+                    style={IMAGE_STYLE}
                 />
             );
-        }
-
-        if (cell.barbel?.image) {
-            return (
+        } else if (barrelImage) {
+            cellContent = (
                 <img
-                    src={cell.barbel.image}
+                    src={barrelImage}
                     alt="barrel"
                     className={styles.image}
-                    style={imageStyle}
+                    style={IMAGE_STYLE}
                 />
             );
-        }
-
-        if (cell.isPortal) {
-            return (
+        } else if (isPortal) {
+            cellContent = (
                 <img
                     src="/portal.png"
                     alt="portal"
                     className={styles.image}
-                    style={imageStyle}
+                    style={IMAGE_STYLE}
                 />
             );
+        } else if (hasMonster) {
+            cellContent = <span className={styles.symbol}>👹</span>;
+        } else if (hasResource) {
+            cellContent = <span className={styles.symbol}>⛏</span>;
+        } else if (hasBarrel) {
+            cellContent = <span className={styles.symbol}>🪵</span>;
         }
-
-        if (cell.monster) return <span className={styles.symbol}>👹</span>;
-        if (cell.resource) return <span className={styles.symbol}>⛏</span>;
-        if (cell.barbel) return <span className={styles.symbol}>🪵</span>;
-
-        return null;
-    }, [cell, imageStyle, isVisible]);
+    }
 
     const handleClick = () => {
         if (isVisible) {
@@ -172,4 +164,32 @@ function getTileBackground(cell: Cell): string {
     }
 }
 
-export default React.memo(MapCell);
+function areEqual(prev: MapCellProps, next: MapCellProps) {
+    const prevCell = prev.cell;
+    const nextCell = next.cell;
+
+    return (
+        prev.visibility === next.visibility &&
+        prev.tileSize === next.tileSize &&
+        prev.isCurrentPlayerCell === next.isCurrentPlayerCell &&
+        prev.onClick === next.onClick &&
+        !!prev.playerInCell === !!next.playerInCell &&
+
+        prevCell.x === nextCell.x &&
+        prevCell.y === nextCell.y &&
+        prevCell.tileCode === nextCell.tileCode &&
+        prevCell.isPortal === nextCell.isPortal &&
+        prevCell.structure_type === nextCell.structure_type &&
+        prevCell.is_under_construction === nextCell.is_under_construction &&
+
+        prevCell.monster === nextCell.monster &&
+        prevCell.resource === nextCell.resource &&
+        prevCell.barbel === nextCell.barbel &&
+
+        prevCell.monster?.image === nextCell.monster?.image &&
+        prevCell.resource?.image === nextCell.resource?.image &&
+        prevCell.barbel?.image === nextCell.barbel?.image
+    );
+}
+
+export default React.memo(MapCell, areEqual);
