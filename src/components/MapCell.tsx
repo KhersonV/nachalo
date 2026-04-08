@@ -1,4 +1,3 @@
-
 //==================================
 // src/components/MapCell.tsx
 //==================================
@@ -16,6 +15,8 @@ interface MapCellProps {
     tileSize: number;
     isCurrentPlayerCell?: boolean;
     onClick?: (cell: Cell) => void;
+    players?: PlayerState[];
+    startOwners?: Record<string, number>;
 }
 
 const IMAGE_STYLE: React.CSSProperties = {
@@ -31,6 +32,8 @@ function MapCell({
     tileSize,
     isCurrentPlayerCell = false,
     onClick,
+    players,
+    startOwners,
 }: MapCellProps) {
     const isVisible = visibility === "visible";
     const isExplored = visibility === "explored";
@@ -49,7 +52,7 @@ function MapCell({
     const tileStyle: React.CSSProperties = {
         width: tileSize,
         height: tileSize,
-        background: getTileBackground(cell),
+        background: getTileBackground(cell, players, startOwners),
         pointerEvents: isVisible ? "auto" : "none",
         cursor: isInteractive ? "pointer" : "default",
     };
@@ -129,11 +132,7 @@ function MapCell({
     };
 
     return (
-        <div
-            className={tileClassName}
-            style={tileStyle}
-            onClick={handleClick}
-        >
+        <div className={tileClassName} style={tileStyle} onClick={handleClick}>
             {cellContent}
 
             {isVisible && (
@@ -143,7 +142,41 @@ function MapCell({
     );
 }
 
-function getTileBackground(cell: Cell): string {
+function getTileBackground(
+    cell: Cell,
+    players?: PlayerState[] | null,
+    startOwners?: Record<string, number> | null,
+): string {
+    // If this cell is a start tile (tileCode 80 / 'P'), color by the original owner stored in startOwners
+    if (cell.tileCode === 80) {
+        const key = `${cell.x}:${cell.y}`;
+        const ownerId = startOwners?.[key] ?? null;
+        const owner = ownerId
+            ? (players?.find((p) => p.user_id === ownerId) ?? null)
+            : null;
+        const groupId = owner?.group_id ?? null;
+
+        if (groupId === 1)
+            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
+        if (groupId === 2)
+            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
+        if (groupId === 3)
+            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
+    }
+
+    // If this cell is a player base structure, try to color by owner's team (group_id)
+    if (cell.structure_type === "base" && cell.structure_owner_user_id) {
+        const ownerId = cell.structure_owner_user_id;
+        const owner = players?.find((p) => p.user_id === ownerId) ?? null;
+        const groupId = owner?.group_id ?? null;
+        if (groupId === 1)
+            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
+        if (groupId === 2)
+            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
+        if (groupId === 3)
+            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
+    }
+
     switch (cell.tileCode) {
         case 48:
             return "linear-gradient(155deg, #9da5ad 0%, #7b858f 100%)";
@@ -173,19 +206,18 @@ function areEqual(prev: MapCellProps, next: MapCellProps) {
         prev.tileSize === next.tileSize &&
         prev.isCurrentPlayerCell === next.isCurrentPlayerCell &&
         prev.onClick === next.onClick &&
+        prev.players === next.players &&
+        prev.startOwners === next.startOwners &&
         !!prev.playerInCell === !!next.playerInCell &&
-
         prevCell.x === nextCell.x &&
         prevCell.y === nextCell.y &&
         prevCell.tileCode === nextCell.tileCode &&
         prevCell.isPortal === nextCell.isPortal &&
         prevCell.structure_type === nextCell.structure_type &&
         prevCell.is_under_construction === nextCell.is_under_construction &&
-
         prevCell.monster === nextCell.monster &&
         prevCell.resource === nextCell.resource &&
         prevCell.barbel === nextCell.barbel &&
-
         prevCell.monster?.image === nextCell.monster?.image &&
         prevCell.resource?.image === nextCell.resource?.image &&
         prevCell.barbel?.image === nextCell.barbel?.image

@@ -19,6 +19,7 @@ export interface MapProps {
     playerPosition: { x: number; y: number };
     onCellClick?: (cell: Cell) => void;
     players?: PlayerState[];
+    startOwners?: Record<string, number>;
 }
 
 type CellVisibility = "visible" | "explored";
@@ -57,6 +58,7 @@ function Map({
     playerPosition,
     onCellClick,
     players = [],
+    startOwners = {},
 }: MapProps) {
     const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
     const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
@@ -205,6 +207,8 @@ function Map({
                                 cell.y === playerPosition.y
                             }
                             onClick={onCellClick}
+                            players={players}
+                            startOwners={startOwners}
                         />
                     </div>
                 );

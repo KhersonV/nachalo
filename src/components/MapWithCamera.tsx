@@ -734,7 +734,10 @@ const PlayerLayer = React.memo(function PlayerLayer({
                             style={wrapperStyle}
                         >
                             {activeLayout && activeSpriteSrc ? (
-                                <div aria-label={player.name} style={spriteStyle} />
+                                <div
+                                    aria-label={player.name}
+                                    style={spriteStyle}
+                                />
                             ) : (
                                 <img
                                     src={normalizeAvatarPath(player.image)}
@@ -840,6 +843,24 @@ export default function MapWithCamera({
         });
     }, [players, playerPosition.x, playerPosition.y, sightRange]);
 
+    // Capture initial start owners (player start positions) once per match load.
+    const initialStartOwnersRef = React.useRef<Record<string, number>>({});
+    React.useEffect(() => {
+        if (
+            Object.keys(initialStartOwnersRef.current).length === 0 &&
+            players &&
+            players.length > 0
+        ) {
+            const m: Record<string, number> = {};
+            for (const p of players) {
+                if (p.position) {
+                    m[`${p.position.x}:${p.position.y}`] = p.user_id;
+                }
+            }
+            initialStartOwnersRef.current = m;
+        }
+    }, [players]);
+
     const { offsetX, offsetY } = React.useMemo(() => {
         let nextOffsetX =
             viewportWidth / 2 -
@@ -849,7 +870,8 @@ export default function MapWithCamera({
             (playerPosition.y * (tileSize + gap) + tileSize / 2);
 
         const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
-        const totalHeight = safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
+        const totalHeight =
+            safeMapHeight * tileSize + (safeMapHeight - 1) * gap;
 
         nextOffsetX = Math.min(
             0,
@@ -975,7 +997,8 @@ export default function MapWithCamera({
                     sightRange={sightRange}
                     playerPosition={playerPosition}
                     onCellClick={onCellClick}
-                    players={visiblePlayers}
+                    players={players}
+                    startOwners={initialStartOwnersRef.current}
                 />
 
                 <PlayerLayer
