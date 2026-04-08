@@ -1,0 +1,219 @@
+.mapGrid {
+    position: relative;
+    display: grid;
+    border: 2px solid rgba(247, 229, 193, 0.35);
+    border-radius: 18px;
+    overflow: hidden;
+    background:
+        radial-gradient(
+            circle at 15% 20%,
+            rgba(240, 214, 160, 0.12),
+            transparent 38%
+        ),
+        radial-gradient(
+            circle at 85% 80%,
+            rgba(96, 161, 131, 0.14),
+            transparent 40%
+        ),
+        #171c22;
+    box-shadow:
+        0 26px 60px rgba(0, 0, 0, 0.45),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.cell {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    transition:
+        transform 0.2s ease,
+        filter 0.2s ease,
+        box-shadow 0.2s ease,
+        opacity 0.22s ease;
+}
+
+.cell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.09), transparent 36%),
+        linear-gradient(0deg, rgba(0, 0, 0, 0.2), transparent 58%);
+    pointer-events: none;
+}
+
+.visible {
+    opacity: 1;
+}
+
+/* Клетки, которые видели ранее — туман войны */
+.explored {
+    opacity: 0.38;
+    filter: grayscale(0.65) brightness(0.48) saturate(0.55);
+}
+
+/* Клетки, которые ещё не открыты — полная тьма */
+.unknown {
+    opacity: 1;
+    background: #0a0c10 !important;
+    filter: brightness(0.18);
+}
+
+.interactive {
+    cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .interactive:hover {
+        transform: translateY(-1px) scale(1.03);
+        filter: brightness(1.08) saturate(1.08);
+        z-index: 2;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .interactive:hover {
+        transform: none;
+        filter: none;
+    }
+
+    .interactive:active {
+        transform: scale(0.98);
+        filter: brightness(1.04);
+    }
+}
+
+.currentPlayerCell {
+    box-shadow:
+        inset 0 0 0 2px rgba(247, 233, 121, 0.9),
+        0 0 0 1px rgba(247, 233, 121, 0.28);
+}
+
+.hasPlayer {
+    box-shadow: inset 0 0 0 2px rgba(115, 206, 176, 0.8);
+}
+
+.image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+
+.symbol {
+    font-size: 18px;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
+}
+
+.coords {
+    position: absolute;
+    right: 4px;
+    bottom: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.78);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* ---- Combat animations ---- */
+
+@keyframes floatUp {
+    0% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1.1);
+    }
+    55% {
+        opacity: 1;
+        transform: translate(-50%, -30px) scale(1.25);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -54px) scale(0.8);
+    }
+}
+
+@keyframes cellHitFlash {
+    0% {
+        opacity: 0.85;
+    }
+    40% {
+        opacity: 0;
+    }
+    70% {
+        opacity: 0.45;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+.combatFloater {
+    position: absolute;
+    font-size: 15px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: floatUp 1.1s ease-out forwards;
+    z-index: 30;
+}
+
+.combatFloaterDamage {
+    color: #ff5050;
+    text-shadow:
+        0 1px 6px rgba(220, 30, 30, 0.7),
+        0 0 12px rgba(255, 80, 50, 0.45);
+}
+
+.combatFloaterHeal {
+    color: #52e09e;
+    text-shadow:
+        0 1px 6px rgba(40, 200, 110, 0.7),
+        0 0 12px rgba(60, 220, 130, 0.45);
+}
+
+.combatFlash {
+    position: absolute;
+    pointer-events: none;
+    animation: cellHitFlash 0.52s ease-out forwards;
+    z-index: 20;
+    background: radial-gradient(
+        circle at 50% 55%,
+        rgba(255, 75, 50, 0.65) 0%,
+        transparent 72%
+    );
+    border-radius: 4px;
+}
+
+/* ---- Tooltip ---- */
+
+.tooltip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 130px;
+    max-width: 220px;
+    background: rgba(13, 18, 24, 0.96);
+    color: #f6f8fb;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre-line;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.42);
+    z-index: 100;
+    pointer-events: none;
+}

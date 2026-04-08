@@ -1,0 +1,48 @@
+
+
+gameservice
+├── cmd
+│   └── main.go                      // Точка входа: настраивает маршруты, CORS и запускает сервер
+├── game
+│   ├── mapgen.go           // Генерация карты и другие игровые утилиты
+│   ├── match.go             // EndTurn завершает ход текущего игрока и передаёт ход следующему игроку.
+│   ├── monsters.go
+│   ├── results.go
+│   └── state.go
+├── handlers
+│   ├── artifacts_http.go
+│   ├── auth.go                      // Обработчики для регистрации, логина, профиля (пустой пример)
+│   ├── barrel_http.go
+│   ├── barrel.go
+│   ├── combat.go                    // Обработчики для атаки, перемещения
+│   ├── deps.go                      // структуры для тестов
+│   ├── finish_match_handler.go
+│   ├── inventory.go                 // Обработчики для работы с инвентарём
+│   ├── match_player.go
+│   ├── match.go                     // Обработчики для создания матчей, получения данных матчей
+│   ├── players.go                   // Обработчики для создания, получения, обновления игроков
+│   ├── resource_collection.go        
+│   ├── resources.go                 // загрузка из бд Ресурсов и Монстров
+|   ├── turn.go                      // Обработчик запроса на завершение хода
+│   └── ws_handler.go                // websockett
+├── middleware
+│   └── auth.go                         // JWT middleware
+├── models
+│   ├── match.go                        // Определения типа MatchInfo
+│   ├── monster.go                      // Определения типа Monster
+│   ├── player.go                       // Определения типа Player
+│   └── user.go                        // Определения типа User (пример-заглушка)
+├── repository
+│   ├── artifacts
+│   ├── db.go                           // Инициализация и функции работы с БД (initDB, создание таблиц и т.п.)
+│   ├── inventory.go                 // Функции доступа к таблице inventory_items
+│   ├── match_monsters.go 
+│   ├── matches.go                   // Функции доступа к таблице matches и match_players
+│   ├── monsters.go
+│   ├── players.go                   // Функции доступа к таблице players
+│   ├── resources.go
+│   └── utils.go
+├── service
+│   └── match_service.go
+├── go.mod
+└── go.sum

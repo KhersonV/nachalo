@@ -1,0 +1,133 @@
+/* src/styles/QuestArtifactAlert.module.css */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(3px);
+}
+
+.alert {
+    background: #1a1a2e;
+    border: 2px solid #e2b855;
+    border-radius: 16px;
+    width: 360px;
+    max-width: 90vw;
+    box-shadow: 0 0 40px rgba(226, 184, 85, 0.35);
+    overflow: hidden;
+    animation: slideIn 0.25s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-24px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: rgba(226, 184, 85, 0.12);
+    border-bottom: 1px solid rgba(226, 184, 85, 0.3);
+}
+
+.badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #e2b855;
+}
+
+.close {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    transition: color 0.15s;
+    padding: 0;
+}
+
+.close:hover {
+    color: #e2b855;
+}
+
+.body {
+    padding: 1.5rem 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+}
+
+.image {
+    width: 96px;
+    height: 96px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 0 10px rgba(226, 184, 85, 0.5));
+}
+
+.title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #e2b855;
+}
+
+.description {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #ccc;
+    line-height: 1.5;
+}
+
+.hint {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #888;
+    font-style: italic;
+}
+
+.footer {
+    padding: 1rem 1.5rem 1.25rem;
+    display: flex;
+    justify-content: center;
+}
+
+.confirmButton {
+    background: #e2b855;
+    color: #1a1a2e;
+    border: none;
+    border-radius: 8px;
+    padding: 0.6rem 2.5rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        transform 0.1s;
+}
+
+.confirmButton:hover {
+    background: #f0cb72;
+    transform: scale(1.03);
+}
+
+.confirmButton:active {
+    transform: scale(0.98);
+}

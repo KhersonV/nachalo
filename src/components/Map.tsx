@@ -1,150 +1,220 @@
+//==================================
+// src/components/Map.tsx
+//==================================
+
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import Tile from "./Tile";
-import { resources, ResourceType } from "./resources/ResourceData";
-import { usePlayer } from "./Player";
-import "../styles/map.css";
+import React, { useMemo, useRef } from "react";
+import { Cell, PlayerState } from "@/types/GameTypes";
+import MapCell from "./MapCell";
+import styles from "@/styles/Map.module.css";
 
-type Cell = {
-  id: number;
-  x: number;
-  y: number;
-  terrain: string;
-  resource: ResourceType | null;
-};
-
-type MapProps = {
-  updateInventory: React.Dispatch<
-    React.SetStateAction<
-      Record<string, { count: number; image: string; description: string }>
-    >
-  >;
-};
-
-const mapWidth = 20;
-const mapHeight = 20;
-const terrains = ["water", "ground", "mountain", "forest", "ice"];
-
-export default function Map({ updateInventory }: MapProps) {
-  const { state: playerState, move } = usePlayer({
-    position: { x: 0, y: 0 },
-    energy: 100,
-    level: 1,
-    visionRange: 5,
-    health: 100,
-    attack: 10,
-    defense: 5,
-  });
-
-  const generateResource = (terrain: string): ResourceType | null => {
-    const availableResources = Object.values(resources).filter((res) =>
-      res.terrains.includes(terrain)
-    );
-    if (availableResources.length === 0) return null;
-    return availableResources[Math.floor(Math.random() * availableResources.length)];
-  };
-
-  const generateGrid = (width: number, height: number): Cell[] => {
-    const total = width * height;
-    return Array.from({ length: total }, (_, id) => {
-      const x = id % width;
-      const y = Math.floor(id / width);
-      const terrain = terrains[Math.floor(Math.random() * terrains.length)];
-      const resource = Math.random() < 0.15 ? generateResource(terrain) : null;
-      return { id, x, y, terrain, resource };
-    });
-  };
-
-  const [grid, setGrid] = useState<Cell[] | null>(null);
-
-  // Генерация карты только на клиенте после монтирования
-  useEffect(() => {
-    const generated = generateGrid(mapWidth, mapHeight);
-    setGrid(generated);
-  }, []);
-
-  const collectResource = useCallback(() => {
-    if (!grid) return;
-    const playerX = playerState.position.x;
-    const playerY = playerState.position.y;
-
-    const cellIndex = grid.findIndex((c) => c.x === playerX && c.y === playerY);
-    if (cellIndex === -1) return;
-
-    const cell = grid[cellIndex];
-
-    if (cell.resource) {
-      const { type, image, description } = cell.resource;
-      updateInventory((prev) => {
-        const newInventory = { ...prev };
-        newInventory[type] = newInventory[type]
-          ? { ...newInventory[type], count: newInventory[type].count + 1 }
-          : { count: 1, image, description };
-        return newInventory;
-      });
-
-      setGrid((prev) =>
-        prev ? prev.map((c) => (c.id === cell.id ? { ...c, resource: null } : c)) : prev
-      );
-    }
-  }, [grid, playerState.position, updateInventory]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!grid) return; // Не двигаемся пока карта не загружена
-      if (e.key === "ArrowUp") {
-        move(0, -1, mapWidth, mapHeight);
-      } else if (e.key === "ArrowDown") {
-        move(0, 1, mapWidth, mapHeight);
-      } else if (e.key === "ArrowLeft") {
-        move(-1, 0, mapWidth, mapHeight);
-      } else if (e.key === "ArrowRight") {
-        move(1, 0, mapWidth, mapHeight);
-      } else if (e.key === " ") {
-        collectResource();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [move, collectResource, grid]);
-
-  if (!grid) {
-    return <div>Loading...</div>;
-  }
-
-  const { position, visionRange } = playerState;
-  const startX = Math.max(position.x - visionRange, 0);
-  const endX = Math.min(position.x + visionRange, mapWidth - 1);
-  const startY = Math.max(position.y - visionRange, 0);
-  const endY = Math.min(position.y + visionRange, mapHeight - 1);
-
-  const visibleTiles = grid.filter((cell) =>
-    cell.x >= startX && cell.x <= endX && cell.y >= startY && cell.y <= endY
-  );
-
-  const rowsCount = endY - startY + 1;
-  const colsCount = endX - startX + 1;
-  const tileSize = 80;
-
-  return (
-    <div
-      className="map"
-      style={{
-        display: "grid",
-        gridTemplateColumns: `repeat(${colsCount}, ${tileSize}px)`,
-        gridTemplateRows: `repeat(${rowsCount}, ${tileSize}px)`,
-        marginLeft: "100px",
-      }}
-    >
-      {visibleTiles.map((cell) => (
-        <Tile
-          key={cell.id}
-          cell={cell}
-          isPlayer={cell.x === position.x && cell.y === position.y}
-        />
-      ))}
-    </div>
-  );
+export interface MapProps {
+    grid: Cell[];
+    mapWidth: number;
+    mapHeight: number;
+    tileSize: number;
+    gap: number;
+    sightRange: number;
+    playerPosition: { x: number; y: number };
+    onCellClick?: (cell: Cell) => void;
+    players?: PlayerState[];
+    startOwners?: Record<string, number>;
 }
+
+type CellVisibility = "visible" | "explored";
+
+type RenderCell = {
+    cell: Cell;
+    visibility: CellVisibility;
+    player: PlayerState | null;
+};
+
+function getCellIndex(x: number, y: number, mapWidth: number): number {
+    return y * mapWidth + x;
+}
+
+function getCellAt(
+    grid: Cell[],
+    x: number,
+    y: number,
+    mapWidth: number,
+    mapHeight: number,
+): Cell | null {
+    if (x < 0 || y < 0 || x >= mapWidth || y >= mapHeight) {
+        return null;
+    }
+
+    return grid[getCellIndex(x, y, mapWidth)] ?? null;
+}
+
+function Map({
+    grid,
+    mapWidth,
+    mapHeight,
+    tileSize,
+    gap,
+    sightRange,
+    playerPosition,
+    onCellClick,
+    players = [],
+    startOwners = {},
+}: MapProps) {
+    const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
+    const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
+    const step = tileSize + gap;
+
+    const playerMap = useMemo(() => {
+        const map = new globalThis.Map<number, PlayerState>();
+
+        for (const player of players) {
+            const pos = player.position;
+            if (!pos) continue;
+
+            map.set(getCellIndex(pos.x, pos.y, mapWidth), player);
+        }
+
+        return map;
+    }, [players, mapWidth]);
+
+    // Track explored cells
+    const exploredCellsRef = useRef<Set<number>>(new Set());
+    const lastMapKeyRef = useRef<string>("");
+
+    const cellsWithVisibility = useMemo<RenderCell[]>(() => {
+        if (!Array.isArray(grid) || grid.length === 0) {
+            return [];
+        }
+
+        const mapKey = `${mapWidth}x${mapHeight}`;
+        if (mapKey !== lastMapKeyRef.current) {
+            lastMapKeyRef.current = mapKey;
+            exploredCellsRef.current = new Set<number>();
+        }
+
+        const result: RenderCell[] = [];
+        const seenKeys = new Set<number>();
+
+        // Player's visible area
+        const visibleMinX = Math.max(0, playerPosition.x - sightRange);
+        const visibleMaxX = Math.min(
+            mapWidth - 1,
+            playerPosition.x + sightRange,
+        );
+        const visibleMinY = Math.max(0, playerPosition.y - sightRange);
+        const visibleMaxY = Math.min(
+            mapHeight - 1,
+            playerPosition.y + sightRange,
+        );
+
+        // Add visible cells and mark them as explored
+        for (let y = visibleMinY; y <= visibleMaxY; y++) {
+            for (let x = visibleMinX; x <= visibleMaxX; x++) {
+                const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
+                if (!cell) continue;
+
+                const key = getCellIndex(x, y, mapWidth);
+                exploredCellsRef.current.add(key);
+                seenKeys.add(key);
+
+                result.push({
+                    cell,
+                    visibility: "visible",
+                    player: playerMap.get(key) || null,
+                });
+            }
+        }
+
+        /**
+         * IMPORTANT:
+         * Do not render all explored cells of the entire map.
+         * Render only a local window around the player.
+         */
+        const exploredBuffer = 3;
+
+        const renderMinX = Math.max(0, visibleMinX - exploredBuffer);
+        const renderMaxX = Math.min(mapWidth - 1, visibleMaxX + exploredBuffer);
+        const renderMinY = Math.max(0, visibleMinY - exploredBuffer);
+        const renderMaxY = Math.min(
+            mapHeight - 1,
+            visibleMaxY + exploredBuffer,
+        );
+
+        for (let y = renderMinY; y <= renderMaxY; y++) {
+            for (let x = renderMinX; x <= renderMaxX; x++) {
+                const key = getCellIndex(x, y, mapWidth);
+
+                if (seenKeys.has(key)) {
+                    continue;
+                }
+
+                if (!exploredCellsRef.current.has(key)) {
+                    continue;
+                }
+
+                const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
+                if (!cell) continue;
+
+                result.push({
+                    cell,
+                    visibility: "explored",
+                    player: null,
+                });
+            }
+        }
+
+        return result;
+    }, [
+        grid,
+        mapWidth,
+        mapHeight,
+        playerPosition.x,
+        playerPosition.y,
+        sightRange,
+        playerMap,
+    ]);
+
+    return (
+        <div
+            className={styles.mapGrid}
+            style={{
+                width: `${fullWidth}px`,
+                height: `${fullHeight}px`,
+                position: "relative",
+            }}
+        >
+            {cellsWithVisibility.map(({ cell, visibility, player }) => {
+                const cellKey = getCellIndex(cell.x, cell.y, mapWidth);
+
+                return (
+                    <div
+                        key={cellKey}
+                        style={{
+                            position: "absolute",
+                            left: cell.x * step,
+                            top: cell.y * step,
+                            width: tileSize,
+                            height: tileSize,
+                        }}
+                    >
+                        <MapCell
+                            cell={cell}
+                            visibility={visibility}
+                            playerInCell={player}
+                            tileSize={tileSize}
+                            isCurrentPlayerCell={
+                                cell.x === playerPosition.x &&
+                                cell.y === playerPosition.y
+                            }
+                            onClick={onCellClick}
+                            players={players}
+                            startOwners={startOwners}
+                        />
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+export default React.memo(Map);
