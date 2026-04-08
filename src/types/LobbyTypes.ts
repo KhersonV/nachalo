@@ -1,7 +1,7 @@
 export type ShopItem = {
     id: number;
     type: string;
-    category: "resource" | "blueprint";
+    category: "resource" | "blueprint" | "scroll";
     name: string;
     description: string;
     image: string;

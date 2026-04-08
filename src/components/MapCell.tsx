@@ -40,6 +40,7 @@ function MapCell({
     const isInteractive = isVisible && !!onClick;
 
     const structureType = cell.structure_type;
+    const structureImage = (cell as any).structure_image as string | undefined;
     const isUnderConstruction = cell.is_under_construction;
     const monsterImage = cell.monster?.image;
     const resourceImage = cell.resource?.image;
@@ -68,18 +69,29 @@ function MapCell({
 
     if (isVisible) {
         if (structureType) {
-            const symbol =
-                structureType === "scout_tower"
-                    ? "🗼"
-                    : structureType === "turret"
-                      ? "🔫"
-                      : "🧱";
+            if (structureImage && !isUnderConstruction) {
+                cellContent = (
+                    <img
+                        src={structureImage}
+                        alt={structureType}
+                        className={styles.image}
+                        style={IMAGE_STYLE}
+                    />
+                );
+            } else {
+                const symbol =
+                    structureType === "scout_tower"
+                        ? "🗼"
+                        : structureType === "turret"
+                          ? "🔫"
+                          : "🧱";
 
-            cellContent = (
-                <span className={styles.symbol}>
-                    {isUnderConstruction ? "🚧" : symbol}
-                </span>
-            );
+                cellContent = (
+                    <span className={styles.symbol}>
+                        {isUnderConstruction ? "🚧" : symbol}
+                    </span>
+                );
+            }
         } else if (monsterImage) {
             cellContent = (
                 <img

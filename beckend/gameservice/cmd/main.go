@@ -139,6 +139,11 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
 	).Methods("GET")
 
+	router.Handle(
+		"/game/match/{instance_id}/use-scroll",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseScrollHandler)),
+	).Methods("POST")
+
 	// Эндпоинт для финализации матча
 	router.Handle("/game/finishMatch",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.FinishMatchHandler)),

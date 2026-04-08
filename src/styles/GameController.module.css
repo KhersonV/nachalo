@@ -430,6 +430,71 @@
     backdrop-filter: blur(6px);
 }
 
+.useScrollFab {
+    position: fixed;
+    left: 16px;
+    bottom: 120px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #fffbe6;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    border: 1px solid #f0e6b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 90;
+}
+
+.useScrollPanel {
+    position: fixed;
+    left: 16px;
+    bottom: 176px;
+    width: 300px;
+    max-height: 360px;
+    background: white;
+    border: 1px solid #ddd;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    padding: 8px;
+    z-index: 95;
+    overflow: auto;
+}
+
+.useScrollHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.useScrollList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.useScrollItem {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.useScrollImage {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+}
+.useScrollMeta {
+    flex: 1;
+}
+.useScrollCount {
+    color: #666;
+    font-size: 12px;
+}
+.useScrollMessage {
+    margin-bottom: 6px;
+    color: #222;
+}
+
 .endTurnButton {
     height: 44px;
     border-radius: 12px;

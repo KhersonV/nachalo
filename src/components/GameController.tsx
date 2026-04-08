@@ -13,6 +13,7 @@ import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import PlayerHUD from "./PlayerHUD";
 import { ObjectHUD } from "./ObjectHUD";
+import UseScrollPanel from "./UseScrollPanel";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import objectHudStyles from "../styles/ObjectHUD.module.css";
@@ -88,7 +89,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
     } | null>(null);
     const [showTurnModal, setShowTurnModal] = useState(false);
     const prevIsMyTurnRef = React.useRef(false);
-    const turnModalTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const turnModalTimerRef = React.useRef<ReturnType<
+        typeof setTimeout
+    > | null>(null);
     const [showQuestAlert, setShowQuestAlert] = useState(false);
     const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
     const [canOpenStats, setCanOpenStats] = useState(false);
@@ -113,7 +116,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     const [profileModalError, setProfileModalError] = useState("");
     const [profileModalFriendLoading, setProfileModalFriendLoading] =
         useState(false);
-    const [profileModalOutgoingSent, setProfileModalOutgoingSent] = useState(false);
+    const [profileModalOutgoingSent, setProfileModalOutgoingSent] =
+        useState(false);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -317,23 +321,23 @@ export default function GameController({ instanceId }: GameControllerProps) {
     }, []);
 
     useEffect(() => {
-    const onMyDefeat = () => {
-        dispatch(
-            setQuestFoundNotification({
-                eventType: "MY_PLAYER_DEFEATED",
-                message:
-                    'Your character has died. Click "To Stats" to open the results screen.',
-                instanceId,
-                userId: user?.id,
-            }),
-        );
-    };
+        const onMyDefeat = () => {
+            dispatch(
+                setQuestFoundNotification({
+                    eventType: "MY_PLAYER_DEFEATED",
+                    message:
+                        'Your character has died. Click "To Stats" to open the results screen.',
+                    instanceId,
+                    userId: user?.id,
+                }),
+            );
+        };
 
         window.addEventListener("my-player-defeated", onMyDefeat);
         return () => {
             window.removeEventListener("my-player-defeated", onMyDefeat);
         };
-   }, [dispatch, instanceId, user?.id]);
+    }, [dispatch, instanceId, user?.id]);
 
     // Show the quest artifact alert once when the map loads
     useEffect(() => {
@@ -459,8 +463,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
         });
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
-                if (data?.error === "quest_artifact_missing") {
-                alert("You need to find the quest artifact before exiting through the portal!");
+            if (data?.error === "quest_artifact_missing") {
+                alert(
+                    "You need to find the quest artifact before exiting through the portal!",
+                );
             } else {
                 console.error("[Portal] finishMatch error", res.status, data);
             }
@@ -523,13 +529,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
         [dispatch, instanceId],
     );
 
-  const notificationEventType = state.questFoundNotification?.eventType;
+    const notificationEventType = state.questFoundNotification?.eventType;
 
-const isPortalExitNotification =
-    notificationEventType === "PLAYER_LEFT_PORTAL";
+    const isPortalExitNotification =
+        notificationEventType === "PLAYER_LEFT_PORTAL";
 
-const isDeathNotification =
-    notificationEventType === "MY_PLAYER_DEFEATED";
+    const isDeathNotification = notificationEventType === "MY_PLAYER_DEFEATED";
     const questFoundConfirmLabel =
         isDeathNotification || (isPortalExitNotification && canOpenStats)
             ? "To Stats"
@@ -725,11 +730,11 @@ const isDeathNotification =
                             if (cell && cell.structure_type) {
                                 base.name =
                                     base.name ||
-                                                                        (cell.structure_type === "scout_tower"
-                                                                                ? "Scout Tower"
-                                                                                : cell.structure_type === "turret"
-                                                                                    ? "Turret"
-                                                                                    : "Wall");
+                                    (cell.structure_type === "scout_tower"
+                                        ? "Scout Tower"
+                                        : cell.structure_type === "turret"
+                                          ? "Turret"
+                                          : "Wall");
                                 base.health = cell.structure_health;
                                 base.maxHealth =
                                     typeof cell.structure_health === "number"
@@ -900,69 +905,133 @@ const isDeathNotification =
                                         {user?.id !== profileModalUserId && (
                                             <div style={{ marginTop: 12 }}>
                                                 {!profileModalData.isFriend ? (
-                                                    (profileModalOutgoingSent || profileModalData?.friendRelation === "outgoing") ? (
-                                                        <span style={{ color: "#9f9" }}>
+                                                    profileModalOutgoingSent ||
+                                                    profileModalData?.friendRelation ===
+                                                        "outgoing" ? (
+                                                        <span
+                                                            style={{
+                                                                color: "#9f9",
+                                                            }}
+                                                        >
                                                             Friend request sent
                                                         </span>
                                                     ) : (
                                                         <button
                                                             onClick={async () => {
-                                                                if (!user?.token) return;
-                                                                setProfileModalFriendLoading(true);
+                                                                if (
+                                                                    !user?.token
+                                                                )
+                                                                    return;
+                                                                setProfileModalFriendLoading(
+                                                                    true,
+                                                                );
                                                                 try {
-                                                                    const res = await fetch(
-                                                                        `${API_BASE}/game/friends/add`,
-                                                                        {
-                                                                            method: "POST",
-                                                                            headers: {
-                                                                                "Content-Type": "application/json",
-                                                                                Authorization: `Bearer ${user?.token}`,
+                                                                    const res =
+                                                                        await fetch(
+                                                                            `${API_BASE}/game/friends/add`,
+                                                                            {
+                                                                                method: "POST",
+                                                                                headers:
+                                                                                    {
+                                                                                        "Content-Type":
+                                                                                            "application/json",
+                                                                                        Authorization: `Bearer ${user?.token}`,
+                                                                                    },
+                                                                                body: JSON.stringify(
+                                                                                    {
+                                                                                        friendUserId:
+                                                                                            profileModalUserId,
+                                                                                    },
+                                                                                ),
                                                                             },
-                                                                            body: JSON.stringify({
-                                                                                friendUserId: profileModalUserId,
-                                                                            }),
-                                                                        },
-                                                                    );
-                                                                    if (!res.ok) {
-                                                                        const t = await res.text().catch(() => null);
-                                                                        alert(t || "Failed to send request");
+                                                                        );
+                                                                    if (
+                                                                        !res.ok
+                                                                    ) {
+                                                                        const t =
+                                                                            await res
+                                                                                .text()
+                                                                                .catch(
+                                                                                    () =>
+                                                                                        null,
+                                                                                );
+                                                                        alert(
+                                                                            t ||
+                                                                                "Failed to send request",
+                                                                        );
                                                                     } else {
                                                                         // Mark as outgoing request locally
-                                                                        setProfileModalData((d: any) => ({
-                                                                            ...d,
-                                                                            isFriend: false,
-                                                                            friendRelation: "outgoing",
-                                                                        }));
-                                                                        setProfileModalOutgoingSent(true);
+                                                                        setProfileModalData(
+                                                                            (
+                                                                                d: any,
+                                                                            ) => ({
+                                                                                ...d,
+                                                                                isFriend: false,
+                                                                                friendRelation:
+                                                                                    "outgoing",
+                                                                            }),
+                                                                        );
+                                                                        setProfileModalOutgoingSent(
+                                                                            true,
+                                                                        );
                                                                         try {
-                                                                            const refetch = await fetch(`${API_BASE}/game/profile/${profileModalUserId}`, {
-                                                                                headers: {
-                                                                                    Authorization: `Bearer ${user?.token}`,
-                                                                                },
-                                                                                cache: "no-store",
-                                                                            });
-                                                                            if (refetch.ok) {
-                                                                                const pdata = await refetch.json();
-                                                                                setProfileModalData(pdata.data ?? pdata);
+                                                                            const refetch =
+                                                                                await fetch(
+                                                                                    `${API_BASE}/game/profile/${profileModalUserId}`,
+                                                                                    {
+                                                                                        headers:
+                                                                                            {
+                                                                                                Authorization: `Bearer ${user?.token}`,
+                                                                                            },
+                                                                                        cache: "no-store",
+                                                                                    },
+                                                                                );
+                                                                            if (
+                                                                                refetch.ok
+                                                                            ) {
+                                                                                const pdata =
+                                                                                    await refetch.json();
+                                                                                setProfileModalData(
+                                                                                    pdata.data ??
+                                                                                        pdata,
+                                                                                );
                                                                             }
                                                                         } catch (e) {
                                                                             // ignore refetch errors; local state already set
                                                                         }
                                                                     }
                                                                 } catch (e) {
-                                                                    console.error(e);
+                                                                    console.error(
+                                                                        e,
+                                                                    );
                                                                 } finally {
-                                                                    setProfileModalFriendLoading(false);
+                                                                    setProfileModalFriendLoading(
+                                                                        false,
+                                                                    );
                                                                 }
                                                             }}
-                                                            disabled={profileModalFriendLoading}
-                                                            style={{ padding: "8px 12px", borderRadius: 6 }}
+                                                            disabled={
+                                                                profileModalFriendLoading
+                                                            }
+                                                            style={{
+                                                                padding:
+                                                                    "8px 12px",
+                                                                borderRadius: 6,
+                                                            }}
                                                         >
-                                                            {profileModalFriendLoading ? "Sending..." : "Add Friend"}
+                                                            {profileModalFriendLoading
+                                                                ? "Sending..."
+                                                                : "Add Friend"}
                                                         </button>
                                                     )
                                                 ) : (
-                                                    <span style={{ color: "#9f9" }}>Friends</span>
+                                                    <span
+                                                        style={{
+                                                            color: "#9f9",
+                                                        }}
+                                                    >
+                                                        Friends
+                                                    </span>
                                                 )}
                                             </div>
                                         )}
@@ -991,7 +1060,8 @@ const isDeathNotification =
                                 Player disconnected: 3:00 to reconnect
                             </div>
                             <div className={styles.disconnectHint}>
-                                If the timer runs out, the player will die from a lightning strike.
+                                If the timer runs out, the player will die from
+                                a lightning strike.
                             </div>
                         </div>
                         <button
@@ -1049,12 +1119,12 @@ const isDeathNotification =
             </div>
             {placementMode && (
                 <div className={styles.turnStatusFloating}>
-                                        Build mode: select an adjacent cell to
-                                        {placementMode.structureType === "scout_tower"
-                                                ? " tower"
-                                                : placementMode.structureType === "turret"
-                                                    ? " turret"
-                                                    : " wall"}
+                    Build mode: select an adjacent cell to
+                    {placementMode.structureType === "scout_tower"
+                        ? " tower"
+                        : placementMode.structureType === "turret"
+                          ? " turret"
+                          : " wall"}
                 </div>
             )}
             <button
@@ -1064,9 +1134,7 @@ const isDeathNotification =
                 aria-label={
                     showInventory ? "Close inventory" : "Open inventory"
                 }
-                title={
-                    showInventory ? "Close inventory" : "Open inventory"
-                }
+                title={showInventory ? "Close inventory" : "Open inventory"}
             >
                 <img
                     src="/ui-icons/backpack.png"
@@ -1075,6 +1143,7 @@ const isDeathNotification =
                     draggable={false}
                 />
             </button>
+            <UseScrollPanel instanceId={instanceId} />
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
@@ -1129,12 +1198,12 @@ const isDeathNotification =
                                     type: "structure",
                                     x: cell.x,
                                     y: cell.y,
-                                        name:
+                                    name:
                                         cell.structure_type === "scout_tower"
                                             ? "Scout Tower"
                                             : cell.structure_type === "turret"
-                                                      ? "Turret"
-                                                      : "Wall",
+                                              ? "Turret"
+                                              : "Wall",
                                     health: cell.structure_health,
                                     maxHealth:
                                         STRUCTURE_DEFAULT_MAX_HEALTH[
@@ -1174,7 +1243,8 @@ const isDeathNotification =
                                 setObjectHUD({
                                     type: "object",
                                     name: "Barrel",
-                                    details: "Can be opened to receive a reward",
+                                    details:
+                                        "Can be opened to receive a reward",
                                 });
                                 return;
                             }

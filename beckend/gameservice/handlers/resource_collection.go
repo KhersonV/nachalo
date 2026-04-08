@@ -37,6 +37,7 @@ type UpdatedCellResponse struct {
 	StructureHealth       int    `json:"structure_health,omitempty"`
 	StructureDefense      int    `json:"structure_defense,omitempty"`
 	StructureAttack       int    `json:"structure_attack,omitempty"`
+	StructureImage        string `json:"structure_image,omitempty"`
 	IsUnderConstruction   bool   `json:"is_under_construction"`
 	ConstructionTurnsLeft int    `json:"construction_turns_left,omitempty"`
 }

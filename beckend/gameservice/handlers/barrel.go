@@ -25,6 +25,19 @@ func isArtifact(res game.ResourceData, artifacts []game.ResourceData) bool {
 }
 
 func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
+	// Determine structure image based on structure type for consistent client rendering
+	var structImg string
+	switch cell.StructureType {
+	case "scout_tower":
+		structImg = "/Forge-items/scout_tower.png"
+	case "turret":
+		structImg = "/Forge-items/turret.png"
+	case "wall":
+		structImg = "/Forge-items/wall.png"
+	default:
+		structImg = ""
+	}
+
 	return UpdatedCellResponse{
 		CellID:   cell.CellID,
 		X:        cell.X,
@@ -42,6 +55,7 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 		StructureAttack:       cell.StructureAttack,
 		IsUnderConstruction:   cell.IsUnderConstruction,
 		ConstructionTurnsLeft: cell.ConstructionTurnsLeft,
+		StructureImage:        structImg,
 	}
 }
 

@@ -56,6 +56,8 @@ const Inventory: React.FC<InventoryProps> = ({
     const player = state.players.find((p) => p.user_id === user?.id);
     if (!player) return <div>Inventory unavailable</div>;
 
+    // Images are provided by the server in inventory entries; use them directly.
+
     const normalize = (it: any, keyHint?: string): RawInventoryItem => {
         let hintType: "resource" | "artifact" | undefined;
         let hintId: number | undefined;
