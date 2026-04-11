@@ -56,22 +56,31 @@ func UseScrollHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Check persistent inventory (players.inventory) for the scroll
-    player, err := repository.GetPlayerByUserID(userID)
-    if err != nil {
-        http.Error(w, fmt.Sprintf("failed to load player: %v", err), http.StatusInternalServerError)
-        return
-    }
+    // Prefer consuming scroll from match-specific inventory (match_players.inventory)
     inv := make(map[string]map[string]interface{})
-    if player.Inventory != "" && player.Inventory != "{}" {
-        if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
+    if matchPlayer.Inventory != "" && matchPlayer.Inventory != "{}" {
+        if err := json.Unmarshal([]byte(matchPlayer.Inventory), &inv); err != nil {
             inv = make(map[string]map[string]interface{})
         }
     }
     entry, exists := inv[scrollItem.InventoryKey]
     if !exists {
-        http.Error(w, "no_scroll", http.StatusBadRequest)
-        return
+        // fallback: check persistent player inventory (players.inventory)
+        player, err := repository.GetPlayerByUserID(userID)
+        if err != nil {
+            http.Error(w, fmt.Sprintf("failed to load player: %v", err), http.StatusInternalServerError)
+            return
+        }
+        if player.Inventory != "" && player.Inventory != "{}" {
+            if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
+                inv = make(map[string]map[string]interface{})
+            }
+        }
+        entry, exists = inv[scrollItem.InventoryKey]
+        if !exists {
+            http.Error(w, "no_scroll", http.StatusBadRequest)
+            return
+        }
     }
     count := 0
     switch v := entry["item_count"].(type) {
@@ -188,10 +197,13 @@ func UseScrollHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // consume one scroll from persistent inventory
-    if err := repository.ConsumePlayerInventoryItem(userID, "scroll", scrollItem.ID, 1); err != nil {
-        http.Error(w, fmt.Sprintf("failed to consume scroll: %v", err), http.StatusInternalServerError)
-        return
+    // Try to consume one scroll from match inventory; fallback to persistent inventory
+    if err := repository.RemoveInventoryItemAndSyncJSON(instanceID, userID, "scroll", scrollItem.ID, 1); err != nil {
+        // fallback to persistent players.inventory
+        if err2 := repository.ConsumePlayerInventoryItem(userID, "scroll", scrollItem.ID, 1); err2 != nil {
+            http.Error(w, fmt.Sprintf("failed to consume scroll: %v / %v", err, err2), http.StatusInternalServerError)
+            return
+        }
     }
 
     // Return only the single coordinate to the requester

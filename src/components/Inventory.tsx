@@ -63,14 +63,14 @@ const Inventory: React.FC<InventoryProps> = ({
         let hintId: number | undefined;
         if (keyHint) {
             const [t, id] = keyHint.split("_");
-            if ((t === "resource" || t === "artifact") && !isNaN(+id)) {
-                hintType = t;
+            if ((t === "resource" || t === "artifact" || t === "scroll") && !isNaN(+id)) {
+                hintType = t as any;
                 hintId = +id;
             }
         }
 
         const explicitItemType =
-            it.item_type === "resource" || it.item_type === "artifact"
+            it.item_type === "resource" || it.item_type === "artifact" || it.item_type === "scroll"
                 ? it.item_type
                 : undefined;
         const item_type = (explicitItemType || hintType || "resource") as
@@ -134,7 +134,7 @@ const Inventory: React.FC<InventoryProps> = ({
         }>(
             (acc, it) => {
                 const key = it.inventory_key || `${it.item_type}_${it.item_id}`;
-                if (it.item_type === "resource") acc.resources[key] = it;
+                if (it.item_type === "resource" || it.item_type === "scroll") acc.resources[key] = it;
                 else acc.artifacts[key] = it;
                 return acc;
             },
@@ -154,6 +154,11 @@ const Inventory: React.FC<InventoryProps> = ({
             onRequestClose?.();
             setFeedback("Build mode: select an adjacent free cell.");
             return;
+        }
+
+        // Scrolls: call inventory use endpoint with item_type = "scroll" and show scroll result (if any)
+        if (key.startsWith("scroll_")) {
+            // continue to use the generic inventory use endpoint; backend will return scroll_result
         }
 
         setFeedback("");
@@ -181,7 +186,7 @@ const Inventory: React.FC<InventoryProps> = ({
                         instance_id: instanceId,
                         item_type,
                         item_id,
-                        item_count: 1,
+                        count: 1,
                     }),
                 },
             );
@@ -190,8 +195,22 @@ const Inventory: React.FC<InventoryProps> = ({
                 setFeedback(errorText || "Failed to use item");
                 return;
             }
-            const updatedPlayer = (await res.json()) as PlayerState;
-            dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
+            const data = await res.json();
+            // backend may return either PlayerState or { player: PlayerState, scroll_result: { axis, value } }
+            let updatedPlayer: PlayerState | null = null;
+            if (data && data.player) {
+                updatedPlayer = data.player as PlayerState;
+                if (data.scroll_result) {
+                    setFeedback(
+                        `Revealed ${String(data.scroll_result.axis).toUpperCase()}: ${data.scroll_result.value}`,
+                    );
+                }
+            } else {
+                updatedPlayer = data as PlayerState;
+            }
+            if (updatedPlayer) {
+                dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
+            }
         } catch (err) {
             setFeedback("Network error while using item");
         }
@@ -205,12 +224,25 @@ const Inventory: React.FC<InventoryProps> = ({
             .filter(([, item]) => item.item_count > 0)
             .map(([key, item]) => (
                 <div key={key} className={styles.item}>
-                    <img
-                        src={item.image}
-                        alt={item.name}
-                        className={styles.itemImage}
-                        loading="lazy"
-                    />
+                    {(() => {
+                        // For blueprints, prefer showing the built-structure image
+                        const isBlueprint = key.startsWith("blueprint_");
+                        const blueprintName = isBlueprint
+                            ? key.replace("blueprint_", "")
+                            : null;
+                        const displayImage = isBlueprint
+                            ? `/Forge-items/${blueprintName}.png`
+                            : item.image || "";
+
+                        return (
+                            <img
+                                src={displayImage}
+                                alt={item.name}
+                                className={styles.itemImage}
+                                loading="lazy"
+                            />
+                        );
+                    })()}
                     <div className={styles.itemName}>{item.name}</div>
                     {section === "resources" && (
                         <>
@@ -218,7 +250,9 @@ const Inventory: React.FC<InventoryProps> = ({
                                 Qty: {item.item_count}
                             </div>
                             {(isConsumableResource(item) ||
-                                key.startsWith("blueprint_")) && (
+                                key.startsWith("blueprint_") ||
+                                key.startsWith("scroll_") ||
+                                item.item_type === "scroll") && (
                                 <button
                                     className={styles.useButton}
                                     onClick={() =>

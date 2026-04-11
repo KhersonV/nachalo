@@ -247,6 +247,28 @@ func getScrollItem(itemType string) (*shopItem, bool) {
 	}, true
 }
 
+// getScrollItemByID ищет scroll по его ID и возвращает shopItem (type и метаданные)
+func getScrollItemByID(id int) (*shopItem, bool) {
+	for t, sc := range scrollCatalog {
+		if sc.ID == id {
+			return &shopItem{
+				ID:           sc.ID,
+				Type:         sc.Type,
+				Category:     "scroll",
+				Name:         sc.Name,
+				Description:  sc.Description,
+				Image:        sc.Image,
+				Effect:       sc.Effect,
+				Price:        sc.Price,
+				InventoryKey: sc.InventoryKey,
+				RequiresForge: sc.RequiresForge,
+			}, true
+		}
+		_ = t // silence unused var if needed
+	}
+	return nil, false
+}
+
 // GetShopItemsHandler returns available preparatory shop items.
 func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 	items := make([]shopItem, 0, 5)

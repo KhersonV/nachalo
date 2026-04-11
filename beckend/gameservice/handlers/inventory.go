@@ -7,6 +7,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -144,6 +145,145 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Special-case: scrolls — обработаем отдельно
+	if req.ItemType == "scroll" {
+		// find scroll metadata by ID
+		scItem, ok := getScrollItemByID(req.ItemID)
+		if !ok {
+			http.Error(w, "unsupported scroll id", http.StatusBadRequest)
+			return
+		}
+
+		// Ensure player participates in match
+		matchPlayer, err := repository.GetMatchPlayerByID(req.InstanceID, playerID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Не удалось получить игрока в матче: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Try to remove from match inventory first; fallback to persistent inventory
+		if err := repository.RemoveInventoryItemAndSyncJSON(req.InstanceID, playerID, "scroll", req.ItemID, req.Count); err != nil {
+			if err2 := repository.ConsumePlayerInventoryItem(playerID, "scroll", req.ItemID, req.Count); err2 != nil {
+				http.Error(w, fmt.Sprintf("Ошибка списания свитка: %v / %v", err, err2), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Compute target coordinate depending on scroll type (re-using scrolls logic)
+		st := scItem.Type
+		var axis string
+		var value int
+
+		switch st {
+		case "scroll_portal_x", "scroll_portal_y":
+			matchInfo, err := repository.GetMatchByID(req.InstanceID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to load match: %v", err), http.StatusInternalServerError)
+				return
+			}
+			var portal [2]int
+			if err := json.Unmarshal(matchInfo.PortalPosition, &portal); err != nil {
+				http.Error(w, "portal not found", http.StatusInternalServerError)
+				return
+			}
+			if st == "scroll_portal_x" {
+				axis = "x"
+				value = portal[0]
+			} else {
+				axis = "y"
+				value = portal[1]
+			}
+
+		case "scroll_nearest_player_x", "scroll_nearest_player_y":
+			players, err := repository.GetPlayersInMatch(req.InstanceID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to load match players: %v", err), http.StatusInternalServerError)
+				return
+			}
+			if len(players) <= 1 {
+				http.Error(w, "no_target", http.StatusBadRequest)
+				return
+			}
+			minD := math.MaxFloat64
+			var targetX, targetY int
+			for _, p := range players {
+				if p.UserID == matchPlayer.UserID {
+					continue
+				}
+				dx := float64(p.Position.X - matchPlayer.Position.X)
+				dy := float64(p.Position.Y - matchPlayer.Position.Y)
+				d := math.Sqrt(dx*dx + dy*dy)
+				if d < minD {
+					minD = d
+					targetX = p.Position.X
+					targetY = p.Position.Y
+				}
+			}
+			if st == "scroll_nearest_player_x" {
+				axis = "x"
+				value = targetX
+			} else {
+				axis = "y"
+				value = targetY
+			}
+
+		case "scroll_nearest_barrel_x", "scroll_nearest_barrel_y":
+			cells, err := repository.LoadMapCells(req.InstanceID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to load map cells: %v", err), http.StatusInternalServerError)
+				return
+			}
+			minD := math.MaxFloat64
+			var bx, by int
+			for _, c := range cells {
+				if c.Barbel == nil {
+					continue
+				}
+				dx := float64(c.X - matchPlayer.Position.X)
+				dy := float64(c.Y - matchPlayer.Position.Y)
+				d := math.Sqrt(dx*dx + dy*dy)
+				if d < minD {
+					minD = d
+					bx = c.X
+					by = c.Y
+				}
+			}
+			if minD == math.MaxFloat64 {
+				http.Error(w, "no_target", http.StatusBadRequest)
+				return
+			}
+			if st == "scroll_nearest_barrel_x" {
+				axis = "x"
+				value = bx
+			} else {
+				axis = "y"
+				value = by
+			}
+
+		default:
+			http.Error(w, "unsupported scroll type", http.StatusBadRequest)
+			return
+		}
+
+		// Return updated match player and scroll result so frontend can update UI
+		updatedPlayer, err := repository.GetMatchPlayerByID(req.InstanceID, playerID)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		resp := map[string]any{
+			"player": updatedPlayer,
+			"scroll_result": map[string]any{"axis": axis, "value": value},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, fmt.Sprintf("Ошибка кодирования ответа: %v", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Для остальных типов — определим ресурсный тип (food/water)
 	resourceType, err := repository.GetResourceTypeByID(req.ItemID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Не удалось определить тип ресурса: %v", err), http.StatusBadRequest)

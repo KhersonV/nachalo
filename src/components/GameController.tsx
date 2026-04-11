@@ -13,7 +13,6 @@ import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import PlayerHUD from "./PlayerHUD";
 import { ObjectHUD } from "./ObjectHUD";
-import UseScrollPanel from "./UseScrollPanel";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import objectHudStyles from "../styles/ObjectHUD.module.css";
@@ -1143,7 +1142,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     draggable={false}
                 />
             </button>
-            <UseScrollPanel instanceId={instanceId} />
+            {/* Scrolls moved into Inventory — separate panel removed */}
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
