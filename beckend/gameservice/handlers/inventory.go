@@ -317,7 +317,8 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if resourceType == "food" {
+	switch resourceType {
+	case "food":
 		if req.Count > 1 {
 			consumableUseMu.Unlock()
 			http.Error(w, "Еду можно использовать только по 1 за раз", http.StatusBadRequest)
@@ -329,7 +330,8 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		state.LastFoodTurn = turnNumber
-	} else if resourceType == "water" {
+
+	case "water":
 		waterUsedLastTwoTurns := state.WaterByTurn[turnNumber] + state.WaterByTurn[turnNumber-1]
 		if waterUsedLastTwoTurns+req.Count > maxWaterUses2Turns {
 			consumableUseMu.Unlock()
@@ -337,7 +339,8 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		state.WaterByTurn[turnNumber] += req.Count
-	} else {
+
+	default:
 		consumableUseMu.Unlock()
 		http.Error(w, "Неподдерживаемый тип расходника", http.StatusBadRequest)
 		return
