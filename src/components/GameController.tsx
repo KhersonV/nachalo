@@ -1142,6 +1142,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     draggable={false}
                 />
             </button>
+            {/* Battle/mode button moved to LobbyHeader (game menu) */}
             {/* Scrolls moved into Inventory — separate panel removed */}
             <div className={styles.mapContainer}>
                 {myPlayer ? (

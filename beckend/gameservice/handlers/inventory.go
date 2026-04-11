@@ -273,7 +273,7 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		resp := map[string]any{
-			"player": updatedPlayer,
+			"player":        updatedPlayer,
 			"scroll_result": map[string]any{"axis": axis, "value": value},
 		}
 		w.Header().Set("Content-Type", "application/json")

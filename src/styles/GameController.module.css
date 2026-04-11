@@ -585,6 +585,42 @@
 }
 
 /* =========================================================
+   BATTLE / MODES BUTTON
+   ========================================================= */
+.battleFab {
+    position: fixed;
+    right: calc(max(12px, env(safe-area-inset-right)) + 64px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 129;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition:
+        transform 0.12s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+}
+
+.battleFabIcon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.95;
+}
+
+.battleFab:active {
+    transform: translateY(calc(-50% + 1px));
+}
+
+/* =========================================================
    QUEST BANNER
    ========================================================= */
 

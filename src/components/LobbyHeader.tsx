@@ -82,6 +82,15 @@ export default function LobbyHeader() {
             iconShiftY: 1,
             onClick: () => router.push("/equipment"),
         },
+        {
+            id: "modes",
+            label: "Modes",
+            iconSrc: "/ui-icons/battle.png",
+            iconScale: 1.0,
+            iconShiftY: 0,
+            isActive: pathname === "/mode",
+            onClick: () => router.push("/mode"),
+        },
     ];
 
     return (
