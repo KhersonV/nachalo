@@ -853,11 +853,7 @@ export default function ProfilePage() {
 
     return (
         <div className={styles.page}>
-            {!isExternalProfileMode && (
-                <div style={{ marginBottom: "0.95rem" }}>
-                    <LobbyHeader />
-                </div>
-            )}
+            {!isExternalProfileMode && <LobbyHeader />}
             <div className={styles.topRow}>
                 <h2 className={styles.title}>Player Profile</h2>
                 <button className={styles.backBtn} onClick={handleBack}>

@@ -30,12 +30,6 @@ function NavButton({ item }: { item: NavItem }) {
                     alt={item.label}
                     className={styles.navIcon}
                     draggable={false}
-                    style={
-                        {
-                            "--icon-scale": item.iconScale ?? 1,
-                            "--icon-shift-y": `${item.iconShiftY ?? 0}px`,
-                        } as React.CSSProperties
-                    }
                 />
             </button>
             <span className={styles.navHint}>{item.label}</span>
@@ -52,16 +46,13 @@ export default function LobbyHeader() {
             id: "profile",
             label: "Profile",
             iconSrc: "/ui-icons/profile.png",
-            iconScale: 1.05,
-            iconShiftY: -1,
+            isActive: pathname === "/profile",
             onClick: () => router.push("/profile"),
         },
         {
             id: "shop",
             label: "Shop",
             iconSrc: "/ui-icons/shop.png",
-            iconScale: 0.98,
-            iconShiftY: 0,
             isActive: pathname === "/shop",
             onClick: () => router.push("/shop"),
         },
@@ -69,8 +60,6 @@ export default function LobbyHeader() {
             id: "base",
             label: "Base",
             iconSrc: "/ui-icons/base.png",
-            iconScale: 1.02,
-            iconShiftY: 0,
             isActive: pathname === "/base",
             onClick: () => router.push("/base"),
         },
@@ -78,16 +67,13 @@ export default function LobbyHeader() {
             id: "equipment",
             label: "Inventory",
             iconSrc: "/ui-icons/backpack.png",
-            iconScale: 0.99,
-            iconShiftY: 1,
+            isActive: pathname === "/equipment",
             onClick: () => router.push("/equipment"),
         },
         {
             id: "modes",
             label: "Modes",
             iconSrc: "/ui-icons/battle.png",
-            iconScale: 1.0,
-            iconShiftY: 0,
             isActive: pathname === "/mode",
             onClick: () => router.push("/mode"),
         },
@@ -103,6 +89,7 @@ export default function LobbyHeader() {
                     <NavButton key={item.id} item={item} />
                 ))}
             </nav>
+            <div className={styles.headerSpacer} aria-hidden="true" />
         </header>
     );
 }
