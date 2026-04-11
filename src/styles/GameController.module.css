@@ -430,6 +430,71 @@
     backdrop-filter: blur(6px);
 }
 
+.useScrollFab {
+    position: fixed;
+    left: 16px;
+    bottom: 120px;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #fffbe6;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    border: 1px solid #f0e6b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 90;
+}
+
+.useScrollPanel {
+    position: fixed;
+    left: 16px;
+    bottom: 176px;
+    width: 300px;
+    max-height: 360px;
+    background: white;
+    border: 1px solid #ddd;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    padding: 8px;
+    z-index: 95;
+    overflow: auto;
+}
+
+.useScrollHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.useScrollList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.useScrollItem {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.useScrollImage {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+}
+.useScrollMeta {
+    flex: 1;
+}
+.useScrollCount {
+    color: #666;
+    font-size: 12px;
+}
+.useScrollMessage {
+    margin-bottom: 6px;
+    color: #222;
+}
+
 .endTurnButton {
     height: 44px;
     border-radius: 12px;
@@ -517,6 +582,42 @@
     border-color: rgba(20, 184, 166, 0.85);
     background: rgba(8, 31, 34, 0.88);
     box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16);
+}
+
+/* =========================================================
+   BATTLE / MODES BUTTON
+   ========================================================= */
+.battleFab {
+    position: fixed;
+    right: calc(max(12px, env(safe-area-inset-right)) + 64px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 129;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    transition:
+        transform 0.12s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+}
+
+.battleFabIcon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.95;
+}
+
+.battleFab:active {
+    transform: translateY(calc(-50% + 1px));
 }
 
 /* =========================================================

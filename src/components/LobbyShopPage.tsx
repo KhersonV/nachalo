@@ -19,6 +19,8 @@ const EFFECT_LABELS: Record<string, string> = {
     structure_blocking: "Blocks Passage",
 };
 
+// images are provided by server; no client-side blueprint suffixing required
+
 function formatEffect(effect: Record<string, number>): string {
     const entries = Object.entries(effect || {});
     if (!entries.length) return "None";
@@ -49,6 +51,7 @@ export default function LobbyShopPage() {
     const [shopError, setShopError] = React.useState("");
     const [shopInfo, setShopInfo] = React.useState("");
     const [forgeBuilt, setForgeBuilt] = React.useState(false);
+    const [libraryBuilt, setLibraryBuilt] = React.useState(false);
 
     const loadShopData = React.useCallback(async () => {
         if (!user) return;
@@ -68,6 +71,12 @@ export default function LobbyShopPage() {
                     const baseData = await baseRes.json();
                     setForgeBuilt(
                         Boolean(baseData?.forge?.built ?? baseData?.built),
+                    );
+                    setLibraryBuilt(
+                        Boolean(
+                            baseData?.library?.built ??
+                            baseData?.Library?.built,
+                        ),
                     );
                 }
             }
@@ -223,7 +232,9 @@ export default function LobbyShopPage() {
             <section className={styles.shopPanel}>
                 <div className={styles.shopHeader}>
                     <h3 className={styles.shopTitle}>Preparation Shop</h3>
-                    <p className={styles.shopSubtitle}>Waiting for the match to start.</p>
+                    <p className={styles.shopSubtitle}>
+                        Waiting for the match to start.
+                    </p>
                     <div className={styles.shopBalance}>
                         Balance: {shopPlayer?.balance ?? 0}
                     </div>
@@ -240,7 +251,8 @@ export default function LobbyShopPage() {
                         const canAfford =
                             (shopPlayer?.balance ?? 0) >= totalCost;
                         const blockedByForge =
-                            item.requiresForge && !forgeBuilt;
+                            (item.requiresForge && !forgeBuilt) ||
+                            (item.category === "scroll" && !libraryBuilt);
                         const canBuy = canAfford && !blockedByForge;
 
                         return (
@@ -265,6 +277,14 @@ export default function LobbyShopPage() {
                                             Forge required
                                         </span>
                                     )}
+                                    {item.category === "scroll" &&
+                                        !libraryBuilt && (
+                                            <span
+                                                className={styles.shopCostWarn}
+                                            >
+                                                Library required
+                                            </span>
+                                        )}
                                     <span
                                         className={
                                             canAfford

@@ -83,7 +83,6 @@ const gameSlice = createSlice({
                     gridIndex[`${c.x}:${c.y}`] = i;
                 }
             }
-         
         },
 
         movePlayer(
@@ -198,6 +197,28 @@ const gameSlice = createSlice({
                     merged.is_under_construction = false;
                     merged.construction_turns_left = undefined;
                 }
+                // Ensure a helpful image path is available for structures so
+                // various UI components can render a built structure image
+                // instead of a generic placeholder.
+                const sType = merged.structure_type as string | undefined;
+                if (sType) {
+                    switch (sType) {
+                        case "scout_tower":
+                            merged.structure_image =
+                                "/Forge-items/scout_tower.png";
+                            break;
+                        case "turret":
+                            merged.structure_image = "/Forge-items/turret.png";
+                            break;
+                        case "wall":
+                            merged.structure_image = "/Forge-items/wall.png";
+                            break;
+                        default:
+                            merged.structure_image = undefined;
+                    }
+                } else {
+                    merged.structure_image = undefined;
+                }
 
                 state.grid[index] = merged;
                 // maintain index
@@ -276,11 +297,11 @@ const gameSlice = createSlice({
             state.instanceId = action.payload;
         },
         setQuestFoundNotification(
-    state,
-    action: PayloadAction<QuestFoundNotification | null>,
-) {
-    state.questFoundNotification = action.payload;
-},
+            state,
+            action: PayloadAction<QuestFoundNotification | null>,
+        ) {
+            state.questFoundNotification = action.payload;
+        },
     },
 });
 

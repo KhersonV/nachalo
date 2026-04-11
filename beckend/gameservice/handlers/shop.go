@@ -18,14 +18,14 @@ const (
 )
 
 type blueprintCatalogItem struct {
-	ID           int
-	Type         string
-	Name         string
-	Description  string
-	Image        string
-	Effect       map[string]int
-	Price        int
-	InventoryKey string
+	ID            int
+	Type          string
+	Name          string
+	Description   string
+	Image         string
+	Effect        map[string]int
+	Price         int
+	InventoryKey  string
 	RequiresForge bool
 }
 
@@ -35,14 +35,14 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 		Type:        "scout_tower_blueprint",
 		Name:        "Scout Tower Blueprint",
 		Description: "Gives +1 to player's sight. In-match stats: defense 5, health 30.",
-		Image:       "/ui-icons/base.png",
+		Image:       "/Forge-items/scout_tower_blueprint.png",
 		Effect: map[string]int{
 			"sight_bonus":       1,
 			"structure_defense": 5,
 			"structure_health":  30,
 		},
-		Price:        55,
-		InventoryKey: "blueprint_scout_tower",
+		Price:         55,
+		InventoryKey:  "blueprint_scout_tower",
 		RequiresForge: true,
 	},
 	"turret_blueprint": {
@@ -50,13 +50,13 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 		Type:        "turret_blueprint",
 		Name:        "Turret Blueprint",
 		Description: "Turret attacks enemies at the end of each turn. Base damage 10, health 30.",
-		Image:       "/ui-icons/base.png",
+		Image:       "/Forge-items/turret_blueprint.png",
 		Effect: map[string]int{
 			"turret_damage":    10,
 			"structure_health": 30,
 		},
-		Price:        75,
-		InventoryKey: "blueprint_turret",
+		Price:         75,
+		InventoryKey:  "blueprint_turret",
 		RequiresForge: true,
 	},
 	"wall_blueprint": {
@@ -64,29 +64,98 @@ var blueprintCatalog = map[string]blueprintCatalogItem{
 		Type:        "wall_blueprint",
 		Name:        "Wall Blueprint",
 		Description: "Wall blocks passage. Durability 30 HP, defense 8.",
-		Image:       "/ui-icons/base.png",
+		Image:       "/Forge-items/wall_blueprint.png",
 		Effect: map[string]int{
 			"structure_blocking": 1,
 			"structure_health":   30,
 			"structure_defense":  8,
 		},
-		Price:        60,
-		InventoryKey: "blueprint_wall",
+		Price:         60,
+		InventoryKey:  "blueprint_wall",
 		RequiresForge: true,
 	},
 }
 
+var scrollCatalog = map[string]blueprintCatalogItem{
+	"scroll_portal_x": {
+		ID:            2001,
+		Type:          "scroll_portal_x",
+		Name:          "Scroll: Portal X",
+		Description:   "Reveals the X coordinate of the portal.",
+		Image:         "/library_items/portal.png",
+		Effect:        map[string]int{},
+		Price:         50,
+		InventoryKey:  "scroll_2001",
+		RequiresForge: false,
+	},
+	"scroll_portal_y": {
+		ID:            2002,
+		Type:          "scroll_portal_y",
+		Name:          "Scroll: Portal Y",
+		Description:   "Reveals the Y coordinate of the portal.",
+		Image:         "/library_items/portal.png",
+		Effect:        map[string]int{},
+		Price:         50,
+		InventoryKey:  "scroll_2002",
+		RequiresForge: false,
+	},
+	"scroll_nearest_player_x": {
+		ID:            2003,
+		Type:          "scroll_nearest_player_x",
+		Name:          "Scroll: Nearest Player X",
+		Description:   "Reveals the X coordinate of the nearest player.",
+		Image:         "/library_items/player.png",
+		Effect:        map[string]int{},
+		Price:         25,
+		InventoryKey:  "scroll_2003",
+		RequiresForge: false,
+	},
+	"scroll_nearest_player_y": {
+		ID:            2004,
+		Type:          "scroll_nearest_player_y",
+		Name:          "Scroll: Nearest Player Y",
+		Description:   "Reveals the Y coordinate of the nearest player.",
+		Image:         "/library_items/player.png",
+		Effect:        map[string]int{},
+		Price:         25,
+		InventoryKey:  "scroll_2004",
+		RequiresForge: false,
+	},
+	"scroll_nearest_barrel_x": {
+		ID:            2005,
+		Type:          "scroll_nearest_barrel_x",
+		Name:          "Scroll: Nearest Barrel X",
+		Description:   "Reveals the X coordinate of the nearest barrel.",
+		Image:         "/library_items/barrel.png",
+		Effect:        map[string]int{},
+		Price:         15,
+		InventoryKey:  "scroll_2005",
+		RequiresForge: false,
+	},
+	"scroll_nearest_barrel_y": {
+		ID:            2006,
+		Type:          "scroll_nearest_barrel_y",
+		Name:          "Scroll: Nearest Barrel Y",
+		Description:   "Reveals the Y coordinate of the nearest barrel.",
+		Image:         "/library_items/barrel.png",
+		Effect:        map[string]int{},
+		Price:         15,
+		InventoryKey:  "scroll_2006",
+		RequiresForge: false,
+	},
+}
+
 type shopItem struct {
-	ID          int            `json:"id"`
-	Type        string         `json:"type"`
-	Category    string         `json:"category"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Image       string         `json:"image"`
-	Effect      map[string]int `json:"effect"`
-	Price       int            `json:"price"`
-	InventoryKey string        `json:"inventoryKey"`
-	RequiresForge bool         `json:"requiresForge"`
+	ID            int            `json:"id"`
+	Type          string         `json:"type"`
+	Category      string         `json:"category"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Image         string         `json:"image"`
+	Effect        map[string]int `json:"effect"`
+	Price         int            `json:"price"`
+	InventoryKey  string         `json:"inventoryKey"`
+	RequiresForge bool           `json:"requiresForge"`
 }
 
 type buyShopItemRequest struct {
@@ -127,15 +196,15 @@ func getShopItem(resourceType string) (*shopItem, error) {
 		return nil, fmt.Errorf("unsupported item type: %s", resourceType)
 	}
 	return &shopItem{
-		ID:          res.ID,
-		Type:        res.Type,
-		Category:    "resource",
-		Name:        resourceDisplayName(res.Type),
-		Description: res.Description,
-		Image:       res.Image,
-		Effect:      res.Effect,
-		Price:       price,
-		InventoryKey: "",
+		ID:            res.ID,
+		Type:          res.Type,
+		Category:      "resource",
+		Name:          resourceDisplayName(res.Type),
+		Description:   res.Description,
+		Image:         res.Image,
+		Effect:        res.Effect,
+		Price:         price,
+		InventoryKey:  "",
 		RequiresForge: false,
 	}, nil
 }
@@ -146,17 +215,58 @@ func getBlueprintItem(itemType string) (*shopItem, bool) {
 		return nil, false
 	}
 	return &shopItem{
-		ID:           bp.ID,
-		Type:         bp.Type,
-		Category:     "blueprint",
-		Name:         bp.Name,
-		Description:  bp.Description,
-		Image:        bp.Image,
-		Effect:       bp.Effect,
-		Price:        bp.Price,
-		InventoryKey: bp.InventoryKey,
+		ID:            bp.ID,
+		Type:          bp.Type,
+		Category:      "blueprint",
+		Name:          bp.Name,
+		Description:   bp.Description,
+		Image:         bp.Image,
+		Effect:        bp.Effect,
+		Price:         bp.Price,
+		InventoryKey:  bp.InventoryKey,
 		RequiresForge: bp.RequiresForge,
 	}, true
+}
+
+func getScrollItem(itemType string) (*shopItem, bool) {
+	sc, ok := scrollCatalog[itemType]
+	if !ok {
+		return nil, false
+	}
+	return &shopItem{
+		ID:            sc.ID,
+		Type:          sc.Type,
+		Category:      "scroll",
+		Name:          sc.Name,
+		Description:   sc.Description,
+		Image:         sc.Image,
+		Effect:        sc.Effect,
+		Price:         sc.Price,
+		InventoryKey:  sc.InventoryKey,
+		RequiresForge: sc.RequiresForge,
+	}, true
+}
+
+// getScrollItemByID ищет scroll по его ID и возвращает shopItem (type и метаданные)
+func getScrollItemByID(id int) (*shopItem, bool) {
+	for t, sc := range scrollCatalog {
+		if sc.ID == id {
+			return &shopItem{
+				ID:            sc.ID,
+				Type:          sc.Type,
+				Category:      "scroll",
+				Name:          sc.Name,
+				Description:   sc.Description,
+				Image:         sc.Image,
+				Effect:        sc.Effect,
+				Price:         sc.Price,
+				InventoryKey:  sc.InventoryKey,
+				RequiresForge: sc.RequiresForge,
+			}, true
+		}
+		_ = t // silence unused var if needed
+	}
+	return nil, false
 }
 
 // GetShopItemsHandler returns available preparatory shop items.
@@ -173,6 +283,11 @@ func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 	for _, itemType := range []string{"scout_tower_blueprint", "turret_blueprint", "wall_blueprint"} {
 		if bp, ok := getBlueprintItem(itemType); ok {
 			items = append(items, *bp)
+		}
+	}
+	for itemType := range scrollCatalog {
+		if sc, ok := getScrollItem(itemType); ok {
+			items = append(items, *sc)
 		}
 	}
 
@@ -215,7 +330,20 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 		unitPrice int
 	)
 
-	if bp, ok := getBlueprintItem(itemType); ok {
+	// scrolls require library built
+	if sc, ok := getScrollItem(itemType); ok {
+		item = sc
+		unitPrice = item.Price
+		libLevel, lerr := repository.GetLibraryLevel(req.PlayerID)
+		if lerr != nil {
+			http.Error(w, "failed to check library level", http.StatusInternalServerError)
+			return
+		}
+		if libLevel <= 0 {
+			http.Error(w, "library_required", http.StatusBadRequest)
+			return
+		}
+	} else if bp, ok := getBlueprintItem(itemType); ok {
 		item = bp
 		unitPrice = item.Price
 		if item.RequiresForge {

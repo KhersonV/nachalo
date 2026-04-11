@@ -14,7 +14,7 @@ export type BonusAttributes = {
 
 // Определяем, как приходит каждый элемент из бэка
 export type RawInventoryItem = {
-    item_type: "resource" | "artifact";
+    item_type: "resource" | "artifact" | "scroll";
     item_id: number;
     name: string; // раньше было item_name
     item_count: number;

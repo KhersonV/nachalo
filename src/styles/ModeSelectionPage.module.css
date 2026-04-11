@@ -1,7 +1,9 @@
 /* src/components/ModeSelectionPage.module.css */
 .pageRoot {
-    padding: 2rem;
+    padding: var(--lobby-page-padding);
     width: 100%;
+    max-width: var(--lobby-page-max-width);
+    margin: 0 auto;
     box-sizing: border-box;
     overflow-x: hidden;
 }

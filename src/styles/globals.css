@@ -16,6 +16,8 @@
   --primary-color: #555;
   --primary-hover-color: #777;
   --header-footer-bg: #333;
+  --lobby-page-max-width: 1100px;
+  --lobby-page-padding: clamp(0.75rem, 2vw, 1.5rem);
 }
 
 html, body {
@@ -44,4 +46,10 @@ button:hover {
   padding: 10px;
   background-color: var(--header-footer-bg);
   text-align: center;
+}
+
+/* Prevent horizontal layout shift when page content toggles scrollbar
+   by always reserving vertical scrollbar space. Improves nav switching UX. */
+html {
+  overflow-y: scroll;
 }

@@ -12,7 +12,7 @@ export default function EquipmentPage() {
         <RequireAuth>
             <main
                 style={{
-                    padding: "1.5rem",
+                    padding: "var(--lobby-page-padding)",
                     color: "#eefbff",
                     minHeight: "100vh",
                     background:
@@ -21,15 +21,15 @@ export default function EquipmentPage() {
             >
                 <div
                     style={{
-                        maxWidth: 980,
-                        margin: "0 auto 0.9rem",
+                        maxWidth: "var(--lobby-page-max-width)",
+                        margin: "0 auto",
                     }}
                 >
                     <LobbyHeader />
                 </div>
                 <div
                     style={{
-                        maxWidth: 980,
+                        maxWidth: "var(--lobby-page-max-width)",
                         margin: "0 auto",
                         border: "1px solid rgba(126,228,255,0.25)",
                         borderRadius: 14,

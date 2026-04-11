@@ -856,13 +856,11 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 
 	// Broadcast the full serialized cell so clients receive a complete,
 	// consistent snapshot (prevents partial updates leaving stale data).
-	var updated interface{} = nil
-	if cells != nil {
-		for i := range cells {
-			if cells[i].X == x && cells[i].Y == y {
-				updated = serialiseUpdatedCell(cells[i])
-				break
-			}
+	var updated interface{}
+	for i := range cells {
+		if cells[i].X == x && cells[i].Y == y {
+			updated = serialiseUpdatedCell(cells[i])
+			break
 		}
 	}
 

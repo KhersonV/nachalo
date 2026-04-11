@@ -1,6 +1,6 @@
 .page {
-    padding: 1rem;
-    max-width: 1100px;
+    padding: var(--lobby-page-padding);
+    max-width: var(--lobby-page-max-width);
     margin: 0 auto;
     color: #f8fbff;
     box-sizing: border-box;
