@@ -702,15 +702,12 @@ func saveTargetHealth(
 					cells[i].Monster.Health = m.Health
 				}
 				_ = Combat.SaveMap(instanceID, cells)
-				update := map[string]interface{}{
-					"type": "UPDATE_CELL",
-					"payload": map[string]interface{}{
-						"instanceId":  instanceID,
-						"updatedCell": serialiseUpdatedCell(cells[i]),
-					},
-				}
-				buf, _ := json.Marshal(update)
-				Broadcast(buf)
+				// Monster HP is now synced to clients via COMBAT_EXCHANGE.
+				// Broadcasting a non-lethal UPDATE_CELL here makes the frontend
+				// see the same combat twice: once as a legacy HP diff on the grid
+				// update, and once from the normalized combat timeline.
+				// We still persist the map state, and lethal removals continue to
+				// broadcast UPDATE_CELL from handleMonsterDeath.
 				break
 			}
 		}

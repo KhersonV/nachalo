@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"gameservice/game"
@@ -165,6 +166,88 @@ func TestBuildCombatExchangePayload_AddsCounterAndAttackerDeath(t *testing.T) {
 	}
 	if payload.Steps[2].Kind != "death" || payload.Steps[2].Target.ID != 10 {
 		t.Fatalf("expected attacker death step, got %+v", payload.Steps[2])
+	}
+}
+
+func TestSaveTargetHealth_NonLethalMonsterDamage_DoesNotBroadcastUpdateCell(t *testing.T) {
+	const (
+		instanceID = "m1"
+		monsterID  = 42
+	)
+
+	var savedCells []game.FullCell
+
+	Combat = CombatDeps{
+		UpdateMonsterHealth: func(_ string, gotMonsterID, gotHP int) error {
+			if gotMonsterID != monsterID {
+				t.Fatalf("expected monster id %d, got %d", monsterID, gotMonsterID)
+			}
+			if gotHP != 5 {
+				t.Fatalf("expected updated hp 5, got %d", gotHP)
+			}
+			return nil
+		},
+		GetMonster: func(_ string, gotMonsterID int) (*repository.MatchMonster, error) {
+			if gotMonsterID != monsterID {
+				t.Fatalf("expected monster id %d, got %d", monsterID, gotMonsterID)
+			}
+			return &repository.MatchMonster{
+				MonsterInstanceID: monsterID,
+				X:                 3,
+				Y:                 4,
+				Health:            5,
+			}, nil
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) {
+			return []game.FullCell{
+				{
+					X: 3,
+					Y: 4,
+					Monster: &game.MonsterData{
+						ID:           7,
+						DBInstanceID: monsterID,
+						Health:       10,
+					},
+				},
+			}, nil
+		},
+		SaveMap: func(_ string, cells []game.FullCell) error {
+			savedCells = cells
+			return nil
+		},
+	}
+	defer RestoreDefaults()
+
+	origBroadcast := broadcastFn
+	var broadcastTypes []string
+	broadcastFn = func(message []byte) {
+		var msg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			t.Fatalf("failed to decode broadcast: %v", err)
+		}
+		broadcastTypes = append(broadcastTypes, msg.Type)
+	}
+	defer func() { broadcastFn = origBroadcast }()
+
+	saveTargetHealth(
+		instanceID,
+		"monster",
+		monsterID,
+		1,
+		"player",
+		attackResult{Damage: 5, NewHealth: 5},
+	)
+
+	if len(savedCells) != 1 || savedCells[0].Monster == nil {
+		t.Fatalf("expected saved map with updated monster cell, got %+v", savedCells)
+	}
+	if savedCells[0].Monster.Health != 5 {
+		t.Fatalf("expected saved monster hp 5, got %d", savedCells[0].Monster.Health)
+	}
+	if slices.Contains(broadcastTypes, "UPDATE_CELL") {
+		t.Fatalf("expected no UPDATE_CELL for non-lethal monster damage, got broadcasts %v", broadcastTypes)
 	}
 }
 
