@@ -36,13 +36,13 @@ type CancelRequest struct {
 }
 
 type QueueEntry struct {
-	PlayerID   int       `json:"player_id"`
-	LeaderID   int       `json:"leader_id"`
-	PartyID    string    `json:"party_id,omitempty"`
-	MemberIDs  []int     `json:"member_ids,omitempty"`
-	PartySize  int       `json:"party_size"`
-	Rating     int       `json:"rating"`
-	JoinTime   time.Time `json:"join_time"`
+	PlayerID  int       `json:"player_id"`
+	LeaderID  int       `json:"leader_id"`
+	PartyID   string    `json:"party_id,omitempty"`
+	MemberIDs []int     `json:"member_ids,omitempty"`
+	PartySize int       `json:"party_size"`
+	Rating    int       `json:"rating"`
+	JoinTime  time.Time `json:"join_time"`
 }
 
 type MatchInfo struct {
@@ -60,16 +60,16 @@ type PartyActionRequest struct {
 }
 
 type PartyInvite struct {
-	LeaderID   int
-	PartyID    string
-	TargetID   int
-	CreatedAt  time.Time
+	LeaderID  int
+	PartyID   string
+	TargetID  int
+	CreatedAt time.Time
 }
 
 type PartyInviteState struct {
-	Leader   PartyMemberState `json:"leader"`
-	PartyID  string           `json:"partyId,omitempty"`
-	CreatedAt string          `json:"createdAt"`
+	Leader    PartyMemberState `json:"leader"`
+	PartyID   string           `json:"partyId,omitempty"`
+	CreatedAt string           `json:"createdAt"`
 }
 
 type PartyInfo struct {
@@ -79,11 +79,11 @@ type PartyInfo struct {
 }
 
 type PartyMemberState struct {
-	UserID         int    `json:"user_id"`
-	Name           string `json:"name"`
-	Image          string `json:"image"`
-	CharacterType  string `json:"characterType"`
-	Level          int    `json:"level"`
+	UserID        int    `json:"user_id"`
+	Name          string `json:"name"`
+	Image         string `json:"image"`
+	CharacterType string `json:"characterType"`
+	Level         int    `json:"level"`
 }
 
 type PartyStateResponse struct {
@@ -98,12 +98,12 @@ type PartyStateResponse struct {
 
 var (
 	queues = map[string][]QueueEntry{
-		"PVE":  {},
-		"1x1":  {},
-		"1x2":  {},
-		"2x2":  {},
-		"3x3":  {},
-		"5x5":  {},
+		"PVE": {},
+		"1x1": {},
+		"1x2": {},
+		"2x2": {},
+		"3x3": {},
+		"5x5": {},
 	}
 	mu sync.Mutex
 
@@ -113,9 +113,9 @@ var (
 	playerMatches = make(map[int]string)
 	matchMu       sync.Mutex
 
-	parties      = make(map[string]*PartyInfo)
+	parties       = make(map[string]*PartyInfo)
 	playerParties = make(map[int]string)
-	partyMu      sync.Mutex
+	partyMu       sync.Mutex
 
 	partyInvites = make(map[int]PartyInvite)
 )
@@ -124,16 +124,16 @@ var gameServiceURL = os.Getenv("GAME_SERVICE_URL")
 
 // RemovePlayerMatch убирает игрока из текущего матча (playerMatches)
 func RemovePlayerMatch(playerID int) {
-    matchMu.Lock()
-    defer matchMu.Unlock()
-    delete(playerMatches, playerID)
+	matchMu.Lock()
+	defer matchMu.Unlock()
+	delete(playerMatches, playerID)
 }
 
 // RemoveMatch помечает матч как завершённый — удаляет из currentMatches
 func RemoveMatch(instanceID string) {
-    matchMu.Lock()
-    defer matchMu.Unlock()
-    delete(currentMatches, instanceID)
+	matchMu.Lock()
+	defer matchMu.Unlock()
+	delete(currentMatches, instanceID)
 }
 
 func requiredPlayersForMode(mode string) int {
@@ -287,8 +287,8 @@ func buildInviteStateForPlayer(playerID int) []PartyInviteState {
 
 	return []PartyInviteState{
 		{
-			Leader:   buildPartyMemberState(invite.LeaderID),
-			PartyID:  invite.PartyID,
+			Leader:    buildPartyMemberState(invite.LeaderID),
+			PartyID:   invite.PartyID,
 			CreatedAt: invite.CreatedAt.Format(time.RFC3339),
 		},
 	}
@@ -742,10 +742,10 @@ func findMatchCandidates(mode string, q []QueueEntry) ([]QueueEntry, map[int]int
 
 // DELETE /matchmaking/player/{playerID}
 func removePlayerHandler(w http.ResponseWriter, r *http.Request) {
-    vars := mux.Vars(r)
-    playerID, _ := strconv.Atoi(vars["playerID"])
-    RemovePlayerMatch(playerID)
-    w.WriteHeader(http.StatusOK)
+	vars := mux.Vars(r)
+	playerID, _ := strconv.Atoi(vars["playerID"])
+	RemovePlayerMatch(playerID)
+	w.WriteHeader(http.StatusOK)
 }
 
 // joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
@@ -994,7 +994,6 @@ func inQueueHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // checkAndMakeMatch – если в очереди набрано нужное количество игроков, формирует матч
 func checkAndMakeMatch(mode string) {
 	if requiredPlayersForMode(mode) == 0 {
@@ -1134,9 +1133,32 @@ func main() {
 		gameServiceURL = "http://gameservice:8001"
 	}
 
-	repository.InitDB()
+	repository.ConnectDB()
+	defer repository.DB.Close()
+	if err := repository.EnsureSchemaReady(); err != nil {
+		log.Fatalf("Game DB schema is not ready: %v", err)
+	}
 
 	r := mux.NewRouter()
+	r.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := repository.PingDB(); err != nil {
+			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		ready, err := repository.SchemaReady()
+		if err != nil {
+			http.Error(w, "schema check failed", http.StatusServiceUnavailable)
+			return
+		}
+		if !ready {
+			http.Error(w, "schema is not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
 	r.HandleFunc("/matchmaking/join", joinHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/cancel", cancelHandler).Methods("POST")
 	r.HandleFunc("/matchmaking/status", statusHandler).Methods("GET")

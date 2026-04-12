@@ -33,3 +33,17 @@ export type {
     GameState,
     Dir,
 } from "./GameTypes";
+
+export type {
+    AttackStyle,
+    CombatActorType,
+    CombatTargetRef,
+    CombatPoint,
+    CombatActorSnapshot,
+    CombatStep,
+    CombatExchangePayload,
+    QueuedCombatExchange,
+    ActiveAttackMotion,
+    ActiveEffect,
+    CombatPresentationState,
+} from "./combat";

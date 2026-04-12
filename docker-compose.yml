@@ -11,12 +11,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  db-bootstrap:
+    image: postgres:16-alpine
+    container_name: nachalo_db_bootstrap
+    restart: "no"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      APP_DB_USER: admin
+      APP_DB_PASSWORD: admin
+      AUTH_DB_NAME: admin
+      GAME_DB_NAME: game_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./docker/postgres/bootstrap:/bootstrap:ro
+    command: ["sh", "/bootstrap/ensure-databases.sh"]
 
   auth:
     build:
@@ -31,10 +49,17 @@ services:
       GAME_SERVICE_URL: http://gameservice:8001
       FRONTEND_ORIGIN: http://localhost:3000
     depends_on:
-      postgres:
+      db-bootstrap:
+        condition: service_completed_successfully
+      gameservice:
         condition: service_healthy
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O - http://127.0.0.1:8000/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   gameservice:
     build:
@@ -49,10 +74,15 @@ services:
       FRONTEND_ORIGIN: http://localhost:3000
       MATCHMAKING_URL: http://matchmaking:8002
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-bootstrap:
+        condition: service_completed_successfully
     ports:
       - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O - http://127.0.0.1:8001/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   matchmaking:
     build:
@@ -65,12 +95,17 @@ services:
       GAME_SERVICE_URL: http://gameservice:8001
       GAME_DB_DSN: postgres://admin:admin@postgres:5432/game_db?sslmode=disable
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-bootstrap:
+        condition: service_completed_successfully
       gameservice:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O - http://127.0.0.1:8002/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   frontend:
     build:
@@ -84,9 +119,12 @@ services:
       NEXT_PUBLIC_AUTH_BASE: http://localhost:8000
       NEXT_PUBLIC_MATCHMAKING_BASE: http://localhost:8002
     depends_on:
-      - auth
-      - gameservice
-      - matchmaking
+      auth:
+        condition: service_healthy
+      gameservice:
+        condition: service_healthy
+      matchmaking:
+        condition: service_healthy
     ports:
       - "3000:3000"
 
@@ -95,8 +133,8 @@ services:
     container_name: nachalo_adminer
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-bootstrap:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
 

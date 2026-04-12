@@ -1,0 +1,21 @@
+.git
+.gitignore
+.next
+out
+build
+coverage
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+*.log
+.DS_Store
+.vercel
+README.md
+all files.txt
+deploy
+deploy.sh
+docker/postgres/init
+docker/postgres/bootstrap

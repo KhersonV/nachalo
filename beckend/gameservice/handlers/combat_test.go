@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"gameservice/game"
@@ -83,6 +84,170 @@ func TestUniversalAttackHandler(t *testing.T) {
 		if _, ok := resp[key]; !ok {
 			t.Errorf("response missing field %q", key)
 		}
+	}
+}
+
+func TestBuildCombatExchangePayload_UsesDeterministicSequenceAndSteps(t *testing.T) {
+	const instanceID = "exchange-match"
+
+	Combat = CombatDeps{
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return &game.MatchState{
+				InstanceID: instanceID,
+				TurnNumber: 3,
+			}, true
+		},
+	}
+	defer RestoreDefaults()
+
+	payload := buildCombatExchangePayload(
+		instanceID,
+		"player",
+		11,
+		"monster",
+		44,
+		stats{CharacterType: "mystic"},
+		attackModeRanged,
+		attackResult{Damage: 7, NewHealth: 0},
+		attackResult{Damage: 0, NewHealth: 10},
+	)
+
+	if payload.ExchangeID != "exchange-match:3:1" {
+		t.Fatalf("expected deterministic exchange id, got %q", payload.ExchangeID)
+	}
+	if payload.AttackStyle != AttackStyleMagic {
+		t.Fatalf("expected magic attack style, got %q", payload.AttackStyle)
+	}
+	if len(payload.Steps) != 2 {
+		t.Fatalf("expected hit + death, got %d steps", len(payload.Steps))
+	}
+	if payload.Steps[0].Kind != "hit" {
+		t.Fatalf("expected first step to be hit, got %q", payload.Steps[0].Kind)
+	}
+	if payload.Steps[0].Target.Type != CombatActorMonster {
+		t.Fatalf("expected monster target, got %q", payload.Steps[0].Target.Type)
+	}
+	if payload.Steps[1].Kind != "death" {
+		t.Fatalf("expected second step to be death, got %q", payload.Steps[1].Kind)
+	}
+}
+
+func TestBuildCombatExchangePayload_AddsCounterAndAttackerDeath(t *testing.T) {
+	Combat = CombatDeps{
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return &game.MatchState{
+				InstanceID: "counter-exchange",
+				TurnNumber: 4,
+			}, true
+		},
+	}
+	defer RestoreDefaults()
+
+	payload := buildCombatExchangePayload(
+		"counter-exchange",
+		"player",
+		10,
+		"player",
+		20,
+		stats{CharacterType: "guardian"},
+		attackModeMelee,
+		attackResult{Damage: 5, NewHealth: 6},
+		attackResult{Damage: 8, NewHealth: 0},
+	)
+
+	if len(payload.Steps) != 3 {
+		t.Fatalf("expected hit + counter + death, got %d steps", len(payload.Steps))
+	}
+	if payload.Steps[1].Kind != "counter" {
+		t.Fatalf("expected second step to be counter, got %q", payload.Steps[1].Kind)
+	}
+	if payload.Steps[1].Target.ID != 10 {
+		t.Fatalf("expected counter target to be attacker, got %d", payload.Steps[1].Target.ID)
+	}
+	if payload.Steps[2].Kind != "death" || payload.Steps[2].Target.ID != 10 {
+		t.Fatalf("expected attacker death step, got %+v", payload.Steps[2])
+	}
+}
+
+func TestSaveTargetHealth_NonLethalMonsterDamage_DoesNotBroadcastUpdateCell(t *testing.T) {
+	const (
+		instanceID = "m1"
+		monsterID  = 42
+	)
+
+	var savedCells []game.FullCell
+
+	Combat = CombatDeps{
+		UpdateMonsterHealth: func(_ string, gotMonsterID, gotHP int) error {
+			if gotMonsterID != monsterID {
+				t.Fatalf("expected monster id %d, got %d", monsterID, gotMonsterID)
+			}
+			if gotHP != 5 {
+				t.Fatalf("expected updated hp 5, got %d", gotHP)
+			}
+			return nil
+		},
+		GetMonster: func(_ string, gotMonsterID int) (*repository.MatchMonster, error) {
+			if gotMonsterID != monsterID {
+				t.Fatalf("expected monster id %d, got %d", monsterID, gotMonsterID)
+			}
+			return &repository.MatchMonster{
+				MonsterInstanceID: monsterID,
+				X:                 3,
+				Y:                 4,
+				Health:            5,
+			}, nil
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) {
+			return []game.FullCell{
+				{
+					X: 3,
+					Y: 4,
+					Monster: &game.MonsterData{
+						ID:           7,
+						DBInstanceID: monsterID,
+						Health:       10,
+					},
+				},
+			}, nil
+		},
+		SaveMap: func(_ string, cells []game.FullCell) error {
+			savedCells = cells
+			return nil
+		},
+	}
+	defer RestoreDefaults()
+
+	origBroadcast := broadcastFn
+	var broadcastTypes []string
+	broadcastFn = func(message []byte) {
+		var msg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			t.Fatalf("failed to decode broadcast: %v", err)
+		}
+		broadcastTypes = append(broadcastTypes, msg.Type)
+	}
+	defer func() { broadcastFn = origBroadcast }()
+
+	saveTargetHealth(
+		instanceID,
+		"monster",
+		monsterID,
+		1,
+		"player",
+		attackResult{Damage: 5, NewHealth: 5},
+	)
+
+	if len(savedCells) != 1 || savedCells[0].Monster == nil {
+		t.Fatalf("expected saved map with updated monster cell, got %+v", savedCells)
+	}
+	if savedCells[0].Monster.Health != 5 {
+		t.Fatalf("expected saved monster hp 5, got %d", savedCells[0].Monster.Health)
+	}
+	if slices.Contains(broadcastTypes, "UPDATE_CELL") {
+		t.Fatalf("expected no UPDATE_CELL for non-lethal monster damage, got broadcasts %v", broadcastTypes)
 	}
 }
 

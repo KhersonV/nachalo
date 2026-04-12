@@ -43,6 +43,25 @@ func main() {
 
 	// Настраиваем маршруты
 	router := mux.NewRouter()
+	router.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := repository.PingDB(); err != nil {
+			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		ready, err := repository.SchemaReady()
+		if err != nil {
+			http.Error(w, "schema check failed", http.StatusServiceUnavailable)
+			return
+		}
+		if !ready {
+			http.Error(w, "schema is not ready", http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
 	// === websocket ===
 	router.HandleFunc("/ws", handlers.WsHandler)
 
@@ -180,7 +199,10 @@ func main() {
 	handler := enableCors(router)
 
 	// Запускаем сервер на 8001 порту
-	port := "8001"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8001"
+	}
 	log.Printf("Game-сервис запущен на порту %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

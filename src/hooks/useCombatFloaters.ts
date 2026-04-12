@@ -28,6 +28,10 @@ const LIFETIME_MS = 1100;
 export function useCombatFloaters(
     players: PlayerState[],
     grid: Cell[],
+    options?: {
+        suppressedPlayerIds?: number[];
+        suppressedMonsterIds?: number[];
+    },
 ): {
     floaters: CombatFloater[];
     flashes: CombatFlash[];
@@ -41,6 +45,8 @@ export function useCombatFloaters(
     useEffect(() => {
         const prevPlayer = prevPlayerHealthRef.current;
         const prevMonster = prevMonsterHealthRef.current;
+        const suppressedPlayers = new Set(options?.suppressedPlayerIds ?? []);
+        const suppressedMonsters = new Set(options?.suppressedMonsterIds ?? []);
         const newFloaters: CombatFloater[] = [];
         const newFlashes: CombatFlash[] = [];
         const now = Date.now();
@@ -48,21 +54,23 @@ export function useCombatFloaters(
         for (const player of players) {
             const prevHp = prevPlayer.get(player.user_id);
             if (prevHp !== undefined && prevHp !== player.health) {
-                const delta = player.health - prevHp;
-                const uid = `${player.user_id}-${now}-${Math.random().toString(36).slice(2)}`;
-                newFloaters.push({
-                    id: uid,
-                    x: player.position.x,
-                    y: player.position.y,
-                    value: Math.abs(delta),
-                    isHeal: delta > 0,
-                });
-                if (delta < 0) {
-                    newFlashes.push({
-                        id: `fl-${uid}`,
+                if (!suppressedPlayers.has(player.user_id)) {
+                    const delta = player.health - prevHp;
+                    const uid = `${player.user_id}-${now}-${Math.random().toString(36).slice(2)}`;
+                    newFloaters.push({
+                        id: uid,
                         x: player.position.x,
                         y: player.position.y,
+                        value: Math.abs(delta),
+                        isHeal: delta > 0,
                     });
+                    if (delta < 0) {
+                        newFlashes.push({
+                            id: `fl-${uid}`,
+                            x: player.position.x,
+                            y: player.position.y,
+                        });
+                    }
                 }
             }
             prevPlayer.set(player.user_id, player.health);
@@ -78,6 +86,10 @@ export function useCombatFloaters(
             const prevHp = prevMonster.get(monsterKey);
             if (prevHp === undefined || prevHp === cell.monster.health)
                 continue;
+            const monsterIds = getMonsterIds(cell);
+            if (monsterIds.some((monsterId) => suppressedMonsters.has(monsterId))) {
+                continue;
+            }
 
             const delta = cell.monster.health - prevHp;
             const uid = `${monsterKey}-${now}-${Math.random().toString(36).slice(2)}`;
@@ -144,7 +156,7 @@ export function useCombatFloaters(
         }, LIFETIME_MS);
 
         return () => clearTimeout(t);
-    }, [players, grid]);
+    }, [players, grid, options?.suppressedMonsterIds, options?.suppressedPlayerIds]);
 
     return { floaters, flashes };
 }
@@ -157,4 +169,17 @@ function getMonsterKey(cell: Cell): string {
         return `m-${cell.monster.id}-${cell.x}-${cell.y}`;
     }
     return `c-${cell.x}-${cell.y}`;
+}
+
+function getMonsterIds(cell: Cell): number[] {
+    if (!cell.monster) return [];
+
+    const ids: number[] = [];
+    if (typeof cell.monster.db_instance_id === "number") {
+        ids.push(cell.monster.db_instance_id);
+    }
+    if (typeof cell.monster.id === "number") {
+        ids.push(cell.monster.id);
+    }
+    return ids;
 }

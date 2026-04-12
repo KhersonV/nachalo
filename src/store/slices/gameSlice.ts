@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import type { GameState, PlayerState, Inventory, Cell } from "../../types";
+import type { CombatExchangePayload, CombatTargetRef } from "@/types/combat";
 
 // Fast lookup index for cells by "x:y" → index in state.grid.
 // Kept at module level for minimal changes (O(1) updates).
@@ -20,6 +21,27 @@ export interface QuestFoundNotification {
 }
 
 let gridIndex: Record<string, number> = {};
+
+function applyActorHp(
+    state: GameState,
+    target: CombatTargetRef,
+    hpAfter: number,
+) {
+    if (target.type === "player") {
+        const player = state.players.find((p) => p.user_id === target.id);
+        if (player) player.health = hpAfter;
+        return;
+    }
+
+    const cell = state.grid.find(
+        (item) =>
+            item.monster?.db_instance_id === target.id ||
+            item.monster?.id === target.id,
+    );
+    if (cell?.monster) {
+        cell.monster.health = hpAfter;
+    }
+}
 
 const initialState: GameState = {
     instanceId: "",
@@ -100,20 +122,15 @@ const gameSlice = createSlice({
             if (p) p.position = action.payload.newPosition;
         },
 
-        combatExchange(
+        applyCombatExchangeState(
             state,
-            action: PayloadAction<{
-                instanceId: string;
-                attacker: { id: number; new_hp: number };
-                target: { id: number; new_hp: number };
-            }>,
+            action: PayloadAction<CombatExchangePayload>,
         ) {
             if (action.payload.instanceId !== state.instanceId) return;
-            for (const p of state.players) {
-                if (p.user_id === action.payload.attacker.id)
-                    p.health = action.payload.attacker.new_hp;
-                if (p.user_id === action.payload.target.id)
-                    p.health = action.payload.target.new_hp;
+
+            for (const step of action.payload.steps) {
+                if (step.kind === "death") continue;
+                applyActorHp(state, step.target, step.targetHpAfter);
             }
         },
 
@@ -308,7 +325,7 @@ const gameSlice = createSlice({
 export const {
     setMatchData,
     movePlayer,
-    combatExchange,
+    applyCombatExchangeState,
     updateInventory,
     updatePlayer,
     updateCell,

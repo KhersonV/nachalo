@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/store";
 import { resetState } from "@/store/slices/gameSlice";
+import { clearCombatPresentation } from "@/store/slices/combatPresentationSlice";
 import { useGameSocket } from "@/hooks/useGameSocket";
 import { debugLog } from "@/utils/log";
 import type { ResourceType, MonsterType } from "@/types/GameTypes";
@@ -127,6 +128,7 @@ export default function GameWrapper({
             prevInstanceIdRef.current !== instanceId
         ) {
             dispatch(resetState());
+            dispatch(clearCombatPresentation());
         }
         prevInstanceIdRef.current = instanceId;
 

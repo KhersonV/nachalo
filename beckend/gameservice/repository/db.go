@@ -5,12 +5,14 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"gameservice/game"
 	"log"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -19,7 +21,21 @@ var connStr = os.Getenv("GAME_DB_DSN")
 
 var DB *sql.DB
 
+const dbConnectTimeout = 90 * time.Second
+const dbConnectRetryInterval = 2 * time.Second
+const schemaReadyTimeout = 90 * time.Second
+
 func InitDB() {
+	ConnectDB()
+	RunMigrations()
+
+	// Восстанавливаем state матчей
+	if err := RestoreRuntimeState(); err != nil {
+		log.Fatalf("Ошибка восстановления матчей: %v", err)
+	}
+}
+
+func ConnectDB() {
 	var err error
 
 	if connStr == "" {
@@ -29,11 +45,22 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-	if err = DB.Ping(); err != nil {
-		log.Fatalf("Невозможно подключиться к БД: %v", err)
-	}
-	log.Println("Подключение к БД установлено")
 
+	deadline := time.Now().Add(dbConnectTimeout)
+	for {
+		if err = DB.Ping(); err == nil {
+			log.Println("Подключение к БД установлено")
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Fatalf("Невозможно подключиться к БД: %v", err)
+		}
+		log.Printf("Ожидание готовности БД: %v", err)
+		time.Sleep(dbConnectRetryInterval)
+	}
+}
+
+func RunMigrations() {
 	CreateMonstersTable()
 	CreateResourcesTable()
 	CreateArtifactsTable()
@@ -61,11 +88,147 @@ func InitDB() {
 	EnsureQuestArtifactColumn()
 
 	CreateMatchPlayerStructuresTable()
+}
 
-	// Восстанавливаем state матчей
-	if err := RestoreMatchStates(); err != nil {
-		log.Fatalf("Ошибка восстановления матчей: %v", err)
+func RestoreRuntimeState() error {
+	return RestoreMatchStates()
+}
+
+func EnsureSchemaReady() error {
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
 	}
+
+	deadline := time.Now().Add(schemaReadyTimeout)
+	for {
+		ready, err := SchemaReady()
+		if err == nil && ready {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err != nil {
+				return fmt.Errorf("schema readiness check failed: %w", err)
+			}
+			return fmt.Errorf("required schema is not ready before timeout")
+		}
+		time.Sleep(dbConnectRetryInterval)
+	}
+}
+
+func PingDB() error {
+	if DB == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return DB.PingContext(ctx)
+}
+
+func SchemaReady() (bool, error) {
+	if err := PingDB(); err != nil {
+		return false, err
+	}
+
+	requiredTables := []string{
+		"monsters",
+		"resources",
+		"artifacts",
+		"players",
+		"matches",
+		"match_players",
+		"inventory_items",
+		"match_monsters",
+		"persisted_artifacts",
+		"match_stats",
+		"match_player_stats",
+		"player_friends",
+		"player_friend_requests",
+		"player_base_buildings",
+		"match_player_structures",
+	}
+
+	for _, tableName := range requiredTables {
+		ok, err := tableExists(tableName)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+
+	requiredColumns := map[string][]string{
+		"players": {
+			"character_type",
+			"mobility",
+			"agility",
+			"sight_range",
+			"is_ranged",
+			"attack_range",
+		},
+		"match_players": {
+			"mobility",
+			"agility",
+			"sight_range",
+			"is_ranged",
+			"attack_range",
+			"image",
+			"group_id",
+		},
+		"matches":            {"quest_artifact_id"},
+		"match_stats":        {"winner_user_ids"},
+		"match_player_stats": {"is_winner"},
+	}
+
+	for tableName, columns := range requiredColumns {
+		for _, columnName := range columns {
+			ok, err := columnExists(tableName, columnName)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				return false, nil
+			}
+		}
+	}
+
+	return true, nil
+}
+
+func tableExists(tableName string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var exists bool
+	err := DB.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = $1
+		)`,
+		tableName,
+	).Scan(&exists)
+	return exists, err
+}
+
+func columnExists(tableName, columnName string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var exists bool
+	err := DB.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+		)`,
+		tableName,
+		columnName,
+	).Scan(&exists)
+	return exists, err
 }
 
 func CreateMonstersTable() {
@@ -159,28 +322,23 @@ func EnsurePlayersCharacterTypeColumn() {
 }
 
 func EnsurePlayersStatColumns() {
-	_, err := DB.Exec(`ALTER TABLE players RENAME COLUMN speed TO mobility`)
-	if err != nil {
+	if err := renameColumnIfNeeded("players", "speed", "mobility"); err != nil {
 		log.Printf("EnsurePlayersStatColumns rename speed->mobility: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN maneuverability TO agility`)
-	if err != nil {
+	if err := renameColumnIfNeeded("players", "maneuverability", "agility"); err != nil {
 		log.Printf("EnsurePlayersStatColumns rename maneuverability->agility: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN vision_range TO sight_range`)
-	if err != nil {
+	if err := renameColumnIfNeeded("players", "vision_range", "sight_range"); err != nil {
 		log.Printf("EnsurePlayersStatColumns rename vision_range->sight_range: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN range_attack TO is_ranged`)
-	if err != nil {
+	if err := renameColumnIfNeeded("players", "range_attack", "is_ranged"); err != nil {
 		log.Printf("EnsurePlayersStatColumns rename range_attack->is_ranged: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE players RENAME COLUMN range_distance TO attack_range`)
-	if err != nil {
+	if err := renameColumnIfNeeded("players", "range_distance", "attack_range"); err != nil {
 		log.Printf("EnsurePlayersStatColumns rename range_distance->attack_range: %v", err)
 	}
 
-	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
+	_, err := DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
 	if err != nil {
 		log.Printf("EnsurePlayersStatColumns mobility: %v", err)
 	}
@@ -302,28 +460,23 @@ func CreateMatchPlayersTable() {
 }
 
 func EnsureMatchPlayersStatColumns() {
-	_, err := DB.Exec(`ALTER TABLE match_players RENAME COLUMN speed TO mobility`)
-	if err != nil {
+	if err := renameColumnIfNeeded("match_players", "speed", "mobility"); err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns rename speed->mobility: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN maneuverability TO agility`)
-	if err != nil {
+	if err := renameColumnIfNeeded("match_players", "maneuverability", "agility"); err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns rename maneuverability->agility: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN vision_range TO sight_range`)
-	if err != nil {
+	if err := renameColumnIfNeeded("match_players", "vision_range", "sight_range"); err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns rename vision_range->sight_range: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN range_attack TO is_ranged`)
-	if err != nil {
+	if err := renameColumnIfNeeded("match_players", "range_attack", "is_ranged"); err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns rename range_attack->is_ranged: %v", err)
 	}
-	_, err = DB.Exec(`ALTER TABLE match_players RENAME COLUMN range_distance TO attack_range`)
-	if err != nil {
+	if err := renameColumnIfNeeded("match_players", "range_distance", "attack_range"); err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns rename range_distance->attack_range: %v", err)
 	}
 
-	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
+	_, err := DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
 	if err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns mobility: %v", err)
 	}
@@ -343,6 +496,32 @@ func EnsureMatchPlayersStatColumns() {
 	if err != nil {
 		log.Printf("EnsureMatchPlayersStatColumns attack_range: %v", err)
 	}
+}
+
+func renameColumnIfNeeded(tableName, oldColumnName, newColumnName string) error {
+	oldExists, err := columnExists(tableName, oldColumnName)
+	if err != nil {
+		return err
+	}
+	if !oldExists {
+		return nil
+	}
+
+	newExists, err := columnExists(tableName, newColumnName)
+	if err != nil {
+		return err
+	}
+	if newExists {
+		return nil
+	}
+
+	_, err = DB.Exec(fmt.Sprintf(
+		`ALTER TABLE %s RENAME COLUMN %s TO %s`,
+		tableName,
+		oldColumnName,
+		newColumnName,
+	))
+	return err
 }
 
 func CreateInventoryTable() {
