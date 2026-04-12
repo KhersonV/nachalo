@@ -9,8 +9,14 @@ import { useSelector, shallowEqual } from "react-redux";
 import type { RootState } from "@/store";
 import Map from "./Map";
 import type { Cell, PlayerState } from "../types";
-import { useCombatFloaters } from "../hooks/useCombatFloaters";
+import {
+    useCombatFloaters,
+    type CombatFlash,
+    type CombatFloater,
+} from "../hooks/useCombatFloaters";
+import { useCombatPresentationPlayback } from "../hooks/useCombatPresentationPlayback";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
+import type { ActiveAttackMotion, ActiveEffect } from "@/types/combat";
 import styles from "../styles/Map.module.css";
 
 interface MapWithCameraProps {
@@ -129,6 +135,7 @@ type PreparedPlayerRenderData = {
     activeSpriteSrc?: string;
     activeLayout: SpriteLayout | null;
     shouldMirror: boolean;
+    spriteScale: number;
     isActiveUser: boolean;
 };
 
@@ -139,21 +146,14 @@ type PlayerLayerProps = {
     active_user: number | null | undefined;
     onPlayerClick?: (player: PlayerState) => void;
     spriteMetaBySrc: Record<string, SpriteImageMeta>;
-};
-
-type CombatEffect = {
-    id: string | number;
-    x: number;
-    y: number;
-};
-
-type CombatFloater = CombatEffect & {
-    value: number;
-    isHeal?: boolean;
+    attackMotions: ActiveAttackMotion[];
+    playbackNowMs: number;
 };
 
 type CombatEffectsLayerProps = {
-    flashes: CombatEffect[];
+    nowMs: number;
+    effects: ActiveEffect[];
+    flashes: CombatFlash[];
     floaters: CombatFloater[];
     tileSize: number;
     gap: number;
@@ -371,6 +371,8 @@ const PlayerLayer = React.memo(function PlayerLayer({
     active_user,
     onPlayerClick,
     spriteMetaBySrc,
+    attackMotions,
+    playbackNowMs,
 }: PlayerLayerProps) {
     const previousPositionsRef = React.useRef<
         globalThis.Map<number, { x: number; y: number }>
@@ -561,6 +563,21 @@ const PlayerLayer = React.memo(function PlayerLayer({
         [tileSize, spriteMetaBySrc],
     );
 
+    const motionByActorId = React.useMemo(() => {
+        const next = new globalThis.Map<number, ActiveAttackMotion>();
+
+        for (const motion of attackMotions) {
+            if (
+                playbackNowMs >= motion.startMs &&
+                playbackNowMs <= motion.startMs + motion.durationMs
+            ) {
+                next.set(motion.actorId, motion);
+            }
+        }
+
+        return next;
+    }, [attackMotions, playbackNowMs]);
+
     const preparedPlayers = React.useMemo<PreparedPlayerRenderData[]>(() => {
         const now = Date.now();
         const result: PreparedPlayerRenderData[] = [];
@@ -651,26 +668,65 @@ const PlayerLayer = React.memo(function PlayerLayer({
 
             const renderWidth = activeLayout?.width ?? tileSize;
             const renderHeight = activeLayout?.height ?? tileSize;
-            const renderLeft =
+            const baseRenderLeft =
                 renderPos.x * (tileSize + gap) +
                 tileSize / 2 -
                 renderWidth / 2 +
                 PLAYER_IMAGE_OFFSET_X;
-            const renderTop =
+            const baseRenderTop =
                 renderPos.y * (tileSize + gap) +
                 tileSize -
                 renderHeight +
                 PLAYER_IMAGE_OFFSET_Y;
+            const attackMotion = motionByActorId.get(player.user_id);
+            const motionProgress = attackMotion
+                ? Math.max(
+                      0,
+                      Math.min(
+                          1,
+                          (playbackNowMs - attackMotion.startMs) /
+                              attackMotion.durationMs,
+                      ),
+                  )
+                : 0;
+            const motionArc = Math.sin(motionProgress * Math.PI);
+            const motionOffsetTiles =
+                attackMotion?.kind === "lunge"
+                    ? (attackMotion.distanceTiles ?? 0.18) * motionArc
+                    : attackMotion?.kind === "recoil"
+                      ? (attackMotion.distanceTiles ?? 0.08) * motionArc
+                      : 0;
+            const motionDirectionX =
+                attackMotion && "direction" in attackMotion
+                    ? attackMotion.direction.x
+                    : 0;
+            const motionDirectionY =
+                attackMotion && "direction" in attackMotion
+                    ? attackMotion.direction.y
+                    : 0;
+            const attackOffsetX =
+                motionDirectionX *
+                motionOffsetTiles *
+                (tileSize + gap);
+            const attackOffsetY =
+                motionDirectionY *
+                motionOffsetTiles *
+                (tileSize + gap);
+            const spriteScale =
+                attackMotion?.kind === "castPulse"
+                    ? 1 + 0.08 * motionArc
+                    : 1;
 
             result.push({
                 player,
-                renderLeft,
-                renderTop,
+                renderLeft: baseRenderLeft + attackOffsetX,
+                renderTop: baseRenderTop + attackOffsetY,
                 renderWidth,
                 renderHeight,
                 activeSpriteSrc,
                 activeLayout,
                 shouldMirror,
+                spriteScale,
                 isActiveUser: player.user_id === active_user,
             });
         }
@@ -686,6 +742,8 @@ const PlayerLayer = React.memo(function PlayerLayer({
         spriteLayoutCache,
         animTick,
         facingDirByPlayer,
+        motionByActorId,
+        playbackNowMs,
         stepAnimByPlayer,
     ]);
 
@@ -701,6 +759,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
                     activeSpriteSrc,
                     activeLayout,
                     shouldMirror,
+                    spriteScale,
                     isActiveUser,
                 }) => {
                     const wrapperStyle: React.CSSProperties = {
@@ -723,7 +782,7 @@ const PlayerLayer = React.memo(function PlayerLayer({
                             ? `${activeLayout.stripWidth}px ${activeLayout.height}px`
                             : undefined,
                         backgroundPositionX: "0px",
-                        transform: shouldMirror ? "scaleX(-1)" : "none",
+                        transform: `${shouldMirror ? "scaleX(-1) " : ""}scale(${spriteScale})`,
                     };
 
                     return (
@@ -762,20 +821,145 @@ function arePlayerLayerPropsEqual(
         prev.tileSize === next.tileSize &&
         prev.gap === next.gap &&
         prev.active_user === next.active_user &&
+        prev.playbackNowMs === next.playbackNowMs &&
         prev.onPlayerClick === next.onPlayerClick &&
+        prev.attackMotions === next.attackMotions &&
         areVisiblePlayersEqual(prev.visiblePlayers, next.visiblePlayers) &&
         areSpriteMetaEqual(prev.spriteMetaBySrc, next.spriteMetaBySrc)
     );
 }
 
 const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
+    nowMs,
+    effects,
     flashes,
     floaters,
     tileSize,
     gap,
 }: CombatEffectsLayerProps) {
+    const timelineEffects = effects.filter(
+        (effect) =>
+            nowMs >= effect.startMs && nowMs <= effect.startMs + effect.durationMs,
+    );
+
     return (
         <div style={EFFECTS_LAYER_STYLE}>
+            {timelineEffects.map((effect) => {
+                if (effect.kind === "hitFlash") {
+                    return (
+                        <div
+                            key={effect.id}
+                            className={styles.combatFlash}
+                            style={{
+                                left: effect.cell.x * (tileSize + gap),
+                                top: effect.cell.y * (tileSize + gap),
+                                width: tileSize,
+                                height: tileSize,
+                            }}
+                        />
+                    );
+                }
+
+                if (effect.kind === "floater") {
+                    return (
+                        <div
+                            key={effect.id}
+                            className={`${styles.combatFloater} ${
+                                effect.isHeal
+                                    ? styles.combatFloaterHeal
+                                    : styles.combatFloaterDamage
+                            }`}
+                            style={{
+                                left:
+                                    effect.cell.x * (tileSize + gap) +
+                                    tileSize / 2,
+                                top: effect.cell.y * (tileSize + gap) - 2,
+                            }}
+                        >
+                            {effect.isHeal
+                                ? `+${effect.value}`
+                                : `-${effect.value}`}
+                        </div>
+                    );
+                }
+
+                if (effect.kind === "projectile") {
+                    const progress = Math.max(
+                        0,
+                        Math.min(
+                            1,
+                            (nowMs - effect.startMs) / effect.durationMs,
+                        ),
+                    );
+                    const worldX =
+                        effect.source.x +
+                        (effect.target.x - effect.source.x) * progress;
+                    const worldY =
+                        effect.source.y +
+                        (effect.target.y - effect.source.y) * progress;
+
+                    return (
+                        <div
+                            key={effect.id}
+                            className={
+                                effect.attackStyle === "magic"
+                                    ? styles.combatProjectileMagic
+                                    : styles.combatProjectile
+                            }
+                            style={{
+                                left:
+                                    worldX * (tileSize + gap) + tileSize / 2 - 5,
+                                top:
+                                    worldY * (tileSize + gap) + tileSize / 2 - 5,
+                            }}
+                        />
+                    );
+                }
+
+                if (effect.kind === "deathBurst") {
+                    return (
+                        <div
+                            key={effect.id}
+                            className={styles.combatDeathBurst}
+                            style={{
+                                left: effect.cell.x * (tileSize + gap),
+                                top: effect.cell.y * (tileSize + gap),
+                                width: tileSize,
+                                height: tileSize,
+                            }}
+                        />
+                    );
+                }
+
+                const spriteSrc = effect.actor.image
+                    ? normalizeAvatarPath(effect.actor.image)
+                    : "";
+                if (!spriteSrc) return null;
+
+                const progress = Math.max(
+                    0,
+                    Math.min(1, (nowMs - effect.startMs) / effect.durationMs),
+                );
+
+                return (
+                    <img
+                        key={effect.id}
+                        src={spriteSrc}
+                        alt=""
+                        draggable={false}
+                        className={styles.combatDeathFade}
+                        style={{
+                            left: effect.actor.position.x * (tileSize + gap),
+                            top: effect.actor.position.y * (tileSize + gap),
+                            width: tileSize,
+                            height: tileSize,
+                            opacity: 1 - progress,
+                            transform: `translateY(${-10 * progress}px) scale(${1 - 0.08 * progress})`,
+                        }}
+                    />
+                );
+            })}
+
             {flashes.map((fl) => (
                 <div
                     key={fl.id}
@@ -842,6 +1026,9 @@ export default function MapWithCamera({
             return dx <= sightRange && dy <= sightRange;
         });
     }, [players, playerPosition.x, playerPosition.y, sightRange]);
+
+    const { nowMs, activeEffects, activeMotions, suppression } =
+        useCombatPresentationPlayback();
 
     // Capture initial start owners (player start positions) once per match load.
     const initialStartOwnersRef = React.useRef<Record<string, number>>({});
@@ -916,7 +1103,10 @@ export default function MapWithCamera({
         [viewportWidth, viewportHeight],
     );
 
-    const { floaters, flashes } = useCombatFloaters(players, grid);
+    const { floaters, flashes } = useCombatFloaters(players, grid, {
+        suppressedPlayerIds: suppression.playerIds,
+        suppressedMonsterIds: suppression.monsterIds,
+    });
 
     const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
         Record<string, SpriteImageMeta>
@@ -1008,9 +1198,13 @@ export default function MapWithCamera({
                     active_user={active_user}
                     onPlayerClick={onPlayerClick}
                     spriteMetaBySrc={spriteMetaBySrc}
+                    attackMotions={activeMotions}
+                    playbackNowMs={nowMs}
                 />
 
                 <CombatEffectsLayer
+                    nowMs={nowMs}
+                    effects={activeEffects}
                     flashes={flashes}
                     floaters={floaters}
                     tileSize={tileSize}

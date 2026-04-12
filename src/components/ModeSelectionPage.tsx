@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import { useDispatch } from "react-redux";
 import { resetState } from "../store/slices/gameSlice";
+import { clearCombatPresentation } from "../store/slices/combatPresentationSlice";
 import type {
     FriendSummary,
     GameMode,
@@ -491,6 +492,7 @@ export default function ModeSelectionPage() {
     useEffect(() => {
         if (window.location.pathname === "/mode") {
             dispatch(resetState());
+            dispatch(clearCombatPresentation());
         }
     }, [dispatch]);
 

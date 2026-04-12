@@ -1,4 +1,3 @@
-
 //================
 //auth/Auth.go
 //================
@@ -48,6 +47,9 @@ type LoginResponse struct {
 
 var db *sql.DB
 
+const dbConnectTimeout = 90 * time.Second
+const dbConnectRetryInterval = 2 * time.Second
+
 func initDB() {
 	var err error
 
@@ -60,12 +62,19 @@ func initDB() {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatalf("Невозможно подключиться к БД: %v", err)
+	deadline := time.Now().Add(dbConnectTimeout)
+	for {
+		err = db.Ping()
+		if err == nil {
+			log.Println("Подключение к БД установлено")
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Fatalf("Невозможно подключиться к БД: %v", err)
+		}
+		log.Printf("Ожидание готовности БД auth: %v", err)
+		time.Sleep(dbConnectRetryInterval)
 	}
-
-	log.Println("Подключение к БД установлено")
 }
 
 func createUsersTable() {
@@ -87,10 +96,10 @@ func createUsersTable() {
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
-	Image    string `json:"image"`
+	Email         string `json:"email"`
+	Password      string `json:"password"`
+	Name          string `json:"name"`
+	Image         string `json:"image"`
 	CharacterType string `json:"characterType"`
 }
 
@@ -161,9 +170,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]interface{}{
-		"user_id": userID,
-		"name":    req.Name,
-		"image":   req.Image,
+		"user_id":        userID,
+		"name":           req.Name,
+		"image":          req.Image,
 		"character_type": req.CharacterType,
 	}
 
@@ -293,6 +302,36 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
+func authReady() error {
+	if db == nil {
+		return fmt.Errorf("database is not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		return err
+	}
+
+	var exists bool
+	if err := db.QueryRowContext(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'users'
+		)`,
+	).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("users table is not ready")
+	}
+
+	return nil
+}
+
 func main() {
 	jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
 	connStr = os.Getenv("AUTH_DB_DSN")
@@ -317,6 +356,14 @@ func main() {
 	createUsersTable()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := authReady(); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("/auth/register", registerHandler)
 	mux.HandleFunc("/auth/login", loginHandler)
 	mux.Handle("/auth/profile", authMiddleware(http.HandlerFunc(profileHandler)))
@@ -337,7 +384,7 @@ func main() {
 	}
 
 	c := cors.New(cors.Options{
-		AllowedOrigins:   allowedOrigins,
+		AllowedOrigins: allowedOrigins,
 		AllowOriginFunc: func(origin string) bool {
 			if _, ok := allowedOriginSet[origin]; ok {
 				return true

@@ -25,19 +25,44 @@ const attackEnergyCost = 4
 const rangedAttackEnergyCost = 6
 const counterAttackEnergyCost = 2
 
+type CombatActorType string
+
+const (
+	CombatActorPlayer  CombatActorType = "player"
+	CombatActorMonster CombatActorType = "monster"
+)
+
+type AttackStyle string
+
+const (
+	AttackStyleMelee  AttackStyle = "melee"
+	AttackStyleRanged AttackStyle = "ranged"
+	AttackStyleMagic  AttackStyle = "magic"
+)
+
+type CombatTargetRef struct {
+	ID   int             `json:"id"`
+	Type CombatActorType `json:"type"`
+}
+
+type CombatStep struct {
+	Kind          string           `json:"kind"`
+	Source        *CombatTargetRef `json:"source,omitempty"`
+	Target        CombatTargetRef  `json:"target"`
+	Damage        int              `json:"damage,omitempty"`
+	TargetHPAfter int              `json:"targetHpAfter,omitempty"`
+}
+
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
 type CombatExchangePayload struct {
-	Attacker struct {
-		ID     int `json:"id"`
-		NewHP  int `json:"new_hp"`
-		Damage int `json:"damage"`
-	} `json:"attacker"`
-	Target struct {
-		ID     int `json:"id"`
-		NewHP  int `json:"new_hp"`
-		Damage int `json:"damage"`
-	} `json:"target"`
-	InstanceID string `json:"instanceId"`
+	InstanceID   string          `json:"instanceId"`
+	ExchangeID   string          `json:"exchangeId"`
+	AttackerID   int             `json:"attackerId"`
+	AttackerType CombatActorType `json:"attackerType"`
+	TargetID     int             `json:"targetId"`
+	TargetType   CombatActorType `json:"targetType"`
+	AttackStyle  AttackStyle     `json:"attackStyle"`
+	Steps        []CombatStep    `json:"steps"`
 }
 
 // CombatExchangeMessage — сообщение WS-события боевого обмена
@@ -52,6 +77,21 @@ type AttackRequest struct {
 	TargetType   string `json:"target_type"`
 	TargetID     int    `json:"target_id"`
 	InstanceID   string `json:"instance_id"`
+}
+
+func toCombatActorType(entityType string) CombatActorType {
+	if entityType == "monster" {
+		return CombatActorMonster
+	}
+	return CombatActorPlayer
+}
+
+func nextCombatExchangeID(instanceID string) string {
+	if ms, ok := Combat.LoadGameState(instanceID); ok && ms != nil {
+		turn, seq := ms.NextCombatExchangeMeta()
+		return fmt.Sprintf("%s:%d:%d", instanceID, turn, seq)
+	}
+	return fmt.Sprintf("%s:0:0", instanceID)
 }
 
 // cellPassable возвращает, можно ли ходить по тайлу с данным кодом
@@ -154,106 +194,106 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5.1) Проверяем, что тайл проходимый
-var mapJSON []byte
-if err := repository.DB.QueryRow(
-	`SELECT map FROM matches WHERE instance_id = $1`,
-	instanceID,
-).Scan(&mapJSON); err != nil {
-	http.Error(w, "Ошибка загрузки карты", http.StatusInternalServerError)
-	return
-}
-
-var cells []game.FullCell
-if err := json.Unmarshal(mapJSON, &cells); err != nil {
-	http.Error(w, "Ошибка разбора карты", http.StatusInternalServerError)
-	return
-}
-
-cellIdx := -1
-var targetCell *game.FullCell
-for i := range cells {
-	if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
-		cellIdx = i
-		targetCell = &cells[i]
-		break
-	}
-}
-if cellIdx == -1 || targetCell == nil {
-	http.Error(w, "Клетка не найдена", http.StatusBadRequest)
-	return
-}
-
-if !cellPassable(targetCell.TileCode) {
-	http.Error(w, fmt.Sprintf("Непроходимый тайл %d", targetCell.TileCode), http.StatusBadRequest)
-	return
-}
-
-if targetCell.StructureType != "" || targetCell.IsUnderConstruction {
-	player, err := repository.GetMatchPlayerByID(instanceID, userID)
-	if err != nil {
-		http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+	var mapJSON []byte
+	if err := repository.DB.QueryRow(
+		`SELECT map FROM matches WHERE instance_id = $1`,
+		instanceID,
+	).Scan(&mapJSON); err != nil {
+		http.Error(w, "Ошибка загрузки карты", http.StatusInternalServerError)
 		return
 	}
 
-	if manhattan(player.Position.X, player.Position.Y, req.NewPosX, req.NewPosY) != 1 {
-		http.Error(w, "строение можно атаковать только в соседней клетке", http.StatusBadRequest)
+	var cells []game.FullCell
+	if err := json.Unmarshal(mapJSON, &cells); err != nil {
+		http.Error(w, "Ошибка разбора карты", http.StatusInternalServerError)
 		return
 	}
 
-	if !canAttackStructure(userID, targetCell) {
-		http.Error(w, "это строение нельзя атаковать", http.StatusBadRequest)
-		return
-	}
-
-	if player.Energy < attackEnergyCost {
-		http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
-		return
-	}
-
-	structureType := targetCell.StructureType
-
-	attackerStats := stats{
-		Attack:      player.Attack,
-		Defense:     player.Defense,
-		Health:      player.Health,
-		IsRanged:    player.IsRanged,
-		AttackRange: player.AttackRange,
-		X:           player.Position.X,
-		Y:           player.Position.Y,
-	}
-
-	player.Energy -= attackEnergyCost
-	if err := repository.UpdateMatchPlayer(instanceID, player); err != nil {
-		http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
-		return
-	}
-
-	targetRes := applyDamageToStructure(attackerStats, targetCell.StructureHealth, targetCell.StructureDefense)
-
-	if targetRes.NewHealth > 0 {
-		if err := damageStructureOnCell(instanceID, cells, cellIdx, targetRes.NewHealth); err != nil {
-			http.Error(w, "Ошибка обновления строения", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if err := destroyStructureOnCell(instanceID, cells, cellIdx); err != nil {
-			http.Error(w, "Ошибка разрушения строения", http.StatusInternalServerError)
-			return
+	cellIdx := -1
+	var targetCell *game.FullCell
+	for i := range cells {
+		if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
+			cellIdx = i
+			targetCell = &cells[i]
+			break
 		}
 	}
+	if cellIdx == -1 || targetCell == nil {
+		http.Error(w, "Клетка не найдена", http.StatusBadRequest)
+		return
+	}
 
-	sendUpdatePlayerWS(instanceID, userID)
+	if !cellPassable(targetCell.TileCode) {
+		http.Error(w, fmt.Sprintf("Непроходимый тайл %d", targetCell.TileCode), http.StatusBadRequest)
+		return
+	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"attack_mode":      "melee",
-		"damage_to_target": targetRes.Damage,
-		"new_target_hp":    targetRes.NewHealth,
-		"target_type":      "structure",
-		"structure_type":   structureType,
-	})
-	return
-}
+	if targetCell.StructureType != "" || targetCell.IsUnderConstruction {
+		player, err := repository.GetMatchPlayerByID(instanceID, userID)
+		if err != nil {
+			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+			return
+		}
+
+		if manhattan(player.Position.X, player.Position.Y, req.NewPosX, req.NewPosY) != 1 {
+			http.Error(w, "строение можно атаковать только в соседней клетке", http.StatusBadRequest)
+			return
+		}
+
+		if !canAttackStructure(userID, targetCell) {
+			http.Error(w, "это строение нельзя атаковать", http.StatusBadRequest)
+			return
+		}
+
+		if player.Energy < attackEnergyCost {
+			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
+			return
+		}
+
+		structureType := targetCell.StructureType
+
+		attackerStats := stats{
+			Attack:      player.Attack,
+			Defense:     player.Defense,
+			Health:      player.Health,
+			IsRanged:    player.IsRanged,
+			AttackRange: player.AttackRange,
+			X:           player.Position.X,
+			Y:           player.Position.Y,
+		}
+
+		player.Energy -= attackEnergyCost
+		if err := repository.UpdateMatchPlayer(instanceID, player); err != nil {
+			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
+			return
+		}
+
+		targetRes := applyDamageToStructure(attackerStats, targetCell.StructureHealth, targetCell.StructureDefense)
+
+		if targetRes.NewHealth > 0 {
+			if err := damageStructureOnCell(instanceID, cells, cellIdx, targetRes.NewHealth); err != nil {
+				http.Error(w, "Ошибка обновления строения", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			if err := destroyStructureOnCell(instanceID, cells, cellIdx); err != nil {
+				http.Error(w, "Ошибка разрушения строения", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		sendUpdatePlayerWS(instanceID, userID)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"attack_mode":      "melee",
+			"damage_to_target": targetRes.Damage,
+			"new_target_hp":    targetRes.NewHealth,
+			"target_type":      "structure",
+			"structure_type":   structureType,
+		})
+		return
+	}
 
 	// 6) Обычное перемещение
 	player, err := repository.GetMatchPlayerByID(instanceID, userID)
@@ -318,13 +358,14 @@ const (
 )
 
 type stats struct {
-	Attack      int
-	Defense     int
-	Health      int
-	IsRanged    bool
-	AttackRange int
-	X           int
-	Y           int
+	Attack        int
+	Defense       int
+	Health        int
+	IsRanged      bool
+	AttackRange   int
+	CharacterType string
+	X             int
+	Y             int
 }
 
 type attackResult struct {
@@ -341,13 +382,14 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 			return stats{}, err
 		}
 		return stats{
-			Attack:      p.Attack,
-			Defense:     p.Defense,
-			Health:      p.Health,
-			IsRanged:    p.IsRanged,
-			AttackRange: p.AttackRange,
-			X:           p.Position.X,
-			Y:           p.Position.Y,
+			Attack:        p.Attack,
+			Defense:       p.Defense,
+			Health:        p.Health,
+			IsRanged:      p.IsRanged,
+			AttackRange:   p.AttackRange,
+			CharacterType: p.CharacterType,
+			X:             p.Position.X,
+			Y:             p.Position.Y,
 		}, nil
 	}
 
@@ -391,6 +433,76 @@ func resolveAttackMode(attacker stats, target stats) (attackMode, error) {
 	return "", fmt.Errorf("цель вне дистанции атаки")
 }
 
+func resolvePresentationAttackStyle(attacker stats, mode attackMode) AttackStyle {
+	if attacker.CharacterType == "mystic" {
+		return AttackStyleMagic
+	}
+	if mode == attackModeRanged {
+		return AttackStyleRanged
+	}
+	return AttackStyleMelee
+}
+
+func buildCombatExchangePayload(
+	instanceID string,
+	attackerType string,
+	attackerID int,
+	targetType string,
+	targetID int,
+	attackerStats stats,
+	mode attackMode,
+	targetRes attackResult,
+	counterRes attackResult,
+) CombatExchangePayload {
+	attackerRef := CombatTargetRef{ID: attackerID, Type: toCombatActorType(attackerType)}
+	targetRef := CombatTargetRef{ID: targetID, Type: toCombatActorType(targetType)}
+
+	steps := []CombatStep{
+		{
+			Kind:          "hit",
+			Source:        &attackerRef,
+			Target:        targetRef,
+			Damage:        targetRes.Damage,
+			TargetHPAfter: targetRes.NewHealth,
+		},
+	}
+
+	if counterRes.Damage > 0 {
+		steps = append(steps, CombatStep{
+			Kind:          "counter",
+			Source:        &targetRef,
+			Target:        attackerRef,
+			Damage:        counterRes.Damage,
+			TargetHPAfter: counterRes.NewHealth,
+		})
+	}
+
+	if targetRes.NewHealth <= 0 {
+		steps = append(steps, CombatStep{
+			Kind:   "death",
+			Target: targetRef,
+		})
+	}
+
+	if counterRes.Damage > 0 && counterRes.NewHealth <= 0 {
+		steps = append(steps, CombatStep{
+			Kind:   "death",
+			Target: attackerRef,
+		})
+	}
+
+	return CombatExchangePayload{
+		InstanceID:   instanceID,
+		ExchangeID:   nextCombatExchangeID(instanceID),
+		AttackerID:   attackerID,
+		AttackerType: attackerRef.Type,
+		TargetID:     targetID,
+		TargetType:   targetRef.Type,
+		AttackStyle:  resolvePresentationAttackStyle(attackerStats, mode),
+		Steps:        steps,
+	}
+}
+
 // --- Расчёт урона и оставшегося HP ----------------------------------------
 
 func applyDamage(att stats, def stats) attackResult {
@@ -404,7 +516,6 @@ func applyDamage(att stats, def stats) attackResult {
 	}
 	return attackResult{Damage: dmg, NewHealth: newHP}
 }
-
 
 func canAttackStructure(attackerUserID int, cell *game.FullCell) bool {
 	if cell == nil {
@@ -478,22 +589,22 @@ func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) e
 	// empty values and client would not clear the structure.
 	uc := serialiseUpdatedCell(*cell)
 	updatedCellPayload := map[string]interface{}{
-		"cell_id": uc.CellID,
-		"x": uc.X,
-		"y": uc.Y,
+		"cell_id":  uc.CellID,
+		"x":        uc.X,
+		"y":        uc.Y,
 		"tileCode": uc.TileCode,
 		"resource": uc.Resource,
-		"barbel": uc.Barbel,
-		"monster": uc.Monster,
+		"barbel":   uc.Barbel,
+		"monster":  uc.Monster,
 		"isPortal": uc.IsPortal,
 		"isPlayer": uc.IsPlayer,
 		// always include structure fields explicitly
-		"structure_type": uc.StructureType,
+		"structure_type":          uc.StructureType,
 		"structure_owner_user_id": uc.StructureOwnerUserID,
-		"structure_health": uc.StructureHealth,
-		"structure_defense": uc.StructureDefense,
-		"structure_attack": uc.StructureAttack,
-		"is_under_construction": uc.IsUnderConstruction,
+		"structure_health":        uc.StructureHealth,
+		"structure_defense":       uc.StructureDefense,
+		"structure_attack":        uc.StructureAttack,
+		"is_under_construction":   uc.IsUnderConstruction,
 		"construction_turns_left": uc.ConstructionTurnsLeft,
 	}
 	update := map[string]interface{}{
@@ -1073,14 +1184,20 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 
 	// 9) WS: COMBAT_EXCHANGE
-	msg := CombatExchangeMessage{Type: "COMBAT_EXCHANGE"}
-	msg.Payload.Attacker.ID = req.AttackerID
-	msg.Payload.Attacker.Damage = counterRes.Damage
-	msg.Payload.Attacker.NewHP = counterRes.NewHealth
-	msg.Payload.Target.ID = req.TargetID
-	msg.Payload.Target.Damage = targetRes.Damage
-	msg.Payload.Target.NewHP = targetRes.NewHealth
-	msg.Payload.InstanceID = req.InstanceID
+	msg := CombatExchangeMessage{
+		Type: "COMBAT_EXCHANGE",
+		Payload: buildCombatExchangePayload(
+			req.InstanceID,
+			req.AttackerType,
+			req.AttackerID,
+			req.TargetType,
+			req.TargetID,
+			atkStats,
+			mode,
+			targetRes,
+			counterRes,
+		),
+	}
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)

@@ -86,6 +86,88 @@ func TestUniversalAttackHandler(t *testing.T) {
 	}
 }
 
+func TestBuildCombatExchangePayload_UsesDeterministicSequenceAndSteps(t *testing.T) {
+	const instanceID = "exchange-match"
+
+	Combat = CombatDeps{
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return &game.MatchState{
+				InstanceID: instanceID,
+				TurnNumber: 3,
+			}, true
+		},
+	}
+	defer RestoreDefaults()
+
+	payload := buildCombatExchangePayload(
+		instanceID,
+		"player",
+		11,
+		"monster",
+		44,
+		stats{CharacterType: "mystic"},
+		attackModeRanged,
+		attackResult{Damage: 7, NewHealth: 0},
+		attackResult{Damage: 0, NewHealth: 10},
+	)
+
+	if payload.ExchangeID != "exchange-match:3:1" {
+		t.Fatalf("expected deterministic exchange id, got %q", payload.ExchangeID)
+	}
+	if payload.AttackStyle != AttackStyleMagic {
+		t.Fatalf("expected magic attack style, got %q", payload.AttackStyle)
+	}
+	if len(payload.Steps) != 2 {
+		t.Fatalf("expected hit + death, got %d steps", len(payload.Steps))
+	}
+	if payload.Steps[0].Kind != "hit" {
+		t.Fatalf("expected first step to be hit, got %q", payload.Steps[0].Kind)
+	}
+	if payload.Steps[0].Target.Type != CombatActorMonster {
+		t.Fatalf("expected monster target, got %q", payload.Steps[0].Target.Type)
+	}
+	if payload.Steps[1].Kind != "death" {
+		t.Fatalf("expected second step to be death, got %q", payload.Steps[1].Kind)
+	}
+}
+
+func TestBuildCombatExchangePayload_AddsCounterAndAttackerDeath(t *testing.T) {
+	Combat = CombatDeps{
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return &game.MatchState{
+				InstanceID: "counter-exchange",
+				TurnNumber: 4,
+			}, true
+		},
+	}
+	defer RestoreDefaults()
+
+	payload := buildCombatExchangePayload(
+		"counter-exchange",
+		"player",
+		10,
+		"player",
+		20,
+		stats{CharacterType: "guardian"},
+		attackModeMelee,
+		attackResult{Damage: 5, NewHealth: 6},
+		attackResult{Damage: 8, NewHealth: 0},
+	)
+
+	if len(payload.Steps) != 3 {
+		t.Fatalf("expected hit + counter + death, got %d steps", len(payload.Steps))
+	}
+	if payload.Steps[1].Kind != "counter" {
+		t.Fatalf("expected second step to be counter, got %q", payload.Steps[1].Kind)
+	}
+	if payload.Steps[1].Target.ID != 10 {
+		t.Fatalf("expected counter target to be attacker, got %d", payload.Steps[1].Target.ID)
+	}
+	if payload.Steps[2].Kind != "death" || payload.Steps[2].Target.ID != 10 {
+		t.Fatalf("expected attacker death step, got %+v", payload.Steps[2])
+	}
+}
+
 func TestDoCounterattackWithEnergy_RecordsDefenderDamageEvent(t *testing.T) {
 	const instanceID = "counter-match"
 	const attackerID = 1

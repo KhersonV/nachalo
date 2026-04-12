@@ -2,13 +2,13 @@
 // src/features/game/createWsHandlers.ts
 //=======================================
 
-import { AppDispatch } from "@/store";
+import { AppDispatch, RootState } from "@/store";
 import {
     setMatchData,
     updateCell,
     updatePlayer,
     movePlayer,
-    combatExchange,
+    applyCombatExchangeState,
     setActiveUser,
     playerDefeated,
     turnPassed,
@@ -17,9 +17,69 @@ import {
     updatePlayerHealth,
     setQuestFoundNotification,
 } from "@/store/slices/gameSlice";
+import {
+    enqueueCombatExchange,
+} from "@/store/slices/combatPresentationSlice";
+import type {
+    CombatActorSnapshot,
+    CombatExchangePayload,
+    CombatTargetRef,
+} from "@/types/combat";
 
 // The User type can be imported from your AuthContext
 type User = { id: number } | null;
+
+function selectActorSnapshot(
+    state: RootState,
+    ref: CombatTargetRef,
+): CombatActorSnapshot | null {
+    if (ref.type === "player") {
+        const player = state.game.players.find((p) => p.user_id === ref.id);
+        if (!player) return null;
+
+        return {
+            id: ref.id,
+            type: "player",
+            position: { ...player.position },
+            image: player.image,
+        };
+    }
+
+    const monsterCell = state.game.grid.find(
+        (cell) =>
+            cell.monster?.db_instance_id === ref.id ||
+            cell.monster?.id === ref.id,
+    );
+    if (!monsterCell?.monster) return null;
+
+    return {
+        id: ref.id,
+        type: "monster",
+        position: { x: monsterCell.x, y: monsterCell.y },
+        image: monsterCell.monster.image,
+    };
+}
+
+const enqueueCombatExchangeFromWs =
+    (payload: CombatExchangePayload) =>
+    (dispatch: AppDispatch, getState: () => RootState) => {
+        const state = getState();
+
+        dispatch(applyCombatExchangeState(payload));
+        dispatch(
+            enqueueCombatExchange({
+                ...payload,
+                attackerSnapshot: selectActorSnapshot(state, {
+                    id: payload.attackerId,
+                    type: payload.attackerType,
+                }),
+                targetSnapshot: selectActorSnapshot(state, {
+                    id: payload.targetId,
+                    type: payload.targetType,
+                }),
+            }),
+        );
+    };
 
 export function createWsHandlers(
     dispatch: AppDispatch,
@@ -97,14 +157,8 @@ export function createWsHandlers(
             );
         },
         // --- BATTLE/COMBAT ---
-        COMBAT_EXCHANGE: (payload: any) =>
-            dispatch(
-                combatExchange({
-                    instanceId,
-                    attacker: payload.attacker,
-                    target: payload.target,
-                }),
-            ),
+        COMBAT_EXCHANGE: (payload: CombatExchangePayload) =>
+            dispatch(enqueueCombatExchangeFromWs(payload)),
         // --- TURN/USER ---
         SET_ACTIVE_USER: (payload: any) =>
             dispatch(

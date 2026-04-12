@@ -6,10 +6,12 @@
 
 import { configureStore } from "@reduxjs/toolkit";
 import gameReducer from "./slices/gameSlice"; // и другие редьюсеры при необходимости
+import combatPresentationReducer from "./slices/combatPresentationSlice";
 
 export const store = configureStore({
   reducer: {
     game: gameReducer,
+    combatPresentation: combatPresentationReducer,
     // другие редьюсеры
   },
 });
