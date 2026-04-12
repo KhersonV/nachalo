@@ -19,11 +19,20 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Стоимость перемещения: 1 единица энергии.
-const moveEnergyCost = 1
-const attackEnergyCost = 4
-const rangedAttackEnergyCost = 6
-const counterAttackEnergyCost = 2
+const (
+	meleeAttackEnergyCost            = 6
+	rangedAttackEnergyCost           = 8
+	standardCounterAttackEnergyCost  = 2
+	guardianZoneControlRange         = 2
+	guardianZoneControlMovePenalty   = 1
+	armorBreakDefensePenaltyPerStack = 2
+	armorBreakDurationTurns          = 2
+	armorBreakMaxStacks              = 2
+	berserkerFollowUpLimitPerTurn    = 3
+	energyDrainPerHit                = 2
+	energyDrainGainPerHit            = 1
+	energyDrainPerTargetLimit        = 3
+)
 
 type CombatActorType string
 
@@ -45,12 +54,33 @@ type CombatTargetRef struct {
 	Type CombatActorType `json:"type"`
 }
 
+type CombatPoint struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
 type CombatStep struct {
 	Kind          string           `json:"kind"`
 	Source        *CombatTargetRef `json:"source,omitempty"`
 	Target        CombatTargetRef  `json:"target"`
 	Damage        int              `json:"damage,omitempty"`
 	TargetHPAfter int              `json:"targetHpAfter,omitempty"`
+}
+
+type CombatEffect struct {
+	Kind              string           `json:"kind"`
+	Source            *CombatTargetRef `json:"source,omitempty"`
+	Target            *CombatTargetRef `json:"target,omitempty"`
+	Value             int              `json:"value,omitempty"`
+	Stacks            int              `json:"stacks,omitempty"`
+	DurationTurns     int              `json:"durationTurns,omitempty"`
+	Succeeded         bool             `json:"succeeded"`
+	PositionAfter     *CombatPoint     `json:"positionAfter,omitempty"`
+	BonusDamage       int              `json:"bonusDamage,omitempty"`
+	EnergyGranted     int              `json:"energyGranted,omitempty"`
+	EnergyDrained     int              `json:"energyDrained,omitempty"`
+	SourceEnergyAfter int              `json:"sourceEnergyAfter,omitempty"`
+	TargetEnergyAfter int              `json:"targetEnergyAfter,omitempty"`
 }
 
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
@@ -63,6 +93,7 @@ type CombatExchangePayload struct {
 	TargetType   CombatActorType `json:"targetType"`
 	AttackStyle  AttackStyle     `json:"attackStyle"`
 	Steps        []CombatStep    `json:"steps"`
+	Effects      []CombatEffect  `json:"effects,omitempty"`
 }
 
 // CombatExchangeMessage — сообщение WS-события боевого обмена
@@ -245,7 +276,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if player.Energy < attackEnergyCost {
+		if player.Energy < meleeAttackEnergyCost {
 			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
 			return
 		}
@@ -253,16 +284,18 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		structureType := targetCell.StructureType
 
 		attackerStats := stats{
-			Attack:      player.Attack,
-			Defense:     player.Defense,
-			Health:      player.Health,
-			IsRanged:    player.IsRanged,
-			AttackRange: player.AttackRange,
-			X:           player.Position.X,
-			Y:           player.Position.Y,
+			Attack:        player.Attack,
+			Defense:       player.Defense,
+			Health:        player.Health,
+			MaxHealth:     player.MaxHealth,
+			IsRanged:      player.IsRanged,
+			AttackRange:   player.AttackRange,
+			CharacterType: player.CharacterType,
+			X:             player.Position.X,
+			Y:             player.Position.Y,
 		}
 
-		player.Energy -= attackEnergyCost
+		player.Energy -= meleeAttackEnergyCost
 		if err := repository.UpdateMatchPlayer(instanceID, player); err != nil {
 			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
 			return
@@ -301,13 +334,23 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
 		return
 	}
-	if player.Energy < moveEnergyCost {
+	if manhattan(player.Position.X, player.Position.Y, req.NewPosX, req.NewPosY) != 1 {
+		http.Error(w, "можно двигаться только на соседнюю клетку", http.StatusBadRequest)
+		return
+	}
+
+	moveCost, err := resolveMoveEnergyCost(instanceID, player)
+	if err != nil {
+		http.Error(w, "Ошибка расчёта стоимости движения", http.StatusInternalServerError)
+		return
+	}
+	if player.Energy < moveCost {
 		http.Error(w, "Недостаточно энергии", http.StatusBadRequest)
 		return
 	}
 
 	oldPos := player.Position
-	player.Energy--
+	player.Energy -= moveCost
 	player.Position.X = req.NewPosX
 	player.Position.Y = req.NewPosY
 
@@ -361,6 +404,7 @@ type stats struct {
 	Attack        int
 	Defense       int
 	Health        int
+	MaxHealth     int
 	IsRanged      bool
 	AttackRange   int
 	CharacterType string
@@ -371,13 +415,14 @@ type stats struct {
 type attackResult struct {
 	Damage    int
 	NewHealth int
+	Triggered bool
 }
 
 // --- Загрузка статов игрока или монстра ------------------------------------
 
 func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 	if entityType == "player" {
-		p, err := repository.GetMatchPlayerByID(instanceID, entityID)
+		p, err := Combat.GetPlayer(instanceID, entityID)
 		if err != nil {
 			return stats{}, err
 		}
@@ -385,6 +430,7 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 			Attack:        p.Attack,
 			Defense:       p.Defense,
 			Health:        p.Health,
+			MaxHealth:     p.MaxHealth,
 			IsRanged:      p.IsRanged,
 			AttackRange:   p.AttackRange,
 			CharacterType: p.CharacterType,
@@ -395,18 +441,20 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 
 	// monster
 
-	mm, err := repository.GetMatchMonsterByID(instanceID, entityID)
+	mm, err := Combat.GetMonster(instanceID, entityID)
 	if err != nil {
 		return stats{}, err
 	}
 	return stats{
-		Attack:      mm.Attack,
-		Defense:     mm.Defense,
-		Health:      mm.Health,
-		IsRanged:    false,
-		AttackRange: 1,
-		X:           mm.X,
-		Y:           mm.Y,
+		Attack:        mm.Attack,
+		Defense:       mm.Defense,
+		Health:        mm.Health,
+		MaxHealth:     mm.MaxHealth,
+		IsRanged:      false,
+		AttackRange:   1,
+		CharacterType: "",
+		X:             mm.X,
+		Y:             mm.Y,
 	}, nil
 }
 
@@ -420,6 +468,13 @@ func manhattanDistance(att stats, def stats) int {
 		dy = -dy
 	}
 	return dx + dy
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func resolveAttackMode(attacker stats, target stats) (attackMode, error) {
@@ -451,45 +506,11 @@ func buildCombatExchangePayload(
 	targetID int,
 	attackerStats stats,
 	mode attackMode,
-	targetRes attackResult,
-	counterRes attackResult,
+	steps []CombatStep,
+	effects []CombatEffect,
 ) CombatExchangePayload {
 	attackerRef := CombatTargetRef{ID: attackerID, Type: toCombatActorType(attackerType)}
 	targetRef := CombatTargetRef{ID: targetID, Type: toCombatActorType(targetType)}
-
-	steps := []CombatStep{
-		{
-			Kind:          "hit",
-			Source:        &attackerRef,
-			Target:        targetRef,
-			Damage:        targetRes.Damage,
-			TargetHPAfter: targetRes.NewHealth,
-		},
-	}
-
-	if counterRes.Damage > 0 {
-		steps = append(steps, CombatStep{
-			Kind:          "counter",
-			Source:        &targetRef,
-			Target:        attackerRef,
-			Damage:        counterRes.Damage,
-			TargetHPAfter: counterRes.NewHealth,
-		})
-	}
-
-	if targetRes.NewHealth <= 0 {
-		steps = append(steps, CombatStep{
-			Kind:   "death",
-			Target: targetRef,
-		})
-	}
-
-	if counterRes.Damage > 0 && counterRes.NewHealth <= 0 {
-		steps = append(steps, CombatStep{
-			Kind:   "death",
-			Target: attackerRef,
-		})
-	}
 
 	return CombatExchangePayload{
 		InstanceID:   instanceID,
@@ -500,21 +521,108 @@ func buildCombatExchangePayload(
 		TargetType:   targetRef.Type,
 		AttackStyle:  resolvePresentationAttackStyle(attackerStats, mode),
 		Steps:        steps,
+		Effects:      effects,
 	}
 }
 
 // --- Расчёт урона и оставшегося HP ----------------------------------------
 
-func applyDamage(att stats, def stats) attackResult {
+func baseMoveEnergyCost(mobility int) int {
+	switch {
+	case mobility <= 2:
+		return 4
+	case mobility <= 5:
+		return 3
+	case mobility <= 8:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func resolveMoveEnergyCost(instanceID string, player *models.PlayerResponse) (int, error) {
+	cost := baseMoveEnergyCost(player.Mobility)
+
+	players, err := repository.LoadMatchPlayers(instanceID)
+	if err != nil {
+		return 0, err
+	}
+	for _, other := range players {
+		if other.UserID == player.UserID || other.Health <= 0 {
+			continue
+		}
+		if other.CharacterType != "guardian" {
+			continue
+		}
+		if player.GroupID != 0 && other.GroupID == player.GroupID {
+			continue
+		}
+		if manhattan(player.Position.X, player.Position.Y, other.Position.X, other.Position.Y) <= guardianZoneControlRange {
+			return cost + guardianZoneControlMovePenalty, nil
+		}
+	}
+
+	return cost, nil
+}
+
+func resolveAttackEnergyCost(mode attackMode) int {
+	if mode == attackModeRanged {
+		return rangedAttackEnergyCost
+	}
+	return meleeAttackEnergyCost
+}
+
+func effectiveDefense(instanceID string, targetType string, targetID int, baseDefense int) int {
+	defense := baseDefense
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		state := ms.GetArmorBreakState(targetType, targetID)
+		defense -= state.Stacks * armorBreakDefensePenaltyPerStack
+	}
+	if defense < 0 {
+		return 0
+	}
+	return defense
+}
+
+func resolvePrimaryDamage(att stats, def stats) int {
 	dmg := att.Attack - def.Defense
 	if dmg < 0 {
 		dmg = 0
 	}
+	if att.CharacterType == "berserker" && def.MaxHealth > 0 && dmg > 0 {
+		hpRatio := float64(def.Health) / float64(def.MaxHealth)
+		bonusMultiplier := 1.0
+		switch {
+		case hpRatio < 0.25:
+			bonusMultiplier = 1.35
+		case hpRatio < 0.50:
+			bonusMultiplier = 1.20
+		case hpRatio < 0.75:
+			bonusMultiplier = 1.10
+		}
+		dmg = int(float64(dmg) * bonusMultiplier)
+	}
+	return dmg
+}
+
+func applyDamage(att stats, def stats) attackResult {
+	dmg := resolvePrimaryDamage(att, def)
 	newHP := def.Health - dmg
 	if newHP < 0 {
 		newHP = 0
 	}
-	return attackResult{Damage: dmg, NewHealth: newHP}
+	return attackResult{Damage: dmg, NewHealth: newHP, Triggered: true}
+}
+
+func applyFlatDamage(targetHealth int, damage int) attackResult {
+	if damage < 0 {
+		damage = 0
+	}
+	newHP := targetHealth - damage
+	if newHP < 0 {
+		newHP = 0
+	}
+	return attackResult{Damage: damage, NewHealth: newHP, Triggered: true}
 }
 
 func canAttackStructure(attackerUserID int, cell *game.FullCell) bool {
@@ -888,10 +996,11 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 
 		nextID := ms.ActiveUserID
 		if nextID != 0 {
+			ms.AdvanceTurnCombatState(nextID, false)
 			if err := Combat.UpdateTurn(instanceID, nextID, ms.TurnNumber); err != nil {
 				log.Printf("UpdateMatchTurn error: %v", err)
 			}
-			if err := regenEnergyForNextPlayer(instanceID, nextID, energyRegen); err != nil {
+			if err := regenEnergyForNextPlayer(instanceID, nextID); err != nil {
 				log.Printf("Ошибка регенерации энергии новому игроку после смерти: %v", err)
 			}
 			turnMsg := map[string]interface{}{
@@ -996,7 +1105,10 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 }
 
 func sendUpdatePlayerWS(instanceID string, playerID int) {
-	p, err := repository.GetMatchPlayerByID(instanceID, playerID)
+	p, err := Combat.GetPlayer(instanceID, playerID)
+	if err != nil || p == nil {
+		p, err = repository.GetMatchPlayerByID(instanceID, playerID)
+	}
 	if err != nil {
 		return
 	}
@@ -1011,6 +1123,246 @@ func sendUpdatePlayerWS(instanceID string, playerID int) {
 	Broadcast(buf)
 }
 
+func findCellIndex(cells []game.FullCell, x int, y int) int {
+	for i := range cells {
+		if cells[i].X == x && cells[i].Y == y {
+			return i
+		}
+	}
+	return -1
+}
+
+func isPushDestinationBlocked(cell *game.FullCell) bool {
+	if cell == nil {
+		return true
+	}
+	if !cellPassable(cell.TileCode) || cell.IsPortal || cell.IsPlayer || cell.Monster != nil {
+		return true
+	}
+	if cell.Resource != nil || cell.Barbel != nil {
+		return true
+	}
+	if cell.StructureType != "" || cell.IsUnderConstruction {
+		return true
+	}
+	return false
+}
+
+func broadcastUpdatedCells(instanceID string, cells []game.FullCell) {
+	seen := make(map[string]bool)
+	for _, cell := range cells {
+		key := fmt.Sprintf("%d:%d", cell.X, cell.Y)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		update := map[string]interface{}{
+			"type": "UPDATE_CELL",
+			"payload": map[string]interface{}{
+				"instanceId":  instanceID,
+				"updatedCell": serialiseUpdatedCell(cell),
+			},
+		}
+		buf, _ := json.Marshal(update)
+		Broadcast(buf)
+	}
+}
+
+func broadcastMovePlayer(instanceID string, userID int, position CombatPoint) {
+	moveMsg := map[string]interface{}{
+		"type": "MOVE_PLAYER",
+		"payload": map[string]interface{}{
+			"userId":      userID,
+			"newPosition": map[string]int{"x": position.X, "y": position.Y},
+			"instanceId":  instanceID,
+		},
+	}
+	buf, _ := json.Marshal(moveMsg)
+	Broadcast(buf)
+}
+
+func applyKnockbackOccupancy(
+	cells []game.FullCell,
+	targetType string,
+	oldIdx int,
+	newIdx int,
+	movedMonster *game.MonsterData,
+) ([]game.FullCell, error) {
+	if oldIdx < 0 || newIdx < 0 {
+		return nil, fmt.Errorf("invalid knockback cell indices")
+	}
+
+	switch targetType {
+	case "player":
+		cells[oldIdx].IsPlayer = false
+		cells[newIdx].IsPlayer = true
+	case "monster":
+		if movedMonster == nil {
+			return nil, fmt.Errorf("missing monster for knockback occupancy update")
+		}
+		monsterCopy := *movedMonster
+		cells[oldIdx].Monster = nil
+		cells[oldIdx].TileCode = int(game.Walkable)
+		cells[newIdx].Monster = &monsterCopy
+		cells[newIdx].TileCode = int('M')
+	default:
+		return nil, fmt.Errorf("unsupported knockback target type %s", targetType)
+	}
+
+	return []game.FullCell{cells[oldIdx], cells[newIdx]}, nil
+}
+
+func tryPushCombatTarget(
+	instanceID string,
+	targetType string,
+	targetID int,
+	current stats,
+	destination CombatPoint,
+) (bool, []game.FullCell, error) {
+	cells, err := repository.LoadMapCells(instanceID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	oldIdx := findCellIndex(cells, current.X, current.Y)
+	newIdx := findCellIndex(cells, destination.X, destination.Y)
+	if oldIdx < 0 || newIdx < 0 {
+		return false, nil, nil
+	}
+	if isPushDestinationBlocked(&cells[newIdx]) {
+		return false, nil, nil
+	}
+
+	switch targetType {
+	case "player":
+		targetPlayer, err := Combat.GetPlayer(instanceID, targetID)
+		if err != nil {
+			return false, nil, err
+		}
+		targetPlayer.Position.X = destination.X
+		targetPlayer.Position.Y = destination.Y
+		if err := Combat.UpdatePlayer(instanceID, targetPlayer); err != nil {
+			return false, nil, err
+		}
+	case "monster":
+		movedMonster := cells[oldIdx].Monster
+		if movedMonster == nil {
+			monster, err := Combat.GetMonster(instanceID, targetID)
+			if err != nil {
+				return false, nil, err
+			}
+			movedMonster = &game.MonsterData{
+				ID:              monster.RefID,
+				DBInstanceID:    monster.MonsterInstanceID,
+				Name:            "",
+				Type:            "monster",
+				Health:          monster.Health,
+				MaxHealth:       monster.MaxHealth,
+				Attack:          monster.Attack,
+				Defense:         monster.Defense,
+				Speed:           monster.Speed,
+				Maneuverability: monster.Maneuverability,
+				Vision:          monster.Vision,
+				Image:           monster.Image,
+			}
+		}
+		updatedCells, err := applyKnockbackOccupancy(cells, targetType, oldIdx, newIdx, movedMonster)
+		if err != nil {
+			return false, nil, err
+		}
+		if err := repository.UpdateMatchMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
+			return false, nil, err
+		}
+		if err := repository.SaveMapCells(instanceID, cells); err != nil {
+			return false, nil, err
+		}
+		return true, updatedCells, nil
+	default:
+		return false, nil, nil
+	}
+
+	updatedCells, err := applyKnockbackOccupancy(cells, targetType, oldIdx, newIdx, nil)
+	if err != nil {
+		return false, nil, err
+	}
+	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+		return false, nil, err
+	}
+
+	return true, updatedCells, nil
+}
+
+func resolveRangerPushFallbackDamage(
+	instanceID string,
+	targetType string,
+	targetID int,
+	attacker stats,
+	target stats,
+	currentHealth int,
+) attackResult {
+	bonusTargetStats := target
+	bonusTargetStats.Health = currentHealth
+	bonusTargetStats.Defense = effectiveDefense(instanceID, targetType, targetID, target.Defense)
+	return applyDamage(attacker, bonusTargetStats)
+}
+
+func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) (*CombatEffect, error) {
+	if targetType != "player" {
+		return nil, nil
+	}
+
+	attacker, err := Combat.GetPlayer(instanceID, attackerID)
+	if err != nil {
+		return nil, err
+	}
+	target, err := Combat.GetPlayer(instanceID, targetID)
+	if err != nil {
+		return nil, err
+	}
+
+	drainAmount := energyDrainPerHit
+	if target.Energy < drainAmount {
+		drainAmount = target.Energy
+	}
+	gainAmount := energyDrainGainPerHit
+	if available := attacker.MaxEnergy - attacker.Energy; gainAmount > available {
+		gainAmount = available
+	}
+	if drainAmount <= 0 && gainAmount <= 0 {
+		return nil, nil
+	}
+
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		if !ms.TryUseMysticDrain(attackerID, targetID, energyDrainPerTargetLimit) {
+			return nil, nil
+		}
+	}
+
+	target.Energy -= drainAmount
+	attacker.Energy += gainAmount
+
+	if err := Combat.UpdatePlayer(instanceID, target); err != nil {
+		return nil, err
+	}
+	if err := Combat.UpdatePlayer(instanceID, attacker); err != nil {
+		return nil, err
+	}
+
+	sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
+	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
+	return &CombatEffect{
+		Kind:              "energyDrain",
+		Source:            &sourceRef,
+		Target:            &targetRef,
+		Succeeded:         true,
+		EnergyGranted:     gainAmount,
+		EnergyDrained:     drainAmount,
+		SourceEnergyAfter: attacker.Energy,
+		TargetEnergyAfter: target.Energy,
+	}, nil
+}
+
 // --- Контратака + логика TURN_PASSED для игрока ----------------------------
 // attackerType/attackerID - тот, кто атаковал
 // defenderType/defenderID - тот, кто защищается (и может делать контратаку)
@@ -1023,26 +1375,32 @@ func doCounterattackWithEnergy(
 	allowCounterattack bool,
 ) (attackResult, error) {
 	if !targetAlive || !allowCounterattack {
-		return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+		return attackResult{Damage: 0, NewHealth: attackerStats.Health, Triggered: false}, nil
 	}
 
 	// Проверяем энергию для контратаки (только если defender — игрок)
 	if defenderType == "player" {
 		p, err := Combat.GetPlayer(instanceID, defenderID)
 		if err != nil {
-			return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+			return attackResult{Damage: 0, NewHealth: attackerStats.Health, Triggered: false}, nil
 		}
-		if p.Energy < counterAttackEnergyCost {
-			// Недостаточно энергии — нет контратаки
-			return attackResult{Damage: 0, NewHealth: attackerStats.Health}, nil
+		counterCost := standardCounterAttackEnergyCost
+		if defenderStats.CharacterType == "guardian" {
+			counterCost = 0
 		}
-		// Списываем энергию
-		p.Energy -= counterAttackEnergyCost
-		Combat.UpdatePlayer(instanceID, p)
+		if p.Energy < counterCost {
+			return attackResult{Damage: 0, NewHealth: attackerStats.Health, Triggered: false}, nil
+		}
+		if counterCost > 0 {
+			p.Energy -= counterCost
+			Combat.UpdatePlayer(instanceID, p)
+		}
 	}
 
 	// Контратака происходит
-	ar := applyDamage(defenderStats, attackerStats) // defender контратакует attacker
+	effectiveAttackerStats := attackerStats
+	effectiveAttackerStats.Defense = effectiveDefense(instanceID, attackerType, attackerID, attackerStats.Defense)
+	ar := applyDamage(defenderStats, effectiveAttackerStats) // defender контратакует attacker
 	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
 		ms.RecordDamageEvent(defenderID, attackerType, ar.Damage)
 		if ar.NewHealth <= 0 {
@@ -1128,53 +1486,227 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// --- ENERGY COST FOR ATTACK ---
 	if req.AttackerType == "player" {
-		player, err := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		player, err := Combat.GetPlayer(req.InstanceID, req.AttackerID)
 		if err != nil {
 			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
 			return
 		}
-		attackCost := attackEnergyCost
-		if mode == attackModeRanged {
-			attackCost = rangedAttackEnergyCost
-		}
+		attackCost := resolveAttackEnergyCost(mode)
 		if player.Energy < attackCost {
 			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
 			return
 		}
 		player.Energy -= attackCost
-		if err := repository.UpdateMatchPlayer(req.InstanceID, player); err != nil {
+		if err := Combat.UpdatePlayer(req.InstanceID, player); err != nil {
 			http.Error(w, "Ошибка обновления энергии", http.StatusInternalServerError)
 			return
 		}
 	}
 	// -------------------------------
 
-	// 4) Урон по цели
-	targetRes := applyDamage(atkStats, defStats)
-	//  Добавляем в состояние матча запись о нанесённом уроне
+	attackerRef := CombatTargetRef{ID: req.AttackerID, Type: toCombatActorType(req.AttackerType)}
+	targetRef := CombatTargetRef{ID: req.TargetID, Type: toCombatActorType(req.TargetType)}
+	steps := make([]CombatStep, 0, 6)
+	effects := make([]CombatEffect, 0, 4)
+	var pushedCells []game.FullCell
+	var pushedPlayerPosition *CombatPoint
+
+	preArmorBreak := game.ArmorBreakState{}
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
+		preArmorBreak = ms.GetArmorBreakState(req.TargetType, req.TargetID)
+	}
+
+	effectiveTargetStats := defStats
+	effectiveTargetStats.Defense = effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
+
+	targetRes := applyDamage(atkStats, effectiveTargetStats)
+	steps = append(steps, CombatStep{
+		Kind:          "hit",
+		Source:        &attackerRef,
+		Target:        targetRef,
+		Damage:        targetRes.Damage,
+		TargetHPAfter: targetRes.NewHealth,
+	})
+
+	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Damage > 0 {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
 	}
-	// 5) Сохранение цели + возможная смерть
-
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+	finalTargetHP := targetRes.NewHealth
+	finalAttackerHP := atkStats.Health
 
-	// 6+7) Контратака (если цель жива) + возможный TURN_PASSED
+	if atkStats.CharacterType == "mystic" {
+		drainEffect, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
+		if err != nil {
+			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)
+			return
+		}
+		if drainEffect != nil {
+			effects = append(effects, *drainEffect)
+		}
+	}
+
+	if atkStats.CharacterType == "ranger" && mode == attackModeRanged && finalTargetHP > 0 {
+		if preArmorBreak.Stacks >= armorBreakMaxStacks && targetRes.Damage > 0 {
+			dx := defStats.X - atkStats.X
+			if dx != 0 {
+				dx /= abs(dx)
+			}
+			dy := defStats.Y - atkStats.Y
+			if dy != 0 {
+				dy /= abs(dy)
+			}
+			pushTo := CombatPoint{X: defStats.X + dx, Y: defStats.Y + dy}
+			pushed, updatedCells, err := tryPushCombatTarget(req.InstanceID, req.TargetType, req.TargetID, defStats, pushTo)
+			if err != nil {
+				http.Error(w, "Ошибка применения push-эффекта", http.StatusInternalServerError)
+				return
+			}
+			if pushed {
+				pushedCells = updatedCells
+				if req.TargetType == "player" {
+					pushedPlayerPosition = &CombatPoint{X: pushTo.X, Y: pushTo.Y}
+				}
+				energyGranted := 0
+				if req.AttackerType == "player" {
+					attackerPlayer, err := Combat.GetPlayer(req.InstanceID, req.AttackerID)
+					if err != nil {
+						http.Error(w, "Ошибка обновления энергии ranger", http.StatusInternalServerError)
+						return
+					}
+					energyGranted = baseMoveEnergyCost(attackerPlayer.Mobility)
+					if available := attackerPlayer.MaxEnergy - attackerPlayer.Energy; energyGranted > available {
+						energyGranted = available
+					}
+					attackerPlayer.Energy += energyGranted
+					if err := Combat.UpdatePlayer(req.InstanceID, attackerPlayer); err != nil {
+						http.Error(w, "Ошибка обновления энергии ranger", http.StatusInternalServerError)
+						return
+					}
+				}
+				effects = append(effects, CombatEffect{
+					Kind:          "push",
+					Source:        &attackerRef,
+					Target:        &targetRef,
+					Succeeded:     true,
+					PositionAfter: &pushTo,
+					EnergyGranted: energyGranted,
+				})
+			} else {
+				bonusRes := resolveRangerPushFallbackDamage(
+					req.InstanceID,
+					req.TargetType,
+					req.TargetID,
+					atkStats,
+					defStats,
+					finalTargetHP,
+				)
+				if ms, ok := game.GetMatchState(req.InstanceID); ok && bonusRes.Damage > 0 {
+					ms.RecordDamageEvent(req.AttackerID, req.TargetType, bonusRes.Damage)
+				}
+				saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes)
+				finalTargetHP = bonusRes.NewHealth
+				steps = append(steps, CombatStep{
+					Kind:          "bonus",
+					Source:        &attackerRef,
+					Target:        targetRef,
+					Damage:        bonusRes.Damage,
+					TargetHPAfter: bonusRes.NewHealth,
+				})
+				effects = append(effects, CombatEffect{
+					Kind:        "push",
+					Source:      &attackerRef,
+					Target:      &targetRef,
+					Succeeded:   false,
+					BonusDamage: bonusRes.Damage,
+				})
+			}
+		}
+
+		if finalTargetHP > 0 {
+			if ms, ok := game.GetMatchState(req.InstanceID); ok {
+				armorBreak := ms.ApplyArmorBreak(req.TargetType, req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
+				effects = append(effects, CombatEffect{
+					Kind:          "armorBreak",
+					Source:        &attackerRef,
+					Target:        &targetRef,
+					Value:         -armorBreakDefensePenaltyPerStack,
+					Stacks:        armorBreak.Stacks,
+					DurationTurns: armorBreakDurationTurns,
+					Succeeded:     true,
+				})
+			}
+		}
+	}
+
 	counterRes, _ := doCounterattackWithEnergy(
 		req.InstanceID,
 		req.AttackerType, req.AttackerID,
 		req.TargetType, req.TargetID,
 		atkStats, defStats,
-		targetRes.NewHealth > 0,
+		finalTargetHP > 0,
 		mode == attackModeMelee,
 	)
+	if counterRes.Triggered {
+		finalAttackerHP = counterRes.NewHealth
+		steps = append(steps, CombatStep{
+			Kind:          "counter",
+			Source:        &targetRef,
+			Target:        attackerRef,
+			Damage:        counterRes.Damage,
+			TargetHPAfter: counterRes.NewHealth,
+		})
+	}
+
+	if req.AttackerType == "player" &&
+		atkStats.CharacterType == "berserker" &&
+		mode == attackModeMelee &&
+		counterRes.Triggered &&
+		finalTargetHP > 0 &&
+		finalAttackerHP > 0 {
+		followUpDamage := targetRes.Damage / 2
+		allowFollowUp := followUpDamage > 0
+		if allowFollowUp {
+			if ms, ok := game.GetMatchState(req.InstanceID); ok {
+				allowFollowUp = ms.TryUseBerserkerFury(req.AttackerID, berserkerFollowUpLimitPerTurn)
+			}
+		}
+		if allowFollowUp {
+			followUpRes := applyFlatDamage(finalTargetHP, followUpDamage)
+			if ms, ok := game.GetMatchState(req.InstanceID); ok && followUpRes.Damage > 0 {
+				ms.RecordDamageEvent(req.AttackerID, req.TargetType, followUpRes.Damage)
+			}
+			saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes)
+			finalTargetHP = followUpRes.NewHealth
+			steps = append(steps, CombatStep{
+				Kind:          "followup",
+				Source:        &attackerRef,
+				Target:        targetRef,
+				Damage:        followUpRes.Damage,
+				TargetHPAfter: followUpRes.NewHealth,
+			})
+		}
+	}
+
+	if finalTargetHP <= 0 {
+		steps = append(steps, CombatStep{
+			Kind:   "death",
+			Target: targetRef,
+		})
+	}
+	if counterRes.Triggered && finalAttackerHP <= 0 {
+		steps = append(steps, CombatStep{
+			Kind:   "death",
+			Target: attackerRef,
+		})
+	}
 
 	// 8) HTTP-ответ
 	resp := map[string]interface{}{
 		"damage_to_target": targetRes.Damage,
-		"new_target_hp":    targetRes.NewHealth,
+		"new_target_hp":    finalTargetHP,
 		"counter_damage":   counterRes.Damage,
-		"new_attacker_hp":  counterRes.NewHealth,
+		"new_attacker_hp":  finalAttackerHP,
 		"attack_mode":      mode,
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1191,13 +1723,20 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 			req.TargetID,
 			atkStats,
 			mode,
-			targetRes,
-			counterRes,
+			steps,
+			effects,
 		),
 	}
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)
+
+	if pushedPlayerPosition != nil {
+		broadcastMovePlayer(req.InstanceID, req.TargetID, *pushedPlayerPosition)
+	}
+	if len(pushedCells) > 0 {
+		broadcastUpdatedCells(req.InstanceID, pushedCells)
+	}
 
 	// 10) WS: MATCH_UPDATE — обновим статы игроков (HP, energy и т.п.)
 	if req.AttackerType == "player" {

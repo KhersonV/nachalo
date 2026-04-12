@@ -36,6 +36,10 @@ const MAGIC_PROJECTILE_MS = 180;
 const COUNTER_DELAY_MS = 180;
 const COUNTER_MOTION_MS = 240;
 const COUNTER_IMPACT_OFFSET_MS = 150;
+const FOLLOWUP_DELAY_MS = 150;
+const FOLLOWUP_MOTION_MS = 220;
+const FOLLOWUP_IMPACT_OFFSET_MS = 150;
+const BONUS_IMPACT_DELAY_MS = 120;
 const HIT_FLASH_MS = 520;
 const FLOATER_MS = 1100;
 const DEATH_BURST_MS = 260;
@@ -247,6 +251,70 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
                 latestBlockingEndMs,
                 counterImpactMs,
             );
+            continue;
+        }
+
+        if (step.kind === "followup") {
+            const followSource = getSnapshotForRef(exchange, step.source);
+            const followTarget = getSnapshotForRef(exchange, step.target);
+            const followStartMs = lastImpactMs + FOLLOWUP_DELAY_MS;
+
+            if (followSource && followTarget && followSource.type === "player") {
+                motions.push({
+                    id: `${exchange.exchangeId}:motion:followup`,
+                    exchangeId: exchange.exchangeId,
+                    actorId: followSource.id,
+                    actorType: followSource.type,
+                    kind: "lunge",
+                    startMs: followStartMs,
+                    durationMs: FOLLOWUP_MOTION_MS,
+                    direction: {
+                        x: Math.sign(
+                            followTarget.position.x - followSource.position.x,
+                        ),
+                        y: Math.sign(
+                            followTarget.position.y - followSource.position.y,
+                        ),
+                    },
+                    distanceTiles: 0.16,
+                });
+                latestBlockingEndMs = Math.max(
+                    latestBlockingEndMs,
+                    followStartMs + FOLLOWUP_MOTION_MS,
+                );
+            }
+
+            const followImpactMs = followStartMs + FOLLOWUP_IMPACT_OFFSET_MS;
+            if (followTarget && step.damage > 0) {
+                addDamageEffects(
+                    effects,
+                    exchange.exchangeId,
+                    followTarget,
+                    index,
+                    followImpactMs,
+                    step.damage,
+                );
+            }
+            lastImpactMs = followImpactMs;
+            latestBlockingEndMs = Math.max(latestBlockingEndMs, followImpactMs);
+            continue;
+        }
+
+        if (step.kind === "bonus") {
+            const bonusTarget = getSnapshotForRef(exchange, step.target);
+            const bonusImpactMs = lastImpactMs + BONUS_IMPACT_DELAY_MS;
+            if (bonusTarget && step.damage > 0) {
+                addDamageEffects(
+                    effects,
+                    exchange.exchangeId,
+                    bonusTarget,
+                    index,
+                    bonusImpactMs,
+                    step.damage,
+                );
+            }
+            lastImpactMs = bonusImpactMs;
+            latestBlockingEndMs = Math.max(latestBlockingEndMs, bonusImpactMs);
             continue;
         }
 

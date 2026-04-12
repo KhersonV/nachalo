@@ -292,8 +292,8 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
 	}
 
-	width := 15 * cfg.TotalPlayers
-	height := 15 * cfg.TotalPlayers
+	width := 9 * cfg.TotalPlayers
+	height := 9 * cfg.TotalPlayers
 
 	rand.Seed(time.Now().UnixNano())
 

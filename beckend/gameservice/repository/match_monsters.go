@@ -68,6 +68,16 @@ func UpdateMatchMonsterHealth(instanceID string, monsterInstanceID, newHP int) e
 	return err
 }
 
+func UpdateMatchMonsterPosition(instanceID string, monsterInstanceID int, newX int, newY int) error {
+	_, err := DB.Exec(`
+        UPDATE match_monsters
+           SET pos_x = $1,
+               pos_y = $2
+         WHERE instance_id = $3 AND monster_instance_id = $4
+    `, newX, newY, instanceID, monsterInstanceID)
+	return err
+}
+
 // GetMatchMonsterByID возвращает монстра по его instance-ID
 func GetMatchMonsterByID(instanceID string, monsterInstanceID int) (*MatchMonster, error) {
 	var m MatchMonster
@@ -99,17 +109,17 @@ func DeleteMatchMonster(instanceID string, monsterInstanceID int) error {
 }
 
 func InsertMatchMonsterReturningID(m MatchMonster) (int, error) {
-    var id int
-    err := DB.QueryRow(`
+	var id int
+	err := DB.QueryRow(`
         INSERT INTO match_monsters
             (instance_id, monster_ref_id, pos_x, pos_y,
              health, max_health, attack, defense, speed, maneuverability, vision, image)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         RETURNING monster_instance_id
     `,
-        m.InstanceID, m.RefID, m.X, m.Y,
-        m.Health, m.MaxHealth, m.Attack, m.Defense,
-        m.Speed, m.Maneuverability, m.Vision, m.Image,
-    ).Scan(&id)
-    return id, err
+		m.InstanceID, m.RefID, m.X, m.Y,
+		m.Health, m.MaxHealth, m.Attack, m.Defense,
+		m.Speed, m.Maneuverability, m.Vision, m.Image,
+	).Scan(&id)
+	return id, err
 }

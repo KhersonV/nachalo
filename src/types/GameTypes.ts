@@ -34,6 +34,7 @@ export type Inventory = {
 export type PlayerState = {
     user_id: number;
     name: string;
+    characterType?: string;
     group_id?: number;
     health: number;
     maxHealth: number;

@@ -63,6 +63,11 @@ type DamageEvent struct {
 	Amount     int
 }
 
+type ArmorBreakState struct {
+	Stacks         int
+	RemainingTurns int
+}
+
 // MatchState инкапсулирует состояние конкретного матча.
 type MatchState struct {
 	InstanceID     string
@@ -72,6 +77,9 @@ type MatchState struct {
 	KillEvents     []KillEvent
 	DamageEvents   []DamageEvent
 	Monsters       map[int]*MonsterState
+	ArmorBreak     map[string]ArmorBreakState
+	BerserkerFury  map[int]int
+	MysticDrains   map[string]int
 	CombatSequence uint64
 	mu             sync.Mutex
 }

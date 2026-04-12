@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gorilla/mux"
 	"gameservice/models"
 	"gameservice/repository"
+	"github.com/gorilla/mux"
 )
 
 // CreatePlayerRequest – структура запроса для создания игрока
@@ -29,6 +29,7 @@ type CreatePlayerRequest struct {
 type characterTemplate struct {
 	CharacterType string
 	Energy        int
+	EnergyRegen   int
 	MaxEnergy     int
 	Health        int
 	MaxHealth     int
@@ -46,48 +47,48 @@ const defaultCharacterType = "adventurer"
 var characterTemplates = map[string]characterTemplate{
 	defaultCharacterType: {
 		CharacterType: defaultCharacterType,
-		Energy: 100, MaxEnergy: 100,
+		Energy:        100, EnergyRegen: 10, MaxEnergy: 100,
 		Health: 100, MaxHealth: 100,
 		Attack: 10, Defense: 5,
 		Mobility: 3, Agility: 2,
 		SightRange: 2,
-		IsRanged: false, AttackRange: 1,
+		IsRanged:   false, AttackRange: 1,
 	},
 	"guardian": {
 		CharacterType: "guardian",
-		Energy: 90, MaxEnergy: 90,
+		Energy:        90, EnergyRegen: 10, MaxEnergy: 90,
 		Health: 130, MaxHealth: 130,
 		Attack: 9, Defense: 8,
 		Mobility: 2, Agility: 2,
 		SightRange: 2,
-		IsRanged: false, AttackRange: 1,
+		IsRanged:   false, AttackRange: 1,
 	},
 	"berserker": {
 		CharacterType: "berserker",
-		Energy: 100, MaxEnergy: 100,
+		Energy:        100, EnergyRegen: 10, MaxEnergy: 100,
 		Health: 100, MaxHealth: 100,
 		Attack: 14, Defense: 3,
 		Mobility: 3, Agility: 2,
 		SightRange: 2,
-		IsRanged: false, AttackRange: 1,
+		IsRanged:   false, AttackRange: 1,
 	},
 	"ranger": {
 		CharacterType: "ranger",
-		Energy: 105, MaxEnergy: 105,
+		Energy:        105, EnergyRegen: 11, MaxEnergy: 105,
 		Health: 92, MaxHealth: 92,
 		Attack: 11, Defense: 4,
 		Mobility: 4, Agility: 4,
 		SightRange: 2,
-		IsRanged: true, AttackRange: 2,
+		IsRanged:   true, AttackRange: 2,
 	},
 	"mystic": {
 		CharacterType: "mystic",
-		Energy: 125, MaxEnergy: 125,
+		Energy:        125, EnergyRegen: 13, MaxEnergy: 125,
 		Health: 95, MaxHealth: 95,
 		Attack: 10, Defense: 4,
 		Mobility: 3, Agility: 3,
 		SightRange: 2,
-		IsRanged: true, AttackRange: 3,
+		IsRanged:   true, AttackRange: 3,
 	},
 }
 
@@ -97,6 +98,14 @@ func resolveCharacterTemplate(characterType string) characterTemplate {
 		return template
 	}
 	return characterTemplates[defaultCharacterType]
+}
+
+func resolveCharacterRegen(characterType string) int {
+	template := resolveCharacterTemplate(characterType)
+	if template.EnergyRegen > 0 {
+		return template.EnergyRegen
+	}
+	return characterTemplates[defaultCharacterType].EnergyRegen
 }
 
 // Уровневые пороги для повышения уровня
@@ -112,10 +121,6 @@ var levelThresholds = map[int]int{
 	9:  32768000,
 	10: 131072000,
 }
-
-
-
-
 
 // CreatePlayerHandler – создает нового игрока.
 func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +273,6 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
-
 // unbindPlayer удаляет игрока из матчинга по HTTP
 func unbindPlayer(playerID int) {
 	baseURL := strings.TrimRight(os.Getenv("MATCHMAKING_URL"), "/")
@@ -276,18 +280,18 @@ func unbindPlayer(playerID int) {
 		baseURL = "http://matchmaking:8002"
 	}
 	url := fmt.Sprintf("%s/matchmaking/player/%d", baseURL, playerID)
-    req, err := http.NewRequest(http.MethodDelete, url, nil)
-    if err != nil {
-        log.Printf("unbindPlayer: не удалось создать запрос: %v", err)
-        return
-    }
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        log.Printf("unbindPlayer: запрос завершился ошибкой: %v", err)
-        return
-    }
-    defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
-        log.Printf("unbindPlayer: unexpected status %s", resp.Status)
-    }
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		log.Printf("unbindPlayer: не удалось создать запрос: %v", err)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("unbindPlayer: запрос завершился ошибкой: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("unbindPlayer: unexpected status %s", resp.Status)
+	}
 }

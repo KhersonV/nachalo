@@ -33,8 +33,52 @@ export type CombatStep =
           targetHpAfter: number;
       }
     | {
+          kind: "followup";
+          source: CombatTargetRef;
+          target: CombatTargetRef;
+          damage: number;
+          targetHpAfter: number;
+      }
+    | {
+          kind: "bonus";
+          source: CombatTargetRef;
+          target: CombatTargetRef;
+          damage: number;
+          targetHpAfter: number;
+      }
+    | {
           kind: "death";
           target: CombatTargetRef;
+      };
+
+export type CombatEffect =
+    | {
+          kind: "armorBreak";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          value?: number;
+          stacks?: number;
+          durationTurns?: number;
+          succeeded: boolean;
+      }
+    | {
+          kind: "push";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+          positionAfter?: CombatPoint;
+          bonusDamage?: number;
+          energyGranted?: number;
+      }
+    | {
+          kind: "energyDrain";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+          energyGranted?: number;
+          energyDrained?: number;
+          sourceEnergyAfter?: number;
+          targetEnergyAfter?: number;
       };
 
 export type CombatExchangePayload = {
@@ -46,6 +90,7 @@ export type CombatExchangePayload = {
     targetType: CombatActorType;
     attackStyle: AttackStyle;
     steps: CombatStep[];
+    effects?: CombatEffect[];
 };
 
 export type QueuedCombatExchange = CombatExchangePayload & {
