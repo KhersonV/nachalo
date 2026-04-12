@@ -64,21 +64,22 @@ const enqueueCombatExchangeFromWs =
     (payload: CombatExchangePayload) =>
     (dispatch: AppDispatch, getState: () => RootState) => {
         const state = getState();
-
-        dispatch(applyCombatExchangeState(payload));
-        dispatch(
-            enqueueCombatExchange({
-                ...payload,
-                attackerSnapshot: selectActorSnapshot(state, {
-                    id: payload.attackerId,
-                    type: payload.attackerType,
-                }),
-                targetSnapshot: selectActorSnapshot(state, {
-                    id: payload.targetId,
-                    type: payload.targetType,
-                }),
+        const queuedExchange = {
+            ...payload,
+            attackerSnapshot: selectActorSnapshot(state, {
+                id: payload.attackerId,
+                type: payload.attackerType,
             }),
-        );
+            targetSnapshot: selectActorSnapshot(state, {
+                id: payload.targetId,
+                type: payload.targetType,
+            }),
+        };
+
+        // Queue presentation first so legacy HP-diff floaters see active
+        // suppression before the authoritative combat HP update lands.
+        dispatch(enqueueCombatExchange(queuedExchange));
+        dispatch(applyCombatExchangeState(payload));
     };
 
 export function createWsHandlers(
