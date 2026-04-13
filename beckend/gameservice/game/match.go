@@ -58,6 +58,9 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.ensureCombatStateLocked()
+	delete(m.GuardianAuraPressure, userID)
+
 	// Сохраним старый порядок, чтобы знать, на каком месте был умерший
 	oldOrder := append([]int(nil), m.TurnOrder...)
 
@@ -98,13 +101,14 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 // CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 	ms := &MatchState{
-		InstanceID:    instanceID,
-		TurnOrder:     append([]int(nil), playerIDs...), // копия слайса
-		TurnNumber:    1,
-		ActiveUserID:  0,
-		ArmorBreak:    make(map[string]ArmorBreakState),
-		BerserkerFury: make(map[int]int),
-		MysticDrains:  make(map[string]int),
+		InstanceID:           instanceID,
+		TurnOrder:            append([]int(nil), playerIDs...), // копия слайса
+		TurnNumber:           1,
+		ActiveUserID:         0,
+		ArmorBreak:           make(map[string]ArmorBreakState),
+		BerserkerFury:        make(map[int]int),
+		MysticDrains:         make(map[string]int),
+		GuardianAuraPressure: make(map[int]GuardianAuraPressureState),
 	}
 	if len(playerIDs) > 0 {
 		ms.ActiveUserID = playerIDs[0]
@@ -173,6 +177,9 @@ func (m *MatchState) ensureCombatStateLocked() {
 	if m.MysticDrains == nil {
 		m.MysticDrains = make(map[string]int)
 	}
+	if m.GuardianAuraPressure == nil {
+		m.GuardianAuraPressure = make(map[int]GuardianAuraPressureState)
+	}
 }
 
 func (m *MatchState) decrementArmorBreakLocked(targetKey string) {
@@ -240,7 +247,8 @@ func (m *MatchState) TryUseBerserkerFury(userID int, limit int) bool {
 
 	m.ensureCombatStateLocked()
 	if limit <= 0 {
-		return false
+		m.BerserkerFury[userID]++
+		return true
 	}
 	if m.BerserkerFury[userID] >= limit {
 		return false
@@ -263,4 +271,36 @@ func (m *MatchState) TryUseMysticDrain(attackerID int, targetID int, perTargetLi
 	}
 	m.MysticDrains[key]++
 	return true
+}
+
+func (m *MatchState) GetGuardianAuraPressure(userID int) GuardianAuraPressureState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	return m.GuardianAuraPressure[userID]
+}
+
+func (m *MatchState) AccumulateGuardianAuraPressure(userID int, sourceUserID int, extraMoveCost int) GuardianAuraPressureState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	state := m.GuardianAuraPressure[userID]
+	if extraMoveCost > 0 {
+		state.AccumulatedExtraMoveCost += extraMoveCost
+	}
+	if sourceUserID > 0 {
+		state.LastSourceUserID = sourceUserID
+	}
+	m.GuardianAuraPressure[userID] = state
+	return state
+}
+
+func (m *MatchState) ResetGuardianAuraPressure(userID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	delete(m.GuardianAuraPressure, userID)
 }

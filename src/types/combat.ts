@@ -47,6 +47,13 @@ export type CombatStep =
           targetHpAfter: number;
       }
     | {
+          kind: "auraExit";
+          source?: CombatTargetRef;
+          target: CombatTargetRef;
+          damage: number;
+          targetHpAfter: number;
+      }
+    | {
           kind: "death";
           target: CombatTargetRef;
       };

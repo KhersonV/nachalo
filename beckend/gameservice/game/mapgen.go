@@ -7,8 +7,8 @@ package game
 import (
 	"errors"
 	"math/rand"
-	"time"
 	"sort"
+	"time"
 )
 
 // TileType определяет тип тайла на карте.
@@ -40,16 +40,16 @@ type MapConfig struct {
 // ResourceData – структура для хранения данных ресурса.
 type ResourceData struct {
 	ID          int            `json:"id"`
-	Type        string         `json:"type"`        // тип ресурса (например, "wood", "food")
-	Description string         `json:"description"` // описание ресурса
-	Effect      map[string]int `json:"effect"`      // эффекты или бонусы (например, {"energy": 10})
-	Image       string         `json:"image"`       // путь к изображению ресурса
+	Type        string         `json:"type"`                // тип ресурса (например, "wood", "food")
+	Description string         `json:"description"`         // описание ресурса
+	Effect      map[string]int `json:"effect"`              // эффекты или бонусы (например, {"energy": 10})
+	Image       string         `json:"image"`               // путь к изображению ресурса
 	ItemType    string         `json:"item_type,omitempty"` // "resource" или "artifact" (для дропа на клетку)
 }
 
 // MonsterData – структура для хранения данных монстра.
 type MonsterData struct {
-	ID              int    `json:"id"`				// виртуальный id (оставь для совместимости)
+	ID              int    `json:"id"`              // виртуальный id (оставь для совместимости)
 	DBInstanceID    int    `json:"db_instance_id"`  // реальный id из match_monsters!
 	Name            string `json:"name"`            // имя монстра (например, "Goblin")
 	Type            string `json:"type"`            // тип монстра (например, "aggressive")
@@ -65,31 +65,24 @@ type MonsterData struct {
 
 // FullCell – полная информация о клетке карты.
 type FullCell struct {
-	CellID   int           `json:"cell_id"`  // Уникальный идентификатор клетки
-	X        int           `json:"x"`        // Координата X
-	Y        int           `json:"y"`        // Координата Y
-	TileCode int           `json:"tileCode"` // Код тайла
-	Resource *ResourceData `json:"resource"` // Ресурс (если присутствует и НЕ является бочкой)
-	Barbel   *ResourceData `json:"barbel"`   // Бочка (если присутствует)
-	Monster  *MonsterData  `json:"monster"`  // Монстр (если присутствует)
-	IsPortal bool          `json:"isPortal"` // Портал
-	IsPlayer bool          `json:"isPlayer"` // Флаг наличия игрока
-	StructureType          string `json:"structure_type,omitempty"`
-	StructureOwnerUserID   int    `json:"structure_owner_user_id,omitempty"`
-	StructureHealth        int    `json:"structure_health,omitempty"`
-	StructureDefense       int    `json:"structure_defense,omitempty"`
-	StructureAttack        int    `json:"structure_attack,omitempty"`
-	StructureEnergy        int    `json:"structure_energy,omitempty"`
-	IsUnderConstruction    bool   `json:"is_under_construction"`
-	ConstructionTurnsLeft  int    `json:"construction_turns_left,omitempty"`
+	CellID                int           `json:"cell_id"`  // Уникальный идентификатор клетки
+	X                     int           `json:"x"`        // Координата X
+	Y                     int           `json:"y"`        // Координата Y
+	TileCode              int           `json:"tileCode"` // Код тайла
+	Resource              *ResourceData `json:"resource"` // Ресурс (если присутствует и НЕ является бочкой)
+	Barbel                *ResourceData `json:"barbel"`   // Бочка (если присутствует)
+	Monster               *MonsterData  `json:"monster"`  // Монстр (если присутствует)
+	IsPortal              bool          `json:"isPortal"` // Портал
+	IsPlayer              bool          `json:"isPlayer"` // Флаг наличия игрока
+	StructureType         string        `json:"structure_type,omitempty"`
+	StructureOwnerUserID  int           `json:"structure_owner_user_id,omitempty"`
+	StructureHealth       int           `json:"structure_health,omitempty"`
+	StructureDefense      int           `json:"structure_defense,omitempty"`
+	StructureAttack       int           `json:"structure_attack,omitempty"`
+	StructureEnergy       int           `json:"structure_energy,omitempty"`
+	IsUnderConstruction   bool          `json:"is_under_construction"`
+	ConstructionTurnsLeft int           `json:"construction_turns_left,omitempty"`
 }
-
-
-
-
-
-
-
 
 // Возвращает квадрат расстояния между двумя точками
 func dist2(a, b [2]int) int {
@@ -110,7 +103,6 @@ func collectCandidates(grid [][]int) [][2]int {
 	}
 	return candidates
 }
-
 
 func portalReachable(grid [][]int, starts [][2]int, portal [2]int) bool {
 	// Все стартовые позиции должны иметь доступ до портала
@@ -158,7 +150,6 @@ func reachableFromPortal(grid [][]int, portal [2]int) [][]bool {
 	return reachable
 }
 
-
 // Для FFA и 1xN — теперь тоже в цикле с проверкой достижимости портала:
 func generateRandomPositions(grid [][]int, totalPlayers int) ([][2]int, [2]int, error) {
 	candidates := collectCandidates(grid)
@@ -183,8 +174,6 @@ func generateRandomPositions(grid [][]int, totalPlayers int) ([][2]int, [2]int, 
 	}
 	return nil, [2]int{}, errors.New("не удалось выбрать стартовые и портал")
 }
-
-
 
 func generateRandomTeamClusters(grid [][]int, totalPlayers, teamsCount int) ([][2]int, [2]int, error) {
 	candidates := collectCandidates(grid)
@@ -247,40 +236,34 @@ func generateRandomTeamClusters(grid [][]int, totalPlayers, teamsCount int) ([][
 	return nil, [2]int{}, errors.New("не удалось выбрать командные старты и портал")
 }
 
-
-
 // проверяет, достижима ли клетка (tx,ty) из (sx,sy)
 func isReachable(grid [][]int, sx, sy, tx, ty int) bool {
-    h, w := len(grid), len(grid[0])
-    visited := make([][]bool, h)
-    for i := range visited {
-        visited[i] = make([]bool, w)
-    }
-    type pt struct{ x, y int }
-    q := []pt{{sx, sy}}
-    visited[sy][sx] = true
-    dirs := []pt{{1,0},{-1,0},{0,1},{0,-1}}
-    for len(q) > 0 {
-        p := q[0]; q = q[1:]
-        if p.x == tx && p.y == ty {
-            return true
-        }
-        for _, d := range dirs {
-            nx, ny := p.x + d.x, p.y + d.y
-            if nx > 0 && ny > 0 && nx < w-1 && ny < h-1 &&
-               !visited[ny][nx] && grid[ny][nx] == int(Walkable) {
-                visited[ny][nx] = true
-                q = append(q, pt{nx, ny})
-            }
-        }
-    }
-    return false
+	h, w := len(grid), len(grid[0])
+	visited := make([][]bool, h)
+	for i := range visited {
+		visited[i] = make([]bool, w)
+	}
+	type pt struct{ x, y int }
+	q := []pt{{sx, sy}}
+	visited[sy][sx] = true
+	dirs := []pt{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for len(q) > 0 {
+		p := q[0]
+		q = q[1:]
+		if p.x == tx && p.y == ty {
+			return true
+		}
+		for _, d := range dirs {
+			nx, ny := p.x+d.x, p.y+d.y
+			if nx > 0 && ny > 0 && nx < w-1 && ny < h-1 &&
+				!visited[ny][nx] && grid[ny][nx] == int(Walkable) {
+				visited[ny][nx] = true
+				q = append(q, pt{nx, ny})
+			}
+		}
+	}
+	return false
 }
-
-
-
-
-
 
 // GenerateFullMap генерирует полную карту, фиксируя размещение ресурсов и монстров.
 // Возвращает срез FullCell, ширину, высоту, массив стартовых позиций и позицию портала.
@@ -292,8 +275,14 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		return nil, 0, 0, nil, [2]int{}, errors.New("количество команд должно быть >= 1")
 	}
 
-	width := 9 * cfg.TotalPlayers
-	height := 9 * cfg.TotalPlayers
+	var width, height int
+	if cfg.TotalPlayers == 1 {
+		width = 15
+		height = 15
+	} else {
+		width = 9 * cfg.TotalPlayers
+		height = 9 * cfg.TotalPlayers
+	}
 
 	rand.Seed(time.Now().UnixNano())
 
@@ -314,21 +303,19 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 		}
 	}
 
+	var startPositions [][2]int
+	var portalPos [2]int
+	var err error
 
+	if cfg.TeamsCount == 1 || cfg.TeamsCount == cfg.TotalPlayers {
+		startPositions, portalPos, err = generateRandomPositions(grid, cfg.TotalPlayers)
+	} else {
+		startPositions, portalPos, err = generateRandomTeamClusters(grid, cfg.TotalPlayers, cfg.TeamsCount)
+	}
 
-var startPositions [][2]int
-var portalPos [2]int
-var err error
-
-if cfg.TeamsCount == 1 || cfg.TeamsCount == cfg.TotalPlayers {
-    startPositions, portalPos, err = generateRandomPositions(grid, cfg.TotalPlayers)
-} else {
-    startPositions, portalPos, err = generateRandomTeamClusters(grid, cfg.TotalPlayers, cfg.TeamsCount)
-}
-
-if err != nil {
-    return nil, 0, 0, nil, [2]int{}, err
-}
+	if err != nil {
+		return nil, 0, 0, nil, [2]int{}, err
+	}
 
 	portalReachability := reachableFromPortal(grid, portalPos)
 
@@ -439,61 +426,58 @@ if err != nil {
 	return fullCells, width, height, startPositions, portalPos, nil
 }
 
-
-
 var rnd = rand.Float64
 
 // SetRnd позволяет установить свою функцию генерации [0,1)
 func SetRnd(f func() float64) {
-    if f == nil {
-        rnd = rand.Float64
-    } else {
-        rnd = f
-    }
+	if f == nil {
+		rnd = rand.Float64
+	} else {
+		rnd = f
+	}
 }
-
 
 // OpenBarbel реализует логику открытия бочки.
 func OpenBarbel(
-    cell FullCell,
-    resources []ResourceData,
-    artifacts []ResourceData,
+	cell FullCell,
+	resources []ResourceData,
+	artifacts []ResourceData,
 
 ) (interface{}, error) {
-    r := rnd()
-    // Параметры урона (можно вынести в константы или Config)
-    const minDamage = 3
-    const maxDamage = 5
+	r := rnd()
+	// Параметры урона (можно вынести в константы или Config)
+	const minDamage = 3
+	const maxDamage = 5
 
-    // 30% шанс получить урон
-    if r < 0.3 {
-        // Рассчитываем случайный урон в диапазоне [minDamage, maxDamage]
-        dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
-        return DamageEvent{Amount: dmg}, nil
-    }
- // 40% шанс выпадения ресурса
-if r < 0.3+0.4 && len(resources) > 0 {
-    // Собираем всех ресурсов, кроме того, что был в бочке
-    var candidates []ResourceData
-    for _, res := range resources {
-        if cell.Barbel != nil && res.ID == cell.Barbel.ID && res.Type == cell.Barbel.Type {
-            // пропускаем — это сама бочка
-            continue
-        }
-        candidates = append(candidates, res)
-    }
-    if len(candidates) == 0 {
-        return nil, nil
-    }
-    chosen := candidates[rand.Intn(len(candidates))]
-    return chosen, nil
-}
+	// 30% шанс получить урон
+	if r < 0.3 {
+		// Рассчитываем случайный урон в диапазоне [minDamage, maxDamage]
+		dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
+		return DamageEvent{Amount: dmg}, nil
+	}
+	// 40% шанс выпадения ресурса
+	if r < 0.3+0.4 && len(resources) > 0 {
+		// Собираем всех ресурсов, кроме того, что был в бочке
+		var candidates []ResourceData
+		for _, res := range resources {
+			if cell.Barbel != nil && res.ID == cell.Barbel.ID && res.Type == cell.Barbel.Type {
+				// пропускаем — это сама бочка
+				continue
+			}
+			candidates = append(candidates, res)
+		}
+		if len(candidates) == 0 {
+			return nil, nil
+		}
+		chosen := candidates[rand.Intn(len(candidates))]
+		return chosen, nil
+	}
 
-    // Иначе артефакт
-    if len(artifacts) > 0 {
-        chosen := artifacts[rand.Intn(len(artifacts))]
-        return chosen, nil
-    }
+	// Иначе артефакт
+	if len(artifacts) > 0 {
+		chosen := artifacts[rand.Intn(len(artifacts))]
+		return chosen, nil
+	}
 
-    return nil, errors.New("не удалось определить результат открытия бочки")
+	return nil, errors.New("не удалось определить результат открытия бочки")
 }

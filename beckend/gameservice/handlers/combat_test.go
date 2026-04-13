@@ -552,3 +552,315 @@ func TestResolveRangerPushFallbackDamage_UsesDefenseAwareFormula(t *testing.T) {
 		t.Fatalf("expected new health 15, got %d", result.NewHealth)
 	}
 }
+
+func TestResolveMoveEnergyCostFromPlayers_GuardianAuraBoundaryAndNoStack(t *testing.T) {
+	player := newCombatTestPlayer(10, "ranger", 0, 20, 2, 0)
+	player.Mobility = 4
+
+	players := []models.PlayerResponse{
+		player,
+		newCombatTestPlayer(5, "guardian", 0, 20, 0, 0),
+		newCombatTestPlayer(1, "guardian", 0, 20, 1, 1),
+	}
+
+	cost, extraCost := resolveMoveEnergyCostFromPlayers(&player, players)
+	if cost != 4 {
+		t.Fatalf("expected base cost 3 + single guardian penalty = 4, got %d", cost)
+	}
+	if extraCost != 1 {
+		t.Fatalf("expected single extra guardian penalty 1, got %d", extraCost)
+	}
+
+	player.Position.X = 3
+	player.Position.Y = 0
+	cost, extraCost = resolveMoveEnergyCostFromPlayers(&player, players)
+	if cost != 3 {
+		t.Fatalf("expected boundary exit to drop move cost back to 3, got %d", cost)
+	}
+	if extraCost != 0 {
+		t.Fatalf("expected no extra cost outside aura boundary, got %d", extraCost)
+	}
+}
+
+func TestResolveGuardianAuraExitDamage_AccumulatesInsideZoneAndTriggersOnVoluntaryExit(t *testing.T) {
+	const instanceID = "guardian-aura-voluntary-exit"
+
+	registerCombatMatchState(t, instanceID, &game.MatchState{InstanceID: instanceID})
+
+	guardian := newCombatTestPlayer(1, "guardian", 0, 20, 0, 0)
+	target := newCombatTestPlayer(2, "ranger", 0, 10, 1, 0)
+	players := []models.PlayerResponse{guardian, target}
+
+	target.Position.X = 2
+	target.Position.Y = 0
+	result := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 1, Y: 0},
+		players,
+		1,
+		true,
+	)
+	if result.Triggered {
+		t.Fatal("expected no damage while target remains inside guardian aura")
+	}
+
+	ms, ok := game.GetMatchState(instanceID)
+	if !ok {
+		t.Fatal("expected match state to exist")
+	}
+	if got := ms.GetGuardianAuraPressure(target.UserID); got.AccumulatedExtraMoveCost != 1 {
+		t.Fatalf("expected accumulated extra cost 1 after in-zone move, got %+v", got)
+	}
+
+	target.Position.X = 3
+	target.Position.Y = 0
+	result = resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 2, Y: 0},
+		players,
+		1,
+		true,
+	)
+	if !result.Triggered {
+		t.Fatal("expected voluntary exit to trigger guardian aura damage")
+	}
+	if result.Damage != 2 {
+		t.Fatalf("expected accumulated exit damage 2, got %d", result.Damage)
+	}
+	if result.NewHealth != 8 {
+		t.Fatalf("expected target HP 8 after exit damage, got %d", result.NewHealth)
+	}
+	if result.SourceGuardianID != guardian.UserID {
+		t.Fatalf("expected guardian %d as damage source, got %d", guardian.UserID, result.SourceGuardianID)
+	}
+	if got := ms.GetGuardianAuraPressure(target.UserID); got.AccumulatedExtraMoveCost != 0 || got.LastSourceUserID != 0 {
+		t.Fatalf("expected guardian aura pressure reset after exit, got %+v", got)
+	}
+}
+
+func TestResolveGuardianAuraExitDamage_ForcedExitDoesNotDamageAndResetsPressure(t *testing.T) {
+	const instanceID = "guardian-aura-forced-exit"
+
+	registerCombatMatchState(t, instanceID, &game.MatchState{InstanceID: instanceID})
+
+	guardian := newCombatTestPlayer(1, "guardian", 0, 20, 0, 0)
+	target := newCombatTestPlayer(2, "ranger", 0, 10, 1, 0)
+	players := []models.PlayerResponse{guardian, target}
+
+	target.Position.X = 2
+	target.Position.Y = 0
+	resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 1, Y: 0},
+		players,
+		1,
+		true,
+	)
+
+	target.Position.X = 4
+	target.Position.Y = 0
+	result := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 2, Y: 0},
+		players,
+		0,
+		false,
+	)
+	if result.Triggered {
+		t.Fatal("expected forced exit to skip guardian aura damage")
+	}
+
+	ms, ok := game.GetMatchState(instanceID)
+	if !ok {
+		t.Fatal("expected match state to exist")
+	}
+	if got := ms.GetGuardianAuraPressure(target.UserID); got.AccumulatedExtraMoveCost != 0 || got.LastSourceUserID != 0 {
+		t.Fatalf("expected forced exit to reset guardian aura pressure, got %+v", got)
+	}
+}
+
+func TestResolveGuardianAuraExitDamage_ReentryStartsFromZero(t *testing.T) {
+	const instanceID = "guardian-aura-reentry"
+
+	registerCombatMatchState(t, instanceID, &game.MatchState{InstanceID: instanceID})
+
+	guardian := newCombatTestPlayer(1, "guardian", 0, 20, 0, 0)
+	target := newCombatTestPlayer(2, "ranger", 0, 10, 1, 0)
+	players := []models.PlayerResponse{guardian, target}
+
+	target.Position.X = 3
+	target.Position.Y = 0
+	firstExit := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 1, Y: 0},
+		players,
+		1,
+		true,
+	)
+	if !firstExit.Triggered || firstExit.Damage != 1 {
+		t.Fatalf("expected first exit to deal 1 damage, got %+v", firstExit)
+	}
+
+	target.Position.X = 2
+	target.Position.Y = 0
+	reentry := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 3, Y: 0},
+		players,
+		0,
+		true,
+	)
+	if reentry.Triggered {
+		t.Fatalf("expected no damage on re-entry move, got %+v", reentry)
+	}
+
+	target.Position.X = 4
+	target.Position.Y = 0
+	secondExit := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 2, Y: 0},
+		players,
+		1,
+		true,
+	)
+	if !secondExit.Triggered || secondExit.Damage != 1 {
+		t.Fatalf("expected second exit to restart from zero and deal 1 damage, got %+v", secondExit)
+	}
+}
+
+func TestResolveGuardianAuraExitDamage_CapsDamageAtFive(t *testing.T) {
+	const instanceID = "guardian-aura-cap"
+
+	registerCombatMatchState(t, instanceID, &game.MatchState{InstanceID: instanceID})
+
+	guardian := newCombatTestPlayer(1, "guardian", 0, 20, 0, 0)
+	target := newCombatTestPlayer(2, "ranger", 0, 20, 1, 0)
+	players := []models.PlayerResponse{guardian, target}
+
+	for i := 0; i < 6; i++ {
+		oldPos := repository.Position{X: 1, Y: 0}
+		target.Position.X = 1
+		target.Position.Y = 1
+		if i%2 == 1 {
+			oldPos = repository.Position{X: 1, Y: 1}
+			target.Position.X = 1
+			target.Position.Y = 0
+		}
+
+		result := resolveGuardianAuraExitDamage(
+			instanceID,
+			&target,
+			oldPos,
+			players,
+			1,
+			true,
+		)
+		if result.Triggered {
+			t.Fatalf("expected no damage while accumulating inside aura, got %+v", result)
+		}
+	}
+
+	target.Position.X = 4
+	target.Position.Y = 0
+	result := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 1, Y: 0},
+		players,
+		1,
+		true,
+	)
+	if !result.Triggered {
+		t.Fatal("expected voluntary exit after large accumulation to trigger damage")
+	}
+	if result.Damage != guardianAuraExitDamageCap {
+		t.Fatalf("expected capped exit damage %d, got %d", guardianAuraExitDamageCap, result.Damage)
+	}
+	if result.NewHealth != 15 {
+		t.Fatalf("expected capped damage to leave target at 15 HP, got %d", result.NewHealth)
+	}
+}
+
+func TestResolveGuardianAuraExitDamage_MultipleGuardiansUseDeterministicSource(t *testing.T) {
+	const instanceID = "guardian-aura-multiple"
+
+	registerCombatMatchState(t, instanceID, &game.MatchState{InstanceID: instanceID})
+
+	guardianHighID := newCombatTestPlayer(5, "guardian", 0, 20, 0, 0)
+	guardianLowID := newCombatTestPlayer(1, "guardian", 0, 20, 1, 1)
+	target := newCombatTestPlayer(2, "ranger", 0, 10, 2, 0)
+	target.Position.X = 4
+	target.Position.Y = 0
+
+	result := resolveGuardianAuraExitDamage(
+		instanceID,
+		&target,
+		repository.Position{X: 2, Y: 0},
+		[]models.PlayerResponse{guardianHighID, guardianLowID, target},
+		1,
+		true,
+	)
+	if !result.Triggered {
+		t.Fatal("expected voluntary exit from overlapping guardian auras to trigger damage")
+	}
+	if result.Damage != 1 {
+		t.Fatalf("expected shared non-stacking damage 1, got %d", result.Damage)
+	}
+	if result.SourceGuardianID != guardianLowID.UserID {
+		t.Fatalf("expected lowest guardian id %d as deterministic source, got %d", guardianLowID.UserID, result.SourceGuardianID)
+	}
+}
+
+func TestBuildGuardianAuraExitExchangePayload_AddsLethalDeathStep(t *testing.T) {
+	payload := buildGuardianAuraExitExchangePayload("guardian-exchange", 7, 12, 5, 0)
+
+	if payload.AttackerID != 7 || payload.AttackerType != CombatActorPlayer {
+		t.Fatalf("expected guardian attacker 7/player, got %d/%s", payload.AttackerID, payload.AttackerType)
+	}
+	if len(payload.Steps) != 2 {
+		t.Fatalf("expected auraExit + death steps, got %d", len(payload.Steps))
+	}
+	if payload.Steps[0].Kind != "auraExit" {
+		t.Fatalf("expected first step auraExit, got %q", payload.Steps[0].Kind)
+	}
+	if payload.Steps[0].Damage != 5 || payload.Steps[0].TargetHPAfter != 0 {
+		t.Fatalf("unexpected auraExit payload: %+v", payload.Steps[0])
+	}
+	if payload.Steps[1].Kind != "death" || payload.Steps[1].Target.ID != 12 {
+		t.Fatalf("expected lethal aura exit death step for player 12, got %+v", payload.Steps[1])
+	}
+}
+
+func registerCombatMatchState(t *testing.T, instanceID string, state *game.MatchState) {
+	t.Helper()
+
+	game.MatchStatesMu.Lock()
+	game.MatchStates[instanceID] = state
+	game.MatchStatesMu.Unlock()
+
+	t.Cleanup(func() {
+		game.MatchStatesMu.Lock()
+		delete(game.MatchStates, instanceID)
+		game.MatchStatesMu.Unlock()
+	})
+}
+
+func newCombatTestPlayer(userID int, characterType string, groupID int, health int, x int, y int) models.PlayerResponse {
+	player := models.PlayerResponse{
+		UserID:        userID,
+		CharacterType: characterType,
+		GroupID:       groupID,
+		Health:        health,
+		MaxHealth:     health,
+	}
+	player.Position.X = x
+	player.Position.Y = y
+	return player
+}

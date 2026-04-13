@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"gameservice/game"
@@ -25,10 +26,11 @@ const (
 	standardCounterAttackEnergyCost  = 2
 	guardianZoneControlRange         = 2
 	guardianZoneControlMovePenalty   = 1
+	guardianAuraExitDamageCap        = 5
 	armorBreakDefensePenaltyPerStack = 2
 	armorBreakDurationTurns          = 2
 	armorBreakMaxStacks              = 2
-	berserkerFollowUpLimitPerTurn    = 3
+	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
 	energyDrainPerHit                = 2
 	energyDrainGainPerHit            = 1
 	energyDrainPerTargetLimit        = 3
@@ -339,11 +341,13 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	moveCost, err := resolveMoveEnergyCost(instanceID, player)
+	players, err := Combat.LoadPlayers(instanceID)
 	if err != nil {
-		http.Error(w, "Ошибка расчёта стоимости движения", http.StatusInternalServerError)
+		http.Error(w, "Ошибка загрузки игроков матча", http.StatusInternalServerError)
 		return
 	}
+
+	moveCost, extraMoveCost := resolveMoveEnergyCostFromPlayers(player, players)
 	if player.Energy < moveCost {
 		http.Error(w, "Недостаточно энергии", http.StatusBadRequest)
 		return
@@ -375,17 +379,53 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	b2, _ := json.Marshal(moveMsg)
 	Broadcast(b2)
 
-	// WS: UPDATE_PLAYER (для изменения энергии)
-	playerForWS, _ := repository.GetMatchPlayerByID(instanceID, userID)
-	updatePlayerMsg := map[string]interface{}{
-		"type": "UPDATE_PLAYER",
-		"payload": map[string]interface{}{
-			"instanceId": instanceID,
-			"player":     playerForWS, // тут hp, energy и все статы игрока!
-		},
+	exitDamage := resolveGuardianAuraExitDamage(
+		instanceID,
+		player,
+		repository.Position{X: oldPos.X, Y: oldPos.Y},
+		players,
+		extraMoveCost,
+		true,
+	)
+	if exitDamage.Triggered {
+		player.Health = exitDamage.NewHealth
+		if exitDamage.NewHealth > 0 {
+			if err := Combat.UpdatePlayer(instanceID, player); err != nil {
+				http.Error(w, "Ошибка обновления здоровья игрока", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if exitDamage.SourceGuardianID > 0 {
+			if ms, ok := game.GetMatchState(instanceID); ok {
+				ms.RecordDamageEvent(exitDamage.SourceGuardianID, "player", exitDamage.Damage)
+				if exitDamage.NewHealth <= 0 {
+					ms.RecordKillEvent(exitDamage.SourceGuardianID, "player", exitDamage.Damage)
+				}
+			}
+		}
+
+		exchangeMsg := CombatExchangeMessage{
+			Type: "COMBAT_EXCHANGE",
+			Payload: buildGuardianAuraExitExchangePayload(
+				instanceID,
+				exitDamage.SourceGuardianID,
+				userID,
+				exitDamage.Damage,
+				exitDamage.NewHealth,
+			),
+		}
+		data, _ := json.Marshal(exchangeMsg)
+		Broadcast(data)
+
+		if exitDamage.NewHealth <= 0 {
+			handlePlayerDeath(instanceID, player, exitDamage.SourceGuardianID, exitDamage.SourceGuardianID > 0)
+		}
 	}
-	buf, _ := json.Marshal(updatePlayerMsg)
-	Broadcast(buf)
+
+	if player.Health > 0 {
+		sendUpdatePlayerWS(instanceID, userID)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(player)
@@ -416,6 +456,13 @@ type attackResult struct {
 	Damage    int
 	NewHealth int
 	Triggered bool
+}
+
+type guardianAuraExitResolution struct {
+	Triggered        bool
+	Damage           int
+	NewHealth        int
+	SourceGuardianID int
 }
 
 // --- Загрузка статов игрока или монстра ------------------------------------
@@ -540,13 +587,8 @@ func baseMoveEnergyCost(mobility int) int {
 	}
 }
 
-func resolveMoveEnergyCost(instanceID string, player *models.PlayerResponse) (int, error) {
-	cost := baseMoveEnergyCost(player.Mobility)
-
-	players, err := repository.LoadMatchPlayers(instanceID)
-	if err != nil {
-		return 0, err
-	}
+func enemyGuardianAuraSourcesAtPosition(player *models.PlayerResponse, x int, y int, players []models.PlayerResponse) []int {
+	guardians := make([]int, 0, 2)
 	for _, other := range players {
 		if other.UserID == player.UserID || other.Health <= 0 {
 			continue
@@ -557,12 +599,141 @@ func resolveMoveEnergyCost(instanceID string, player *models.PlayerResponse) (in
 		if player.GroupID != 0 && other.GroupID == player.GroupID {
 			continue
 		}
-		if manhattan(player.Position.X, player.Position.Y, other.Position.X, other.Position.Y) <= guardianZoneControlRange {
-			return cost + guardianZoneControlMovePenalty, nil
+		if manhattan(x, y, other.Position.X, other.Position.Y) <= guardianZoneControlRange {
+			guardians = append(guardians, other.UserID)
 		}
 	}
+	sort.Ints(guardians)
+	return guardians
+}
 
-	return cost, nil
+func resolveMoveEnergyCostFromPlayers(player *models.PlayerResponse, players []models.PlayerResponse) (int, int) {
+	cost := baseMoveEnergyCost(player.Mobility)
+	if len(enemyGuardianAuraSourcesAtPosition(player, player.Position.X, player.Position.Y, players)) > 0 {
+		return cost + guardianZoneControlMovePenalty, guardianZoneControlMovePenalty
+	}
+	return cost, 0
+}
+
+func resolveMoveEnergyCost(instanceID string, player *models.PlayerResponse) (int, int, error) {
+	players, err := Combat.LoadPlayers(instanceID)
+	if err != nil {
+		return 0, 0, err
+	}
+	cost, extraCost := resolveMoveEnergyCostFromPlayers(player, players)
+	return cost, extraCost, nil
+}
+
+func resolveGuardianAuraExitDamage(
+	instanceID string,
+	player *models.PlayerResponse,
+	oldPos repository.Position,
+	players []models.PlayerResponse,
+	extraMoveCost int,
+	voluntary bool,
+) guardianAuraExitResolution {
+	guardiansBefore := enemyGuardianAuraSourcesAtPosition(player, oldPos.X, oldPos.Y, players)
+	if len(guardiansBefore) == 0 {
+		if ms, ok := game.GetMatchState(instanceID); ok {
+			ms.ResetGuardianAuraPressure(player.UserID)
+		}
+		return guardianAuraExitResolution{}
+	}
+
+	ms, ok := game.GetMatchState(instanceID)
+	if !ok {
+		return guardianAuraExitResolution{}
+	}
+
+	pressure := ms.GetGuardianAuraPressure(player.UserID)
+	if extraMoveCost > 0 {
+		pressure = ms.AccumulateGuardianAuraPressure(
+			player.UserID,
+			guardiansBefore[0],
+			extraMoveCost,
+		)
+	}
+
+	if len(enemyGuardianAuraSourcesAtPosition(player, player.Position.X, player.Position.Y, players)) > 0 {
+		return guardianAuraExitResolution{}
+	}
+
+	ms.ResetGuardianAuraPressure(player.UserID)
+	if !voluntary {
+		return guardianAuraExitResolution{}
+	}
+
+	damage := pressure.AccumulatedExtraMoveCost
+	if damage > guardianAuraExitDamageCap {
+		damage = guardianAuraExitDamageCap
+	}
+	if damage <= 0 {
+		return guardianAuraExitResolution{}
+	}
+
+	sourceGuardianID := pressure.LastSourceUserID
+	if sourceGuardianID == 0 {
+		sourceGuardianID = guardiansBefore[0]
+	}
+
+	newHealth := player.Health - damage
+	if newHealth < 0 {
+		newHealth = 0
+	}
+
+	return guardianAuraExitResolution{
+		Triggered:        true,
+		Damage:           damage,
+		NewHealth:        newHealth,
+		SourceGuardianID: sourceGuardianID,
+	}
+}
+
+func buildGuardianAuraExitExchangePayload(
+	instanceID string,
+	sourceGuardianID int,
+	targetID int,
+	damage int,
+	targetHPAfter int,
+) CombatExchangePayload {
+	attackerType := CombatActorPlayer
+	attackerID := sourceGuardianID
+	var sourceRef *CombatTargetRef
+	if sourceGuardianID > 0 {
+		ref := CombatTargetRef{ID: sourceGuardianID, Type: CombatActorPlayer}
+		sourceRef = &ref
+	} else {
+		attackerType = CombatActorMonster
+		attackerID = 0
+	}
+
+	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
+	steps := []CombatStep{
+		{
+			Kind:          "auraExit",
+			Source:        sourceRef,
+			Target:        targetRef,
+			Damage:        damage,
+			TargetHPAfter: targetHPAfter,
+		},
+	}
+	if targetHPAfter <= 0 {
+		steps = append(steps, CombatStep{
+			Kind:   "death",
+			Target: targetRef,
+		})
+	}
+
+	return CombatExchangePayload{
+		InstanceID:   instanceID,
+		ExchangeID:   nextCombatExchangeID(instanceID),
+		AttackerID:   attackerID,
+		AttackerType: attackerType,
+		TargetID:     targetID,
+		TargetType:   CombatActorPlayer,
+		AttackStyle:  AttackStyleMelee,
+		Steps:        steps,
+	}
 }
 
 func resolveAttackEnergyCost(mode attackMode) int {
@@ -1234,17 +1405,27 @@ func tryPushCombatTarget(
 		return false, nil, nil
 	}
 
+	var players []models.PlayerResponse
+	if targetType == "player" {
+		players, err = Combat.LoadPlayers(instanceID)
+		if err != nil {
+			return false, nil, err
+		}
+	}
+
 	switch targetType {
 	case "player":
 		targetPlayer, err := Combat.GetPlayer(instanceID, targetID)
 		if err != nil {
 			return false, nil, err
 		}
+		oldPos := repository.Position{X: targetPlayer.Position.X, Y: targetPlayer.Position.Y}
 		targetPlayer.Position.X = destination.X
 		targetPlayer.Position.Y = destination.Y
 		if err := Combat.UpdatePlayer(instanceID, targetPlayer); err != nil {
 			return false, nil, err
 		}
+		_ = resolveGuardianAuraExitDamage(instanceID, targetPlayer, oldPos, players, 0, false)
 	case "monster":
 		movedMonster := cells[oldIdx].Monster
 		if movedMonster == nil {
