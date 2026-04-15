@@ -79,6 +79,8 @@ npm run dev
 ```
 
 Frontend will be available at `http://localhost:3000`.
+For devices in the same local network, open `http://<your-computer-ip>:3000`.
+The frontend now automatically swaps `localhost` service URLs to the host machine IP when opened from another device.
 
 ### 2) Auth service
 

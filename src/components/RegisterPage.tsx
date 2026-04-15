@@ -6,13 +6,12 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AUTH_BASE } from "@/utils/serviceUrls";
 import styles from "../styles/RegisterPage.module.css";
 import {
     characterArchetypes,
     type CharacterArchetype,
 } from "../constants/characterArchetypes";
-
-const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_BASE || "http://localhost:8000";
 
 const RegisterPage = () => {
     const router = useRouter();

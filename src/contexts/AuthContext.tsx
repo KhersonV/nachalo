@@ -5,10 +5,9 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { AUTH_BASE } from "@/utils/serviceUrls";
 import { debugLog } from "../utils/log";
 import { useRouter } from "next/navigation";
-
-const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_BASE || "http://localhost:8000";
 
 export type User = {
     id: number;

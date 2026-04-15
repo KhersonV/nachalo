@@ -2,12 +2,11 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import type { PlayerShopState, ShopItem } from "../types";
 import styles from "../styles/ModeSelectionPage.module.css";
-
-const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 const EFFECT_LABELS: Record<string, string> = {
     health: "HP",

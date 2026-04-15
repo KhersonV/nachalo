@@ -4,12 +4,9 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import type { Cell, PlayerState } from "../types";
-
-// -- Вынесем базовый адрес WebSocket и HTTP API в константы/ENV --
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 // Module-level global lock: shared across ALL instances of this hook in the same
 // browser tab. Prevents multiple simultaneous WebSocket opens for the same session

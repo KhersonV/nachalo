@@ -2,11 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { MATCHMAKING_BASE as API_MATCH } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import MatchReadyModal from "./MatchReadyModal";
-
-const API_MATCH =
-    process.env.NEXT_PUBLIC_MATCHMAKING_BASE || "http://localhost:8002";
 const prepSecondsFromEnv = Number(process.env.NEXT_PUBLIC_PREP_SECONDS || 15);
 const PREP_REDIRECT_SECONDS = Number.isFinite(prepSecondsFromEnv)
     ? Math.max(5, Math.min(120, Math.floor(prepSecondsFromEnv)))

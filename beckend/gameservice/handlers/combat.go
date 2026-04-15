@@ -31,9 +31,9 @@ const (
 	armorBreakDurationTurns          = 2
 	armorBreakMaxStacks              = 2
 	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
-	energyDrainPerHit                = 2
+	energyDrainPerHit                = 3
 	energyDrainGainPerHit            = 1
-	energyDrainPerTargetLimit        = 3
+	energyDrainPerTargetLimit        = 10
 )
 
 type CombatActorType string

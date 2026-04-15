@@ -2,6 +2,7 @@
 // src/hooks/usePlayerActions.ts
 //===============================
 
+import { API_BASE } from "@/utils/serviceUrls";
 import { useDispatch } from "react-redux";
 import { updatePlayer, updateCell } from "../store/slices/gameSlice";
 import type { PlayerState, Cell } from "../types";
@@ -17,8 +18,6 @@ const DELTAS = {
 } as const;
 
 type MoveDirection = keyof typeof DELTAS;
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 type PlacementStructureType = "scout_tower" | "turret" | "wall";
 
