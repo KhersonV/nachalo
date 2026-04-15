@@ -8,6 +8,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
+import MiniMap from "./MiniMap";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
@@ -383,6 +384,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
             alert(message);
         },
     });
+
+    const minimapViewportCells = React.useMemo(() => {
+        const step = mapViewport.tileSize + 1;
+        return {
+            width: Math.max(1, Math.ceil(mapViewport.width / step)),
+            height: Math.max(1, Math.ceil(mapViewport.height / step)),
+        };
+    }, [mapViewport.height, mapViewport.tileSize, mapViewport.width]);
 
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
@@ -1110,6 +1119,15 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     groupId={myPlayer.group_id}
                 />
             )}
+            <MiniMap
+                grid={state.grid}
+                mapWidth={state.mapWidth}
+                mapHeight={state.mapHeight}
+                players={state.players}
+                myPlayerId={myPlayer?.user_id}
+                activeUserId={state.active_user}
+                viewportCells={minimapViewportCells}
+            />
             <div
                 className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
             >
