@@ -291,7 +291,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             }>;
             const userId = custom.detail?.userId;
             const graceMs = custom.detail?.graceMs ?? 180000;
-            if (!userId) return;
+            if (!userId || userId === user?.id) return;
             setDisconnectedDeadlines((prev) => ({
                 ...prev,
                 [userId]: Date.now() + graceMs,
@@ -316,7 +316,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             window.removeEventListener("player-disconnected", onDisconnected);
             window.removeEventListener("player-reconnected", onReconnected);
         };
-    }, []);
+    }, [user?.id]);
 
     useEffect(() => {
         const onMyDefeat = () => {
@@ -1146,6 +1146,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
+                        instanceId={instanceId}
                         tileSize={mapViewport.tileSize}
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}

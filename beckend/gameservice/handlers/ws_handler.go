@@ -193,19 +193,19 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 			if envelope.Type == "JOIN_MATCH" {
 				// Always update instanceID from client message and reply with MATCH_UPDATE.
 				prevInstance := client.instanceID
-				client.instanceID = envelope.InstanceID
-				if prevInstance == "" {
-					if cancelReconnectGrace(client.instanceID, client.userID) {
-						reconnectedMsg := map[string]interface{}{
-							"type": "PLAYER_RECONNECTED",
-							"payload": map[string]interface{}{
-								"instanceId": client.instanceID,
-								"userId":     client.userID,
-							},
-						}
-						if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
-							Broadcast(rb)
-						}
+				if envelope.InstanceID != "" {
+					client.instanceID = envelope.InstanceID
+				}
+				if client.instanceID != "" && cancelReconnectGrace(client.instanceID, client.userID) {
+					reconnectedMsg := map[string]interface{}{
+						"type": "PLAYER_RECONNECTED",
+						"payload": map[string]interface{}{
+							"instanceId": client.instanceID,
+							"userId":     client.userID,
+						},
+					}
+					if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
+						Broadcast(rb)
 					}
 				}
 				log.Printf("[WsHandler] client %d joined match %s (prev=%s)", client.userID, envelope.InstanceID, prevInstance)
