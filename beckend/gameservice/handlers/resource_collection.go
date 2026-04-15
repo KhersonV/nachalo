@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 
+	"gameservice/game"
+	"gameservice/middleware"
 	"gameservice/repository"
 )
 
@@ -23,23 +25,23 @@ type CollectResourceRequest struct {
 
 // UpdatedCellResponse – структура ответа для обновлённой клетки.
 type UpdatedCellResponse struct {
-	CellID   int         `json:"cell_id"`
-	X        int         `json:"x"`
-	Y        int         `json:"y"`
-	TileCode int         `json:"tileCode"`
-	Resource interface{} `json:"resource"`
-	Barbel   interface{} `json:"barbel"`
-	Monster  interface{} `json:"monster"`
-	IsPortal bool        `json:"isPortal"`
-	IsPlayer bool        `json:"isPlayer"`
-	StructureType         string `json:"structure_type,omitempty"`
-	StructureOwnerUserID  int    `json:"structure_owner_user_id,omitempty"`
-	StructureHealth       int    `json:"structure_health,omitempty"`
-	StructureDefense      int    `json:"structure_defense,omitempty"`
-	StructureAttack       int    `json:"structure_attack,omitempty"`
-	StructureImage        string `json:"structure_image,omitempty"`
-	IsUnderConstruction   bool   `json:"is_under_construction"`
-	ConstructionTurnsLeft int    `json:"construction_turns_left,omitempty"`
+	CellID                int         `json:"cell_id"`
+	X                     int         `json:"x"`
+	Y                     int         `json:"y"`
+	TileCode              int         `json:"tileCode"`
+	Resource              interface{} `json:"resource"`
+	Barbel                interface{} `json:"barbel"`
+	Monster               interface{} `json:"monster"`
+	IsPortal              bool        `json:"isPortal"`
+	IsPlayer              bool        `json:"isPlayer"`
+	StructureType         string      `json:"structure_type,omitempty"`
+	StructureOwnerUserID  int         `json:"structure_owner_user_id,omitempty"`
+	StructureHealth       int         `json:"structure_health,omitempty"`
+	StructureDefense      int         `json:"structure_defense,omitempty"`
+	StructureAttack       int         `json:"structure_attack,omitempty"`
+	StructureImage        string      `json:"structure_image,omitempty"`
+	IsUnderConstruction   bool        `json:"is_under_construction"`
+	ConstructionTurnsLeft int         `json:"construction_turns_left,omitempty"`
 }
 
 func asInt(v interface{}) int {
@@ -88,12 +90,35 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "instance_id и user_id обязательны", http.StatusBadRequest)
 		return
 	}
+	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || tokenUserID != req.PlayerID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
-	// 2) Загрузка карты и поиск нужной ячейки
+	lockPlayer(req.PlayerID)
+	defer unlockPlayer(req.PlayerID)
+
+	matchState, ok := game.GetMatchState(req.InstanceID)
+	if !ok {
+		http.Error(w, "match not found", http.StatusNotFound)
+		return
+	}
+	if matchState.ActiveUserID != req.PlayerID {
+		http.Error(w, "it's not your turn", http.StatusBadRequest)
+		return
+	}
+
+	// 2) Загрузка карты и поиск нужной ячейки — делаем в транзакции с FOR UPDATE
+	tx, err := repository.DB.Begin()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("begin tx: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
 	var mapJSON string
-	if err := repository.DB.
-		QueryRow(`SELECT map FROM matches WHERE instance_id=$1`, req.InstanceID).
-		Scan(&mapJSON); err != nil {
+	if err := tx.QueryRow(`SELECT map FROM matches WHERE instance_id=$1 FOR UPDATE`, req.InstanceID).Scan(&mapJSON); err != nil {
 		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -119,7 +144,7 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 	// 3) Проверяем, есть ли ресурс в этой ячейке
 	resData, ok := target["resource"].(map[string]interface{})
 	if !ok {
-		// нет ресурса — выходим молча
+		http.Error(w, "resource already collected", http.StatusConflict)
 		return
 	}
 
@@ -134,16 +159,15 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		itemType = "artifact"
 	}
 
-
 	// 4) Очищаем клетку
 	target["resource"] = nil
 	target["tileCode"] = float64(48)
 	target["monster"] = nil
 	target["isPortal"] = false
 
-	// 5) Сохраняем обновлённую карту
+	// 5) Сохраняем обновлённую карту в транзакции
 	updatedMap, _ := json.Marshal(cells)
-	if _, err := repository.DB.Exec(
+	if _, err := tx.Exec(
 		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
 		string(updatedMap), req.InstanceID,
 	); err != nil {
@@ -151,34 +175,35 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	
+	if err := tx.Commit(); err != nil {
+		http.Error(w, fmt.Sprintf("commit tx: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-
-
-if err := repository.AddInventoryItem(
-	req.InstanceID,
-	req.PlayerID,
-	itemType, // "resource" или "artifact"
-	itemID,
-	itemName,
-	itemImage,
-	itemDesc,
-	1,
-); err != nil {
-    http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
-    return
-}
+	if err := repository.AddInventoryItem(
+		req.InstanceID,
+		req.PlayerID,
+		itemType, // "resource" или "artifact"
+		itemID,
+		itemName,
+		itemImage,
+		itemDesc,
+		1,
+	); err != nil {
+		http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
+		return
+	}
 	// 7) Формируем и отправляем ответ клиенту
 	updatedCell := UpdatedCellResponse{
-		CellID:   int(target["cell_id"].(float64)),
-		X:        int(target["x"].(float64)),
-		Y:        int(target["y"].(float64)),
-		TileCode: int(target["tileCode"].(float64)),
-		Resource: nil,
-		Barbel:   target["barbel"],
-		Monster:  target["monster"],
-		IsPortal: target["isPortal"].(bool),
-		IsPlayer: target["isPlayer"].(bool),
+		CellID:                int(target["cell_id"].(float64)),
+		X:                     int(target["x"].(float64)),
+		Y:                     int(target["y"].(float64)),
+		TileCode:              int(target["tileCode"].(float64)),
+		Resource:              nil,
+		Barbel:                target["barbel"],
+		Monster:               target["monster"],
+		IsPortal:              target["isPortal"].(bool),
+		IsPlayer:              target["isPlayer"].(bool),
 		StructureType:         asString(target["structure_type"]),
 		StructureOwnerUserID:  asInt(target["structure_owner_user_id"]),
 		StructureHealth:       asInt(target["structure_health"]),
@@ -192,14 +217,13 @@ if err := repository.AddInventoryItem(
 	wsMsg := map[string]interface{}{
 		"type": "RESOURCE_COLLECTED",
 		"payload": map[string]interface{}{
-			 "instanceId":    req.InstanceID, 
+			"instanceId":    req.InstanceID,
 			"updatedCell":   updatedCell,
 			"updatedPlayer": playerResp,
 		},
 	}
 	msgBuf, _ := json.Marshal(wsMsg)
 	Broadcast(msgBuf)
-
 
 	// Если собранный предмет — квест-артефакт, уведомляем всех игроков
 	if itemType == "artifact" {

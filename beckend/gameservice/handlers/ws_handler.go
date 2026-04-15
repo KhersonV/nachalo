@@ -1,4 +1,3 @@
-
 //====================================
 // gameservice/handlers/ws_handler.go
 //====================================
@@ -154,6 +153,11 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{Conn: ws, userID: int(userID)}
+	// Pre-fill instanceID from query param to avoid race where server
+	// broadcasts match events before client sends JOIN_MATCH message.
+	if qInstance := r.URL.Query().Get("instanceId"); qInstance != "" {
+		client.instanceID = qInstance
+	}
 
 	clientsMu.Lock()
 	if oldClient, ok := clients[client.userID]; ok {
@@ -176,48 +180,51 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Читаем сообщения клиента
 	for {
-    messageType, message, err := ws.ReadMessage()
-    if err != nil {
-        break
-    }
-    log.Printf("[WsHandler] Получено сообщение (тип %d): %s", messageType, string(message))
-    var envelope struct {
-        Type       string `json:"type"`
-        InstanceID string `json:"instanceId"`
-    }
-    if err := json.Unmarshal(message, &envelope); err == nil {
-        if envelope.Type == "JOIN_MATCH" {
-            if client.instanceID == "" {
-                client.instanceID = envelope.InstanceID
-				if cancelReconnectGrace(client.instanceID, client.userID) {
-					reconnectedMsg := map[string]interface{}{
-						"type": "PLAYER_RECONNECTED",
-						"payload": map[string]interface{}{
-							"instanceId": client.instanceID,
-							"userId":     client.userID,
-						},
-					}
-					if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
-						Broadcast(rb)
+		messageType, message, err := ws.ReadMessage()
+		if err != nil {
+			break
+		}
+		log.Printf("[WsHandler] Получено сообщение (тип %d): %s", messageType, string(message))
+		var envelope struct {
+			Type       string `json:"type"`
+			InstanceID string `json:"instanceId"`
+		}
+		if err := json.Unmarshal(message, &envelope); err == nil {
+			if envelope.Type == "JOIN_MATCH" {
+				// Always update instanceID from client message and reply with MATCH_UPDATE.
+				prevInstance := client.instanceID
+				client.instanceID = envelope.InstanceID
+				if prevInstance == "" {
+					if cancelReconnectGrace(client.instanceID, client.userID) {
+						reconnectedMsg := map[string]interface{}{
+							"type": "PLAYER_RECONNECTED",
+							"payload": map[string]interface{}{
+								"instanceId": client.instanceID,
+								"userId":     client.userID,
+							},
+						}
+						if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
+							Broadcast(rb)
+						}
 					}
 				}
-                log.Printf("[WsHandler] client %d joined match %s", client.userID, envelope.InstanceID)
-                // >>> Отправить MATCH_UPDATE <<<
+				log.Printf("[WsHandler] client %d joined match %s (prev=%s)", client.userID, envelope.InstanceID, prevInstance)
 
-                matchResp, err := BuildMatchResponse(client.instanceID)
-                if err == nil {
-                    wsMsg := struct {
-                        Type    string         `json:"type"`
-                        Payload *MatchResponse `json:"payload"`
-                    }{
-                        Type:    "MATCH_UPDATE",
-                        Payload: matchResp,
-                    }
-                    if b, err := json.Marshal(wsMsg); err == nil {
-                        client.Conn.WriteMessage(websocket.TextMessage, b)
-                    }
-                } else {
-                    log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
+				// >>> Отправить MATCH_UPDATE <<<
+				matchResp, err := BuildMatchResponse(client.instanceID)
+				if err == nil {
+					wsMsg := struct {
+						Type    string         `json:"type"`
+						Payload *MatchResponse `json:"payload"`
+					}{
+						Type:    "MATCH_UPDATE",
+						Payload: matchResp,
+					}
+					if b, err := json.Marshal(wsMsg); err == nil {
+						client.Conn.WriteMessage(websocket.TextMessage, b)
+					}
+				} else {
+					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
 					if allStats, winnerType, winnerID, serr := buildAllPlayersGameStatsFromStored(client.instanceID); serr == nil {
 						endedMsg := matchEndedBroadcastResponse{
 							Type: "MATCH_ENDED",
@@ -242,8 +249,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 							_ = client.Conn.WriteMessage(websocket.TextMessage, b)
 						}
 					}
-                }
-            }
+				}
 				continue
 			}
 		}
@@ -276,36 +282,63 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 var broadcastFn = func(message []byte) {
-    var env broadcastEnvelope
-    _ = json.Unmarshal(message, &env)
+	var env broadcastEnvelope
+	_ = json.Unmarshal(message, &env)
 
-    clientsMu.Lock()
-    var targets []*Client
-    for _, client := range clients {
-        if client.instanceID == "" || (env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID) {
-            continue
-        }
-        targets = append(targets, client)
-    }
-    clientsMu.Unlock()
+	// Try to extract message type for logging
+	var raw map[string]interface{}
+	_ = json.Unmarshal(message, &raw)
+	msgType := "<unknown>"
+	if t, ok := raw["type"].(string); ok {
+		msgType = t
+	}
 
-    // Теперь рассылка без lock!
-    for _, client := range targets {
-        err := client.Conn.WriteMessage(websocket.TextMessage, message)
-        if err != nil {
-            // Если ошибка — безопасно удалить клиента (требуется ещё один lock)
-            clientsMu.Lock()
-            client.Conn.Close()
+	clientsMu.Lock()
+	var targets []*Client
+	for _, client := range clients {
+		// If client already has instanceID set — match normally.
+		if client.instanceID != "" {
+			if env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID {
+				continue
+			}
+			targets = append(targets, client)
+			continue
+		}
+
+		// client.instanceID is empty — as a fallback, if message targets a
+		// specific instance, include the client when the user belongs to that match.
+		if env.Payload.InstanceID != "" {
+			if p, err := repository.GetMatchPlayerByID(env.Payload.InstanceID, client.userID); err == nil && p != nil {
+				targets = append(targets, client)
+				continue
+			}
+		}
+		// otherwise skip
+	}
+	clientsMu.Unlock()
+
+	log.Printf("[Broadcast] type=%s instance=%s targets=%d", msgType, env.Payload.InstanceID, len(targets))
+	// Теперь рассылка без lock!
+	for _, client := range targets {
+		err := client.Conn.WriteMessage(websocket.TextMessage, message)
+		if err != nil {
+			log.Printf("[Broadcast] write error user=%d err=%v", client.userID, err)
+			// Если ошибка — безопасно удалить клиента (требуется ещё один lock)
+			clientsMu.Lock()
+			client.Conn.Close()
 			if current, ok := clients[client.userID]; ok && current == client {
 				delete(clients, client.userID)
 			}
-            clientsMu.Unlock()
-        }
-    }
+			clientsMu.Unlock()
+		} else {
+			// Log successful send for critical turn events to aid debugging
+			if msgType == "SET_ACTIVE_USER" || msgType == "TURN_PASSED" {
+				log.Printf("[Broadcast] sent user=%d instance=%s type=%s", client.userID, env.Payload.InstanceID, msgType)
+			}
+		}
+	}
 }
-
 
 func Broadcast(msg []byte) {
 	broadcastFn(msg)

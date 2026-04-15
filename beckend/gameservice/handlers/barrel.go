@@ -9,8 +9,8 @@ import (
 	"log"
 
 	"gameservice/game"
-	"gameservice/repository"
 	"gameservice/models"
+	"gameservice/repository"
 )
 
 // вверху файла
@@ -39,15 +39,15 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 	}
 
 	return UpdatedCellResponse{
-		CellID:   cell.CellID,
-		X:        cell.X,
-		Y:        cell.Y,
-		TileCode: cell.TileCode,
-		Resource: cell.Resource,
-		Barbel:   cell.Barbel,
-		Monster:  cell.Monster,
-		IsPortal: cell.IsPortal,
-		IsPlayer: cell.IsPlayer,
+		CellID:                cell.CellID,
+		X:                     cell.X,
+		Y:                     cell.Y,
+		TileCode:              cell.TileCode,
+		Resource:              cell.Resource,
+		Barbel:                cell.Barbel,
+		Monster:               cell.Monster,
+		IsPortal:              cell.IsPortal,
+		IsPlayer:              cell.IsPlayer,
 		StructureType:         cell.StructureType,
 		StructureOwnerUserID:  cell.StructureOwnerUserID,
 		StructureHealth:       cell.StructureHealth,
@@ -59,21 +59,40 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 	}
 }
 
-
-
 func updateCellInMap(instanceID string, cell game.FullCell) {
-    cells, err := repository.LoadMapCells(instanceID)
-    if err == nil {
-        for i := range cells {
-            if cells[i].X == cell.X && cells[i].Y == cell.Y {
-                cells[i] = cell
-                break
-            }
-        }
-        _ = repository.SaveMapCells(instanceID, cells)
-    }
-}
+	tx, err := repository.DB.Begin()
+	if err != nil {
+		log.Printf("updateCellInMap: begin tx failed: %v", err)
+		return
+	}
+	defer tx.Rollback()
 
+	var raw []byte
+	if err := tx.QueryRow(`SELECT map FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&raw); err != nil {
+		log.Printf("updateCellInMap: load map failed: %v", err)
+		return
+	}
+	var cells []game.FullCell
+	if err := json.Unmarshal(raw, &cells); err != nil {
+		log.Printf("updateCellInMap: unmarshal failed: %v", err)
+		return
+	}
+	for i := range cells {
+		if cells[i].X == cell.X && cells[i].Y == cell.Y {
+			cells[i] = cell
+			break
+		}
+	}
+	newMap, _ := json.Marshal(cells)
+	if _, err := tx.Exec(`UPDATE matches SET map=$1 WHERE instance_id=$2`, newMap, instanceID); err != nil {
+		log.Printf("updateCellInMap: save map failed: %v", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("updateCellInMap: commit failed: %v", err)
+		return
+	}
+}
 
 // HandleOpenBarrel вызывается по WS/HTTP, когда игрок открывает бочку.
 func HandleOpenBarrel(

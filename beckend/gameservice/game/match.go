@@ -26,6 +26,9 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	if n == 0 {
 		return 0, ErrNoPlayers
 	}
+	if m.ActiveUserID != currentPlayerID {
+		return 0, ErrNotYourTurn
+	}
 
 	// Найти текущий индекс, если есть
 	startIdx := 0

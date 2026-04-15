@@ -17,6 +17,7 @@ import (
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
+
 	"github.com/gorilla/mux"
 )
 
@@ -176,6 +177,19 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lockPlayer(userID)
+	defer unlockPlayer(userID)
+
+	matchState, ok := game.GetMatchState(instanceID)
+	if !ok {
+		http.Error(w, "Матч не найден", http.StatusNotFound)
+		return
+	}
+	if matchState.ActiveUserID != userID {
+		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// 3) Проверяем границы карты
 	var mapW, mapH int
 	if err := repository.DB.QueryRow(
@@ -204,7 +218,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 			TargetID:     mm.MonsterInstanceID,
 			InstanceID:   instanceID,
 		}
-		UniversalAttackHandler(w, rWithBody(attackReq))
+		universalAttackLocked(w, attackReq)
 		return
 	}
 
@@ -222,7 +236,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 			TargetID:     other,
 			InstanceID:   instanceID,
 		}
-		UniversalAttackHandler(w, rWithBody(attackReq))
+		universalAttackLocked(w, attackReq)
 		return
 	}
 
@@ -1488,20 +1502,57 @@ func resolveRangerPushFallbackDamage(
 	return applyDamage(attacker, bonusTargetStats)
 }
 
-func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) (*CombatEffect, error) {
+// tryApplyMysticEnergyDrain пытается вытянуть энергию у цели.
+// Если у цели нет энергии — наносит небольшой бонусный плоский урон.
+// Возвращает эффект (energyDrain) и опционально шаг (bonus hit), если был нанесён доп. урон.
+func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) (*CombatEffect, *CombatStep, error) {
 	if targetType != "player" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	attacker, err := Combat.GetPlayer(instanceID, attackerID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	target, err := Combat.GetPlayer(instanceID, targetID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// Если у цели нет энергии — наносим бонусный плоский урон.
+	if target.Energy <= 0 {
+		bonusDamage := energyDrainPerHit // используем константу дрейна как величину бонусного урона
+		if bonusDamage <= 0 {
+			return nil, nil, nil
+		}
+		ar := applyFlatDamage(target.Health, bonusDamage)
+		// Сохраняем новый HP цели и обрабатываем возможную смерть
+		saveTargetHealth(instanceID, "player", targetID, attackerID, "player", ar)
+
+		sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
+		targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
+		step := CombatStep{
+			Kind:          "bonus",
+			Source:        &sourceRef,
+			Target:        targetRef,
+			Damage:        ar.Damage,
+			TargetHPAfter: ar.NewHealth,
+		}
+		eff := CombatEffect{
+			Kind:              "energyDrain",
+			Source:            &sourceRef,
+			Target:            &targetRef,
+			Succeeded:         true,
+			BonusDamage:       ar.Damage,
+			EnergyGranted:     0,
+			EnergyDrained:     0,
+			SourceEnergyAfter: attacker.Energy,
+			TargetEnergyAfter: target.Energy,
+		}
+		return &eff, &step, nil
+	}
+
+	// Обычный дренаж энергии
 	drainAmount := energyDrainPerHit
 	if target.Energy < drainAmount {
 		drainAmount = target.Energy
@@ -1511,12 +1562,12 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 		gainAmount = available
 	}
 	if drainAmount <= 0 && gainAmount <= 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if ms, ok := game.GetMatchState(instanceID); ok {
 		if !ms.TryUseMysticDrain(attackerID, targetID, energyDrainPerTargetLimit) {
-			return nil, nil
+			return nil, nil, nil
 		}
 	}
 
@@ -1524,10 +1575,10 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 	attacker.Energy += gainAmount
 
 	if err := Combat.UpdatePlayer(instanceID, target); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := Combat.UpdatePlayer(instanceID, attacker); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
@@ -1541,7 +1592,7 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 		EnergyDrained:     drainAmount,
 		SourceEnergyAfter: attacker.Energy,
 		TargetEnergyAfter: target.Energy,
-	}, nil
+	}, nil, nil
 }
 
 // --- Контратака + логика TURN_PASSED для игрока ----------------------------
@@ -1612,21 +1663,37 @@ func doCounterattackWithEnergy(
 
 // --- Главная функция обработки атаки --------------------------------------
 func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
-	// 1) Декодируем
-	var req struct {
-		InstanceID   string `json:"instance_id"`
-		AttackerType string `json:"attacker_type"`
-		AttackerID   int    `json:"attacker_id"`
-		TargetType   string `json:"target_type"`
-		TargetID     int    `json:"target_id"`
-	}
-
+	var req AttackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[DEBUG] UniversalAttackHandler: decode error: %v", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if req.AttackerType == "player" {
+		tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+		if !ok || tokenUserID != req.AttackerID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 
+		matchState, ok := Combat.LoadGameState(req.InstanceID)
+		if !ok {
+			http.Error(w, "match not found", http.StatusNotFound)
+			return
+		}
+		if matchState.ActiveUserID != req.AttackerID {
+			http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+			return
+		}
+
+		lockPlayer(req.AttackerID)
+		defer unlockPlayer(req.AttackerID)
+	}
+
+	universalAttackLocked(w, req)
+}
+
+func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
 	if err != nil {
 		log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
@@ -1717,13 +1784,21 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	finalAttackerHP := atkStats.Health
 
 	if atkStats.CharacterType == "mystic" {
-		drainEffect, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
+		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
 		if err != nil {
 			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)
 			return
 		}
 		if drainEffect != nil {
 			effects = append(effects, *drainEffect)
+		}
+		if drainStep != nil {
+			steps = append(steps, *drainStep)
+			finalTargetHP = drainStep.TargetHPAfter
+			if finalTargetHP <= 0 {
+				// добавляем шаг смерти для анимации
+				steps = append(steps, CombatStep{Kind: "death", Target: targetRef})
+			}
 		}
 	}
 

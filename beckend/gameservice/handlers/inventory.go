@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 
+	"gameservice/game"
+	"gameservice/middleware"
 	"gameservice/repository"
 
 	"github.com/gorilla/mux"
@@ -125,6 +127,11 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Некорректный ID игрока", http.StatusBadRequest)
 		return
 	}
+	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || tokenUserID != playerID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
 	// 2. Парсим тело запроса
 	var req struct {
@@ -142,6 +149,19 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.InstanceID == "" {
 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
+		return
+	}
+
+	lockPlayer(playerID)
+	defer unlockPlayer(playerID)
+
+	matchState, ok := game.GetMatchState(req.InstanceID)
+	if !ok {
+		http.Error(w, "match not found", http.StatusNotFound)
+		return
+	}
+	if matchState.ActiveUserID != playerID {
+		http.Error(w, "it's not your turn", http.StatusBadRequest)
 		return
 	}
 

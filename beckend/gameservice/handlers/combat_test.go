@@ -5,12 +5,14 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
 
+	"auth/common"
 	"gameservice/game"
 	"gameservice/models"
 	"gameservice/repository"
@@ -74,6 +76,7 @@ func TestUniversalAttackHandler(t *testing.T) {
 	}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest("POST", "/attack", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), common.UserIDKey, 1))
 	rec := httptest.NewRecorder()
 
 	// 3) Вызываем хендлер

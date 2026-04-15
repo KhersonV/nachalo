@@ -139,6 +139,9 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lockPlayer(req.UserID)
+	defer unlockPlayer(req.UserID)
+
 	matchState, ok := game.GetMatchState(req.InstanceID)
 	if !ok {
 		http.Error(w, "match not found", http.StatusNotFound)
@@ -206,9 +209,9 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := repository.UpdateMatchPlayerInventory(req.InstanceID, player.UserID, player.Inventory); err != nil {
-	http.Error(w, "failed to update player inventory", http.StatusInternalServerError)
-	return
-}
+		http.Error(w, "failed to update player inventory", http.StatusInternalServerError)
+		return
+	}
 
 	updatedCell := serialiseUpdatedCell(cells[cellIdx])
 	cellMsg := map[string]interface{}{

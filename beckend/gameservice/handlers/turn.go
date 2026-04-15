@@ -379,6 +379,9 @@ func startTurnTimer(instanceID string, userID int) {
 // doEndTurn executes the turn-change logic without an HTTP context (used by both
 // the timer goroutine and EndTurnHandler to avoid duplication).
 func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
+	lockPlayer(userID)
+	defer unlockPlayer(userID)
+
 	if err := progressConstructionByTurn(instanceID); err != nil {
 		log.Printf("[doEndTurn] progressConstructionByTurn error: %v", err)
 	}
@@ -411,6 +414,7 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 		"type": "SET_ACTIVE_USER",
 		"payload": map[string]interface{}{
 			"instanceId":  instanceID,
+			"instance_id": instanceID,
 			"active_user": nextUserID,
 			"energy":      nextUser.Energy,
 			"turnNumber":  ms.TurnNumber,
@@ -418,6 +422,19 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 	}
 	updateJSON, _ := json.Marshal(updateMsg)
 	Broadcast(updateJSON)
+	// Also broadcast legacy TURN_PASSED for clients that expect that event type
+	turnPassedMsg := map[string]interface{}{
+		"type": "TURN_PASSED",
+		"payload": map[string]interface{}{
+			"instanceId":  instanceID,
+			"instance_id": instanceID,
+			"userId":      nextUserID,
+			"turnNumber":  ms.TurnNumber,
+		},
+	}
+	if tbuf, err := json.Marshal(turnPassedMsg); err == nil {
+		Broadcast(tbuf)
+	}
 	startTurnTimer(instanceID, nextUserID)
 }
 
@@ -442,6 +459,14 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Printf("Матч с instance_id %s не найден", req.InstanceID)
 		http.Error(w, "Match not found", http.StatusNotFound)
+		return
+	}
+
+	lockPlayer(req.UserID)
+	defer unlockPlayer(req.UserID)
+
+	if matchState.ActiveUserID != req.UserID {
+		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
 		return
 	}
 
