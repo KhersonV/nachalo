@@ -27,6 +27,8 @@ interface MapWithCameraProps {
     myPlayer: PlayerState;
     onCellClick?: (cell: Cell) => void;
     onPlayerClick?: (player: PlayerState) => void;
+    focusPoint?: { x: number; y: number } | null;
+    pingPoint?: { x: number; y: number } | null;
 }
 
 const STEP_ANIM_MS = 260;
@@ -1002,6 +1004,8 @@ export default function MapWithCamera({
     myPlayer,
     onCellClick,
     onPlayerClick,
+    focusPoint,
+    pingPoint,
 }: MapWithCameraProps) {
     const { grid, mapWidth, mapHeight, players, active_user } = useSelector(
         (state: RootState) => ({
@@ -1015,6 +1019,7 @@ export default function MapWithCamera({
     );
 
     const playerPosition = myPlayer?.position || { x: 0, y: 0 };
+    const cameraCenterPoint = focusPoint ?? playerPosition;
     const sightRange = myPlayer?.sightRange ?? 3;
     const explorationStorageKey = React.useMemo(() => {
         if (!instanceId || !myPlayer?.user_id) return "";
@@ -1057,10 +1062,10 @@ export default function MapWithCamera({
     const { offsetX, offsetY } = React.useMemo(() => {
         let nextOffsetX =
             viewportWidth / 2 -
-            (playerPosition.x * (tileSize + gap) + tileSize / 2);
+            (cameraCenterPoint.x * (tileSize + gap) + tileSize / 2);
         let nextOffsetY =
             viewportHeight / 2 -
-            (playerPosition.y * (tileSize + gap) + tileSize / 2);
+            (cameraCenterPoint.y * (tileSize + gap) + tileSize / 2);
 
         const totalWidth = safeMapWidth * tileSize + (safeMapWidth - 1) * gap;
         const totalHeight =
@@ -1082,8 +1087,8 @@ export default function MapWithCamera({
     }, [
         viewportWidth,
         viewportHeight,
-        playerPosition.x,
-        playerPosition.y,
+        cameraCenterPoint.x,
+        cameraCenterPoint.y,
         tileSize,
         gap,
         safeMapWidth,
@@ -1196,6 +1201,7 @@ export default function MapWithCamera({
                     players={players}
                     startOwners={initialStartOwnersRef.current}
                     explorationStorageKey={explorationStorageKey}
+                    renderCenterPosition={cameraCenterPoint}
                 />
 
                 <PlayerLayer
@@ -1217,6 +1223,19 @@ export default function MapWithCamera({
                     tileSize={tileSize}
                     gap={gap}
                 />
+                {pingPoint ? (
+                    <div
+                        className={styles.cameraPing}
+                        style={{
+                            left: pingPoint.x * (tileSize + gap),
+                            top: pingPoint.y * (tileSize + gap),
+                            width: tileSize,
+                            height: tileSize,
+                        }}
+                    >
+                        <div className={styles.cameraPingDot} />
+                    </div>
+                ) : null}
             </div>
         </div>
     );

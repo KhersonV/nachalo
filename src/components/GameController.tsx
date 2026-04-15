@@ -104,6 +104,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
         height: 600,
         tileSize: 80,
     });
+    const [minimapFocusPoint, setMinimapFocusPoint] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
+    const [minimapPingPoint, setMinimapPingPoint] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
     const questAlertShownRef = React.useRef(false);
     const turnStartMsRef = React.useRef<number>(Date.now());
     const autoEndTurnInFlightRef = React.useRef(false);
@@ -392,6 +400,43 @@ export default function GameController({ instanceId }: GameControllerProps) {
             height: Math.max(1, Math.ceil(mapViewport.height / step)),
         };
     }, [mapViewport.height, mapViewport.tileSize, mapViewport.width]);
+
+    const handleMiniMapPing = useCallback(
+        (point: { x: number; y: number }) => {
+            setMinimapFocusPoint(point);
+            setMinimapPingPoint(point);
+        },
+        [],
+    );
+
+    useEffect(() => {
+        if (!minimapFocusPoint) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setMinimapFocusPoint(null);
+        }, 2200);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [minimapFocusPoint]);
+
+    useEffect(() => {
+        if (!minimapPingPoint) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setMinimapPingPoint(null);
+        }, 1600);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [minimapPingPoint]);
+
+    useEffect(() => {
+        setMinimapFocusPoint(null);
+        setMinimapPingPoint(null);
+    }, [instanceId, myPlayer?.user_id]);
 
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
@@ -1124,9 +1169,13 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 mapWidth={state.mapWidth}
                 mapHeight={state.mapHeight}
                 players={state.players}
+                instanceId={instanceId}
                 myPlayerId={myPlayer?.user_id}
                 activeUserId={state.active_user}
+                sightRange={myPlayer?.sightRange ?? 3}
                 viewportCells={minimapViewportCells}
+                cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+                onCellPing={handleMiniMapPing}
             />
             <div
                 className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
@@ -1169,6 +1218,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
+                        focusPoint={minimapFocusPoint}
+                        pingPoint={minimapPingPoint}
                         onCellClick={async (cell) => {
                             if (!myPlayer) return;
                             const distance =
