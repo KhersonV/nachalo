@@ -63,17 +63,31 @@ type DamageEvent struct {
 	Amount     int
 }
 
+type ArmorBreakState struct {
+	Stacks         int
+	RemainingTurns int
+}
+
+type GuardianAuraPressureState struct {
+	AccumulatedExtraMoveCost int
+	LastSourceUserID         int
+}
+
 // MatchState инкапсулирует состояние конкретного матча.
 type MatchState struct {
-	InstanceID     string
-	ActiveUserID   int   // ID игрока, чей сейчас ход
-	TurnOrder      []int // Очередность ходов (список ID игроков)
-	TurnNumber     int   // Номер текущего круга
-	KillEvents     []KillEvent
-	DamageEvents   []DamageEvent
-	Monsters       map[int]*MonsterState
-	CombatSequence uint64
-	mu             sync.Mutex
+	InstanceID           string
+	ActiveUserID         int   // ID игрока, чей сейчас ход
+	TurnOrder            []int // Очередность ходов (список ID игроков)
+	TurnNumber           int   // Номер текущего круга
+	KillEvents           []KillEvent
+	DamageEvents         []DamageEvent
+	Monsters             map[int]*MonsterState
+	ArmorBreak           map[string]ArmorBreakState
+	BerserkerFury        map[int]int
+	MysticDrains         map[string]int
+	GuardianAuraPressure map[int]GuardianAuraPressureState
+	CombatSequence       uint64
+	mu                   sync.Mutex
 }
 
 // глобальная ма́па: instanceID → MatchState

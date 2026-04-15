@@ -13,6 +13,7 @@ import { resetState } from "@/store/slices/gameSlice";
 import { clearCombatPresentation } from "@/store/slices/combatPresentationSlice";
 import { useGameSocket } from "@/hooks/useGameSocket";
 import { debugLog } from "@/utils/log";
+import { API_BASE } from "@/utils/serviceUrls";
 import type { ResourceType, MonsterType } from "@/types/GameTypes";
 import { createWsHandlers } from "./createWsHandlers";
 
@@ -20,8 +21,6 @@ interface GameWrapperProps {
     instanceId: string;
     children: React.ReactNode;
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 export default function GameWrapper({
     instanceId,

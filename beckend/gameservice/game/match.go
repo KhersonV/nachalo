@@ -6,7 +6,9 @@ package game
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"strings"
 )
 
 var (
@@ -23,6 +25,9 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 	n := len(m.TurnOrder)
 	if n == 0 {
 		return 0, ErrNoPlayers
+	}
+	if m.ActiveUserID != currentPlayerID {
+		return 0, ErrNotYourTurn
 	}
 
 	// Найти текущий индекс, если есть
@@ -55,6 +60,9 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	delete(m.GuardianAuraPressure, userID)
 
 	// Сохраним старый порядок, чтобы знать, на каком месте был умерший
 	oldOrder := append([]int(nil), m.TurnOrder...)
@@ -96,10 +104,14 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 // CreateMatchState создаёт новую игру с указанными игроками.
 func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 	ms := &MatchState{
-		InstanceID:   instanceID,
-		TurnOrder:    append([]int(nil), playerIDs...), // копия слайса
-		TurnNumber:   1,
-		ActiveUserID: 0,
+		InstanceID:           instanceID,
+		TurnOrder:            append([]int(nil), playerIDs...), // копия слайса
+		TurnNumber:           1,
+		ActiveUserID:         0,
+		ArmorBreak:           make(map[string]ArmorBreakState),
+		BerserkerFury:        make(map[int]int),
+		MysticDrains:         make(map[string]int),
+		GuardianAuraPressure: make(map[int]GuardianAuraPressureState),
 	}
 	if len(playerIDs) > 0 {
 		ms.ActiveUserID = playerIDs[0]
@@ -152,4 +164,146 @@ func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int
 		VictimType: victimType,
 		Damage:     damage,
 	})
+}
+
+func combatTargetKey(targetType string, targetID int) string {
+	return fmt.Sprintf("%s:%d", targetType, targetID)
+}
+
+func (m *MatchState) ensureCombatStateLocked() {
+	if m.ArmorBreak == nil {
+		m.ArmorBreak = make(map[string]ArmorBreakState)
+	}
+	if m.BerserkerFury == nil {
+		m.BerserkerFury = make(map[int]int)
+	}
+	if m.MysticDrains == nil {
+		m.MysticDrains = make(map[string]int)
+	}
+	if m.GuardianAuraPressure == nil {
+		m.GuardianAuraPressure = make(map[int]GuardianAuraPressureState)
+	}
+}
+
+func (m *MatchState) decrementArmorBreakLocked(targetKey string) {
+	state, ok := m.ArmorBreak[targetKey]
+	if !ok {
+		return
+	}
+	state.RemainingTurns--
+	if state.RemainingTurns <= 0 || state.Stacks <= 0 {
+		delete(m.ArmorBreak, targetKey)
+		return
+	}
+	m.ArmorBreak[targetKey] = state
+}
+
+func (m *MatchState) AdvanceTurnCombatState(nextUserID int, roundAdvanced bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	clear(m.BerserkerFury)
+	clear(m.MysticDrains)
+
+	if nextUserID > 0 {
+		m.decrementArmorBreakLocked(combatTargetKey("player", nextUserID))
+	}
+	if !roundAdvanced {
+		return
+	}
+	for key := range m.ArmorBreak {
+		if strings.HasPrefix(key, "monster:") {
+			m.decrementArmorBreakLocked(key)
+		}
+	}
+}
+
+func (m *MatchState) GetArmorBreakState(targetType string, targetID int) ArmorBreakState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	return m.ArmorBreak[combatTargetKey(targetType, targetID)]
+}
+
+func (m *MatchState) ApplyArmorBreak(targetType string, targetID int, maxStacks int, durationTurns int) ArmorBreakState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	key := combatTargetKey(targetType, targetID)
+	state := m.ArmorBreak[key]
+	if state.Stacks < maxStacks {
+		state.Stacks++
+	}
+	if durationTurns > 0 {
+		state.RemainingTurns = durationTurns
+	}
+	m.ArmorBreak[key] = state
+	return state
+}
+
+func (m *MatchState) TryUseBerserkerFury(userID int, limit int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	if limit <= 0 {
+		m.BerserkerFury[userID]++
+		return true
+	}
+	if m.BerserkerFury[userID] >= limit {
+		return false
+	}
+	m.BerserkerFury[userID]++
+	return true
+}
+
+func (m *MatchState) TryUseMysticDrain(attackerID int, targetID int, perTargetLimit int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	if perTargetLimit <= 0 {
+		return false
+	}
+	key := fmt.Sprintf("%d:%d", attackerID, targetID)
+	if m.MysticDrains[key] >= perTargetLimit {
+		return false
+	}
+	m.MysticDrains[key]++
+	return true
+}
+
+func (m *MatchState) GetGuardianAuraPressure(userID int) GuardianAuraPressureState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	return m.GuardianAuraPressure[userID]
+}
+
+func (m *MatchState) AccumulateGuardianAuraPressure(userID int, sourceUserID int, extraMoveCost int) GuardianAuraPressureState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	state := m.GuardianAuraPressure[userID]
+	if extraMoveCost > 0 {
+		state.AccumulatedExtraMoveCost += extraMoveCost
+	}
+	if sourceUserID > 0 {
+		state.LastSourceUserID = sourceUserID
+	}
+	m.GuardianAuraPressure[userID] = state
+	return state
+}
+
+func (m *MatchState) ResetGuardianAuraPressure(userID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	delete(m.GuardianAuraPressure, userID)
 }

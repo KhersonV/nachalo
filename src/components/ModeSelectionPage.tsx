@@ -6,6 +6,10 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import {
+    API_BASE as API_GAME,
+    MATCHMAKING_BASE as API_MATCH,
+} from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import { useDispatch } from "react-redux";
 import { resetState } from "../store/slices/gameSlice";
@@ -25,11 +29,6 @@ import LobbyHeader from "./LobbyHeader";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 
 import styles from "../styles/ModeSelectionPage.module.css";
-
-// URL сервисов
-const API_MATCH =
-    process.env.NEXT_PUBLIC_MATCHMAKING_BASE || "http://localhost:8002";
-const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 const prepSecondsFromEnv = Number(process.env.NEXT_PUBLIC_PREP_SECONDS || 15);
 const PREP_REDIRECT_SECONDS = Number.isFinite(prepSecondsFromEnv)
     ? Math.max(5, Math.min(120, Math.floor(prepSecondsFromEnv)))

@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import styles from "@/styles/GameStatsPage.module.css";
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 type Reward = {
     type?: string;

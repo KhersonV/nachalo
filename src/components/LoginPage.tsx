@@ -5,11 +5,10 @@
 "use client";
 
 import React, { useState } from "react";
+import { AUTH_BASE } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import styles from "../styles/LoginPage.module.css";
-
-const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_BASE || "http://localhost:8000";
 
 const LoginPage = () => {
     const { login } = useAuth();

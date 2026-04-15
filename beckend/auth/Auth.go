@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -332,6 +334,34 @@ func authReady() error {
 	return nil
 }
 
+func isAllowedLANOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+
+	if strings.HasSuffix(host, ".local") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+
+	return ip.IsPrivate() || ip.IsLoopback()
+}
+
 func main() {
 	jwtSecretKey = os.Getenv("JWT_SECRET_KEY")
 	connStr = os.Getenv("AUTH_DB_DSN")
@@ -389,7 +419,10 @@ func main() {
 			if _, ok := allowedOriginSet[origin]; ok {
 				return true
 			}
-			return strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, ".run.app")
+			if strings.HasPrefix(origin, "https://") && strings.HasSuffix(origin, ".run.app") {
+				return true
+			}
+			return isAllowedLANOrigin(origin)
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},

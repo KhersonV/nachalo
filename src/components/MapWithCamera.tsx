@@ -20,6 +20,7 @@ import type { ActiveAttackMotion, ActiveEffect } from "@/types/combat";
 import styles from "../styles/Map.module.css";
 
 interface MapWithCameraProps {
+    instanceId: string;
     tileSize: number;
     viewportWidth: number;
     viewportHeight: number;
@@ -994,6 +995,7 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
 });
 
 export default function MapWithCamera({
+    instanceId,
     tileSize: inputTileSize,
     viewportWidth,
     viewportHeight,
@@ -1014,6 +1016,10 @@ export default function MapWithCamera({
 
     const playerPosition = myPlayer?.position || { x: 0, y: 0 };
     const sightRange = myPlayer?.sightRange ?? 3;
+    const explorationStorageKey = React.useMemo(() => {
+        if (!instanceId || !myPlayer?.user_id) return "";
+        return `fog-explored:${instanceId}:${myPlayer.user_id}`;
+    }, [instanceId, myPlayer?.user_id]);
     const tileSize = Number(inputTileSize) || 60;
     const safeMapWidth = Number(mapWidth) || 15;
     const safeMapHeight = Number(mapHeight) || 15;
@@ -1189,6 +1195,7 @@ export default function MapWithCamera({
                     onCellClick={onCellClick}
                     players={players}
                     startOwners={initialStartOwnersRef.current}
+                    explorationStorageKey={explorationStorageKey}
                 />
 
                 <PlayerLayer

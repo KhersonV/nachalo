@@ -30,9 +30,6 @@ type EndTurnResponse struct {
 	TurnNumber int `json:"turn_number"`
 }
 
-// Константа пополнения энергии при получении хода
-const energyRegen = 10
-
 func progressConstructionByTurn(instanceID string) error {
 	cells, err := repository.LoadMapCells(instanceID)
 	if err != nil {
@@ -48,26 +45,26 @@ func progressConstructionByTurn(instanceID string) error {
 			cells[i].ConstructionTurnsLeft--
 		}
 		if cells[i].ConstructionTurnsLeft <= 0 {
-	cells[i].ConstructionTurnsLeft = 0
-	cells[i].IsUnderConstruction = false
+			cells[i].ConstructionTurnsLeft = 0
+			cells[i].IsUnderConstruction = false
 
-	ownerUserID := cells[i].StructureOwnerUserID
-	structureType := cells[i].StructureType
+			ownerUserID := cells[i].StructureOwnerUserID
+			structureType := cells[i].StructureType
 
-	if ownerUserID > 0 && structureType != "" {
-		if err := repository.IncrementStructureCount(instanceID, ownerUserID, structureType); err != nil {
-			log.Printf("progressConstructionByTurn: IncrementStructureCount failed: instance=%s user=%d type=%s err=%v",
-				instanceID, ownerUserID, structureType, err)
-		}
+			if ownerUserID > 0 && structureType != "" {
+				if err := repository.IncrementStructureCount(instanceID, ownerUserID, structureType); err != nil {
+					log.Printf("progressConstructionByTurn: IncrementStructureCount failed: instance=%s user=%d type=%s err=%v",
+						instanceID, ownerUserID, structureType, err)
+				}
 
-		if structureType == "scout_tower" {
-			if err := repository.ApplyScoutTowerBonusIfNeeded(instanceID, ownerUserID); err != nil {
-				log.Printf("progressConstructionByTurn: ApplyScoutTowerBonusIfNeeded failed: instance=%s user=%d err=%v",
-					instanceID, ownerUserID, err)
+				if structureType == "scout_tower" {
+					if err := repository.ApplyScoutTowerBonusIfNeeded(instanceID, ownerUserID); err != nil {
+						log.Printf("progressConstructionByTurn: ApplyScoutTowerBonusIfNeeded failed: instance=%s user=%d err=%v",
+							instanceID, ownerUserID, err)
+					}
+				}
 			}
 		}
-	}
-}
 		changed = append(changed, serialiseUpdatedCell(cells[i]))
 	}
 
@@ -93,7 +90,6 @@ func progressConstructionByTurn(instanceID string) error {
 
 	return nil
 }
-
 
 func applyTurretDamage(instanceID string, ownerUserID int, targetType string, targetID int, turretAttack int, targetDefense int, targetHealth int) {
 	attackerStats := stats{
@@ -209,9 +205,9 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 				break
 			}
 
-				cell.StructureEnergy -= turretAttackCost
-				modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
-				applyTurretDamage(
+			cell.StructureEnergy -= turretAttackCost
+			modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
+			applyTurretDamage(
 				instanceID,
 				cell.StructureOwnerUserID,
 				"player",
@@ -251,7 +247,7 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 					cell.StructureAttack,
 					m.Defense,
 					m.Health,
-					)
+				)
 				break
 			}
 		}
@@ -317,39 +313,35 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 	return nil
 }
 
-// Можно оставить energyRegen = 10 как дефолтное значение, а в функцию передавать явно нужное значение.
-func regenEnergyForNextPlayer(instanceID string, userID int, regenEnergy int) error {
-    if regenEnergy <= 0 {
-        regenEnergy = 10 // дефолт, если не передан или <=0
-    }
-    nextPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
-    if err != nil {
-        return err
-    }
-    newEnergy := nextPlayer.Energy + regenEnergy
-    if newEnergy > nextPlayer.MaxEnergy {
-        newEnergy = nextPlayer.MaxEnergy
-    }
-    nextPlayer.Energy = newEnergy
+func regenEnergyForNextPlayer(instanceID string, userID int) error {
+	nextPlayer, err := repository.GetMatchPlayerByID(instanceID, userID)
+	if err != nil {
+		return err
+	}
 
-    if err = repository.UpdateMatchPlayer(instanceID, nextPlayer); err != nil {
-        return err
-    }
+	regenEnergy := resolveCharacterRegen(nextPlayer.CharacterType)
+	newEnergy := nextPlayer.Energy + regenEnergy
+	if newEnergy > nextPlayer.MaxEnergy {
+		newEnergy = nextPlayer.MaxEnergy
+	}
+	nextPlayer.Energy = newEnergy
 
-    // WebSocket сообщение для клиента об обновлении энергии/игрока
-    updatePlayerMsg := map[string]interface{}{
-        "type": "UPDATE_PLAYER",
-        "payload": map[string]interface{}{
-            "instanceId": instanceID,
-            "player":     nextPlayer,
-        },
-    }
-    buf, _ := json.Marshal(updatePlayerMsg)
-    Broadcast(buf)
+	if err = repository.UpdateMatchPlayer(instanceID, nextPlayer); err != nil {
+		return err
+	}
 
-    return nil
+	updatePlayerMsg := map[string]interface{}{
+		"type": "UPDATE_PLAYER",
+		"payload": map[string]interface{}{
+			"instanceId": instanceID,
+			"player":     nextPlayer,
+		},
+	}
+	buf, _ := json.Marshal(updatePlayerMsg)
+	Broadcast(buf)
+
+	return nil
 }
-
 
 // turnTimerLimit is the per-turn time limit.
 const turnTimerLimit = 60 * time.Second
@@ -387,6 +379,9 @@ func startTurnTimer(instanceID string, userID int) {
 // doEndTurn executes the turn-change logic without an HTTP context (used by both
 // the timer goroutine and EndTurnHandler to avoid duplication).
 func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
+	lockPlayer(userID)
+	defer unlockPlayer(userID)
+
 	if err := progressConstructionByTurn(instanceID); err != nil {
 		log.Printf("[doEndTurn] progressConstructionByTurn error: %v", err)
 	}
@@ -395,16 +390,18 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 		log.Printf("[doEndTurn] progressStructuresEffectsByTurn error: %v", err)
 	}
 
+	prevTurn := ms.TurnNumber
 	nextUserID, err := ms.EndTurn(userID)
 	if err != nil {
 		log.Printf("[doEndTurn] EndTurn error for user %d: %v", userID, err)
 		return
 	}
+	ms.AdvanceTurnCombatState(nextUserID, ms.TurnNumber > prevTurn)
 	if err := repository.UpdateMatchTurn(instanceID, nextUserID, ms.TurnNumber); err != nil {
 		log.Printf("[doEndTurn] UpdateMatchTurn error: %v", err)
 		return
 	}
-	if err := regenEnergyForNextPlayer(instanceID, nextUserID, energyRegen); err != nil {
+	if err := regenEnergyForNextPlayer(instanceID, nextUserID); err != nil {
 		log.Printf("[doEndTurn] regenEnergy error: %v", err)
 		return
 	}
@@ -417,6 +414,7 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 		"type": "SET_ACTIVE_USER",
 		"payload": map[string]interface{}{
 			"instanceId":  instanceID,
+			"instance_id": instanceID,
 			"active_user": nextUserID,
 			"energy":      nextUser.Energy,
 			"turnNumber":  ms.TurnNumber,
@@ -424,6 +422,19 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 	}
 	updateJSON, _ := json.Marshal(updateMsg)
 	Broadcast(updateJSON)
+	// Also broadcast legacy TURN_PASSED for clients that expect that event type
+	turnPassedMsg := map[string]interface{}{
+		"type": "TURN_PASSED",
+		"payload": map[string]interface{}{
+			"instanceId":  instanceID,
+			"instance_id": instanceID,
+			"userId":      nextUserID,
+			"turnNumber":  ms.TurnNumber,
+		},
+	}
+	if tbuf, err := json.Marshal(turnPassedMsg); err == nil {
+		Broadcast(tbuf)
+	}
 	startTurnTimer(instanceID, nextUserID)
 }
 
@@ -451,6 +462,14 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lockPlayer(req.UserID)
+	defer unlockPlayer(req.UserID)
+
+	if matchState.ActiveUserID != req.UserID {
+		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Завершаем ход (логика выбора следующего игрока находится в EndTurn)
 	if err := progressConstructionByTurn(req.InstanceID); err != nil {
 		log.Printf("Ошибка прогресса строительства: %v", err)
@@ -458,17 +477,19 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := progressStructuresEffectsByTurn(req.InstanceID); err != nil {
-	log.Printf("Ошибка эффектов построек: %v", err)
-	http.Error(w, "Internal server error", http.StatusInternalServerError)
-	return
-}
+		log.Printf("Ошибка эффектов построек: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
+	prevTurn := matchState.TurnNumber
 	nextUserID, err := matchState.EndTurn(req.UserID)
 	if err != nil {
 		log.Printf("Ошибка завершения хода: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	matchState.AdvanceTurnCombatState(nextUserID, matchState.TurnNumber > prevTurn)
 
 	// Обновляем данные матча в БД
 	if err := repository.UpdateMatchTurn(req.InstanceID, nextUserID, matchState.TurnNumber); err != nil {
@@ -478,7 +499,7 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Регенерируем энергию для следующего игрока через общую функцию
-	if err := regenEnergyForNextPlayer(req.InstanceID, nextUserID, energyRegen); err != nil {
+	if err := regenEnergyForNextPlayer(req.InstanceID, nextUserID); err != nil {
 		log.Printf("Ошибка начисления энергии следующему игроку: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

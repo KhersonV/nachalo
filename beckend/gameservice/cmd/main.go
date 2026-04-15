@@ -141,7 +141,10 @@ func main() {
 
 	// === Эндпоинты для инвентаря ===
 	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")
-	router.HandleFunc("/game/player/{id}/inventory/use", handlers.UseInventoryHandler).Methods("POST")
+	router.Handle(
+		"/game/player/{id}/inventory/use",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseInventoryHandler)),
+	).Methods("POST")
 	router.Handle(
 		"/game/blueprint/place",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceBlueprintHandler)),
@@ -183,8 +186,14 @@ func main() {
 
 	// === Эндпоинты для ресурсов и монстров ===
 	// В файле gameservice/cmd/main.go, внутри настройки маршрутов:
-	router.HandleFunc("/game/collectResource", handlers.CollectResourceHandler).Methods("POST")
-	router.HandleFunc("/game/openBarrel", handlers.OpenBarrelHandler).Methods("POST")
+	router.Handle(
+		"/game/collectResource",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectResourceHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/openBarrel",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenBarrelHandler)),
+	).Methods("POST")
 
 	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
 	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")

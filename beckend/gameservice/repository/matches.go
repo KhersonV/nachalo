@@ -14,7 +14,6 @@ import (
 	"gameservice/models"
 )
 
-
 func LoadMatchMonsters(instanceID string) ([]MatchMonster, error) {
 	rows, err := DB.Query(`
 		SELECT
@@ -181,7 +180,6 @@ func UpdateMatchPlayerHealth(instanceID string, userID int, newHP int) error {
 	`, newHP, instanceID, userID)
 	return err
 }
-
 
 func UpdateMatchPlayerInventory(instanceID string, userID int, inventory string) error {
 	_, err := DB.Exec(`
@@ -360,29 +358,31 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, error) {
 	query := `
 		SELECT 
-			user_id,
-			name, 
-			image, 
-			position, 
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			mobility,
-			agility,
-			sight_range,
-			is_ranged,
-			attack_range,
-			group_id,
-			balance
-		FROM match_players
-		WHERE instance_id = $1 AND user_id = $2
+			mp.user_id,
+			mp.name, 
+			mp.image,
+			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.position, 
+			mp.inventory,
+			mp.level,
+			mp.energy,
+			mp.max_energy,
+			mp.health,
+			mp.max_health,
+			mp.experience,
+			mp.max_experience,
+			mp.attack,
+			mp.defense,
+			mp.mobility,
+			mp.agility,
+			mp.sight_range,
+			mp.is_ranged,
+			mp.attack_range,
+			mp.group_id,
+			mp.balance
+		FROM match_players mp
+		LEFT JOIN players p ON p.user_id = mp.user_id
+		WHERE mp.instance_id = $1 AND mp.user_id = $2
 		LIMIT 1;
 	`
 	var pr models.PlayerResponse
@@ -392,6 +392,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		&pr.UserID,
 		&pr.Name,
 		&pr.Image,
+		&pr.CharacterType,
 		&positionJSON,
 		&pr.Inventory,
 		&pr.Level,
@@ -453,30 +454,32 @@ func UpdateMatchPlayer(instanceID string, player *models.PlayerResponse) error {
 func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 	query := `
 		SELECT 
-			user_id,
-			name,
-			image,
-			position,
-			inventory,
-			level,
-			energy,
-			max_energy,
-			health,
-			max_health,
-			experience,
-			max_experience,
-			attack,
-			defense,
-			mobility,
-			agility,
-			sight_range,
-			is_ranged,
-			attack_range,
-			group_id,
-			balance
-		FROM match_players
-		WHERE instance_id = $1
-		AND health > 0
+			mp.user_id,
+			mp.name,
+			mp.image,
+			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.position,
+			mp.inventory,
+			mp.level,
+			mp.energy,
+			mp.max_energy,
+			mp.health,
+			mp.max_health,
+			mp.experience,
+			mp.max_experience,
+			mp.attack,
+			mp.defense,
+			mp.mobility,
+			mp.agility,
+			mp.sight_range,
+			mp.is_ranged,
+			mp.attack_range,
+			mp.group_id,
+			mp.balance
+		FROM match_players mp
+		LEFT JOIN players p ON p.user_id = mp.user_id
+		WHERE mp.instance_id = $1
+		AND mp.health > 0
 	`
 	rows, err := DB.Query(query, matchID)
 	if err != nil {
@@ -492,6 +495,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			&pr.UserID,
 			&pr.Name,
 			&pr.Image,
+			&pr.CharacterType,
 			&positionJSON,
 			&pr.Inventory,
 			&pr.Level,
@@ -629,8 +633,6 @@ func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
 		return err
 	}
 
-	
-
 	// Обновляем флаги
 	for i, c := range cells {
 		if c.X == oldPos.X && c.Y == oldPos.Y {
@@ -680,7 +682,6 @@ func SaveMapCells(instanceID string, cells []game.FullCell) error {
 	)
 	return err
 }
-
 
 // DeleteMatch удаляет матч и всё по нему в БД
 func DeleteMatch(instanceID string) error {
@@ -789,10 +790,9 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
-	
+
 	return nil
 }
-
 
 func CleanupMatchPlayers(instanceID string) error {
 	_, err := DB.Exec(`

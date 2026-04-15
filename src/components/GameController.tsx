@@ -2,6 +2,7 @@
 // src/components/GameController.tsx
 //==================================
 
+import { API_BASE } from "@/utils/serviceUrls";
 import { useSelector, useDispatch } from "react-redux";
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -49,8 +50,6 @@ const STRUCTURE_DEFAULT_MAX_HEALTH: Record<PlacementStructureType, number> = {
 interface GameControllerProps {
     instanceId: string;
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 export default function GameController({ instanceId }: GameControllerProps) {
     const dispatch = useDispatch();
@@ -292,7 +291,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             }>;
             const userId = custom.detail?.userId;
             const graceMs = custom.detail?.graceMs ?? 180000;
-            if (!userId) return;
+            if (!userId || userId === user?.id) return;
             setDisconnectedDeadlines((prev) => ({
                 ...prev,
                 [userId]: Date.now() + graceMs,
@@ -317,7 +316,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             window.removeEventListener("player-disconnected", onDisconnected);
             window.removeEventListener("player-reconnected", onReconnected);
         };
-    }, []);
+    }, [user?.id]);
 
     useEffect(() => {
         const onMyDefeat = () => {
@@ -1147,6 +1146,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <div className={styles.mapContainer}>
                 {myPlayer ? (
                     <MapWithCamera
+                        instanceId={instanceId}
                         tileSize={mapViewport.tileSize}
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}

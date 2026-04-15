@@ -24,6 +24,7 @@ type BarrelDeps struct {
 type CombatDeps struct {
 	LoadMap             func(instanceID string) ([]game.FullCell, error)
 	SaveMap             func(instanceID string, cells []game.FullCell) error
+	LoadPlayers         func(instanceID string) ([]models.PlayerResponse, error)
 	UpdatePlayer        func(instanceID string, p *models.PlayerResponse) error
 	GetPlayer           func(instanceID string, userID int) (*models.PlayerResponse, error)
 	GetMonster          func(instanceID string, monsterID int) (*repository.MatchMonster, error)
@@ -49,6 +50,7 @@ var (
 	defaultCombatDeps = CombatDeps{
 		LoadMap:             repository.LoadMapCells,
 		SaveMap:             repository.SaveMapCells,
+		LoadPlayers:         repository.LoadMatchPlayers,
 		UpdatePlayer:        repository.UpdateMatchPlayer,
 		GetPlayer:           repository.GetMatchPlayerByID,
 		GetMonster:          repository.GetMatchMonsterByID,

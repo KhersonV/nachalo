@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"gameservice/game"
+	"gameservice/middleware"
 	"gameservice/repository"
 )
 
@@ -26,22 +27,40 @@ type OpenBarrelRequest struct {
 type OpenBarrelResponse struct {
 	UpdatedCell   UpdatedCellResponse `json:"updatedCell"`
 	UpdatedPlayer interface{}         `json:"updatedPlayer"`
-	MatchEnded    bool                 `json:"matchEnded,omitempty"`
+	MatchEnded    bool                `json:"matchEnded,omitempty"`
 }
 
 // OpenBarrelHandler — HTTP-хендлер для открытия бочки.
 func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 	// 1) читаем JSON
-	 if r.Method != http.MethodPost {
-        http.Error(w, "only POST is allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "only POST is allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	body, _ := io.ReadAll(r.Body)
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	var req OpenBarrelRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, fmt.Sprintf("парсинг запроса: %v", err), http.StatusBadRequest)
+		return
+	}
+	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || tokenUserID != req.PlayerID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	lockPlayer(req.PlayerID)
+	defer unlockPlayer(req.PlayerID)
+
+	matchState, ok := game.GetMatchState(req.InstanceID)
+	if !ok {
+		http.Error(w, "match not found", http.StatusNotFound)
+		return
+	}
+	if matchState.ActiveUserID != req.PlayerID {
+		http.Error(w, "it's not your turn", http.StatusBadRequest)
 		return
 	}
 
@@ -55,11 +74,10 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var cells []map[string]interface{}
-	json.Unmarshal([]byte(mapJSON), &cells)
-	 if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
-        http.Error(w, fmt.Sprintf("json.Unmarshal карты: %v", err), http.StatusInternalServerError)
-        return
-    }
+	if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
+		http.Error(w, fmt.Sprintf("json.Unmarshal карты: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	var target map[string]interface{}
 	for _, c := range cells {
@@ -86,9 +104,9 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	bar := target["barbel"].(map[string]interface{})
 	eff := make(map[string]int, len(bar["effect"].(map[string]interface{})))
-    for k, v := range bar["effect"].(map[string]interface{}) {
-        eff[k] = int(v.(float64))
-    }
+	for k, v := range bar["effect"].(map[string]interface{}) {
+		eff[k] = int(v.(float64))
+	}
 
 	cell.Barbel = &game.ResourceData{
 		ID:          int(bar["id"].(float64)),
@@ -109,29 +127,22 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("загрузка артефактов: %v", err), http.StatusInternalServerError)
 		return
 	}
+	// 5) ВЫНОСИМ HandleOpenBarrel в отдельную строку
+	updatedCell, updatedPlayer, matchEnded, err := HandleOpenBarrel(
+		cell, req.InstanceID, req.PlayerID, resList, artList,
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("open barrel: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-	
-    // 5) ВЫНОСИМ HandleOpenBarrel в отдельную строку
-    updatedCell, updatedPlayer, matchEnded, err := HandleOpenBarrel(
-        cell, req.InstanceID, req.PlayerID, resList, artList,
-    )
-    if err != nil {
-        http.Error(w, fmt.Sprintf("open barrel: %v", err), http.StatusInternalServerError)
-        return
-    }
+	// 6) Формируем ответ — без повторного GetMatchPlayerByID
+	resp := OpenBarrelResponse{
+		UpdatedCell:   serialiseUpdatedCell(updatedCell),
+		UpdatedPlayer: *updatedPlayer,
+		MatchEnded:    matchEnded,
+	}
 
-		cell.Barbel = nil
-		cell.TileCode = 48 
-
-	    // 6) Формируем ответ — без повторного GetMatchPlayerByID
-    resp := OpenBarrelResponse{
-        UpdatedCell:   serialiseUpdatedCell(updatedCell),
-        UpdatedPlayer: *updatedPlayer,
-        MatchEnded:    matchEnded,
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(resp)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
-
-

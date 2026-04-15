@@ -5,14 +5,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { API_BASE } from "@/utils/serviceUrls";
 import { useDispatch, useSelector } from "react-redux";
 import { useAuth } from "../contexts/AuthContext";
 import type { RootState } from "../store";
 import type { RawInventoryItem, PlayerState } from "../types";
 import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 interface InventoryProps {
     onBlueprintPlacementStart?: (inventoryKey: string) => void;

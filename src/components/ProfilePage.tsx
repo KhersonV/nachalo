@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
@@ -129,8 +130,6 @@ type OutgoingFriendRequestsApiResponse = {
         createdAt: string;
     }>;
 };
-
-const API_GAME = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8001";
 
 export default function ProfilePage() {
     const router = useRouter();

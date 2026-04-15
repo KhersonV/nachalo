@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Cell, PlayerState } from "@/types/GameTypes";
 import MapCell from "./MapCell";
 import styles from "@/styles/Map.module.css";
@@ -20,6 +20,7 @@ export interface MapProps {
     onCellClick?: (cell: Cell) => void;
     players?: PlayerState[];
     startOwners?: Record<string, number>;
+    explorationStorageKey?: string;
 }
 
 type CellVisibility = "visible" | "explored";
@@ -48,6 +49,44 @@ function getCellAt(
     return grid[getCellIndex(x, y, mapWidth)] ?? null;
 }
 
+function loadExploredCells(storageKey: string): Set<number> {
+    if (!storageKey || typeof window === "undefined") {
+        return new Set<number>();
+    }
+
+    try {
+        const raw = window.sessionStorage.getItem(storageKey);
+        if (!raw) return new Set<number>();
+
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return new Set<number>();
+
+        return new Set<number>(
+            parsed.filter(
+                (value): value is number =>
+                    Number.isInteger(value) && value >= 0,
+            ),
+        );
+    } catch {
+        return new Set<number>();
+    }
+}
+
+function persistExploredCells(storageKey: string, exploredCells: Set<number>) {
+    if (!storageKey || typeof window === "undefined") {
+        return;
+    }
+
+    try {
+        const encoded = JSON.stringify(
+            Array.from(exploredCells.values()).sort((a, b) => a - b),
+        );
+        window.sessionStorage.setItem(storageKey, encoded);
+    } catch {
+        // ignore storage failures
+    }
+}
+
 function Map({
     grid,
     mapWidth,
@@ -59,6 +98,7 @@ function Map({
     onCellClick,
     players = [],
     startOwners = {},
+    explorationStorageKey,
 }: MapProps) {
     const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
     const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
@@ -80,6 +120,7 @@ function Map({
     // Track explored cells
     const exploredCellsRef = useRef<Set<number>>(new Set());
     const lastMapKeyRef = useRef<string>("");
+    const lastExplorationStorageKeyRef = useRef<string>("");
 
     const cellsWithVisibility = useMemo<RenderCell[]>(() => {
         if (!Array.isArray(grid) || grid.length === 0) {
@@ -87,7 +128,17 @@ function Map({
         }
 
         const mapKey = `${mapWidth}x${mapHeight}`;
-        if (mapKey !== lastMapKeyRef.current) {
+        const effectiveStorageKey = explorationStorageKey
+            ? `${explorationStorageKey}:${mapKey}`
+            : "";
+
+        if (effectiveStorageKey !== lastExplorationStorageKeyRef.current) {
+            lastExplorationStorageKeyRef.current = effectiveStorageKey;
+            lastMapKeyRef.current = mapKey;
+            exploredCellsRef.current = effectiveStorageKey
+                ? loadExploredCells(effectiveStorageKey)
+                : new Set<number>();
+        } else if (mapKey !== lastMapKeyRef.current) {
             lastMapKeyRef.current = mapKey;
             exploredCellsRef.current = new Set<number>();
         }
@@ -172,6 +223,22 @@ function Map({
         playerPosition.y,
         sightRange,
         playerMap,
+        explorationStorageKey,
+    ]);
+
+    useEffect(() => {
+        const effectiveStorageKey = lastExplorationStorageKeyRef.current;
+        if (!effectiveStorageKey) return;
+
+        persistExploredCells(effectiveStorageKey, exploredCellsRef.current);
+    }, [
+        cellsWithVisibility,
+        grid,
+        mapWidth,
+        mapHeight,
+        playerPosition.x,
+        playerPosition.y,
+        sightRange,
     ]);
 
     return (
