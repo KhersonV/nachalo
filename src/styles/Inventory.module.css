@@ -1,16 +1,16 @@
 .inventoryContainer {
-    position: absolute;
-    top: 10%;
-    /* keep the inventory away from the right edge so it doesn't cover the
-       floating inventory button (fab). Uses clamp to prefer 10% but never
-       allow it to be closer than 72px to the right edge on wide screens */
-    right: clamp(72px, 10%, 22%);
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 88px);
+    top: auto;
+    right: auto;
+    width: min(420px, calc(100vw - 24px));
     background: linear-gradient(135deg, #1e1e1e, #383838);
     color: #f0f0f0;
     padding: 20px;
-    z-index: 100;
+    z-index: 132;
     border-radius: 12px;
-    max-height: 80vh;
+    max-height: min(72dvh, 720px);
     overflow-y: auto;
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
     animation: fadeIn 0.5s ease-out;

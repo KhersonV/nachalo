@@ -368,11 +368,11 @@
     }
 
     .panelSmall {
-        --panel-width: 160px;
+        --panel-width: 190px;
     }
 
     .panelLarge {
-        --panel-width: 214px;
+        --panel-width: 258px;
     }
 
     .title {
@@ -400,10 +400,10 @@
     }
 
     .panelSmall {
-        --panel-width: 156px;
+        --panel-width: 182px;
     }
 
     .panelLarge {
-        --panel-width: 216px;
+        --panel-width: 242px;
     }
 }
