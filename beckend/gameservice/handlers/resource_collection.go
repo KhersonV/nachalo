@@ -44,37 +44,6 @@ type UpdatedCellResponse struct {
 	ConstructionTurnsLeft int         `json:"construction_turns_left,omitempty"`
 }
 
-func asInt(v interface{}) int {
-	switch val := v.(type) {
-	case int:
-		return val
-	case int32:
-		return int(val)
-	case int64:
-		return int(val)
-	case float64:
-		return int(val)
-	default:
-		return 0
-	}
-}
-
-func asString(v interface{}) string {
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
-
-func asBool(v interface{}) bool {
-	b, ok := v.(bool)
-	if !ok {
-		return false
-	}
-	return b
-}
-
 // CollectResourceHandler обрабатывает и сбор ресурсов, и открытие бочек.
 func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 	// 1) Чтение и парсинг запроса
@@ -109,7 +78,7 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2) Загрузка карты и поиск нужной ячейки — делаем в транзакции с FOR UPDATE
+	// 2) Загружаем только нужную клетку и блокируем её на время сбора
 	tx, err := repository.DB.Begin()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("begin tx: %v", err), http.StatusInternalServerError)
@@ -117,61 +86,42 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	var mapJSON string
-	if err := tx.QueryRow(`SELECT map FROM matches WHERE instance_id=$1 FOR UPDATE`, req.InstanceID).Scan(&mapJSON); err != nil {
-		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
+	targetCell, err := repository.LoadMapCellForUpdateTx(tx, req.InstanceID, req.CellX, req.CellY)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("загрузка клетки: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	var cells []map[string]interface{}
-	if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
-		http.Error(w, fmt.Sprintf("парсинг карты: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var target map[string]interface{}
-	for _, c := range cells {
-		if int(c["x"].(float64)) == req.CellX && int(c["y"].(float64)) == req.CellY {
-			target = c
-			break
-		}
-	}
-	if target == nil {
+	if targetCell == nil {
 		http.Error(w, "клетка не найдена", http.StatusBadRequest)
 		return
 	}
 
 	// 3) Проверяем, есть ли ресурс в этой ячейке
-	resData, ok := target["resource"].(map[string]interface{})
-	if !ok {
+	if targetCell.Resource == nil {
 		http.Error(w, "resource already collected", http.StatusConflict)
 		return
 	}
 
 	// Сохраняем нужные поля ресурса ДО очистки клетки
-	itemID := int(resData["id"].(float64))
-	itemName := resData["type"].(string)
-	itemDesc := resData["description"].(string)
-	itemImage := resData["image"].(string) // картинка ресурса
+	itemID := targetCell.Resource.ID
+	itemName := targetCell.Resource.Type
+	itemDesc := targetCell.Resource.Description
+	itemImage := targetCell.Resource.Image
 	// item_type: "artifact" если это дроп артефакта, иначе "resource"
 	itemType := "resource"
-	if t, ok := resData["item_type"].(string); ok && t == "artifact" {
+	if targetCell.Resource.ItemType == "artifact" {
 		itemType = "artifact"
 	}
 
 	// 4) Очищаем клетку
-	target["resource"] = nil
-	target["tileCode"] = float64(48)
-	target["monster"] = nil
-	target["isPortal"] = false
+	targetCell.Resource = nil
+	targetCell.TileCode = 48
+	targetCell.Monster = nil
+	targetCell.IsPortal = false
 
-	// 5) Сохраняем обновлённую карту в транзакции
-	updatedMap, _ := json.Marshal(cells)
-	if _, err := tx.Exec(
-		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
-		string(updatedMap), req.InstanceID,
-	); err != nil {
-		http.Error(w, fmt.Sprintf("сохранение карты: %v", err), http.StatusInternalServerError)
+	// 5) Сохраняем обновлённую клетку в транзакции
+	if err := repository.SaveMapCellTx(tx, req.InstanceID, *targetCell); err != nil {
+		http.Error(w, fmt.Sprintf("сохранение клетки: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -194,24 +144,7 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 7) Формируем и отправляем ответ клиенту
-	updatedCell := UpdatedCellResponse{
-		CellID:                int(target["cell_id"].(float64)),
-		X:                     int(target["x"].(float64)),
-		Y:                     int(target["y"].(float64)),
-		TileCode:              int(target["tileCode"].(float64)),
-		Resource:              nil,
-		Barbel:                target["barbel"],
-		Monster:               target["monster"],
-		IsPortal:              target["isPortal"].(bool),
-		IsPlayer:              target["isPlayer"].(bool),
-		StructureType:         asString(target["structure_type"]),
-		StructureOwnerUserID:  asInt(target["structure_owner_user_id"]),
-		StructureHealth:       asInt(target["structure_health"]),
-		StructureDefense:      asInt(target["structure_defense"]),
-		StructureAttack:       asInt(target["structure_attack"]),
-		IsUnderConstruction:   asBool(target["is_under_construction"]),
-		ConstructionTurnsLeft: asInt(target["construction_turns_left"]),
-	}
+	updatedCell := serialiseUpdatedCell(*targetCell)
 	playerResp, _ := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
 
 	wsMsg := map[string]interface{}{

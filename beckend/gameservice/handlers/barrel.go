@@ -60,36 +60,8 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 }
 
 func updateCellInMap(instanceID string, cell game.FullCell) {
-	tx, err := repository.DB.Begin()
-	if err != nil {
-		log.Printf("updateCellInMap: begin tx failed: %v", err)
-		return
-	}
-	defer tx.Rollback()
-
-	var raw []byte
-	if err := tx.QueryRow(`SELECT map FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&raw); err != nil {
-		log.Printf("updateCellInMap: load map failed: %v", err)
-		return
-	}
-	var cells []game.FullCell
-	if err := json.Unmarshal(raw, &cells); err != nil {
-		log.Printf("updateCellInMap: unmarshal failed: %v", err)
-		return
-	}
-	for i := range cells {
-		if cells[i].X == cell.X && cells[i].Y == cell.Y {
-			cells[i] = cell
-			break
-		}
-	}
-	newMap, _ := json.Marshal(cells)
-	if _, err := tx.Exec(`UPDATE matches SET map=$1 WHERE instance_id=$2`, newMap, instanceID); err != nil {
-		log.Printf("updateCellInMap: save map failed: %v", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		log.Printf("updateCellInMap: commit failed: %v", err)
+	if err := repository.SaveMapCell(instanceID, cell); err != nil {
+		log.Printf("updateCellInMap: save map cell failed: %v", err)
 		return
 	}
 }
@@ -122,14 +94,9 @@ func HandleOpenBarrel(
 			return cell, nil, false, fmt.Errorf("check quest artifact dropped: %w", err)
 		}
 
-		cells, err := repository.LoadMapCells(instanceID)
+		remainingBarrels, err = repository.CountBarrelCells(instanceID)
 		if err != nil {
-			return cell, nil, false, fmt.Errorf("load map cells: %w", err)
-		}
-		for _, c := range cells {
-			if c.Barbel != nil {
-				remainingBarrels++
-			}
+			return cell, nil, false, fmt.Errorf("count barrel cells: %w", err)
 		}
 	}
 

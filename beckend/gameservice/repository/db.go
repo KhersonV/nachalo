@@ -71,6 +71,7 @@ func RunMigrations() {
 	EnsurePlayersCharacterTypeColumn()
 	EnsurePlayersStatColumns()
 	CreateMatchesTable()
+	CreateMatchMapCellsTable()
 	CreateMatchPlayersTable()
 	EnsureMatchPlayersStatColumns()
 	CreateInventoryTable()
@@ -139,6 +140,7 @@ func SchemaReady() (bool, error) {
 		"artifacts",
 		"players",
 		"matches",
+		"match_map_cells",
 		"match_players",
 		"inventory_items",
 		"match_monsters",

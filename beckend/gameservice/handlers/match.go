@@ -144,8 +144,8 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 		}
 	}
 
-	var fullMap []game.FullCell
-	if err := json.Unmarshal(match.Map, &fullMap); err != nil {
+	fullMap, err := repository.LoadMapCells(instanceID)
+	if err != nil {
 		return nil, err
 	}
 	var startPositions [][2]int
@@ -338,8 +338,9 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Теперь сразу сериализуем карту — пока без db_instance_id монстров!
-	mapJSON := toJSON(fullMap)
+	// 5. В matches больше не храним runtime-карту целиком:
+	// source of truth переехал в match_map_cells.
+	mapJSON := []byte("[]")
 	turnOrderJSON := toJSON(req.PlayerIDs[:1])
 	startPosJSON := toJSON(startPositions)
 	portalPosJSON := toJSON(portalPos)
@@ -389,14 +390,9 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 8. Теперь пересохраняем map уже с заполненными db_instance_id монстров
-	mapJSON = toJSON(fullMap)
-	_, err = repository.DB.Exec(
-		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
-		mapJSON, req.InstanceID,
-	)
-	if err != nil {
-		handleError(w, "[CreateMatch] failed to update map with monster db_instance_id", err)
+	// 8. Сохраняем runtime-карту в специализированную таблицу клеток
+	if err := repository.InsertMatchMapCells(req.InstanceID, fullMap); err != nil {
+		handleError(w, "[CreateMatch] failed to persist match map cells", err)
 		return
 	}
 	// 9. Копируем игроков в матч

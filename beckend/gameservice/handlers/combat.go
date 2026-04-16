@@ -241,31 +241,12 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5.1) Проверяем, что тайл проходимый
-	var mapJSON []byte
-	if err := repository.DB.QueryRow(
-		`SELECT map FROM matches WHERE instance_id = $1`,
-		instanceID,
-	).Scan(&mapJSON); err != nil {
-		http.Error(w, "Ошибка загрузки карты", http.StatusInternalServerError)
+	targetCell, err := repository.LoadMapCell(instanceID, req.NewPosX, req.NewPosY)
+	if err != nil {
+		http.Error(w, "Ошибка загрузки клетки", http.StatusInternalServerError)
 		return
 	}
-
-	var cells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &cells); err != nil {
-		http.Error(w, "Ошибка разбора карты", http.StatusInternalServerError)
-		return
-	}
-
-	cellIdx := -1
-	var targetCell *game.FullCell
-	for i := range cells {
-		if cells[i].X == req.NewPosX && cells[i].Y == req.NewPosY {
-			cellIdx = i
-			targetCell = &cells[i]
-			break
-		}
-	}
-	if cellIdx == -1 || targetCell == nil {
+	if targetCell == nil {
 		http.Error(w, "Клетка не найдена", http.StatusBadRequest)
 		return
 	}
@@ -320,12 +301,12 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		targetRes := applyDamageToStructure(attackerStats, targetCell.StructureHealth, targetCell.StructureDefense)
 
 		if targetRes.NewHealth > 0 {
-			if err := damageStructureOnCell(instanceID, cells, cellIdx, targetRes.NewHealth); err != nil {
+			if err := damageStructureOnCell(instanceID, targetCell, targetRes.NewHealth); err != nil {
 				http.Error(w, "Ошибка обновления строения", http.StatusInternalServerError)
 				return
 			}
 		} else {
-			if err := destroyStructureOnCell(instanceID, cells, cellIdx); err != nil {
+			if err := destroyStructureOnCell(instanceID, targetCell); err != nil {
 				http.Error(w, "Ошибка разрушения строения", http.StatusInternalServerError)
 				return
 			}
@@ -846,9 +827,7 @@ func applyDamageToStructure(att stats, structureHealth int, structureDefense int
 	}
 }
 
-func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) error {
-	cell := &cells[idx]
-
+func destroyStructureOnCell(instanceID string, cell *game.FullCell) error {
 	ownerUserID := cell.StructureOwnerUserID
 	structureType := cell.StructureType
 
@@ -861,7 +840,7 @@ func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) e
 	cell.IsUnderConstruction = false
 	cell.ConstructionTurnsLeft = 0
 
-	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+	if err := repository.SaveMapCell(instanceID, *cell); err != nil {
 		return err
 	}
 
@@ -915,11 +894,10 @@ func destroyStructureOnCell(instanceID string, cells []game.FullCell, idx int) e
 	return nil
 }
 
-func damageStructureOnCell(instanceID string, cells []game.FullCell, idx int, newHP int) error {
-	cell := &cells[idx]
+func damageStructureOnCell(instanceID string, cell *game.FullCell, newHP int) error {
 	cell.StructureHealth = newHP
 
-	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+	if err := repository.SaveMapCell(instanceID, *cell); err != nil {
 		return err
 	}
 
@@ -984,27 +962,24 @@ func saveTargetHealth(
 			return
 		}
 
-		// 3. Грузим карту
-		cells, err := Combat.LoadMap(instanceID)
+		cell, err := repository.LoadMapCell(instanceID, m.X, m.Y)
 		if err != nil {
-			log.Printf("[saveTargetHealth] LoadMap error: %v", err)
+			log.Printf("[saveTargetHealth] LoadMapCell error: %v", err)
 			return
 		}
-		for i := range cells {
-			if cells[i].X == m.X && cells[i].Y == m.Y {
-				if cells[i].Monster != nil {
-					log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
-					cells[i].Monster.Health = m.Health
-				}
-				_ = Combat.SaveMap(instanceID, cells)
-				// Monster HP is now synced to clients via COMBAT_EXCHANGE.
-				// Broadcasting a non-lethal UPDATE_CELL here makes the frontend
-				// see the same combat twice: once as a legacy HP diff on the grid
-				// update, and once from the normalized combat timeline.
-				// We still persist the map state, and lethal removals continue to
-				// broadcast UPDATE_CELL from handleMonsterDeath.
-				break
+		if cell != nil && cell.Monster != nil {
+			log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
+			cell.Monster.Health = m.Health
+			if err := repository.SaveMapCell(instanceID, *cell); err != nil {
+				log.Printf("[saveTargetHealth] SaveMapCell error: %v", err)
+				return
 			}
+			// Monster HP is now synced to clients via COMBAT_EXCHANGE.
+			// Broadcasting a non-lethal UPDATE_CELL here makes the frontend
+			// see the same combat twice: once as a legacy HP diff on the grid
+			// update, and once from the normalized combat timeline.
+			// We still persist the map state, and lethal removals continue to
+			// broadcast UPDATE_CELL from handleMonsterDeath.
 		}
 
 		if ar.NewHealth <= 0 {
@@ -1274,32 +1249,22 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 	x, y := m.X, m.Y
 	_ = Combat.DeleteMonster(instanceID, monsterID)
 
-	cells, err := Combat.LoadMap(instanceID)
-	if err == nil {
-		for i := range cells {
-			if cells[i].X == x && cells[i].Y == y {
-				cells[i].Monster = nil
-				cells[i].TileCode = 48
-				break
-			}
-		}
-		_ = Combat.SaveMap(instanceID, cells)
+	cell, err := repository.LoadMapCell(instanceID, x, y)
+	if err != nil {
+		return
 	}
-
-	// Broadcast the full serialized cell so clients receive a complete,
-	// consistent snapshot (prevents partial updates leaving stale data).
-	var updated interface{}
-	for i := range cells {
-		if cells[i].X == x && cells[i].Y == y {
-			updated = serialiseUpdatedCell(cells[i])
-			break
-		}
+	if cell != nil {
+		cell.Monster = nil
+		cell.TileCode = 48
+		_ = repository.SaveMapCell(instanceID, *cell)
 	}
 
 	// Fallback to minimal payload if for some reason we don't have the full cell
 	// (shouldn't happen, but be defensive).
-	updatedCellPayload := updated
-	if updatedCellPayload == nil {
+	var updatedCellPayload interface{}
+	if cell != nil {
+		updatedCellPayload = serialiseUpdatedCell(*cell)
+	} else {
 		updatedCellPayload = map[string]interface{}{
 			"x":        x,
 			"y":        y,
@@ -1435,17 +1400,18 @@ func tryPushCombatTarget(
 	current stats,
 	destination CombatPoint,
 ) (bool, []game.FullCell, error) {
-	cells, err := repository.LoadMapCells(instanceID)
+	oldCell, err := repository.LoadMapCell(instanceID, current.X, current.Y)
 	if err != nil {
 		return false, nil, err
 	}
-
-	oldIdx := findCellIndex(cells, current.X, current.Y)
-	newIdx := findCellIndex(cells, destination.X, destination.Y)
-	if oldIdx < 0 || newIdx < 0 {
+	newCell, err := repository.LoadMapCell(instanceID, destination.X, destination.Y)
+	if err != nil {
+		return false, nil, err
+	}
+	if oldCell == nil || newCell == nil {
 		return false, nil, nil
 	}
-	if isPushDestinationBlocked(&cells[newIdx]) {
+	if isPushDestinationBlocked(newCell) {
 		return false, nil, nil
 	}
 
@@ -1470,8 +1436,10 @@ func tryPushCombatTarget(
 			return false, nil, err
 		}
 		_ = resolveGuardianAuraExitDamage(instanceID, targetPlayer, oldPos, players, 0, false)
+		oldCell.IsPlayer = false
+		newCell.IsPlayer = true
 	case "monster":
-		movedMonster := cells[oldIdx].Monster
+		movedMonster := oldCell.Monster
 		if movedMonster == nil {
 			monster, err := Combat.GetMonster(instanceID, targetID)
 			if err != nil {
@@ -1492,30 +1460,36 @@ func tryPushCombatTarget(
 				Image:           monster.Image,
 			}
 		}
-		updatedCells, err := applyKnockbackOccupancy(cells, targetType, oldIdx, newIdx, movedMonster)
-		if err != nil {
-			return false, nil, err
-		}
 		if err := repository.UpdateMatchMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
 			return false, nil, err
 		}
-		if err := repository.SaveMapCells(instanceID, cells); err != nil {
-			return false, nil, err
-		}
-		return true, updatedCells, nil
+
+		monsterCopy := *movedMonster
+		oldCell.Monster = nil
+		oldCell.TileCode = int(game.Walkable)
+		newCell.Monster = &monsterCopy
+		newCell.TileCode = int('M')
 	default:
 		return false, nil, nil
 	}
 
-	updatedCells, err := applyKnockbackOccupancy(cells, targetType, oldIdx, newIdx, nil)
+	tx, err := repository.DB.Begin()
 	if err != nil {
 		return false, nil, err
 	}
-	if err := repository.SaveMapCells(instanceID, cells); err != nil {
+	defer tx.Rollback()
+
+	if err := repository.SaveMapCellTx(tx, instanceID, *oldCell); err != nil {
+		return false, nil, err
+	}
+	if err := repository.SaveMapCellTx(tx, instanceID, *newCell); err != nil {
+		return false, nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return false, nil, err
 	}
 
-	return true, updatedCells, nil
+	return true, []game.FullCell{*oldCell, *newCell}, nil
 }
 
 func resolveRangerPushFallbackDamage(

@@ -169,24 +169,16 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cells, err := repository.LoadMapCells(req.InstanceID)
+	cell, err := repository.LoadMapCell(req.InstanceID, req.CellX, req.CellY)
 	if err != nil {
-		http.Error(w, "failed to load map", http.StatusInternalServerError)
+		http.Error(w, "failed to load map cell", http.StatusInternalServerError)
 		return
 	}
-
-	cellIdx := -1
-	for i := range cells {
-		if cells[i].X == req.CellX && cells[i].Y == req.CellY {
-			cellIdx = i
-			break
-		}
-	}
-	if cellIdx == -1 {
+	if cell == nil {
 		http.Error(w, "cell not found", http.StatusBadRequest)
 		return
 	}
-	if !isBuildableOrdinaryCell(cells[cellIdx]) {
+	if !isBuildableOrdinaryCell(*cell) {
 		http.Error(w, "can only build on an ordinary free cell", http.StatusBadRequest)
 		return
 	}
@@ -196,16 +188,16 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cells[cellIdx].StructureType = stats.StructureType
-	cells[cellIdx].StructureOwnerUserID = req.UserID
-	cells[cellIdx].StructureHealth = stats.Health
-	cells[cellIdx].StructureDefense = stats.Defense
-	cells[cellIdx].StructureAttack = stats.Attack
-	cells[cellIdx].IsUnderConstruction = true
-	cells[cellIdx].ConstructionTurnsLeft = 2
+	cell.StructureType = stats.StructureType
+	cell.StructureOwnerUserID = req.UserID
+	cell.StructureHealth = stats.Health
+	cell.StructureDefense = stats.Defense
+	cell.StructureAttack = stats.Attack
+	cell.IsUnderConstruction = true
+	cell.ConstructionTurnsLeft = 2
 
-	if err := repository.SaveMapCells(req.InstanceID, cells); err != nil {
-		http.Error(w, "failed to save map", http.StatusInternalServerError)
+	if err := repository.SaveMapCell(req.InstanceID, *cell); err != nil {
+		http.Error(w, "failed to save map cell", http.StatusInternalServerError)
 		return
 	}
 	if err := repository.UpdateMatchPlayerInventory(req.InstanceID, player.UserID, player.Inventory); err != nil {
@@ -213,7 +205,7 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updatedCell := serialiseUpdatedCell(cells[cellIdx])
+	updatedCell := serialiseUpdatedCell(*cell)
 	cellMsg := map[string]interface{}{
 		"type": "UPDATE_CELL",
 		"payload": map[string]interface{}{

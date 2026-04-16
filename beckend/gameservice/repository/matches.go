@@ -267,7 +267,6 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 			total_players,
 			map_width,
 			map_height,
-			map,
 			active_user_id,
 			turn_number,
 			turn_order,
@@ -285,7 +284,6 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 		&match.TotalPlayers,
 		&match.MapWidth,
 		&match.MapHeight,
-		&match.Map,
 		&match.ActiveUserID,
 		&match.TurnNumber,
 		&match.TurnOrder,
@@ -296,6 +294,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	match.Map = json.RawMessage("[]")
 	return match, nil
 }
 
@@ -579,41 +578,17 @@ type Position struct {
 // ClearCellPlayerFlag снимает флаг IsPlayer в поле map для клетки oldPos,
 // не трогая больше никаких позиций.
 func ClearCellPlayerFlag(instanceID string, oldPos Position) error {
-	// 1) Считываем текущее поле map из matches
-	var mapJSON []byte
-	if err := DB.QueryRow(
-		`SELECT map FROM matches WHERE instance_id = $1`,
-		instanceID,
-	).Scan(&mapJSON); err != nil {
-		return fmt.Errorf("ClearCellPlayerFlag: failed to load map JSON: %w", err)
+	if err := EnsureMatchMapCellsBackfilled(instanceID); err != nil {
+		return fmt.Errorf("ClearCellPlayerFlag: failed to backfill: %w", err)
 	}
 
-	// 2) Десериализуем в срез клеток
-	var cells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &cells); err != nil {
-		return fmt.Errorf("ClearCellPlayerFlag: failed to unmarshal: %w", err)
-	}
-
-	// 3) Находим oldPos и снимаем IsPlayer
-	for i, c := range cells {
-		if c.X == oldPos.X && c.Y == oldPos.Y {
-			cells[i].IsPlayer = false
-			break
-		}
-	}
-
-	// 4) Сериализуем обратно
-	newMap, err := json.Marshal(cells)
-	if err != nil {
-		return fmt.Errorf("ClearCellPlayerFlag: failed to marshal: %w", err)
-	}
-
-	// 5) Обновляем в БД
 	if _, err := DB.Exec(
-		`UPDATE matches SET map = $1 WHERE instance_id = $2`,
-		newMap, instanceID,
+		`UPDATE match_map_cells
+			SET is_player = FALSE
+		  WHERE instance_id = $1 AND x = $2 AND y = $3`,
+		instanceID, oldPos.X, oldPos.Y,
 	); err != nil {
-		return fmt.Errorf("ClearCellPlayerFlag: failed to update DB: %w", err)
+		return fmt.Errorf("ClearCellPlayerFlag: failed to update map cell: %w", err)
 	}
 
 	return nil
@@ -622,67 +597,87 @@ func ClearCellPlayerFlag(instanceID string, oldPos Position) error {
 // UpdateCellPlayerFlags обновляет поле isPlayer в карте матча, установив false для клетки с oldPos и true для клетки с newPos.
 // UpdateCellPlayerFlags устанавливает false на старой и true на новой позиции игрока.
 func UpdateCellPlayerFlags(instanceID string, oldPos, newPos Position) error {
-	// Извлекаем текущую карту матча.
-	var mapJSON []byte
-	query := `SELECT map FROM matches WHERE instance_id = $1;`
-	if err := DB.QueryRow(query, instanceID).Scan(&mapJSON); err != nil {
+	if err := EnsureMatchMapCellsBackfilled(instanceID); err != nil {
 		return err
 	}
 
-	// Десериализуем в срез FullCell
-	var cells []game.FullCell
-	if err := json.Unmarshal(mapJSON, &cells); err != nil {
-		return err
-	}
-
-	// Обновляем флаги
-	for i, c := range cells {
-		if c.X == oldPos.X && c.Y == oldPos.Y {
-			cells[i].IsPlayer = false
-		}
-		if c.X == newPos.X && c.Y == newPos.Y {
-			cells[i].IsPlayer = true
-		}
-	}
-
-	// Сериализуем обратно и сохраняем
-	newMap, err := json.Marshal(cells)
+	tx, err := DB.Begin()
 	if err != nil {
 		return err
 	}
-	if _, err := DB.Exec(`UPDATE matches SET map = $1 WHERE instance_id = $2`, string(newMap), instanceID); err != nil {
-		log.Printf("UpdateCellPlayerFlags error: %v", err)
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`UPDATE match_map_cells
+			SET is_player = FALSE
+		  WHERE instance_id = $1 AND x = $2 AND y = $3`,
+		instanceID, oldPos.X, oldPos.Y,
+	); err != nil {
 		return err
 	}
-	return nil
+
+	if _, err := tx.Exec(
+		`UPDATE match_map_cells
+			SET is_player = TRUE
+		  WHERE instance_id = $1 AND x = $2 AND y = $3`,
+		instanceID, newPos.X, newPos.Y,
+	); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func LoadMapCells(instanceID string) ([]game.FullCell, error) {
-	var raw []byte
-	err := DB.QueryRow(
-		`SELECT map FROM matches WHERE instance_id=$1`,
-		instanceID,
-	).Scan(&raw)
+	if err := EnsureMatchMapCellsBackfilled(instanceID); err != nil {
+		return nil, err
+	}
+
+	rows, err := DB.Query(`
+		SELECT
+			cell_id,
+			x,
+			y,
+			tile_code,
+			resource,
+			barbel,
+			monster,
+			is_portal,
+			is_player,
+			structure_type,
+			structure_owner_user_id,
+			structure_health,
+			structure_defense,
+			structure_attack,
+			structure_energy,
+			is_under_construction,
+			construction_turns_left
+		FROM match_map_cells
+		WHERE instance_id = $1
+		ORDER BY cell_id
+	`, instanceID)
 	if err != nil {
 		return nil, err
 	}
-	var cells []game.FullCell
-	if err := json.Unmarshal(raw, &cells); err != nil {
+	defer rows.Close()
+
+	cells := make([]game.FullCell, 0)
+	for rows.Next() {
+		cell, err := scanMatchMapCell(rows)
+		if err != nil {
+			return nil, err
+		}
+		cells = append(cells, *cell)
+	}
+	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return cells, nil
 }
 
 func SaveMapCells(instanceID string, cells []game.FullCell) error {
-	raw, err := json.Marshal(cells)
-	if err != nil {
-		return err
-	}
-	_, err = DB.Exec(
-		`UPDATE matches SET map=$1 WHERE instance_id=$2`,
-		raw, instanceID,
-	)
-	return err
+	return replaceMatchMapCells(instanceID, cells)
 }
 
 // DeleteMatch удаляет матч и всё по нему в БД

@@ -64,56 +64,15 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2) находим cell в карте
-	mapJSON := ""
-	if err := repository.DB.
-		QueryRow(`SELECT map FROM matches WHERE instance_id=$1`, req.InstanceID).
-		Scan(&mapJSON); err != nil {
-		http.Error(w, fmt.Sprintf("загрузка карты: %v", err), http.StatusInternalServerError)
+	// 2) находим cell точечно
+	cell, err := repository.LoadMapCell(req.InstanceID, req.CellX, req.CellY)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("загрузка клетки: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	var cells []map[string]interface{}
-	if err := json.Unmarshal([]byte(mapJSON), &cells); err != nil {
-		http.Error(w, fmt.Sprintf("json.Unmarshal карты: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var target map[string]interface{}
-	for _, c := range cells {
-		if int(c["x"].(float64)) == req.CellX && int(c["y"].(float64)) == req.CellY {
-			target = c
-			break
-		}
-	}
-	if target == nil || target["barbel"] == nil {
+	if cell == nil || cell.Barbel == nil {
 		http.Error(w, "бочка не найдена в этой клетке", http.StatusBadRequest)
 		return
-	}
-
-	// 3) собираем game.FullCell
-	cell := game.FullCell{
-		CellID:   int(target["cell_id"].(float64)),
-		X:        req.CellX,
-		Y:        req.CellY,
-		TileCode: int(target["tileCode"].(float64)),
-		Resource: nil,
-		Monster:  nil,
-		IsPortal: target["isPortal"].(bool),
-		IsPlayer: target["isPlayer"].(bool),
-	}
-	bar := target["barbel"].(map[string]interface{})
-	eff := make(map[string]int, len(bar["effect"].(map[string]interface{})))
-	for k, v := range bar["effect"].(map[string]interface{}) {
-		eff[k] = int(v.(float64))
-	}
-
-	cell.Barbel = &game.ResourceData{
-		ID:          int(bar["id"].(float64)),
-		Type:        bar["type"].(string),
-		Description: bar["description"].(string),
-		Effect:      eff,
-		Image:       bar["image"].(string),
 	}
 
 	// 4) для открытия берём справочники
@@ -129,7 +88,7 @@ func OpenBarrelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// 5) ВЫНОСИМ HandleOpenBarrel в отдельную строку
 	updatedCell, updatedPlayer, matchEnded, err := HandleOpenBarrel(
-		cell, req.InstanceID, req.PlayerID, resList, artList,
+		*cell, req.InstanceID, req.PlayerID, resList, artList,
 	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("open barrel: %v", err), http.StatusInternalServerError)
