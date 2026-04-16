@@ -8,6 +8,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
+import MiniMap from "./MiniMap";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
 import TurnIndicator from "./TurnIndicator";
@@ -46,6 +47,18 @@ const STRUCTURE_DEFAULT_MAX_HEALTH: Record<PlacementStructureType, number> = {
     turret: 30,
     wall: 30,
 };
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function formatDuration(seconds: number) {
+    const safeSeconds = Math.max(0, Math.ceil(seconds));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+
+    return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
 
 interface GameControllerProps {
     instanceId: string;
@@ -103,6 +116,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
         height: 600,
         tileSize: 80,
     });
+    const [minimapFocusPoint, setMinimapFocusPoint] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
+    const [minimapPingPoint, setMinimapPingPoint] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
     const questAlertShownRef = React.useRef(false);
     const turnStartMsRef = React.useRef<number>(Date.now());
     const autoEndTurnInFlightRef = React.useRef(false);
@@ -123,11 +144,56 @@ export default function GameController({ instanceId }: GameControllerProps) {
         const baseViewportWidth = 800;
         const baseViewportHeight = 600;
         const baseTileSize = 80;
+        const mapGap = 1;
+
+        const buildViewport = (
+            availableWidth: number,
+            availableHeight: number,
+            columns: number,
+            rows: number,
+            minTileSize: number,
+        ) => {
+            const safeWidth = Math.max(220, availableWidth);
+            const safeHeight = Math.max(220, availableHeight);
+            const widthTile = Math.floor(
+                (safeWidth - (columns - 1) * mapGap) / columns,
+            );
+            const heightTile = Math.floor(
+                (safeHeight - (rows - 1) * mapGap) / rows,
+            );
+            const tileSize = clamp(
+                Math.min(widthTile, heightTile, baseTileSize),
+                minTileSize,
+                baseTileSize,
+            );
+
+            return {
+                width: columns * tileSize + (columns - 1) * mapGap,
+                height: rows * tileSize + (rows - 1) * mapGap,
+                tileSize,
+            };
+        };
 
         const updateViewport = () => {
             const screenW = window.innerWidth;
             const screenH = window.innerHeight;
+            const isPhonePortrait = screenW <= 760 && screenH >= screenW;
+            const isPhoneLandscape = screenW <= 920 && screenH < screenW;
             const isMobile = screenW <= 900;
+
+            if (isPhonePortrait) {
+                setMapViewport(
+                    buildViewport(screenW - 16, screenH - 232, 7, 6, 42),
+                );
+                return;
+            }
+
+            if (isPhoneLandscape) {
+                setMapViewport(
+                    buildViewport(screenW - 24, screenH - 122, 8, 5, 36),
+                );
+                return;
+            }
 
             if (!isMobile) {
                 setMapViewport({
@@ -384,6 +450,51 @@ export default function GameController({ instanceId }: GameControllerProps) {
         },
     });
 
+    const minimapViewportCells = React.useMemo(() => {
+        const step = mapViewport.tileSize + 1;
+        return {
+            width: Math.max(1, Math.ceil(mapViewport.width / step)),
+            height: Math.max(1, Math.ceil(mapViewport.height / step)),
+        };
+    }, [mapViewport.height, mapViewport.tileSize, mapViewport.width]);
+
+    const handleMiniMapPing = useCallback(
+        (point: { x: number; y: number }) => {
+            setMinimapFocusPoint(point);
+            setMinimapPingPoint(point);
+        },
+        [],
+    );
+
+    useEffect(() => {
+        if (!minimapFocusPoint) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setMinimapFocusPoint(null);
+        }, 2200);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [minimapFocusPoint]);
+
+    useEffect(() => {
+        if (!minimapPingPoint) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setMinimapPingPoint(null);
+        }, 1600);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [minimapPingPoint]);
+
+    useEffect(() => {
+        setMinimapFocusPoint(null);
+        setMinimapPingPoint(null);
+    }, [instanceId, myPlayer?.user_id]);
+
     const handleMapPlayerClick = useCallback(
         async (targetPlayer: PlayerState) => {
             if (!myPlayer) return;
@@ -545,6 +656,53 @@ export default function GameController({ instanceId }: GameControllerProps) {
     );
     const isTurnWarning = turnSecsLeft <= 30;
     const turnTimerText = `${Math.floor(turnSecsLeft / 60)}:${String(turnSecsLeft % 60).padStart(2, "0")}`;
+    const waitingTurnInfo = React.useMemo(() => {
+        if (!myPlayer || isMyTurn || state.players.length === 0) {
+            return null;
+        }
+
+        const activePlayers = state.players.filter(
+            (player) => typeof player.health !== "number" || player.health > 0,
+        );
+
+        if (activePlayers.length === 0) {
+            return null;
+        }
+
+        const activeIndex = activePlayers.findIndex(
+            (player) => player.user_id === state.active_user,
+        );
+        const myIndex = activePlayers.findIndex(
+            (player) => player.user_id === myPlayer.user_id,
+        );
+
+        if (activeIndex === -1 || myIndex === -1) {
+            return null;
+        }
+
+        const stepsUntilMyTurn =
+            (myIndex - activeIndex + activePlayers.length) %
+            activePlayers.length;
+        const normalizedSteps =
+            stepsUntilMyTurn === 0 ? activePlayers.length : stepsUntilMyTurn;
+        const playersAhead = Math.max(0, normalizedSteps - 1);
+        const etaSeconds =
+            turnSecsLeft + Math.max(0, normalizedSteps - 1) * TURN_SECS;
+
+        return {
+            activePlayerName:
+                activePlayers[activeIndex]?.name ?? "another player",
+            playersAhead,
+            etaText: formatDuration(etaSeconds),
+        };
+    }, [
+        isMyTurn,
+        myPlayer,
+        state.active_user,
+        state.players,
+        turnSecsLeft,
+        TURN_SECS,
+    ]);
 
     // Fallback: if timer reaches 00:00 on client and it's still my turn,
     // force end-turn request to keep gameplay flowing.
@@ -1110,6 +1268,19 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     groupId={myPlayer.group_id}
                 />
             )}
+            <MiniMap
+                grid={state.grid}
+                mapWidth={state.mapWidth}
+                mapHeight={state.mapHeight}
+                players={state.players}
+                instanceId={instanceId}
+                myPlayerId={myPlayer?.user_id}
+                activeUserId={state.active_user}
+                sightRange={myPlayer?.sightRange ?? 3}
+                viewportCells={minimapViewportCells}
+                cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+                onCellPing={handleMiniMapPing}
+            />
             <div
                 className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
             >
@@ -1125,22 +1296,6 @@ export default function GameController({ instanceId }: GameControllerProps) {
                           : " wall"}
                 </div>
             )}
-            <button
-                type="button"
-                className={`${styles.inventoryFab} ${showInventory ? styles.inventoryFabActive : ""}`}
-                onClick={() => setShowInventory((v) => !v)}
-                aria-label={
-                    showInventory ? "Close inventory" : "Open inventory"
-                }
-                title={showInventory ? "Close inventory" : "Open inventory"}
-            >
-                <img
-                    src="/ui-icons/backpack.png"
-                    alt="Inventory"
-                    className={styles.inventoryFabIcon}
-                    draggable={false}
-                />
-            </button>
             {/* Battle/mode button moved to LobbyHeader (game menu) */}
             {/* Scrolls moved into Inventory — separate panel removed */}
             <div className={styles.mapContainer}>
@@ -1151,6 +1306,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         viewportWidth={mapViewport.width}
                         viewportHeight={mapViewport.height}
                         myPlayer={myPlayer}
+                        focusPoint={minimapFocusPoint}
+                        pingPoint={minimapPingPoint}
                         onCellClick={async (cell) => {
                             if (!myPlayer) return;
                             const distance =
@@ -1275,9 +1432,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     <p className={styles.mapLoading}>Loading map...</p>
                 )}
             </div>
-            <div
-                className={`${styles.controlsContainer} ${!isMyTurn ? styles.controlsContainerHiddenMobile : ""}`}
-            >
+            <div className={styles.controlsContainer}>
                 {isMyTurn ? (
                     <>
                         <div className={styles.turnPrompt}>
@@ -1293,11 +1448,6 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             onAction={handleAction}
                         />
                         <TurnIndicator />
-                        <div
-                            className={`${styles.turnTimer} ${styles.turnTimerInline} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
-                        >
-                            {turnTimerText}
-                        </div>
                         <div className={styles.endTurnInlineDesktop}>
                             <EndTurnButton
                                 playerId={myPlayer?.user_id!}
@@ -1341,9 +1491,29 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             <span
                                 className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
                             >
-                                It's another player's turn
+                                {waitingTurnInfo
+                                    ? `Now: ${waitingTurnInfo.activePlayerName}`
+                                    : "It's another player's turn"}
                             </span>
                         </div>
+                        {waitingTurnInfo && (
+                            <>
+                                <div className={styles.waitingEta}>
+                                    <span className={styles.waitingEtaLabel}>
+                                        Your turn in
+                                    </span>
+                                    <span className={styles.waitingEtaValue}>
+                                        {waitingTurnInfo.etaText}
+                                    </span>
+                                </div>
+                                <div className={styles.waitingQueue}>
+                                    {waitingTurnInfo.playersAhead > 0
+                                        ? `${waitingTurnInfo.playersAhead} player${waitingTurnInfo.playersAhead === 1 ? "" : "s"} before you`
+                                        : "You're next after this turn"}
+                                </div>
+                            </>
+                        )}
+                        <TurnIndicator />
                         <div
                             className={`${styles.turnTimer} ${styles.turnTimerInline} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
                         >

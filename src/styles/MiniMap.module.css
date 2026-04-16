@@ -1,0 +1,409 @@
+.panel {
+    --panel-width: 208px;
+    position: fixed;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px);
+    z-index: 127;
+    width: min(var(--panel-width), calc(100vw - 24px));
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid rgba(160, 184, 206, 0.22);
+    border-radius: 16px;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(72, 127, 184, 0.18),
+            transparent 34%
+        ),
+        rgba(8, 14, 24, 0.82);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+    color: #e6eef6;
+}
+
+.panelSmall {
+    --panel-width: 208px;
+}
+
+.panelLarge {
+    --panel-width: 292px;
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #f8fafc;
+}
+
+.subtitle {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #9cb3c8;
+}
+
+.controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sizeButton {
+    appearance: none;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 999px;
+    background: rgba(18, 29, 45, 0.8);
+    color: #d8e3ee;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 9px;
+    cursor: pointer;
+    transition:
+        transform 0.18s ease,
+        border-color 0.18s ease,
+        background 0.18s ease,
+        color 0.18s ease;
+}
+
+.sizeButton:hover {
+    transform: translateY(-1px);
+    border-color: rgba(186, 230, 253, 0.42);
+    background: rgba(24, 40, 61, 0.95);
+}
+
+.sizeButtonActive {
+    border-color: rgba(125, 211, 252, 0.48);
+    background: rgba(17, 94, 89, 0.92);
+    color: #ecfeff;
+}
+
+.hint {
+    font-size: 10px;
+    color: #b8c7d7;
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    font-size: 10px;
+    color: #b8c7d7;
+}
+
+.legendItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legendSwatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.youSwatch {
+    background: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+}
+
+.activeSwatch {
+    background: #facc15;
+    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16);
+}
+
+.unknownSwatch {
+    background: #0f1720;
+    border-color: rgba(148, 163, 184, 0.4);
+}
+
+.grid {
+    display: grid;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(2, 6, 12, 0.96);
+}
+
+.cellButton {
+    appearance: none;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+}
+
+.cellButton:disabled {
+    cursor: default;
+}
+
+.cell {
+    position: relative;
+    min-width: 0;
+    aspect-ratio: 1 / 1;
+    box-shadow: inset 0 0 0 1px rgba(5, 12, 20, 0.32);
+    transition:
+        transform 0.18s ease,
+        filter 0.18s ease,
+        opacity 0.2s ease,
+        box-shadow 0.18s ease;
+}
+
+.cell:not(:disabled) {
+    cursor: pointer;
+}
+
+.cell:not(:disabled):hover {
+    transform: scale(1.04);
+    z-index: 1;
+}
+
+.visibleCell {
+    opacity: 1;
+}
+
+.exploredCell {
+    opacity: 0.42;
+    filter: grayscale(0.68) brightness(0.62) saturate(0.58);
+}
+
+.unknownCell {
+    opacity: 1;
+    background:
+        linear-gradient(180deg, rgba(11, 17, 26, 0.96), rgba(6, 10, 16, 1)),
+        rgba(6, 10, 16, 1);
+    filter: brightness(0.92);
+}
+
+.walkableCell {
+    background: linear-gradient(180deg, #a3adb6 0%, #7d8995 100%);
+}
+
+.blockedCell {
+    background: linear-gradient(180deg, #41505e 0%, #2b3742 100%);
+}
+
+.borderCell {
+    background: linear-gradient(180deg, #603f37 0%, #432920 100%);
+}
+
+.startCell {
+    background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+}
+
+.portalCell {
+    background: linear-gradient(180deg, #2dd4bf 0%, #0f766e 100%);
+}
+
+.resourceCell {
+    background: linear-gradient(180deg, #3fa284 0%, #236d57 100%);
+}
+
+.barrelCell {
+    background: linear-gradient(180deg, #be8a4b 0%, #8c5b2d 100%);
+}
+
+.monsterCell {
+    background: linear-gradient(180deg, #b04545 0%, #7f2727 100%);
+}
+
+.structureCell {
+    background: linear-gradient(180deg, #9a7cf2 0%, #6747b4 100%);
+}
+
+.unknownTerrain {
+    background:
+        linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(6, 9, 14, 0.98)),
+        rgba(6, 9, 14, 0.98);
+}
+
+.viewportEdge {
+    box-shadow:
+        inset 0 0 0 1px rgba(186, 230, 253, 0.76),
+        inset 0 0 0 2px rgba(14, 165, 233, 0.16);
+}
+
+.poiMarker {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 28%;
+    height: 28%;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.monsterMarker {
+    background: #fee2e2;
+    box-shadow: 0 0 0 1px rgba(127, 39, 39, 0.8);
+}
+
+.resourceMarker {
+    background: #7dd3fc;
+    box-shadow: 0 0 0 1px rgba(3, 105, 161, 0.85);
+}
+
+.barrelMarker {
+    background: #fdba74;
+    box-shadow: 0 0 0 1px rgba(146, 64, 14, 0.9);
+}
+
+.portalMarker {
+    width: 42%;
+    height: 42%;
+    border: 1px solid rgba(240, 253, 250, 0.92);
+    background: transparent;
+    box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.75);
+}
+
+.structureMarker {
+    width: 38%;
+    height: 38%;
+    border-radius: 4px;
+    background: rgba(17, 24, 39, 0.78);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.constructionMarker {
+    width: 42%;
+    height: 42%;
+    border-radius: 4px;
+    background: rgba(251, 191, 36, 0.88);
+    box-shadow: 0 0 0 1px rgba(120, 53, 15, 0.92);
+}
+
+.playerMarker {
+    position: absolute;
+    width: 34%;
+    height: 34%;
+    border-radius: 999px;
+    border: 1px solid rgba(6, 11, 18, 0.85);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.stackMarker {
+    width: 26%;
+    height: 26%;
+}
+
+.myPlayerMarker {
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35);
+}
+
+.activePlayerMarker {
+    outline: 1px solid rgba(250, 204, 21, 0.9);
+    outline-offset: 1px;
+}
+
+.groupNeutral {
+    background: #f8fafc;
+}
+
+.groupOne {
+    background: #60a5fa;
+}
+
+.groupTwo {
+    background: #f87171;
+}
+
+.groupThree {
+    background: #facc15;
+}
+
+@keyframes minimapPingPulse {
+    0% {
+        transform: translate(-50%, -50%) scale(0.42);
+        opacity: 1;
+    }
+    70% {
+        transform: translate(-50%, -50%) scale(1.12);
+        opacity: 0.22;
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1.24);
+        opacity: 0;
+    }
+}
+
+.pingMarker {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 72%;
+    height: 72%;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(186, 230, 253, 0.95);
+    box-shadow:
+        0 0 0 1px rgba(8, 14, 24, 0.75),
+        0 0 10px rgba(56, 189, 248, 0.55);
+    animation: minimapPingPulse 1s ease-out forwards;
+    pointer-events: none;
+    z-index: 3;
+}
+
+@media (max-width: 760px) and (orientation: portrait) {
+    .panel {
+        right: 8px;
+        bottom: calc(max(8px, env(safe-area-inset-bottom)) + 132px);
+        padding: 9px;
+        border-radius: 14px;
+        gap: 6px;
+    }
+
+    .panelSmall {
+        --panel-width: 190px;
+    }
+
+    .panelLarge {
+        --panel-width: 258px;
+    }
+
+    .title {
+        font-size: 11px;
+    }
+
+    .subtitle,
+    .hint,
+    .legend {
+        font-size: 9px;
+    }
+
+    .sizeButton {
+        font-size: 9px;
+        padding: 5px 8px;
+    }
+}
+
+@media (max-width: 920px) and (orientation: landscape) {
+    .panel {
+        right: 8px;
+        bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
+        padding: 9px;
+        gap: 6px;
+    }
+
+    .panelSmall {
+        --panel-width: 182px;
+    }
+
+    .panelLarge {
+        --panel-width: 242px;
+    }
+}

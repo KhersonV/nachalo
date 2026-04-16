@@ -301,6 +301,32 @@
     color: #fecaca;
 }
 
+.waitingEta {
+    display: grid;
+    gap: 2px;
+    justify-items: center;
+}
+
+.waitingEtaLabel {
+    font-size: 11px;
+    color: #fda4af;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.waitingEtaValue {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #ffe4e6;
+    letter-spacing: 0.05em;
+}
+
+.waitingQueue {
+    font-size: 12px;
+    color: #fecdd3;
+    font-weight: 600;
+}
+
 .turnTimer {
     min-width: 72px;
     border: 1px solid var(--panel-line);
@@ -531,11 +557,12 @@
 }
 
 .inventoryDockButton {
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 46px;
     height: 46px;
+    flex-shrink: 0;
     padding: 0;
     border-radius: 12px;
     cursor: pointer;
@@ -849,6 +876,15 @@
         top: 42%;
     }
 
+    .waitingEtaLabel,
+    .waitingQueue {
+        font-size: 10px;
+    }
+
+    .waitingEtaValue {
+        font-size: 1.1rem;
+    }
+
     .questFoundBanner {
         top: 0.6rem;
         font-size: 0.9rem;
@@ -957,6 +993,15 @@
 
     .inventoryFab:active {
         transform: translateY(calc(-50% + 1px));
+    }
+
+    .waitingEtaLabel,
+    .waitingQueue {
+        font-size: 10px;
+    }
+
+    .waitingEtaValue {
+        font-size: 1.05rem;
     }
 }
 
