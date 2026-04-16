@@ -5,7 +5,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef } from "react";
-import { Cell, PlayerState } from "@/types/GameTypes";
+import { Cell } from "@/types/GameTypes";
 import {
     buildExplorationStorageKey,
     getCellIndex,
@@ -24,8 +24,9 @@ export interface MapProps {
     sightRange: number;
     playerPosition: { x: number; y: number };
     onCellClick?: (cell: Cell) => void;
-    players?: PlayerState[];
     startOwners?: Record<string, number>;
+    occupiedCellIndices?: ReadonlySet<number>;
+    ownerGroupByUserId?: Readonly<Record<number, number>>;
     explorationStorageKey?: string;
     renderCenterPosition?: { x: number; y: number };
 }
@@ -35,7 +36,8 @@ type CellVisibility = "visible" | "explored";
 type RenderCell = {
     cell: Cell;
     visibility: CellVisibility;
-    player: PlayerState | null;
+    hasPlayer: boolean;
+    background: string;
 };
 
 function getCellAt(
@@ -52,6 +54,58 @@ function getCellAt(
     return grid[getCellIndex(x, y, mapWidth)] ?? null;
 }
 
+function getTileBackground(
+    cell: Cell,
+    ownerGroupByUserId?: Readonly<Record<number, number>>,
+    startOwners?: Record<string, number>,
+): string {
+    const resolveGroupId = (userId?: number | null) => {
+        if (!userId) return null;
+        return ownerGroupByUserId?.[userId] ?? null;
+    };
+
+    if (cell.tileCode === 80) {
+        const key = `${cell.x}:${cell.y}`;
+        const groupId = resolveGroupId(startOwners?.[key] ?? null);
+
+        if (groupId === 1)
+            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
+        if (groupId === 2)
+            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
+        if (groupId === 3)
+            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
+    }
+
+    if (cell.structure_type === "base" && cell.structure_owner_user_id) {
+        const groupId = resolveGroupId(cell.structure_owner_user_id);
+        if (groupId === 1)
+            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
+        if (groupId === 2)
+            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
+        if (groupId === 3)
+            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
+    }
+
+    switch (cell.tileCode) {
+        case 48:
+            return "linear-gradient(155deg, #9da5ad 0%, #7b858f 100%)";
+        case 80:
+            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
+        case 32:
+            return "linear-gradient(155deg, #3f4954 0%, #2a3139 100%)";
+        case 77:
+            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
+        case 82:
+            return "linear-gradient(155deg, #2f8d64 0%, #1f6a4a 100%)";
+        case 112:
+            return "linear-gradient(155deg, #45c7b0 0%, #1b8f8d 100%)";
+        case 66:
+            return "linear-gradient(155deg, #cb8a45 0%, #8f5f2e 100%)";
+        default:
+            return "linear-gradient(155deg, #8a4b42 0%, #6d362f 100%)";
+    }
+}
+
 function Map({
     grid,
     mapWidth,
@@ -61,27 +115,15 @@ function Map({
     sightRange,
     playerPosition,
     onCellClick,
-    players = [],
     startOwners = {},
+    occupiedCellIndices,
+    ownerGroupByUserId,
     explorationStorageKey,
     renderCenterPosition,
 }: MapProps) {
     const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
     const fullHeight = mapHeight * tileSize + (mapHeight - 1) * gap;
     const step = tileSize + gap;
-
-    const playerMap = useMemo(() => {
-        const map = new globalThis.Map<number, PlayerState>();
-
-        for (const player of players) {
-            const pos = player.position;
-            if (!pos) continue;
-
-            map.set(getCellIndex(pos.x, pos.y, mapWidth), player);
-        }
-
-        return map;
-    }, [players, mapWidth]);
 
     // Track explored cells
     const exploredCellsRef = useRef<Set<number>>(new Set());
@@ -138,7 +180,12 @@ function Map({
                 result.push({
                     cell,
                     visibility: "visible",
-                    player: playerMap.get(key) || null,
+                    hasPlayer: occupiedCellIndices?.has(key) ?? false,
+                    background: getTileBackground(
+                        cell,
+                        ownerGroupByUserId,
+                        startOwners,
+                    ),
                 });
             }
         }
@@ -187,7 +234,12 @@ function Map({
                 result.push({
                     cell,
                     visibility: "explored",
-                    player: null,
+                    hasPlayer: false,
+                    background: getTileBackground(
+                        cell,
+                        ownerGroupByUserId,
+                        startOwners,
+                    ),
                 });
             }
         }
@@ -200,8 +252,10 @@ function Map({
         playerPosition.x,
         playerPosition.y,
         sightRange,
-        playerMap,
         explorationStorageKey,
+        occupiedCellIndices,
+        ownerGroupByUserId,
+        startOwners,
         renderCenterPosition?.x,
         renderCenterPosition?.y,
     ]);
@@ -230,7 +284,8 @@ function Map({
                 position: "relative",
             }}
         >
-            {cellsWithVisibility.map(({ cell, visibility, player }) => {
+            {cellsWithVisibility.map(
+                ({ cell, visibility, hasPlayer, background }) => {
                 const cellKey = getCellIndex(cell.x, cell.y, mapWidth);
 
                 return (
@@ -247,15 +302,14 @@ function Map({
                         <MapCell
                             cell={cell}
                             visibility={visibility}
-                            playerInCell={player}
+                            hasPlayer={hasPlayer}
+                            background={background}
                             tileSize={tileSize}
                             isCurrentPlayerCell={
                                 cell.x === playerPosition.x &&
                                 cell.y === playerPosition.y
                             }
                             onClick={onCellClick}
-                            players={players}
-                            startOwners={startOwners}
                         />
                     </div>
                 );

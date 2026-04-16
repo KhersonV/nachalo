@@ -50,6 +50,13 @@ export default function LobbyHeader() {
             onClick: () => router.push("/profile"),
         },
         {
+            id: "history",
+            label: "History",
+            iconSrc: "/ui-icons/statistick.png",
+            isActive: pathname === "/matches" || pathname.startsWith("/matches/"),
+            onClick: () => router.push("/matches"),
+        },
+        {
             id: "shop",
             label: "Shop",
             iconSrc: "/ui-icons/shop.png",

@@ -412,7 +412,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 		if exitDamage.SourceGuardianID > 0 {
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				ms.RecordDamageEvent(exitDamage.SourceGuardianID, "player", exitDamage.Damage)
+				ms.RecordDamageEvent(exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
 				if exitDamage.NewHealth <= 0 {
 					ms.RecordKillEvent(exitDamage.SourceGuardianID, "player", exitDamage.Damage)
 				}
@@ -540,10 +540,12 @@ func abs(v int) int {
 
 func resolveAttackMode(attacker stats, target stats) (attackMode, error) {
 	distance := manhattanDistance(attacker, target)
-	if distance == 1 {
+	// Treat overlap (distance == 0) and adjacent (distance == 1) as melee range
+	if distance <= 1 {
 		return attackModeMelee, nil
 	}
-	if attacker.IsRanged && distance > 1 && distance <= attacker.AttackRange {
+	// Otherwise, if attacker is ranged and within range, it's a ranged attack
+	if attacker.IsRanged && distance <= attacker.AttackRange {
 		return attackModeRanged, nil
 	}
 	return "", fmt.Errorf("цель вне дистанции атаки")
@@ -1108,6 +1110,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 
 	// 2 Если в памяти есть матч
 	if ms, ok := game.GetMatchState(instanceID); ok {
+		ms.RecordPlayerDefeat(userID)
 		ms.RemovePlayerFromTurnOrder(userID)
 
 		// 2а Если больше нет игроков — завершаем матч
@@ -1188,16 +1191,43 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 			if err := regenEnergyForNextPlayer(instanceID, nextID); err != nil {
 				log.Printf("Ошибка регенерации энергии новому игроку после смерти: %v", err)
 			}
-			turnMsg := map[string]interface{}{
+
+			// Отправляем унифицированное сообщение SET_ACTIVE_USER (фронтенд ожидает его)
+			if nextUser, nerr := repository.GetMatchPlayerByID(instanceID, nextID); nerr == nil && nextUser != nil {
+				updateMsg := map[string]interface{}{
+					"type": "SET_ACTIVE_USER",
+					"payload": map[string]interface{}{
+						"instanceId":  instanceID,
+						"instance_id": instanceID,
+						"active_user": nextID,
+						"energy":      nextUser.Energy,
+						"turnNumber":  ms.TurnNumber,
+					},
+				}
+				if b, _ := json.Marshal(updateMsg); b != nil {
+					Broadcast(b)
+				}
+			} else {
+				// Fallback: отправим legacy TURN_PASSED, если не удалось получить данные игрока
+				log.Printf("[handlePlayerDeath] GetMatchPlayerByID error: %v", nerr)
+			}
+
+			// Также посылаем legacy TURN_PASSED (клиенты в некоторых местах его ждут)
+			turnPassedMsg := map[string]interface{}{
 				"type": "TURN_PASSED",
 				"payload": map[string]interface{}{
-					"instanceId": instanceID,
-					"userId":     nextID,
-					"turnNumber": ms.TurnNumber,
+					"instanceId":  instanceID,
+					"instance_id": instanceID,
+					"userId":      nextID,
+					"turnNumber":  ms.TurnNumber,
 				},
 			}
-			buf, _ := json.Marshal(turnMsg)
-			Broadcast(buf)
+			if tbuf, _ := json.Marshal(turnPassedMsg); tbuf != nil {
+				Broadcast(tbuf)
+			}
+
+			// Запускаем таймер хода для нового активного игрока
+			startTurnTimer(instanceID, nextID)
 		}
 	}
 
@@ -1634,7 +1664,7 @@ func doCounterattackWithEnergy(
 	effectiveAttackerStats.Defense = effectiveDefense(instanceID, attackerType, attackerID, attackerStats.Defense)
 	ar := applyDamage(defenderStats, effectiveAttackerStats) // defender контратакует attacker
 	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
-		ms.RecordDamageEvent(defenderID, attackerType, ar.Damage)
+		ms.RecordDamageEvent(defenderID, attackerType, attackerID, ar.Damage)
 		if ar.NewHealth <= 0 {
 			ms.RecordKillEvent(defenderID, attackerType, ar.Damage)
 		}
@@ -1777,7 +1807,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	})
 
 	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Damage > 0 {
-		ms.RecordDamageEvent(req.AttackerID, req.TargetType, targetRes.Damage)
+		ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
 	}
 	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
 	finalTargetHP := targetRes.NewHealth
@@ -1858,7 +1888,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					finalTargetHP,
 				)
 				if ms, ok := game.GetMatchState(req.InstanceID); ok && bonusRes.Damage > 0 {
-					ms.RecordDamageEvent(req.AttackerID, req.TargetType, bonusRes.Damage)
+					ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, bonusRes.Damage)
 				}
 				saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes)
 				finalTargetHP = bonusRes.NewHealth
@@ -1930,7 +1960,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		if allowFollowUp {
 			followUpRes := applyFlatDamage(finalTargetHP, followUpDamage)
 			if ms, ok := game.GetMatchState(req.InstanceID); ok && followUpRes.Damage > 0 {
-				ms.RecordDamageEvent(req.AttackerID, req.TargetType, followUpRes.Damage)
+				ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, followUpRes.Damage)
 			}
 			saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes)
 			finalTargetHP = followUpRes.NewHealth

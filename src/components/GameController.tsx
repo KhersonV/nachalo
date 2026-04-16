@@ -19,7 +19,7 @@ import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import objectHudStyles from "../styles/ObjectHUD.module.css";
 import type { RootState } from "../store";
-import type { PlayerState } from "../types";
+import type { Cell, PlayerState } from "../types";
 import {
     setInstanceId,
     setActiveUser,
@@ -537,6 +537,115 @@ export default function GameController({ instanceId }: GameControllerProps) {
             });
         },
         [myPlayer, isMyTurn, fightPlayer],
+    );
+
+    const handleMapCellClick = useCallback(
+        async (cell: Cell) => {
+            if (!myPlayer) return;
+
+            const distance =
+                Math.abs(myPlayer.position.x - cell.x) +
+                Math.abs(myPlayer.position.y - cell.y);
+            const attackRange = myPlayer.attackRange ?? 1;
+
+            if (cell.monster) {
+                if (isMyTurn && distance <= attackRange) {
+                    await fightMonster(cell.x, cell.y);
+                    return;
+                }
+                setObjectHUD({
+                    type: "monster",
+                    x: cell.x,
+                    y: cell.y,
+                    name: cell.monster.name,
+                    health: cell.monster.health,
+                    maxHealth: cell.monster.maxHealth ?? cell.monster.health,
+                    attack: cell.monster.attack,
+                    defense: cell.monster.defense,
+                });
+                return;
+            }
+
+            if (cell.structure_type) {
+                const isOwnStructure =
+                    cell.structure_owner_user_id === myPlayer.user_id;
+                if (
+                    isMyTurn &&
+                    distance === 1 &&
+                    !isOwnStructure &&
+                    !cell.is_under_construction
+                ) {
+                    await handleCellClick(cell);
+                    return;
+                }
+                setObjectHUD({
+                    type: "structure",
+                    x: cell.x,
+                    y: cell.y,
+                    name:
+                        cell.structure_type === "scout_tower"
+                            ? "Scout Tower"
+                            : cell.structure_type === "turret"
+                              ? "Turret"
+                              : "Wall",
+                    health: cell.structure_health,
+                    maxHealth:
+                        STRUCTURE_DEFAULT_MAX_HEALTH[
+                            cell.structure_type as PlacementStructureType
+                        ] ?? cell.structure_health,
+                    defense: cell.structure_defense,
+                    attack: cell.structure_attack,
+                    structureType: cell.structure_type as PlacementStructureType,
+                    sightRange:
+                        cell.structure_type === "scout_tower" ? 1 : undefined,
+                });
+                return;
+            }
+
+            if (cell.resource) {
+                if (isMyTurn && distance === 1) {
+                    await handleCellClick(cell);
+                    return;
+                }
+                setObjectHUD({
+                    type: "object",
+                    name: `Resource: ${cell.resource.type}`,
+                    details: cell.resource.description || "Useful resource",
+                });
+                return;
+            }
+
+            if (cell.barbel) {
+                if (isMyTurn && distance === 1) {
+                    await handleCellClick(cell);
+                    return;
+                }
+                setObjectHUD({
+                    type: "object",
+                    name: "Barrel",
+                    details: "Can be opened to receive a reward",
+                });
+                return;
+            }
+
+            if (cell.isPortal) {
+                if (isMyTurn && distance === 1) {
+                    await handleCellClick(cell);
+                    return;
+                }
+                setObjectHUD({
+                    type: "object",
+                    name: "Portal",
+                    details: "Exit point from the match after conditions are met",
+                });
+                return;
+            }
+
+            if (isMyTurn && distance === 1) {
+                await handleCellClick(cell);
+            }
+        },
+        [myPlayer, isMyTurn, fightMonster, handleCellClick],
     );
 
     // Show centered "YOUR TURN" modal when turn transitions to the current player
@@ -1308,124 +1417,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                         myPlayer={myPlayer}
                         focusPoint={minimapFocusPoint}
                         pingPoint={minimapPingPoint}
-                        onCellClick={async (cell) => {
-                            if (!myPlayer) return;
-                            const distance =
-                                Math.abs(myPlayer.position.x - cell.x) +
-                                Math.abs(myPlayer.position.y - cell.y);
-                            const attackRange = myPlayer.attackRange ?? 1;
-                            // Монстр
-                            if (cell.monster) {
-                                if (isMyTurn && distance <= attackRange) {
-                                    await fightMonster(cell.x, cell.y);
-                                    return;
-                                }
-                                // Иначе показываем HUD
-                                setObjectHUD({
-                                    type: "monster",
-                                    x: cell.x,
-                                    y: cell.y,
-                                    name: cell.monster.name,
-                                    health: cell.monster.health,
-                                    maxHealth:
-                                        cell.monster.maxHealth ??
-                                        cell.monster.health,
-                                    attack: cell.monster.attack,
-                                    defense: cell.monster.defense,
-                                });
-                                return;
-                            }
-                            // Постройка
-                            if (cell.structure_type) {
-                                // Бэкенд позволяет атаковать только соседние постройки (manhattan == 1)
-                                // и только чужие, не строящиеся
-                                const isOwnStructure =
-                                    cell.structure_owner_user_id ===
-                                    myPlayer.user_id;
-                                if (
-                                    isMyTurn &&
-                                    distance === 1 &&
-                                    !isOwnStructure &&
-                                    !cell.is_under_construction
-                                ) {
-                                    await handleCellClick(cell);
-                                    return;
-                                }
-                                setObjectHUD({
-                                    type: "structure",
-                                    x: cell.x,
-                                    y: cell.y,
-                                    name:
-                                        cell.structure_type === "scout_tower"
-                                            ? "Scout Tower"
-                                            : cell.structure_type === "turret"
-                                              ? "Turret"
-                                              : "Wall",
-                                    health: cell.structure_health,
-                                    maxHealth:
-                                        STRUCTURE_DEFAULT_MAX_HEALTH[
-                                            cell.structure_type as PlacementStructureType
-                                        ] ?? cell.structure_health,
-                                    defense: cell.structure_defense,
-                                    attack: cell.structure_attack,
-                                    structureType: cell.structure_type as any,
-                                    sightRange:
-                                        cell.structure_type === "scout_tower"
-                                            ? 1
-                                            : undefined,
-                                });
-                                return;
-                            }
-                            // Ресурс
-                            if (cell.resource) {
-                                if (isMyTurn && distance === 1) {
-                                    await handleCellClick(cell);
-                                    return;
-                                }
-                                setObjectHUD({
-                                    type: "object",
-                                    name: `Resource: ${cell.resource.type}`,
-                                    details:
-                                        cell.resource.description ||
-                                        "Useful resource",
-                                });
-                                return;
-                            }
-                            // Бочка
-                            if (cell.barbel) {
-                                if (isMyTurn && distance === 1) {
-                                    await handleCellClick(cell);
-                                    return;
-                                }
-                                setObjectHUD({
-                                    type: "object",
-                                    name: "Barrel",
-                                    details:
-                                        "Can be opened to receive a reward",
-                                });
-                                return;
-                            }
-                            // Портал
-                            if (cell.isPortal) {
-                                if (isMyTurn && distance === 1) {
-                                    await handleCellClick(cell);
-                                    return;
-                                }
-                                setObjectHUD({
-                                    type: "object",
-                                    name: "Portal",
-                                    details:
-                                        "Exit point from the match after conditions are met",
-                                });
-                                return;
-                            }
-                            // Пустая клетка — если можно дойти, двигаемся
-                            if (isMyTurn && distance === 1) {
-                                await handleCellClick(cell);
-                                return;
-                            }
-                            // В остальных случаях HUD не нужен
-                        }}
+                        onCellClick={handleMapCellClick}
                         onPlayerClick={handleMapPlayerClick}
                     />
                 ) : (

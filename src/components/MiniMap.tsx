@@ -41,7 +41,7 @@ const MAX_RENDERED_PLAYER_MARKERS = 3;
 const SIZE_STORAGE_KEY = "minimap:size";
 const LOCAL_PING_DURATION_MS = 1600;
 
-export default function MiniMap({
+function MiniMap({
     grid,
     mapWidth,
     mapHeight,
@@ -440,6 +440,8 @@ export default function MiniMap({
         </aside>
     );
 }
+
+export default React.memo(MiniMap);
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);

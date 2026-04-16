@@ -3,20 +3,19 @@
 //==================================
 
 import React from "react";
-import { Cell, PlayerState } from "@/types/GameTypes";
+import { Cell } from "@/types/GameTypes";
 import styles from "@/styles/Map.module.css";
 
 type Visibility = "visible" | "explored" | "unknown";
 
 interface MapCellProps {
     cell: Cell;
-    playerInCell: PlayerState | null;
+    hasPlayer: boolean;
+    background: string;
     visibility: Visibility;
     tileSize: number;
     isCurrentPlayerCell?: boolean;
     onClick?: (cell: Cell) => void;
-    players?: PlayerState[];
-    startOwners?: Record<string, number>;
 }
 
 const IMAGE_STYLE: React.CSSProperties = {
@@ -27,13 +26,12 @@ const IMAGE_STYLE: React.CSSProperties = {
 
 function MapCell({
     cell,
-    playerInCell,
+    hasPlayer,
+    background,
     visibility,
     tileSize,
     isCurrentPlayerCell = false,
     onClick,
-    players,
-    startOwners,
 }: MapCellProps) {
     const isVisible = visibility === "visible";
     const isExplored = visibility === "explored";
@@ -53,7 +51,7 @@ function MapCell({
     const tileStyle: React.CSSProperties = {
         width: tileSize,
         height: tileSize,
-        background: getTileBackground(cell, players, startOwners),
+        background,
         pointerEvents: isVisible ? "auto" : "none",
         cursor: isInteractive ? "pointer" : "default",
     };
@@ -63,7 +61,7 @@ function MapCell({
         `${isVisible ? styles.visible : isExplored ? styles.explored : styles.unknown} ` +
         `${isInteractive ? styles.interactive : ""} ` +
         `${isCurrentPlayerCell ? styles.currentPlayerCell : ""} ` +
-        `${playerInCell ? styles.hasPlayer : ""}`;
+        `${hasPlayer ? styles.hasPlayer : ""}`;
 
     let cellContent: React.ReactNode = null;
 
@@ -154,73 +152,17 @@ function MapCell({
     );
 }
 
-function getTileBackground(
-    cell: Cell,
-    players?: PlayerState[] | null,
-    startOwners?: Record<string, number> | null,
-): string {
-    // If this cell is a start tile (tileCode 80 / 'P'), color by the original owner stored in startOwners
-    if (cell.tileCode === 80) {
-        const key = `${cell.x}:${cell.y}`;
-        const ownerId = startOwners?.[key] ?? null;
-        const owner = ownerId
-            ? (players?.find((p) => p.user_id === ownerId) ?? null)
-            : null;
-        const groupId = owner?.group_id ?? null;
-
-        if (groupId === 1)
-            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
-        if (groupId === 2)
-            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
-        if (groupId === 3)
-            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
-    }
-
-    // If this cell is a player base structure, try to color by owner's team (group_id)
-    if (cell.structure_type === "base" && cell.structure_owner_user_id) {
-        const ownerId = cell.structure_owner_user_id;
-        const owner = players?.find((p) => p.user_id === ownerId) ?? null;
-        const groupId = owner?.group_id ?? null;
-        if (groupId === 1)
-            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
-        if (groupId === 2)
-            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
-        if (groupId === 3)
-            return "linear-gradient(155deg, #f2c94c 0%, #c58f16 100%)";
-    }
-
-    switch (cell.tileCode) {
-        case 48:
-            return "linear-gradient(155deg, #9da5ad 0%, #7b858f 100%)";
-        case 80:
-            return "linear-gradient(155deg, #2f68bf 0%, #183a72 100%)";
-        case 32:
-            return "linear-gradient(155deg, #3f4954 0%, #2a3139 100%)";
-        case 77:
-            return "linear-gradient(155deg, #a93939 0%, #7f2727 100%)";
-        case 82:
-            return "linear-gradient(155deg, #2f8d64 0%, #1f6a4a 100%)";
-        case 112:
-            return "linear-gradient(155deg, #45c7b0 0%, #1b8f8d 100%)";
-        case 66:
-            return "linear-gradient(155deg, #cb8a45 0%, #8f5f2e 100%)";
-        default:
-            return "linear-gradient(155deg, #8a4b42 0%, #6d362f 100%)";
-    }
-}
-
 function areEqual(prev: MapCellProps, next: MapCellProps) {
     const prevCell = prev.cell;
     const nextCell = next.cell;
 
     return (
+        prev.hasPlayer === next.hasPlayer &&
+        prev.background === next.background &&
         prev.visibility === next.visibility &&
         prev.tileSize === next.tileSize &&
         prev.isCurrentPlayerCell === next.isCurrentPlayerCell &&
         prev.onClick === next.onClick &&
-        prev.players === next.players &&
-        prev.startOwners === next.startOwners &&
-        !!prev.playerInCell === !!next.playerInCell &&
         prevCell.x === nextCell.x &&
         prevCell.y === nextCell.y &&
         prevCell.tileCode === nextCell.tileCode &&

@@ -276,12 +276,12 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	}
 
 	var width, height int
-	if cfg.TotalPlayers == 1 {
+	if (cfg.TotalPlayers == 1 || cfg.TotalPlayers == 2) {
 		width = 15
 		height = 15
 	} else {
-		width = 9 * cfg.TotalPlayers
-		height = 9 * cfg.TotalPlayers
+		width = 6 * cfg.TotalPlayers
+		height = 6 * cfg.TotalPlayers
 	}
 
 	rand.Seed(time.Now().UnixNano())

@@ -1,0 +1,161 @@
+.page {
+    padding: var(--lobby-page-padding);
+    max-width: var(--lobby-page-max-width);
+    margin: 0 auto;
+    color: #f8fbff;
+    box-sizing: border-box;
+}
+
+.topRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.title {
+    margin: 0;
+    font-size: 1.6rem;
+}
+
+.subtitle {
+    margin: 0.35rem 0 0;
+    color: rgba(226, 241, 255, 0.82);
+    font-size: 0.95rem;
+}
+
+.backBtn {
+    border: none;
+    border-radius: 10px;
+    padding: 0.62rem 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: #e8f6ff;
+    background: linear-gradient(
+        rgba(34, 112, 155, 0.85),
+        rgba(7, 42, 66, 0.88)
+    );
+}
+
+.stateCard,
+.card {
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 1rem;
+    background: linear-gradient(rgba(12, 34, 54, 0.78), rgba(3, 14, 24, 0.75));
+}
+
+.hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.meta {
+    margin: 0;
+    font-size: 0.8rem;
+    color: rgba(169, 201, 221, 0.88);
+}
+
+.heroTitle {
+    margin: 0.25rem 0 0;
+    font-size: 1.2rem;
+}
+
+.heroSubtitle {
+    margin: 0.35rem 0 0;
+    color: rgba(226, 241, 255, 0.78);
+    line-height: 1.4;
+}
+
+.statusBadge {
+    border-radius: 999px;
+    padding: 0.28rem 0.62rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #072433;
+    background: linear-gradient(
+        rgba(127, 240, 255, 0.95),
+        rgba(41, 187, 224, 0.92)
+    );
+}
+
+.sectionGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.section {
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(7, 24, 37, 0.5);
+    padding: 0.9rem;
+}
+
+.sectionTitle {
+    margin: 0 0 0.8rem;
+    font-size: 1rem;
+}
+
+.kvList {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.kvItem {
+    display: grid;
+    gap: 0.18rem;
+}
+
+.label {
+    color: rgba(169, 201, 221, 0.88);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.value {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.valueText {
+    font-size: 0.94rem;
+    line-height: 1.4;
+}
+
+.list {
+    margin: 0;
+    padding-left: 1rem;
+    display: grid;
+    gap: 0.42rem;
+}
+
+.listItem {
+    line-height: 1.4;
+}
+
+.emptyText {
+    margin: 0;
+    color: rgba(226, 241, 255, 0.74);
+    line-height: 1.4;
+}
+
+@media (max-width: 860px) {
+    .topRow,
+    .hero {
+        flex-direction: column;
+    }
+
+    .sectionGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .backBtn {
+        width: 100%;
+    }
+}

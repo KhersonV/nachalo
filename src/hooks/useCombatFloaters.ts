@@ -47,9 +47,16 @@ export function useCombatFloaters(
         const prevMonster = prevMonsterHealthRef.current;
         const suppressedPlayers = new Set(options?.suppressedPlayerIds ?? []);
         const suppressedMonsters = new Set(options?.suppressedMonsterIds ?? []);
+        const visiblePlayerIds = new Set(players.map((player) => player.user_id));
         const newFloaters: CombatFloater[] = [];
         const newFlashes: CombatFlash[] = [];
         const now = Date.now();
+
+        prevPlayer.forEach((_, userId) => {
+            if (!visiblePlayerIds.has(userId)) {
+                prevPlayer.delete(userId);
+            }
+        });
 
         for (const player of players) {
             const prevHp = prevPlayer.get(player.user_id);

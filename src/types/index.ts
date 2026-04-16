@@ -23,6 +23,21 @@ export type {
 } from "./ApiTypes";
 
 export type {
+    MatchHistoryReward,
+    MatchHistoryParticipant,
+    MatchHistoryWinner,
+    MatchPlayerRewardSummary,
+    MatchPlayerResultSummary,
+    MatchHistoryListItem,
+    MatchHistoryArtifact,
+    MatchHistoryBonus,
+    CurrentPlayerMatchStats,
+    MatchHistoryDetailItem,
+    MatchHistoryListResponse,
+    MatchHistoryDetailResponse,
+} from "./MatchHistoryTypes";
+
+export type {
     BonusAttributes,
     RawInventoryItem,
     Inventory,

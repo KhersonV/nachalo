@@ -162,6 +162,8 @@ type CombatEffectsLayerProps = {
     gap: number;
 };
 
+const EXPLORED_BUFFER = 3;
+
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
     {
         imageKey: "guardian",
@@ -244,6 +246,99 @@ const SPRITE_CONFIG_CACHE = new globalThis.Map<
     string,
     CharacterSpriteConfig | null
 >();
+
+function getCellIndexForMap(x: number, y: number, mapWidth: number) {
+    return y * mapWidth + x;
+}
+
+function buildVisibleWindowCells(
+    grid: Cell[],
+    mapWidth: number,
+    mapHeight: number,
+    center: { x: number; y: number },
+    sightRange: number,
+    buffer: number,
+) {
+    if (!Array.isArray(grid) || grid.length === 0 || mapWidth <= 0 || mapHeight <= 0) {
+        return [];
+    }
+
+    const minX = Math.max(0, center.x - sightRange - buffer);
+    const maxX = Math.min(mapWidth - 1, center.x + sightRange + buffer);
+    const minY = Math.max(0, center.y - sightRange - buffer);
+    const maxY = Math.min(mapHeight - 1, center.y + sightRange + buffer);
+
+    const result: Cell[] = [];
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            const cell = grid[getCellIndexForMap(x, y, mapWidth)];
+            if (cell) {
+                result.push(cell);
+            }
+        }
+    }
+
+    return result;
+}
+
+function useStableOwnerGroupByUserId(players: PlayerState[]) {
+    const ref = React.useRef<Readonly<Record<number, number>>>({});
+    const signatureRef = React.useRef("");
+
+    return React.useMemo(() => {
+        const signature = players
+            .map((player) => `${player.user_id}:${player.group_id ?? 0}`)
+            .join("|");
+
+        if (signature === signatureRef.current) {
+            return ref.current;
+        }
+
+        const next: Record<number, number> = {};
+        for (const player of players) {
+            next[player.user_id] = player.group_id ?? 0;
+        }
+
+        ref.current = next;
+        signatureRef.current = signature;
+        return ref.current;
+    }, [players]);
+}
+
+function useStableOccupiedCellIndices(players: PlayerState[], mapWidth: number) {
+    const ref = React.useRef<ReadonlySet<number>>(new Set());
+    const signatureRef = React.useRef("");
+
+    return React.useMemo(() => {
+        const signature = `${mapWidth}|${players
+            .map(
+                (player) =>
+                    `${player.user_id}:${player.position.x}:${player.position.y}`,
+            )
+            .join("|")}`;
+
+        if (signature === signatureRef.current && mapWidth > 0) {
+            return ref.current;
+        }
+
+        const next = new Set<number>();
+        if (mapWidth > 0) {
+            for (const player of players) {
+                next.add(
+                    getCellIndexForMap(
+                        player.position.x,
+                        player.position.y,
+                        mapWidth,
+                    ),
+                );
+            }
+        }
+
+        ref.current = next;
+        signatureRef.current = signature;
+        return ref.current;
+    }, [players, mapWidth]);
+}
 
 function getSpriteConfig(playerImage?: string): CharacterSpriteConfig | null {
     const normalizedPlayerImage = normalizeAvatarPath(playerImage);
@@ -996,7 +1091,7 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
     );
 });
 
-export default function MapWithCamera({
+function MapWithCamera({
     instanceId,
     tileSize: inputTileSize,
     viewportWidth,
@@ -1037,6 +1132,29 @@ export default function MapWithCamera({
             return dx <= sightRange && dy <= sightRange;
         });
     }, [players, playerPosition.x, playerPosition.y, sightRange]);
+    const ownerGroupByUserId = useStableOwnerGroupByUserId(players);
+    const occupiedCellIndices = useStableOccupiedCellIndices(
+        visiblePlayers,
+        safeMapWidth,
+    );
+    const trackedGrid = React.useMemo(
+        () =>
+            buildVisibleWindowCells(
+                grid,
+                safeMapWidth,
+                safeMapHeight,
+                cameraCenterPoint,
+                sightRange,
+                EXPLORED_BUFFER,
+            ),
+        [
+            grid,
+            safeMapWidth,
+            safeMapHeight,
+            cameraCenterPoint,
+            sightRange,
+        ],
+    );
 
     const { nowMs, activeEffects, activeMotions, suppression } =
         useCombatPresentationPlayback();
@@ -1114,7 +1232,7 @@ export default function MapWithCamera({
         [viewportWidth, viewportHeight],
     );
 
-    const { floaters, flashes } = useCombatFloaters(players, grid, {
+    const { floaters, flashes } = useCombatFloaters(visiblePlayers, trackedGrid, {
         suppressedPlayerIds: suppression.playerIds,
         suppressedMonsterIds: suppression.monsterIds,
     });
@@ -1198,8 +1316,9 @@ export default function MapWithCamera({
                     sightRange={sightRange}
                     playerPosition={playerPosition}
                     onCellClick={onCellClick}
-                    players={players}
                     startOwners={initialStartOwnersRef.current}
+                    occupiedCellIndices={occupiedCellIndices}
+                    ownerGroupByUserId={ownerGroupByUserId}
                     explorationStorageKey={explorationStorageKey}
                     renderCenterPosition={cameraCenterPoint}
                 />
@@ -1240,3 +1359,5 @@ export default function MapWithCamera({
         </div>
     );
 }
+
+export default React.memo(MapWithCamera);

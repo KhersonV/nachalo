@@ -7,6 +7,7 @@ package service
 import (
 	"encoding/json"
 	"log"
+	"sort"
 
 	"gameservice/models"
 
@@ -15,10 +16,12 @@ import (
 
 // FinalizeMatch завершает матч: сохраняет результаты, начисляет опыт/награды и удаляет матч.
 func FinalizeMatch(instanceID string) error {
-	
-
 	// 1) Получить финальные данные по матчу
 	results, err := repository.GetMatchResults(instanceID)
+	if err != nil {
+		return err
+	}
+	match, err := repository.GetMatchByID(instanceID)
 	if err != nil {
 		return err
 	}
@@ -38,18 +41,38 @@ func FinalizeMatch(instanceID string) error {
 	}
 
 	// 3) Сохранить общую статистику матча
+	participants := make([]models.MatchParticipantSnapshot, 0, len(results.PlayerResults))
+	for _, result := range results.PlayerResults {
+		participants = append(participants, models.MatchParticipantSnapshot{
+			UserID:        result.UserID,
+			Name:          result.PlayerName,
+			GroupID:       result.GroupID,
+			CharacterType: result.CharacterType,
+			Placement:     result.Placement,
+			IsWinner:      result.IsWinner,
+			Survived:      result.Survived,
+		})
+	}
+	sort.SliceStable(participants, func(i, j int) bool {
+		if participants[i].Placement != participants[j].Placement {
+			return participants[i].Placement < participants[j].Placement
+		}
+		return participants[i].UserID < participants[j].UserID
+	})
+
 	stats := models.MatchInfo{
 		InstanceID:    instanceID,
+		Mode:          match.Mode,
 		WinnerID:      results.WinnerID,
 		WinnerGroupID: results.WinnerGroupID,
 		WinnerUserIDs: results.WinnerUserIDs,
+		Participants:  participants,
 	}
 	if err := repository.SaveMatchStats(&stats); err != nil {
 		log.Printf("SaveMatchStats failed: %v", err)
 	}
 
 	// 4) **Сохранить детальную статистику по каждому игроку**
-	
 	if err := repository.SaveMatchPlayerStats(instanceID, results.PlayerResults); err != nil {
 		log.Printf("[FinalizeMatch] SaveMatchPlayerStats failed for match %s: %v", instanceID, err)
 	} else {
@@ -60,7 +83,7 @@ func FinalizeMatch(instanceID string) error {
 	if err := repository.DeleteMatch(instanceID); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 

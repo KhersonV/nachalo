@@ -12,6 +12,7 @@ import (
 	"gameservice/game"
 	"log"
 	"os"
+	"sort"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -81,6 +82,8 @@ func RunMigrations() {
 	EnsureMatchStatsWinnerUsersColumn()
 	CreateMatchPlayerStatsTable()
 	EnsureMatchPlayerStatsWinnerColumn()
+	EnsureMatchPlayerStatsHistoryColumns()
+	EnsureMatchStatsHistoryColumns()
 	CreatePlayerFriendsTable()
 	CreatePlayerFriendRequestsTable()
 	EnsurePlayerBaseBuildingsTable()
@@ -176,9 +179,23 @@ func SchemaReady() (bool, error) {
 			"image",
 			"group_id",
 		},
-		"matches":            {"quest_artifact_id"},
-		"match_stats":        {"winner_user_ids"},
-		"match_player_stats": {"is_winner"},
+		"matches": {"quest_artifact_id"},
+		"match_stats": {
+			"winner_user_ids",
+			"mode",
+			"participants",
+		},
+		"match_player_stats": {
+			"is_winner",
+			"player_name",
+			"group_id",
+			"character_type",
+			"survived",
+			"deaths",
+			"damage_taken",
+			"placement",
+			"inventory_snapshot",
+		},
 	}
 
 	for tableName, columns := range requiredColumns {
@@ -782,9 +799,11 @@ func CreateMatchStatsTable() {
         instance_id      TEXT PRIMARY KEY
                            REFERENCES matches(instance_id)
                            ON DELETE CASCADE,
+        mode             TEXT        NOT NULL DEFAULT '',
         winner_id        INTEGER     NOT NULL,
         winner_group_id  INTEGER     NOT NULL,
 		winner_user_ids  JSONB       NOT NULL DEFAULT '[]'::jsonb,
+        participants     JSONB       NOT NULL DEFAULT '[]'::jsonb,
         created_at       TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
     );
     `
@@ -829,6 +848,56 @@ func EnsureMatchStatsWinnerUsersColumn() {
 	}
 }
 
+func EnsureMatchStatsHistoryColumns() {
+	_, err := DB.Exec(`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT ''`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsHistoryColumns mode: %v", err)
+		return
+	}
+
+	_, err = DB.Exec(`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS participants JSONB NOT NULL DEFAULT '[]'::jsonb`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsHistoryColumns participants: %v", err)
+		return
+	}
+
+	_, err = DB.Exec(`
+		UPDATE match_stats ms
+		SET participants = COALESCE(src.participants, '[]'::jsonb)
+		FROM (
+			SELECT
+				mps.instance_id,
+				jsonb_agg(
+					jsonb_build_object(
+						'userId', mps.user_id,
+						'name', CASE
+							WHEN COALESCE(mps.player_name, '') <> '' THEN mps.player_name
+							WHEN COALESCE(p.name, '') <> '' THEN p.name
+							ELSE 'Player ' || mps.user_id::text
+						END,
+						'groupId', COALESCE(mps.group_id, 0),
+						'characterType', CASE
+							WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
+							ELSE COALESCE(p.character_type, 'adventurer')
+						END,
+						'placement', COALESCE(mps.placement, 0),
+						'isWinner', COALESCE(mps.is_winner, FALSE),
+						'survived', COALESCE(mps.survived, FALSE)
+					)
+					ORDER BY COALESCE(NULLIF(mps.placement, 0), 9999), mps.user_id
+				) AS participants
+			FROM match_player_stats mps
+			LEFT JOIN players p ON p.user_id = mps.user_id
+			GROUP BY mps.instance_id
+		) AS src
+		WHERE ms.instance_id = src.instance_id
+		  AND (ms.participants IS NULL OR ms.participants = '[]'::jsonb)
+	`)
+	if err != nil {
+		log.Printf("EnsureMatchStatsHistoryColumns backfill participants: %v", err)
+	}
+}
+
 // CreateMatchPlayerStatsTable создаёт таблицу для хранения детальных результатов каждого игрока в матче.
 func CreateMatchPlayerStatsTable() {
 	query := `
@@ -837,7 +906,12 @@ func CreateMatchPlayerStatsTable() {
                                  REFERENCES match_stats(instance_id)
                                  ON DELETE CASCADE,
         user_id            INTEGER  NOT NULL,
+        player_name        TEXT     NOT NULL DEFAULT '',
+        group_id           INTEGER  NOT NULL DEFAULT 0,
+        character_type     TEXT     NOT NULL DEFAULT 'adventurer',
 		is_winner          BOOLEAN  NOT NULL DEFAULT FALSE,
+        survived           BOOLEAN  NOT NULL DEFAULT FALSE,
+        deaths             INTEGER  NOT NULL DEFAULT 0,
         exp_gained         INTEGER  NOT NULL,
         rewards            JSONB    NOT NULL,
         player_kills       INTEGER  NOT NULL,
@@ -845,6 +919,9 @@ func CreateMatchPlayerStatsTable() {
         damage_total       INTEGER  NOT NULL,
         damage_to_players  INTEGER  NOT NULL,
         damage_to_monsters INTEGER  NOT NULL,
+        damage_taken       INTEGER  NOT NULL DEFAULT 0,
+        placement          INTEGER  NOT NULL DEFAULT 0,
+        inventory_snapshot JSONB    NOT NULL DEFAULT '{}'::jsonb,
         PRIMARY KEY (instance_id, user_id)
     );
     `
@@ -871,6 +948,45 @@ func EnsureMatchPlayerStatsWinnerColumn() {
     `)
 	if err != nil {
 		log.Printf("EnsureMatchPlayerStatsWinnerColumn backfill: %v", err)
+	}
+}
+
+func EnsureMatchPlayerStatsHistoryColumns() {
+	commands := []string{
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS player_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS group_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS character_type TEXT NOT NULL DEFAULT 'adventurer'`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS survived BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS deaths INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS damage_taken INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS placement INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS inventory_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb`,
+	}
+
+	for _, command := range commands {
+		if _, err := DB.Exec(command); err != nil {
+			log.Printf("EnsureMatchPlayerStatsHistoryColumns: %v", err)
+			return
+		}
+	}
+
+	_, err := DB.Exec(`
+		UPDATE match_player_stats mps
+		SET
+			player_name = CASE
+				WHEN COALESCE(mps.player_name, '') <> '' THEN mps.player_name
+				WHEN COALESCE(p.name, '') <> '' THEN p.name
+				ELSE 'Player ' || mps.user_id::text
+			END,
+			character_type = CASE
+				WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
+				ELSE COALESCE(p.character_type, 'adventurer')
+			END
+		FROM players p
+		WHERE p.user_id = mps.user_id
+	`)
+	if err != nil {
+		log.Printf("EnsureMatchPlayerStatsHistoryColumns backfill player info: %v", err)
 	}
 }
 
@@ -922,11 +1038,164 @@ func RestoreMatchStates() error {
 	return nil
 }
 
+func placementLess(a, b game.PlayerResult, defeatRank map[int]int) bool {
+	if a.IsWinner != b.IsWinner {
+		return a.IsWinner
+	}
+	if a.Survived != b.Survived {
+		return a.Survived
+	}
+	aRank, aOK := defeatRank[a.UserID]
+	bRank, bOK := defeatRank[b.UserID]
+	if aOK != bOK {
+		return aOK
+	}
+	if aOK && bOK && aRank != bRank {
+		return aRank < bRank
+	}
+	return a.UserID < b.UserID
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func applySoloPlacements(results []game.PlayerResult, defeatedUsers []int) {
+	defeatRank := make(map[int]int, len(defeatedUsers))
+	for idx := len(defeatedUsers) - 1; idx >= 0; idx-- {
+		userID := defeatedUsers[idx]
+		if _, exists := defeatRank[userID]; exists {
+			continue
+		}
+		defeatRank[userID] = len(defeatRank)
+	}
+
+	sorted := append([]game.PlayerResult(nil), results...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return placementLess(sorted[i], sorted[j], defeatRank)
+	})
+
+	placementByUser := make(map[int]int, len(sorted))
+	for idx, result := range sorted {
+		placementByUser[result.UserID] = idx + 1
+	}
+
+	for i := range results {
+		results[i].Placement = placementByUser[results[i].UserID]
+	}
+}
+
+func applyTeamPlacements(results []game.PlayerResult, defeatedUsers []int) {
+	type groupScore struct {
+		GroupID            int
+		IsWinner           bool
+		HasSurvivor        bool
+		LastDefeatPosition int
+	}
+
+	groupMembers := make(map[int][]int)
+	groupScores := make(map[int]*groupScore)
+	for idx := range results {
+		groupID := results[idx].GroupID
+		if groupID <= 0 {
+			groupID = results[idx].UserID
+		}
+		groupMembers[groupID] = append(groupMembers[groupID], results[idx].UserID)
+
+		score := groupScores[groupID]
+		if score == nil {
+			score = &groupScore{
+				GroupID:            groupID,
+				LastDefeatPosition: -1,
+			}
+			groupScores[groupID] = score
+		}
+		if results[idx].IsWinner {
+			score.IsWinner = true
+		}
+		if results[idx].Survived {
+			score.HasSurvivor = true
+		}
+	}
+
+	defeatPosition := make(map[int]int, len(defeatedUsers))
+	for idx, userID := range defeatedUsers {
+		defeatPosition[userID] = idx
+	}
+
+	for groupID, members := range groupMembers {
+		score := groupScores[groupID]
+		for _, userID := range members {
+			if pos, ok := defeatPosition[userID]; ok && pos > score.LastDefeatPosition {
+				score.LastDefeatPosition = pos
+			}
+		}
+	}
+
+	scores := make([]*groupScore, 0, len(groupScores))
+	for _, score := range groupScores {
+		scores = append(scores, score)
+	}
+
+	sort.SliceStable(scores, func(i, j int) bool {
+		left := scores[i]
+		right := scores[j]
+		if left.IsWinner != right.IsWinner {
+			return left.IsWinner
+		}
+		if left.HasSurvivor != right.HasSurvivor {
+			return left.HasSurvivor
+		}
+		if left.LastDefeatPosition != right.LastDefeatPosition {
+			return left.LastDefeatPosition > right.LastDefeatPosition
+		}
+		return left.GroupID < right.GroupID
+	})
+
+	placementByGroup := make(map[int]int, len(scores))
+	for idx, score := range scores {
+		placementByGroup[score.GroupID] = idx + 1
+	}
+
+	for i := range results {
+		groupID := results[i].GroupID
+		if groupID <= 0 {
+			groupID = results[i].UserID
+		}
+		results[i].Placement = placementByGroup[groupID]
+	}
+}
+
+func assignPlacements(results []game.PlayerResult, defeatedUsers []int) {
+	groupSizes := make(map[int]int)
+	teamMode := false
+	for _, result := range results {
+		groupSizes[result.GroupID]++
+		if result.GroupID > 0 && groupSizes[result.GroupID] > 1 {
+			teamMode = true
+		}
+	}
+
+	if teamMode {
+		applyTeamPlacements(results, defeatedUsers)
+		return
+	}
+
+	applySoloPlacements(results, defeatedUsers)
+}
+
 // GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.
 func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 	log.Printf("[GetMatchResults] fetching for match %s", instanceID)
 
 	var mr game.MatchResults
+	var defeatedUsers []int
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		defeatedUsers = ms.SnapshotDefeatedUsers()
+	}
 
 	// 1) Победители из таблицы matches, NULL → 0 (не определён)
 	if err := DB.QueryRow(
@@ -952,9 +1221,16 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 
 	// 2) Список участников
 	rows, err := DB.Query(
-		`SELECT user_id, COALESCE(group_id, 0), COALESCE(health, 0)
-           FROM match_players
-          WHERE instance_id = $1`,
+		`SELECT
+			mp.user_id,
+			COALESCE(mp.name, ''),
+			COALESCE(p.character_type, 'adventurer'),
+			COALESCE(mp.group_id, 0),
+			COALESCE(mp.health, 0),
+			COALESCE(mp.inventory, '{}'::jsonb)
+           FROM match_players mp
+		   LEFT JOIN players p ON p.user_id = mp.user_id
+          WHERE mp.instance_id = $1`,
 		instanceID,
 	)
 	if err != nil {
@@ -967,14 +1243,17 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 	// 3) Для каждого игрока — игровая логика CalculateResults
 	for rows.Next() {
 		var userID, groupID, health int
-		if err := rows.Scan(&userID, &groupID, &health); err != nil {
+		var playerName string
+		var characterType string
+		var inventorySnapshot []byte
+		if err := rows.Scan(&userID, &playerName, &characterType, &groupID, &health, &inventorySnapshot); err != nil {
 			log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
 			continue
 		}
 		groupByUser[userID] = groupID
 		survived := health > 0
 
-		exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, err :=
+		exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, dmgTaken, err :=
 			game.CalculateResults(instanceID, userID, survived)
 		if err != nil {
 			log.Printf("GetMatchResults: CalculateResults для user %d вернул ошибку: %v", userID, err)
@@ -989,15 +1268,22 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		}
 
 		mr.PlayerResults = append(mr.PlayerResults, game.PlayerResult{
-			UserID:           userID,
-			IsWinner:         false,
-			ExpGained:        exp,
-			RewardsData:      rewardsJSON,
-			PlayerKills:      killsP,
-			MonsterKills:     killsM,
-			DamageTotal:      dmgTotal,
-			DamageToPlayers:  dmgPlayers,
-			DamageToMonsters: dmgMonsters,
+			UserID:            userID,
+			PlayerName:        playerName,
+			GroupID:           groupID,
+			CharacterType:     characterType,
+			IsWinner:          false,
+			Survived:          survived,
+			Deaths:            boolToInt(!survived),
+			ExpGained:         exp,
+			RewardsData:       rewardsJSON,
+			PlayerKills:       killsP,
+			MonsterKills:      killsM,
+			DamageTotal:       dmgTotal,
+			DamageToPlayers:   dmgPlayers,
+			DamageToMonsters:  dmgMonsters,
+			DamageTaken:       dmgTaken,
+			InventorySnapshot: append([]byte(nil), inventorySnapshot...),
 		})
 	}
 
@@ -1048,6 +1334,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		}
 	}
 	mr.WinnerUserIDs = winnerUserIDs
+	assignPlacements(mr.PlayerResults, defeatedUsers)
 
 	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
 	if len(mr.PlayerResults) == 0 {

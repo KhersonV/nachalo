@@ -260,22 +260,23 @@ func InsertMatch(
 // GetMatchByID – получает матч по instance_id из таблицы matches.
 func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 	query := `
-        SELECT
-            instance_id,
-            mode,
-            teams_count,
-            total_players,
-            map_width,
-            map_height,
-            map,
-            active_user_id,
-            turn_number,
-            start_positions,
-            portal_position,
-            COALESCE(quest_artifact_id, 0)
-        FROM matches
-        WHERE instance_id = $1
-    `
+		SELECT
+			instance_id,
+			mode,
+			teams_count,
+			total_players,
+			map_width,
+			map_height,
+			map,
+			active_user_id,
+			turn_number,
+			turn_order,
+			start_positions,
+			portal_position,
+			COALESCE(quest_artifact_id, 0)
+		FROM matches
+		WHERE instance_id = $1
+	`
 	match := &models.MatchInfo{}
 	err := DB.QueryRow(query, instanceID).Scan(
 		&match.InstanceID,
@@ -287,6 +288,7 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 		&match.Map,
 		&match.ActiveUserID,
 		&match.TurnNumber,
+		&match.TurnOrder,
 		&match.StartPositions,
 		&match.PortalPosition,
 		&match.QuestArtifactID,
@@ -710,24 +712,35 @@ func SaveMatchStats(stats *models.MatchInfo) error {
 	if err != nil {
 		winnerUserIDsJSON = []byte("[]")
 	}
+	participantsJSON, err := json.Marshal(stats.Participants)
+	if err != nil {
+		participantsJSON = []byte("[]")
+	}
 
 	query := `
-        INSERT INTO match_stats (instance_id, winner_id, winner_group_id, winner_user_ids, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO match_stats (instance_id, mode, winner_id, winner_group_id, winner_user_ids, participants, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (instance_id) DO UPDATE
-          SET winner_id       = EXCLUDED.winner_id,
+          SET mode            = EXCLUDED.mode,
+              winner_id       = EXCLUDED.winner_id,
               winner_group_id = EXCLUDED.winner_group_id,
               winner_user_ids = EXCLUDED.winner_user_ids,
+              participants    = EXCLUDED.participants,
               created_at      = EXCLUDED.created_at;
     `
 	// используем NOW(), но чтобы тестировать, передаём время из Go
-	now := time.Now().UTC()
+	finishedAt := stats.FinishedAt
+	if finishedAt.IsZero() {
+		finishedAt = time.Now().UTC()
+	}
 	if _, err := DB.Exec(query,
 		stats.InstanceID,
+		stats.Mode,
 		stats.WinnerID,
 		stats.WinnerGroupID,
 		winnerUserIDsJSON,
-		now,
+		participantsJSON,
+		finishedAt,
 	); err != nil {
 		return fmt.Errorf("SaveMatchStats: exec insert: %w", err)
 	}
@@ -746,24 +759,40 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
       INSERT INTO match_player_stats (
         instance_id,
         user_id,
+				player_name,
+				group_id,
+				character_type,
 				is_winner,
+				survived,
+				deaths,
         exp_gained,
         rewards,
         player_kills,
         monster_kills,
-        damage_total,
+				damage_total,
         damage_to_players,
-        damage_to_monsters
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        damage_to_monsters,
+				damage_taken,
+				placement,
+				inventory_snapshot
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       ON CONFLICT (instance_id, user_id) DO UPDATE SET
+				player_name       = EXCLUDED.player_name,
+				group_id          = EXCLUDED.group_id,
+				character_type    = EXCLUDED.character_type,
 				is_winner         = EXCLUDED.is_winner,
+				survived          = EXCLUDED.survived,
+				deaths            = EXCLUDED.deaths,
         exp_gained         = EXCLUDED.exp_gained,
         rewards            = EXCLUDED.rewards,
         player_kills       = EXCLUDED.player_kills,
         monster_kills      = EXCLUDED.monster_kills,
         damage_total       = EXCLUDED.damage_total,
         damage_to_players  = EXCLUDED.damage_to_players,
-        damage_to_monsters = EXCLUDED.damage_to_monsters;
+        damage_to_monsters = EXCLUDED.damage_to_monsters,
+				damage_taken      = EXCLUDED.damage_taken,
+				placement         = EXCLUDED.placement,
+				inventory_snapshot = EXCLUDED.inventory_snapshot;
     `)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
@@ -774,7 +803,12 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
 		if _, err := stmt.Exec(
 			instanceID,
 			pr.UserID,
+			pr.PlayerName,
+			pr.GroupID,
+			pr.CharacterType,
 			pr.IsWinner,
+			pr.Survived,
+			pr.Deaths,
 			pr.ExpGained,
 			pr.RewardsData,
 			pr.PlayerKills,
@@ -782,6 +816,9 @@ func SaveMatchPlayerStats(instanceID string, results []game.PlayerResult) error 
 			pr.DamageTotal,
 			pr.DamageToPlayers,
 			pr.DamageToMonsters,
+			pr.DamageTaken,
+			pr.Placement,
+			pr.InventorySnapshot,
 		); err != nil {
 			return fmt.Errorf("exec for user %d: %w", pr.UserID, err)
 		}
@@ -810,19 +847,26 @@ func LoadMatchStats(instanceID string) (*models.MatchInfo, error) {
 	query := `
     SELECT 
       ms.instance_id,
+      COALESCE(ms.mode, ''),
       ms.winner_id,
       ms.winner_group_id,
-      COALESCE(ms.winner_user_ids, '[]'::jsonb)
+      COALESCE(ms.winner_user_ids, '[]'::jsonb),
+      COALESCE(ms.participants, '[]'::jsonb),
+      ms.created_at
     FROM match_stats ms
     WHERE ms.instance_id = $1
     `
 	row := DB.QueryRow(query, instanceID)
 	var winnerUserIDsRaw []byte
+	var participantsRaw []byte
 	if err := row.Scan(
 		&mi.InstanceID,
+		&mi.Mode,
 		&mi.WinnerID,
 		&mi.WinnerGroupID,
 		&winnerUserIDsRaw,
+		&participantsRaw,
+		&mi.FinishedAt,
 	); err != nil {
 		return nil, fmt.Errorf("LoadMatchStats: scan error: %w", err)
 	}
@@ -830,6 +874,11 @@ func LoadMatchStats(instanceID string) (*models.MatchInfo, error) {
 	if len(winnerUserIDsRaw) > 0 {
 		if err := json.Unmarshal(winnerUserIDsRaw, &mi.WinnerUserIDs); err != nil {
 			mi.WinnerUserIDs = []int{}
+		}
+	}
+	if len(participantsRaw) > 0 {
+		if err := json.Unmarshal(participantsRaw, &mi.Participants); err != nil {
+			mi.Participants = []models.MatchParticipantSnapshot{}
 		}
 	}
 
@@ -842,13 +891,22 @@ func LoadMatchPlayerStats(instanceID string) ([]models.PlayerMatchStat, error) {
     SELECT 
       instance_id,
       user_id,
+      player_name,
+      group_id,
+      character_type,
+      is_winner,
+      survived,
+      deaths,
       exp_gained,
       rewards,
       player_kills,
       monster_kills,
       damage_total,
       damage_to_players,
-      damage_to_monsters
+      damage_to_monsters,
+      damage_taken,
+      placement,
+      inventory_snapshot
     FROM match_player_stats
     WHERE instance_id = $1
     ORDER BY user_id
@@ -865,6 +923,12 @@ func LoadMatchPlayerStats(instanceID string) ([]models.PlayerMatchStat, error) {
 		if err := rows.Scan(
 			&s.InstanceID,
 			&s.UserID,
+			&s.PlayerName,
+			&s.GroupID,
+			&s.CharacterType,
+			&s.IsWinner,
+			&s.Survived,
+			&s.Deaths,
 			&s.ExpGained,
 			&s.Rewards,
 			&s.PlayerKills,
@@ -872,6 +936,9 @@ func LoadMatchPlayerStats(instanceID string) ([]models.PlayerMatchStat, error) {
 			&s.DamageTotal,
 			&s.DamageToPlayers,
 			&s.DamageToMonsters,
+			&s.DamageTaken,
+			&s.Placement,
+			&s.InventorySnapshot,
 		); err != nil {
 			return nil, fmt.Errorf("LoadMatchPlayerStats: scan error: %w", err)
 		}

@@ -11,15 +11,23 @@ import (
 
 // PlayerResult — результат одного игрока
 type PlayerResult struct {
-	UserID           int             // ID игрока
-	IsWinner         bool            // победил ли игрок в этом матче
-	ExpGained        int             // сколько опыта дать
-	RewardsData      json.RawMessage // JSON-представление наград
-	PlayerKills      int             // сколько игроков убил
-	MonsterKills     int             // сколько монстров убил
-	DamageTotal      int             // общий нанесённый урон
-	DamageToPlayers  int             // урон, нанесённый другим игрокам
-	DamageToMonsters int             // урон, нанесённый монстрам
+	UserID            int             // ID игрока
+	PlayerName        string          // имя игрока на момент завершения матча
+	GroupID           int             // команда / группа игрока в матче
+	CharacterType     string          // архетип персонажа на момент матча
+	IsWinner          bool            // победил ли игрок в этом матче
+	Survived          bool            // дожил ли игрок до финала матча
+	Deaths            int             // количество смертей в матче
+	ExpGained         int             // сколько опыта дать
+	RewardsData       json.RawMessage // JSON-представление наград
+	PlayerKills       int             // сколько игроков убил
+	MonsterKills      int             // сколько монстров убил
+	DamageTotal       int             // общий нанесённый урон
+	DamageToPlayers   int             // урон, нанесённый другим игрокам
+	DamageToMonsters  int             // урон, нанесённый монстрам
+	DamageTaken       int             // урон, полученный игроком
+	Placement         int             // итоговое место в матче
+	InventorySnapshot json.RawMessage // финальный снимок инвентаря/лута
 }
 
 // MatchResults — итоги по всему матчу
@@ -60,6 +68,7 @@ type KillEvent struct {
 type DamageEvent struct {
 	DealerID   int
 	TargetType string // "player" или "monster"
+	TargetID   int
 	Amount     int
 }
 
@@ -86,6 +95,7 @@ type MatchState struct {
 	BerserkerFury        map[int]int
 	MysticDrains         map[string]int
 	GuardianAuraPressure map[int]GuardianAuraPressureState
+	DefeatedUsers        []int
 	CombatSequence       uint64
 	mu                   sync.Mutex
 }

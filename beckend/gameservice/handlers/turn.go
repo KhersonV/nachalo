@@ -105,7 +105,7 @@ func applyTurretDamage(instanceID string, ownerUserID int, targetType string, ta
 
 	// Засчитываем урон владельцу турели
 	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RecordDamageEvent(ownerUserID, targetType, targetRes.Damage)
+		ms.RecordDamageEvent(ownerUserID, targetType, targetID, targetRes.Damage)
 	}
 
 	saveTargetHealth(

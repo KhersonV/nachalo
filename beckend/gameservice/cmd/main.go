@@ -160,6 +160,14 @@ func main() {
 		"/game/match/{instance_id}/my-stats",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
 	).Methods("GET")
+	router.Handle(
+		"/game/matches/history",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ListCompletedMatchesHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/matches/history/{instance_id}",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetCompletedMatchDetailsHandler)),
+	).Methods("GET")
 
 	router.Handle(
 		"/game/match/{instance_id}/use-scroll",

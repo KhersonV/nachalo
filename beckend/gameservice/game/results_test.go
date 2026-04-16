@@ -14,9 +14,10 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 			{KillerID: userID, VictimType: "player", Damage: 77},
 		},
 		DamageEvents: []DamageEvent{
-			{DealerID: userID, TargetType: "monster", Amount: 24},
-			{DealerID: userID, TargetType: "player", Amount: 11},
-			{DealerID: 99, TargetType: "monster", Amount: 1000},
+			{DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 24},
+			{DealerID: userID, TargetType: "player", TargetID: 11, Amount: 11},
+			{DealerID: 99, TargetType: "player", TargetID: userID, Amount: 9},
+			{DealerID: 99, TargetType: "monster", TargetID: 2, Amount: 1000},
 		},
 	}
 	MatchStatesMu.Unlock()
@@ -27,7 +28,7 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 		MatchStatesMu.Unlock()
 	})
 
-	exp, rewards, playerKills, monsterKills, dmgTotal, dmgPlayers, dmgMonsters, err := CalculateResults(instanceID, userID, true)
+	exp, rewards, playerKills, monsterKills, dmgTotal, dmgPlayers, dmgMonsters, dmgTaken, err := CalculateResults(instanceID, userID, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -47,6 +48,9 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 	}
 	if dmgTotal != 35 {
 		t.Fatalf("expected dmgTotal=35 (players+monsters), got %d", dmgTotal)
+	}
+	if dmgTaken != 9 {
+		t.Fatalf("expected dmgTaken=9, got %d", dmgTaken)
 	}
 
 	// XP = floor(24/5)*1 + floor(11/5)*2 = 4 + 4 = 8
@@ -77,7 +81,7 @@ func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
 			{KillerID: userID, VictimType: "monster", Damage: 10},
 		},
 		DamageEvents: []DamageEvent{
-			{DealerID: userID, TargetType: "monster", Amount: 10},
+			{DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 10},
 		},
 	}
 	MatchStatesMu.Unlock()
@@ -88,7 +92,7 @@ func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
 		MatchStatesMu.Unlock()
 	})
 
-	_, rewards, _, _, _, _, _, err := CalculateResults(instanceID, userID, false)
+	_, rewards, _, _, _, _, _, _, err := CalculateResults(instanceID, userID, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -19,19 +19,19 @@ import (
 
 // DTO для ответа на создание и получение матча
 type MatchResponse struct {
-	InstanceID              string                  `json:"instance_id"`
-	Mode                    string                  `json:"mode"`
-	TeamsCount              int                     `json:"teams_count"`
-	TotalPlayers            int                     `json:"total_players"`
-	MapWidth                int                     `json:"map_width"`
-	MapHeight               int                     `json:"map_height"`
-	Map                     []game.FullCell         `json:"map"`
-	Players                 []models.PlayerResponse `json:"players"`
-	ActiveUser              int                     `json:"active_user"`
-	TurnNumber              int                     `json:"turn_number"`
-	StartPositions          [][2]int                `json:"start_positions"`
-	PortalPosition          [2]int                  `json:"portal_position"`
-	Winner                  *models.WinnerInfo      `json:"winner,omitempty"`
+	InstanceID               string                  `json:"instance_id"`
+	Mode                     string                  `json:"mode"`
+	TeamsCount               int                     `json:"teams_count"`
+	TotalPlayers             int                     `json:"total_players"`
+	MapWidth                 int                     `json:"map_width"`
+	MapHeight                int                     `json:"map_height"`
+	Map                      []game.FullCell         `json:"map"`
+	Players                  []models.PlayerResponse `json:"players"`
+	ActiveUser               int                     `json:"active_user"`
+	TurnNumber               int                     `json:"turn_number"`
+	StartPositions           [][2]int                `json:"start_positions"`
+	PortalPosition           [2]int                  `json:"portal_position"`
+	Winner                   *models.WinnerInfo      `json:"winner,omitempty"`
 	QuestArtifactID          int                     `json:"quest_artifact_id"`
 	QuestArtifactName        string                  `json:"quest_artifact_name"`
 	QuestArtifactImage       string                  `json:"quest_artifact_image"`
@@ -78,16 +78,14 @@ func insertMatchMonsters(instanceID string, cells []game.FullCell) error {
 			Vision:          md.Vision,
 			Image:           md.Image,
 		}
-	dbID, err := repository.InsertMatchMonsterReturningID(mm)
-if err != nil {
-    return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
-}
-cell.Monster.DBInstanceID = dbID // <- запишем id в клетку!
+		dbID, err := repository.InsertMatchMonsterReturningID(mm)
+		if err != nil {
+			return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
+		}
+		cell.Monster.DBInstanceID = dbID // <- запишем id в клетку!
 	}
 	return nil
 }
-
-
 
 // Сборка полного MatchResponse по instanceID. Возвращает структуру и ошибку.
 func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
@@ -116,6 +114,34 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 	players, err := repository.GetPlayersInMatch(instanceID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Поправим порядок игроков по серверному turn_order (если он задан),
+	// чтобы фронтенд видел игроков в той же последовательности, что и сервер.
+	if len(match.TurnOrder) > 0 {
+		var turnOrderIDs []int
+		if err := json.Unmarshal(match.TurnOrder, &turnOrderIDs); err == nil {
+			byID := make(map[int]models.PlayerResponse, len(players))
+			for _, p := range players {
+				byID[p.UserID] = p
+			}
+			ordered := make([]models.PlayerResponse, 0, len(players))
+			used := make(map[int]bool)
+			for _, uid := range turnOrderIDs {
+				if pl, ok := byID[uid]; ok {
+					ordered = append(ordered, pl)
+					used[uid] = true
+				}
+			}
+			for _, p := range players {
+				if !used[p.UserID] {
+					ordered = append(ordered, p)
+				}
+			}
+			players = ordered
+		} else {
+			log.Printf("[BuildMatchResponse] failed to parse turn_order for %s: %v", instanceID, err)
+		}
 	}
 
 	var fullMap []game.FullCell
@@ -158,8 +184,6 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 	}
 	return resp, nil
 }
-
-
 
 // assignMatchPlayers создаёт копии игроков в матче с их стартовыми позициями.
 // Если для какого-то игрока не получится получить данные или вставить — логируем и продолжаем.
@@ -219,7 +243,6 @@ func assignMatchPlayers(
 	return nil
 }
 
-
 func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	return &game.MonsterState{
 		ID:                md.ID,
@@ -235,17 +258,15 @@ func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
 	}
 }
 
-
-
 func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-    instanceID := r.URL.Query().Get("instance_id")
-    if instanceID == "" {
+	instanceID := r.URL.Query().Get("instance_id")
+	if instanceID == "" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "instance_id обязателен"})
-        return
-    }
-    resp, err := BuildMatchResponse(instanceID)
-    if err != nil {
+		return
+	}
+	resp, err := BuildMatchResponse(instanceID)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNotFound)
@@ -254,14 +275,11 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-        return
-    }
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
-
-
-
 
 func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -381,51 +399,48 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		handleError(w, "[CreateMatch] failed to update map with monster db_instance_id", err)
 		return
 	}
-// 9. Копируем игроков в матч
-if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, req.GroupIDs, startPositions, req.Mode); err != nil {
-	_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
-	handleError(w, "[CreateMatch] failed to assign players", err)
-	return
-}
+	// 9. Копируем игроков в матч
+	if err := assignMatchPlayers(req.InstanceID, req.PlayerIDs, req.GroupIDs, startPositions, req.Mode); err != nil {
+		_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
+		handleError(w, "[CreateMatch] failed to assign players", err)
+		return
+	}
 
+	// 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
+	if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
+		log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
+	}
+	// Запускаем таймер хода для первого игрока
+	startTurnTimer(req.InstanceID, req.PlayerIDs[0])
 
-// 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
-if err := repository.UpdateMatchTurn(req.InstanceID, req.PlayerIDs[0], 1); err != nil {
-	log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
-}
-// Запускаем таймер хода для первого игрока
-startTurnTimer(req.InstanceID, req.PlayerIDs[0])
+	// 11. Теперь получаем список игроков для ответа (они уже точно есть!)
+	playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
+	if err != nil {
+		handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
+		return
+	}
 
-// 11. Теперь получаем список игроков для ответа (они уже точно есть!)
-playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
-if err != nil {
-	handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
-	return
+	// 12. Собираем и отдаём JSON-ответ
+	resp := MatchResponse{
+		InstanceID:               req.InstanceID,
+		Mode:                     req.Mode,
+		TeamsCount:               req.TeamsCount,
+		TotalPlayers:             req.TotalPlayers,
+		MapWidth:                 mapWidth,
+		MapHeight:                mapHeight,
+		Map:                      fullMap,
+		Players:                  playersInMatch,
+		ActiveUser:               req.PlayerIDs[0],
+		TurnNumber:               1,
+		StartPositions:           startPositions,
+		PortalPosition:           portalPos,
+		QuestArtifactID:          questArtifact.ID,
+		QuestArtifactName:        questArtifact.Name,
+		QuestArtifactImage:       questArtifact.Image,
+		QuestArtifactDescription: questArtifact.Description,
+	}
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Printf("[CreateMatch] Encode response failed: %v", err)
+	}
 }
-
-// 12. Собираем и отдаём JSON-ответ
-resp := MatchResponse{
-	InstanceID:               req.InstanceID,
-	Mode:                     req.Mode,
-	TeamsCount:               req.TeamsCount,
-	TotalPlayers:             req.TotalPlayers,
-	MapWidth:                 mapWidth,
-	MapHeight:                mapHeight,
-	Map:                      fullMap,
-	Players:                  playersInMatch,
-	ActiveUser:               req.PlayerIDs[0],
-	TurnNumber:               1,
-	StartPositions:           startPositions,
-	PortalPosition:           portalPos,
-	QuestArtifactID:          questArtifact.ID,
-	QuestArtifactName:        questArtifact.Name,
-	QuestArtifactImage:       questArtifact.Image,
-	QuestArtifactDescription: questArtifact.Description,
-}
-w.WriteHeader(http.StatusCreated)
-if err := json.NewEncoder(w).Encode(resp); err != nil {
-	log.Printf("[CreateMatch] Encode response failed: %v", err)
-}
-}
-
-

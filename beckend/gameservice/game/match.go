@@ -30,13 +30,16 @@ func (m *MatchState) EndTurn(currentPlayerID int) (int, error) {
 		return 0, ErrNotYourTurn
 	}
 
-	// Найти текущий индекс, если есть
-	startIdx := 0
+	// Найти текущий индекс в очереди. Если игрока нет — ошибка.
+	startIdx := -1
 	for i, id := range m.TurnOrder {
 		if id == currentPlayerID {
 			startIdx = i
 			break
 		}
+	}
+	if startIdx == -1 {
+		return 0, ErrPlayerNotInOrder
 	}
 
 	// Ищем следующего — всегда берём (startIdx+1)%n
@@ -84,12 +87,16 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 	// Если умерший был активным, выбираем следующего по индексу без инкремента turnNumber
 	if m.ActiveUserID == userID {
 		// Найдём позицию погибшего в oldOrder
-		removedIdx := 0
+		removedIdx := -1
 		for i, id := range oldOrder {
 			if id == userID {
 				removedIdx = i
 				break
 			}
+		}
+		if removedIdx == -1 {
+			// Игрока не было в старом порядке — ничего не меняем
+			return
 		}
 		// Следующий игрок — тот, кто оказался на той же позиции (modulo новый размер)
 		nextIdx := removedIdx % len(newOrder)
@@ -145,12 +152,13 @@ func (m *MatchState) NextCombatExchangeMeta() (turn int, seq uint64) {
 }
 
 // RecordDamageEvent добавляет в память факт нанесённого урона.
-func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, amount int) {
+func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, targetID int, amount int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DamageEvents = append(m.DamageEvents, DamageEvent{
 		DealerID:   dealerID,
 		TargetType: targetType,
+		TargetID:   targetID,
 		Amount:     amount,
 	})
 }
@@ -164,6 +172,26 @@ func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int
 		VictimType: victimType,
 		Damage:     damage,
 	})
+}
+
+func (m *MatchState) RecordPlayerDefeat(userID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, defeatedUserID := range m.DefeatedUsers {
+		if defeatedUserID == userID {
+			return
+		}
+	}
+
+	m.DefeatedUsers = append(m.DefeatedUsers, userID)
+}
+
+func (m *MatchState) SnapshotDefeatedUsers() []int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return append([]int(nil), m.DefeatedUsers...)
 }
 
 func combatTargetKey(targetType string, targetID int) string {
