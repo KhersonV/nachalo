@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"gameservice/game"
 	"gameservice/middleware"
+	"gameservice/models"
 	"gameservice/repository"
 	"log"
 	"net/http"
@@ -91,7 +92,7 @@ func progressConstructionByTurn(instanceID string) error {
 	return nil
 }
 
-func applyTurretDamage(instanceID string, ownerUserID int, targetType string, targetID int, turretAttack int, targetDefense int, targetHealth int) {
+func applyTurretDamage(instanceID string, ownerUserID int, targetType string, targetID int, turretAttack int, targetDefense int, targetHealth int) attackResult {
 	attackerStats := stats{
 		Attack: turretAttack,
 	}
@@ -119,6 +120,67 @@ func applyTurretDamage(instanceID string, ownerUserID int, targetType string, ta
 
 	if targetType == "player" && targetRes.NewHealth > 0 {
 		sendUpdatePlayerWS(instanceID, targetID)
+	}
+
+	return targetRes
+}
+
+func broadcastMonsterCellUpdate(instanceID string, monsterID int) {
+	monster, err := Combat.GetMonster(instanceID, monsterID)
+	if err != nil || monster == nil {
+		return
+	}
+
+	cells, err := Combat.LoadMap(instanceID)
+	if err != nil {
+		return
+	}
+
+	for i := range cells {
+		if cells[i].X != monster.X || cells[i].Y != monster.Y {
+			continue
+		}
+
+		update := map[string]interface{}{
+			"type": "UPDATE_CELL",
+			"payload": map[string]interface{}{
+				"instanceId":  instanceID,
+				"updatedCell": serialiseUpdatedCell(cells[i]),
+			},
+		}
+		buf, _ := json.Marshal(update)
+		Broadcast(buf)
+		return
+	}
+}
+
+func applyTurretDamageToPlayer(instanceID string, turret *game.FullCell, target *models.PlayerResponse) {
+	result := applyTurretDamage(
+		instanceID,
+		turret.StructureOwnerUserID,
+		"player",
+		target.UserID,
+		turret.StructureAttack,
+		target.Defense,
+		target.Health,
+	)
+	target.Health = result.NewHealth
+}
+
+func applyTurretDamageToMonster(instanceID string, turret *game.FullCell, target *repository.MatchMonster) {
+	result := applyTurretDamage(
+		instanceID,
+		turret.StructureOwnerUserID,
+		"monster",
+		target.MonsterInstanceID,
+		turret.StructureAttack,
+		target.Defense,
+		target.Health,
+	)
+	target.Health = result.NewHealth
+
+	if result.NewHealth > 0 {
+		broadcastMonsterCellUpdate(instanceID, target.MonsterInstanceID)
 	}
 }
 
@@ -184,7 +246,8 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 		attacked := false
 
 		// 1) Приоритет — вражеский игрок
-		for _, p := range players {
+		for i := range players {
+			p := &players[i]
 			if p.Health <= 0 {
 				continue
 			}
@@ -207,22 +270,15 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 
 			cell.StructureEnergy -= turretAttackCost
 			modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
-			applyTurretDamage(
-				instanceID,
-				cell.StructureOwnerUserID,
-				"player",
-				p.UserID,
-				cell.StructureAttack,
-				p.Defense,
-				p.Health,
-			)
+			applyTurretDamageToPlayer(instanceID, cell, p)
 			attacked = true
 			break
 		}
 
 		// 2) Если не атаковали игрока — атакуем монстра
 		if !attacked {
-			for _, m := range monsters {
+			for i := range monsters {
+				m := &monsters[i]
 				if m.Health <= 0 {
 					continue
 				}
@@ -239,15 +295,7 @@ func progressStructuresEffectsByTurn(instanceID string) error {
 
 				cell.StructureEnergy -= turretAttackCost
 				modified[fmt.Sprintf("%d:%d", cell.X, cell.Y)] = true
-				applyTurretDamage(
-					instanceID,
-					cell.StructureOwnerUserID,
-					"monster",
-					m.MonsterInstanceID,
-					cell.StructureAttack,
-					m.Defense,
-					m.Health,
-				)
+				applyTurretDamageToMonster(instanceID, cell, m)
 				break
 			}
 		}
