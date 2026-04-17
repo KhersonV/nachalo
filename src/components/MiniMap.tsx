@@ -37,17 +37,23 @@ type MiniMapCellState = {
     isPinged: boolean;
 };
 
+type MiniMapCellButtonProps = {
+    state: MiniMapCellState;
+    myPlayerId?: number;
+    activeUserId?: number;
+    onCellClick: (state: MiniMapCellState) => void;
+};
+
 type MiniMapSize = "small" | "large";
 
 const MAX_RENDERED_PLAYER_MARKERS = 3;
 const SIZE_STORAGE_KEY = "minimap:size";
 const LOCAL_PING_DURATION_MS = 1600;
-const DEVICE_PIXEL_RATIO_FALLBACK = 1;
 
 const PLAYER_MARKER_LAYOUT = [
-    { x: 0.5, y: 0.5, radius: 0.18 },
-    { x: 0.68, y: 0.28, radius: 0.14 },
-    { x: 0.32, y: 0.68, radius: 0.14 },
+    { x: 0.5, y: 0.5 },
+    { x: 0.68, y: 0.28 },
+    { x: 0.32, y: 0.68 },
 ];
 
 const FALLBACK_UNKNOWN_CELL: Cell = {
@@ -80,17 +86,21 @@ function MiniMap({
         x: number;
         y: number;
     } | null>(null);
-    const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-    const canvasHostRef = React.useRef<HTMLDivElement | null>(null);
-    const [canvasBounds, setCanvasBounds] = React.useState({
-        width: 0,
-        height: 0,
-    });
+    const lastPersistedExplorationRef = React.useRef("");
+
+    const deferredGrid = React.useDeferredValue(grid);
+    const deferredPlayers = React.useDeferredValue(players);
+    const deferredViewportCells = React.useDeferredValue(viewportCells);
+    const deferredCameraCenterPosition =
+        React.useDeferredValue(cameraCenterPosition);
 
     const myPlayer = React.useMemo(
-        () => players.find((player) => player.user_id === myPlayerId),
-        [players, myPlayerId],
+        () =>
+            deferredPlayers.find((player) => player.user_id === myPlayerId),
+        [deferredPlayers, myPlayerId],
     );
+
+    const effectiveSightRange = myPlayer?.sightRange ?? sightRange;
 
     React.useEffect(() => {
         if (typeof window === "undefined") return;
@@ -131,45 +141,6 @@ function MiniMap({
         setLocalPingPoint(null);
     }, [instanceId, myPlayerId]);
 
-    React.useEffect(() => {
-        const host = canvasHostRef.current;
-        if (!host || typeof ResizeObserver === "undefined") {
-            return;
-        }
-
-        const updateBounds = () => {
-            const rect = host.getBoundingClientRect();
-            setCanvasBounds((prev) => {
-                const nextWidth = Math.max(1, Math.round(rect.width));
-                const nextHeight = Math.max(1, Math.round(rect.height));
-
-                if (
-                    prev.width === nextWidth &&
-                    prev.height === nextHeight
-                ) {
-                    return prev;
-                }
-
-                return {
-                    width: nextWidth,
-                    height: nextHeight,
-                };
-            });
-        };
-
-        updateBounds();
-
-        const observer = new ResizeObserver(() => {
-            updateBounds();
-        });
-
-        observer.observe(host);
-
-        return () => {
-            observer.disconnect();
-        };
-    }, []);
-
     const explorationStorageKey = React.useMemo(() => {
         if (!instanceId || !myPlayerId) return "";
 
@@ -187,10 +158,16 @@ function MiniMap({
             return next;
         }
 
-        const minX = Math.max(0, myPlayer.position.x - sightRange);
-        const maxX = Math.min(mapWidth - 1, myPlayer.position.x + sightRange);
-        const minY = Math.max(0, myPlayer.position.y - sightRange);
-        const maxY = Math.min(mapHeight - 1, myPlayer.position.y + sightRange);
+        const minX = Math.max(0, myPlayer.position.x - effectiveSightRange);
+        const maxX = Math.min(
+            mapWidth - 1,
+            myPlayer.position.x + effectiveSightRange,
+        );
+        const minY = Math.max(0, myPlayer.position.y - effectiveSightRange);
+        const maxY = Math.min(
+            mapHeight - 1,
+            myPlayer.position.y + effectiveSightRange,
+        );
 
         for (let y = minY; y <= maxY; y++) {
             for (let x = minX; x <= maxX; x++) {
@@ -199,7 +176,7 @@ function MiniMap({
         }
 
         return next;
-    }, [mapHeight, mapWidth, myPlayer, sightRange]);
+    }, [effectiveSightRange, mapHeight, mapWidth, myPlayer]);
 
     const exploredCells = React.useMemo(() => {
         const next = loadExploredCells(explorationStorageKey);
@@ -212,25 +189,39 @@ function MiniMap({
     }, [explorationStorageKey, visibleCells]);
 
     React.useEffect(() => {
-        if (!explorationStorageKey) return;
+        if (!explorationStorageKey) {
+            lastPersistedExplorationRef.current = "";
+            return;
+        }
+
+        const encoded = JSON.stringify(
+            Array.from(exploredCells.values()).sort((a, b) => a - b),
+        );
+        const persistKey = `${explorationStorageKey}:${encoded}`;
+
+        if (lastPersistedExplorationRef.current === persistKey) {
+            return;
+        }
+
+        lastPersistedExplorationRef.current = persistKey;
         persistExploredCells(explorationStorageKey, exploredCells);
     }, [explorationStorageKey, exploredCells]);
 
     const viewportRect = React.useMemo(() => {
         if (
             !myPlayer ||
-            !viewportCells ||
+            !deferredViewportCells ||
             mapWidth <= 0 ||
             mapHeight <= 0 ||
-            viewportCells.width <= 0 ||
-            viewportCells.height <= 0
+            deferredViewportCells.width <= 0 ||
+            deferredViewportCells.height <= 0
         ) {
             return null;
         }
 
-        const center = cameraCenterPosition ?? myPlayer.position;
-        const width = Math.min(mapWidth, viewportCells.width);
-        const height = Math.min(mapHeight, viewportCells.height);
+        const center = deferredCameraCenterPosition ?? myPlayer.position;
+        const width = Math.min(mapWidth, deferredViewportCells.width);
+        const height = Math.min(mapHeight, deferredViewportCells.height);
         const halfWidth = Math.floor(width / 2);
         const halfHeight = Math.floor(height / 2);
 
@@ -244,11 +235,11 @@ function MiniMap({
             maxY: minY + height - 1,
         };
     }, [
-        cameraCenterPosition,
+        deferredCameraCenterPosition,
+        deferredViewportCells,
         mapHeight,
         mapWidth,
         myPlayer,
-        viewportCells,
     ]);
 
     const playersByCellIndex = React.useMemo(() => {
@@ -258,7 +249,7 @@ function MiniMap({
             return next;
         }
 
-        for (const player of players) {
+        for (const player of deferredPlayers) {
             const idx = getCellIndex(
                 player.position.x,
                 player.position.y,
@@ -274,12 +265,12 @@ function MiniMap({
         }
 
         return next;
-    }, [mapHeight, mapWidth, players]);
+    }, [deferredPlayers, mapHeight, mapWidth]);
 
     const resolveCellState = React.useCallback(
         (x: number, y: number): MiniMapCellState => {
             const cellIndex = getCellIndex(x, y, mapWidth);
-            const cell = grid[cellIndex] ?? {
+            const cell = deferredGrid[cellIndex] ?? {
                 ...FALLBACK_UNKNOWN_CELL,
                 cell_id: cellIndex + 1,
                 x,
@@ -319,8 +310,8 @@ function MiniMap({
             };
         },
         [
+            deferredGrid,
             exploredCells,
-            grid,
             localPingPoint,
             mapWidth,
             playersByCellIndex,
@@ -329,118 +320,27 @@ function MiniMap({
         ],
     );
 
-    React.useEffect(() => {
-        const canvas = canvasRef.current;
-        if (
-            !canvas ||
-            !myPlayer ||
-            mapWidth <= 0 ||
-            mapHeight <= 0 ||
-            canvasBounds.width <= 0 ||
-            canvasBounds.height <= 0
-        ) {
-            return;
-        }
-
-        const dpr =
-            typeof window !== "undefined"
-                ? window.devicePixelRatio || DEVICE_PIXEL_RATIO_FALLBACK
-                : DEVICE_PIXEL_RATIO_FALLBACK;
-
-        canvas.width = Math.max(1, Math.round(canvasBounds.width * dpr));
-        canvas.height = Math.max(1, Math.round(canvasBounds.height * dpr));
-        canvas.style.width = `${canvasBounds.width}px`;
-        canvas.style.height = `${canvasBounds.height}px`;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, canvasBounds.width, canvasBounds.height);
-        ctx.imageSmoothingEnabled = false;
-
-        const cellWidth = canvasBounds.width / mapWidth;
-        const cellHeight = canvasBounds.height / mapHeight;
+    const cellStates = React.useMemo(() => {
+        const next: MiniMapCellState[] = [];
 
         for (let y = 0; y < mapHeight; y++) {
             for (let x = 0; x < mapWidth; x++) {
-                const state = resolveCellState(x, y);
-                drawMiniMapCell(
-                    ctx,
-                    state,
-                    x * cellWidth,
-                    y * cellHeight,
-                    cellWidth,
-                    cellHeight,
-                    myPlayerId,
-                    activeUserId,
-                );
+                next.push(resolveCellState(x, y));
             }
         }
-    }, [
-        activeUserId,
-        canvasBounds.height,
-        canvasBounds.width,
-        mapHeight,
-        mapWidth,
-        myPlayer,
-        myPlayerId,
-        resolveCellState,
-    ]);
 
-    const resolveCanvasPoint = React.useCallback(
-        (event: React.MouseEvent<HTMLCanvasElement>) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) {
-                return null;
-            }
+        return next;
+    }, [mapHeight, mapWidth, resolveCellState]);
 
-            const rawX = ((event.clientX - rect.left) / rect.width) * mapWidth;
-            const rawY =
-                ((event.clientY - rect.top) / rect.height) * mapHeight;
-
-            return {
-                x: clamp(Math.floor(rawX), 0, Math.max(0, mapWidth - 1)),
-                y: clamp(Math.floor(rawY), 0, Math.max(0, mapHeight - 1)),
-            };
-        },
-        [mapHeight, mapWidth],
-    );
-
-    const handleCanvasClick = React.useCallback(
-        (event: React.MouseEvent<HTMLCanvasElement>) => {
-            const point = resolveCanvasPoint(event);
-            if (!point) return;
-
-            const state = resolveCellState(point.x, point.y);
+    const handleCellClick = React.useCallback(
+        (state: MiniMapCellState) => {
             if (state.visibility === "unknown") return;
 
+            const point = { x: state.cell.x, y: state.cell.y };
             setLocalPingPoint(point);
             onCellPing?.(point);
         },
-        [onCellPing, resolveCanvasPoint, resolveCellState],
-    );
-
-    const handleCanvasPointerMove = React.useCallback(
-        (event: React.MouseEvent<HTMLCanvasElement>) => {
-            const point = resolveCanvasPoint(event);
-            if (!point) return;
-
-            const state = resolveCellState(point.x, point.y);
-            event.currentTarget.title = buildCellTitle(
-                state.cell,
-                state.players,
-                state.visibility,
-            );
-        },
-        [resolveCanvasPoint, resolveCellState],
-    );
-
-    const handleCanvasPointerLeave = React.useCallback(
-        (event: React.MouseEvent<HTMLCanvasElement>) => {
-            event.currentTarget.title = "";
-        },
-        [],
+        [onCellPing],
     );
 
     if (!mapWidth || !mapHeight || !myPlayer) {
@@ -458,7 +358,7 @@ function MiniMap({
                 <div>
                     <div className={styles.title}>Minimap</div>
                     <div className={styles.subtitle}>
-                        {mapWidth}x{mapHeight} · vision {sightRange}
+                        {mapWidth}x{mapHeight} · vision {effectiveSightRange}
                     </div>
                 </div>
 
@@ -511,216 +411,300 @@ function MiniMap({
 
             <div className={styles.grid}>
                 <div
-                    ref={canvasHostRef}
-                    className={styles.canvasFrame}
+                    className={styles.cells}
                     style={{
+                        gridTemplateColumns: `repeat(${mapWidth}, minmax(0, 1fr))`,
                         aspectRatio: `${mapWidth} / ${mapHeight}`,
                     }}
                 >
-                    <canvas
-                        ref={canvasRef}
-                        className={styles.canvas}
-                        onClick={handleCanvasClick}
-                        onMouseMove={handleCanvasPointerMove}
-                        onMouseLeave={handleCanvasPointerLeave}
-                    />
+                    {cellStates.map((state, index) => (
+                        <MiniMapCellButton
+                            key={`${state.cell.cell_id}:${index}`}
+                            state={state}
+                            myPlayerId={myPlayerId}
+                            activeUserId={activeUserId}
+                            onCellClick={handleCellClick}
+                        />
+                    ))}
                 </div>
             </div>
         </aside>
     );
 }
 
-export default React.memo(MiniMap);
+const MiniMapCellButton = React.memo(
+    function MiniMapCellButton({
+        state,
+        myPlayerId,
+        activeUserId,
+        onCellClick,
+    }: MiniMapCellButtonProps) {
+        const visiblePlayers = state.players.slice(0, MAX_RENDERED_PLAYER_MARKERS);
+
+        return (
+            <button
+                type="button"
+                className={getCellClassName(state)}
+                title={buildCellTitle(
+                    state.cell,
+                    state.players,
+                    state.visibility,
+                )}
+                onClick={() => onCellClick(state)}
+                disabled={state.visibility === "unknown"}
+            >
+                {state.visibility === "visible" && (
+                    <>
+                        {renderPointOfInterest(state.cell)}
+                        {visiblePlayers.map((player, playerIndex) => {
+                            const markerLayout =
+                                PLAYER_MARKER_LAYOUT[playerIndex] ??
+                                PLAYER_MARKER_LAYOUT[0];
+
+                            return (
+                                <span
+                                    key={`player:${player.user_id}:${playerIndex}`}
+                                    className={getPlayerMarkerClassName(
+                                        player,
+                                        myPlayerId,
+                                        activeUserId,
+                                        playerIndex > 0,
+                                    )}
+                                    style={{
+                                        left: `${markerLayout.x * 100}%`,
+                                        top: `${markerLayout.y * 100}%`,
+                                    }}
+                                />
+                            );
+                        })}
+                    </>
+                )}
+
+                {state.isPinged && <span className={styles.pingMarker} />}
+            </button>
+        );
+    },
+    areMiniMapCellButtonPropsEqual,
+);
+
+export default React.memo(MiniMap, areMiniMapPropsEqual);
+
+function areMiniMapPropsEqual(prev: MiniMapProps, next: MiniMapProps) {
+    return (
+        prev.grid === next.grid &&
+        prev.players === next.players &&
+        prev.instanceId === next.instanceId &&
+        prev.mapWidth === next.mapWidth &&
+        prev.mapHeight === next.mapHeight &&
+        prev.myPlayerId === next.myPlayerId &&
+        prev.activeUserId === next.activeUserId &&
+        prev.sightRange === next.sightRange &&
+        prev.onCellPing === next.onCellPing &&
+        areViewportCellsEqual(prev.viewportCells, next.viewportCells) &&
+        arePointsEqual(
+            prev.cameraCenterPosition ?? null,
+            next.cameraCenterPosition ?? null,
+        )
+    );
+}
+
+function areMiniMapCellButtonPropsEqual(
+    prev: MiniMapCellButtonProps,
+    next: MiniMapCellButtonProps,
+) {
+    return (
+        prev.myPlayerId === next.myPlayerId &&
+        prev.activeUserId === next.activeUserId &&
+        prev.onCellClick === next.onCellClick &&
+        areMiniMapCellStatesEqual(prev.state, next.state)
+    );
+}
+
+function areMiniMapCellStatesEqual(
+    prev: MiniMapCellState,
+    next: MiniMapCellState,
+) {
+    return (
+        prev.visibility === next.visibility &&
+        prev.isViewportEdge === next.isViewportEdge &&
+        prev.isPinged === next.isPinged &&
+        areRenderableCellsEqual(prev.cell, next.cell) &&
+        areRenderablePlayersEqual(prev.players, next.players)
+    );
+}
+
+function areRenderableCellsEqual(prev: Cell, next: Cell) {
+    return (
+        prev === next ||
+        (prev.cell_id === next.cell_id &&
+            prev.x === next.x &&
+            prev.y === next.y &&
+            prev.tileCode === next.tileCode &&
+            prev.isPortal === next.isPortal &&
+            !!prev.barbel === !!next.barbel &&
+            (prev.resource?.type ?? "") === (next.resource?.type ?? "") &&
+            (prev.monster?.name ?? "") === (next.monster?.name ?? "") &&
+            (prev.monster?.db_instance_id ??
+                prev.monster?.id ??
+                0) ===
+                (next.monster?.db_instance_id ??
+                    next.monster?.id ??
+                    0) &&
+            (prev.structure_type ?? "") === (next.structure_type ?? "") &&
+            !!prev.is_under_construction === !!next.is_under_construction)
+    );
+}
+
+function areRenderablePlayersEqual(
+    prev: PlayerState[],
+    next: PlayerState[],
+) {
+    if (prev === next) {
+        return true;
+    }
+
+    if (prev.length !== next.length) {
+        return false;
+    }
+
+    for (let i = 0; i < prev.length; i++) {
+        if (
+            prev[i]?.user_id !== next[i]?.user_id ||
+            prev[i]?.group_id !== next[i]?.group_id ||
+            prev[i]?.name !== next[i]?.name
+        ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function areViewportCellsEqual(
+    prev?: { width: number; height: number },
+    next?: { width: number; height: number },
+) {
+    return (
+        (prev?.width ?? 0) === (next?.width ?? 0) &&
+        (prev?.height ?? 0) === (next?.height ?? 0)
+    );
+}
+
+function arePointsEqual(
+    prev: { x: number; y: number } | null,
+    next: { x: number; y: number } | null,
+) {
+    return (
+        (prev?.x ?? -1) === (next?.x ?? -1) &&
+        (prev?.y ?? -1) === (next?.y ?? -1)
+    );
+}
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(Math.max(value, min), max);
 }
 
-function drawMiniMapCell(
-    ctx: CanvasRenderingContext2D,
-    state: MiniMapCellState,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-    myPlayerId?: number,
-    activeUserId?: number,
-) {
-    const { cell, players, visibility, isViewportEdge, isPinged } = state;
+function getCellClassName(state: MiniMapCellState) {
+    const classNames = [styles.cellButton, styles.cell];
 
-    ctx.fillStyle = getTerrainFill(cell, visibility);
-    ctx.fillRect(left, top, width, height);
-
-    if (visibility === "explored") {
-        ctx.fillStyle = "rgba(7, 12, 18, 0.55)";
-        ctx.fillRect(left, top, width, height);
+    if (state.visibility === "visible") {
+        classNames.push(styles.visibleCell);
+    } else if (state.visibility === "explored") {
+        classNames.push(styles.exploredCell);
+    } else {
+        classNames.push(styles.unknownCell);
     }
 
-    ctx.strokeStyle =
-        visibility === "unknown"
-            ? "rgba(15, 23, 32, 0.72)"
-            : "rgba(5, 12, 20, 0.32)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(left + 0.5, top + 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
+    if (state.visibility !== "unknown") {
+        classNames.push(getTerrainClassName(state.cell));
+    }
 
-    if (isViewportEdge) {
-        ctx.strokeStyle = "rgba(186, 230, 253, 0.76)";
-        ctx.lineWidth = Math.max(1, Math.min(width, height) * 0.08);
-        ctx.strokeRect(
-            left + ctx.lineWidth / 2,
-            top + ctx.lineWidth / 2,
-            Math.max(0, width - ctx.lineWidth),
-            Math.max(0, height - ctx.lineWidth),
+    if (state.isViewportEdge) {
+        classNames.push(styles.viewportEdge);
+    }
+
+    return classNames.join(" ");
+}
+
+function getTerrainClassName(cell: Cell) {
+    if (cell.isPortal) return styles.portalCell;
+    if (cell.structure_type) return styles.structureCell;
+    if (cell.monster) return styles.monsterCell;
+    if (cell.resource) return styles.resourceCell;
+    if (cell.barbel) return styles.barrelCell;
+    if (cell.tileCode === 32) return styles.blockedCell;
+    if (cell.tileCode === 80) return styles.startCell;
+    if (cell.tileCode === 48) return styles.walkableCell;
+    return styles.borderCell;
+}
+
+function renderPointOfInterest(cell: Cell) {
+    if (cell.is_under_construction) {
+        return (
+            <span
+                className={`${styles.poiMarker} ${styles.constructionMarker}`}
+            />
         );
     }
 
-    if (visibility === "visible") {
-        drawPointOfInterest(ctx, cell, left, top, width, height);
-
-        const visiblePlayers = players.slice(0, MAX_RENDERED_PLAYER_MARKERS);
-        visiblePlayers.forEach((player, index) => {
-            const marker = PLAYER_MARKER_LAYOUT[index] ?? PLAYER_MARKER_LAYOUT[0];
-            const centerX = left + width * marker.x;
-            const centerY = top + height * marker.y;
-            const radius = Math.max(1.5, Math.min(width, height) * marker.radius);
-
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.fillStyle = getGroupFill(player.group_id);
-            ctx.fill();
-
-            ctx.strokeStyle = "rgba(6, 11, 18, 0.85)";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            if (player.user_id === myPlayerId) {
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius + 1.5, 0, Math.PI * 2);
-                ctx.strokeStyle = "rgba(34, 197, 94, 0.7)";
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-
-            if (player.user_id === activeUserId) {
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius + 3.5, 0, Math.PI * 2);
-                ctx.strokeStyle = "rgba(250, 204, 21, 0.92)";
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-            }
-        });
-    }
-
-    if (isPinged) {
-        const centerX = left + width / 2;
-        const centerY = top + height / 2;
-        const radius = Math.max(3, Math.min(width, height) * 0.36);
-
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(186, 230, 253, 0.95)";
-        ctx.lineWidth = Math.max(1, Math.min(width, height) * 0.08);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius * 0.58, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.65)";
-        ctx.lineWidth = Math.max(1, Math.min(width, height) * 0.06);
-        ctx.stroke();
-    }
-}
-
-function drawPointOfInterest(
-    ctx: CanvasRenderingContext2D,
-    cell: Cell,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-) {
-    const centerX = left + width / 2;
-    const centerY = top + height / 2;
-    const radius = Math.max(1.5, Math.min(width, height) * 0.14);
-
-    if (cell.resource || cell.barbel) {
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = cell.barbel ? "#fdba74" : "#7dd3fc";
-        ctx.fill();
-        ctx.strokeStyle = cell.barbel
-            ? "rgba(146, 64, 14, 0.9)"
-            : "rgba(3, 105, 161, 0.85)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-    }
-
-    if (cell.monster) {
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius + 0.5, 0, Math.PI * 2);
-        ctx.fillStyle = "#fee2e2";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(127, 39, 39, 0.8)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-    }
-
     if (cell.structure_type) {
-        const side = Math.max(3, Math.min(width, height) * 0.32);
-        ctx.fillStyle = cell.is_under_construction
-            ? "rgba(251, 191, 36, 0.9)"
-            : "rgba(17, 24, 39, 0.78)";
-        ctx.strokeStyle = cell.is_under_construction
-            ? "rgba(120, 53, 15, 0.92)"
-            : "rgba(255, 255, 255, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.fillRect(centerX - side / 2, centerY - side / 2, side, side);
-        ctx.strokeRect(centerX - side / 2, centerY - side / 2, side, side);
+        return (
+            <span className={`${styles.poiMarker} ${styles.structureMarker}`} />
+        );
     }
 
     if (cell.isPortal) {
-        const portalRadius = Math.max(3, Math.min(width, height) * 0.22);
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, portalRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(240, 253, 250, 0.92)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, portalRadius + 1.5, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(45, 212, 191, 0.75)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        return <span className={`${styles.poiMarker} ${styles.portalMarker}`} />;
     }
+
+    if (cell.monster) {
+        return <span className={`${styles.poiMarker} ${styles.monsterMarker}`} />;
+    }
+
+    if (cell.barbel) {
+        return <span className={`${styles.poiMarker} ${styles.barrelMarker}`} />;
+    }
+
+    if (cell.resource) {
+        return (
+            <span className={`${styles.poiMarker} ${styles.resourceMarker}`} />
+        );
+    }
+
+    return null;
 }
 
-function getTerrainFill(cell: Cell, visibility: CellVisibility) {
-    if (visibility === "unknown") {
-        return "#0b111a";
+function getPlayerMarkerClassName(
+    player: PlayerState,
+    myPlayerId?: number,
+    activeUserId?: number,
+    isStacked = false,
+) {
+    const classNames = [styles.playerMarker, getGroupClassName(player.group_id)];
+
+    if (isStacked) {
+        classNames.push(styles.stackMarker);
+    }
+    if (player.user_id === myPlayerId) {
+        classNames.push(styles.myPlayerMarker);
+    }
+    if (player.user_id === activeUserId) {
+        classNames.push(styles.activePlayerMarker);
     }
 
-    if (visibility === "visible") {
-        if (cell.isPortal) return "#158b86";
-        if (cell.structure_type) return "#7a63d1";
-        if (cell.monster) return "#8d3434";
-        if (cell.resource) return "#2f8a71";
-        if (cell.barbel) return "#a26d36";
-    }
-
-    if (cell.tileCode === 32) return "#32404b";
-    if (cell.tileCode === 80) return "#2563eb";
-    if (cell.tileCode === 48) return "#7d8995";
-    return "#4b2f28";
+    return classNames.join(" ");
 }
 
-function getGroupFill(groupId?: number) {
+function getGroupClassName(groupId?: number) {
     switch (groupId) {
         case 1:
-            return "#60a5fa";
+            return styles.groupOne;
         case 2:
-            return "#f87171";
+            return styles.groupTwo;
         case 3:
-            return "#facc15";
+            return styles.groupThree;
         default:
-            return "#f8fafc";
+            return styles.groupNeutral;
     }
 }
 

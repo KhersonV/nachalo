@@ -1378,6 +1378,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 />
             )}
             <MiniMap
+                key={instanceId}
                 grid={state.grid}
                 mapWidth={state.mapWidth}
                 mapHeight={state.mapHeight}

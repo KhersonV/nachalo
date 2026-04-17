@@ -43,6 +43,157 @@ function applyActorHp(
     }
 }
 
+function coerceInteger(value: unknown): number | undefined {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.trunc(value);
+    }
+
+    if (typeof value === "string" && value.trim() !== "") {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.trunc(parsed);
+        }
+    }
+
+    return undefined;
+}
+
+function normalizeGridCells(
+    grid: Cell[] | undefined,
+    mapWidth: number | undefined,
+    mapHeight: number | undefined,
+): Cell[] {
+    if (!Array.isArray(grid) || grid.length === 0) {
+        return [];
+    }
+
+    if (!mapWidth || !mapHeight) {
+        return grid;
+    }
+
+    const expectedSize = mapWidth * mapHeight;
+    if (grid.length !== expectedSize) {
+        return grid;
+    }
+
+    const dense: Array<Cell | undefined> = new Array(expectedSize);
+
+    for (const cell of grid) {
+        const x = coerceInteger((cell as any)?.x);
+        const y = coerceInteger((cell as any)?.y);
+
+        if (
+            x === undefined ||
+            y === undefined ||
+            x < 0 ||
+            y < 0 ||
+            x >= mapWidth ||
+            y >= mapHeight
+        ) {
+            return grid;
+        }
+
+        const index = y * mapWidth + x;
+        if (dense[index] !== undefined) {
+            return grid;
+        }
+
+        dense[index] = cell;
+    }
+
+    if (dense.some((cell) => cell === undefined)) {
+        return grid;
+    }
+
+    return dense as Cell[];
+}
+
+function normalizePlayerState(
+    player: PlayerState,
+    existing?: PlayerState,
+): PlayerState {
+    const incoming = (player ?? {}) as any;
+    const merged = { ...existing, ...incoming } as any;
+
+    const nextUserID = coerceInteger(incoming.user_id ?? incoming.player_id);
+    if (nextUserID !== undefined) {
+        merged.user_id = nextUserID;
+    }
+
+    const nextPosX = coerceInteger(incoming?.position?.x);
+    const nextPosY = coerceInteger(incoming?.position?.y);
+    const hasExistingPosition =
+        existing?.position &&
+        Number.isFinite(existing.position.x) &&
+        Number.isFinite(existing.position.y);
+
+    // Some non-match handlers can return a persistent player snapshot with the
+    // zero-value position (0,0). Keep the match position in that case.
+    const looksLikeUninitializedMatchPosition =
+        nextPosX === 0 &&
+        nextPosY === 0 &&
+        hasExistingPosition &&
+        (existing.position.x !== 0 || existing.position.y !== 0);
+
+    if (
+        nextPosX !== undefined &&
+        nextPosY !== undefined &&
+        !looksLikeUninitializedMatchPosition
+    ) {
+        merged.position = { x: nextPosX, y: nextPosY };
+    } else if (hasExistingPosition) {
+        merged.position = { ...existing.position };
+    } else {
+        merged.position = {
+            x: nextPosX ?? 0,
+            y: nextPosY ?? 0,
+        };
+    }
+
+    const nextSightRange =
+        coerceInteger(incoming.sightRange) ??
+        coerceInteger(incoming.visionRange) ??
+        coerceInteger(incoming.vision) ??
+        existing?.sightRange ??
+        2;
+    merged.sightRange = Math.max(0, nextSightRange);
+
+    const nextAttackRange =
+        coerceInteger(incoming.attackRange) ?? existing?.attackRange ?? 1;
+    merged.attackRange = Math.max(1, nextAttackRange);
+
+    const nextGroupID = coerceInteger(incoming.group_id);
+    if (nextGroupID !== undefined) {
+        const looksLikePersistentSnapshot =
+            nextGroupID === 0 &&
+            looksLikeUninitializedMatchPosition &&
+            (existing?.group_id ?? 0) > 0;
+
+        if (!looksLikePersistentSnapshot) {
+            merged.group_id = nextGroupID;
+        }
+    } else if (existing?.group_id !== undefined) {
+        merged.group_id = existing.group_id;
+    }
+
+    return merged as PlayerState;
+}
+
+function rebuildGridIndex(cells: Cell[]) {
+    gridIndex = {};
+
+    for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i] as Cell | undefined;
+        if (
+            cell &&
+            typeof cell.x === "number" &&
+            typeof cell.y === "number"
+        ) {
+            gridIndex[`${cell.x}:${cell.y}`] = i;
+        }
+    }
+}
+
 const initialState: GameState = {
     instanceId: "",
     mode: "",
@@ -72,14 +223,28 @@ const gameSlice = createSlice({
                 state.instanceId = action.payload.instanceId;
             if (action.payload.mode !== undefined)
                 state.mode = action.payload.mode;
-            if (action.payload.grid !== undefined)
-                state.grid = action.payload.grid;
             if (action.payload.mapWidth !== undefined)
                 state.mapWidth = action.payload.mapWidth;
             if (action.payload.mapHeight !== undefined)
                 state.mapHeight = action.payload.mapHeight;
-            if (action.payload.players !== undefined)
-                state.players = action.payload.players;
+            if (action.payload.grid !== undefined) {
+                state.grid = normalizeGridCells(
+                    action.payload.grid,
+                    state.mapWidth,
+                    state.mapHeight,
+                );
+            }
+            if (action.payload.players !== undefined) {
+                const existingByUserId = new Map(
+                    state.players.map((player) => [player.user_id, player]),
+                );
+                state.players = action.payload.players.map((player) =>
+                    normalizePlayerState(
+                        player,
+                        existingByUserId.get(player.user_id),
+                    ),
+                );
+            }
             if (action.payload.active_user !== undefined)
                 state.active_user = action.payload.active_user;
             if (action.payload.turnNumber !== undefined)
@@ -97,14 +262,7 @@ const gameSlice = createSlice({
             if (state.grid.length > 0 && state.mapWidth && state.mapHeight) {
                 state.isMapLoaded = true;
             }
-            // Rebuild grid index for quick cell lookups
-            gridIndex = {};
-            for (let i = 0; i < state.grid.length; i++) {
-                const c = state.grid[i] as any;
-                if (typeof c.x === "number" && typeof c.y === "number") {
-                    gridIndex[`${c.x}:${c.y}`] = i;
-                }
-            }
+            rebuildGridIndex(state.grid);
         },
 
         movePlayer(
@@ -161,7 +319,9 @@ const gameSlice = createSlice({
             const i = state.players.findIndex(
                 (p) => p.user_id === updated.user_id,
             );
-            if (i >= 0) state.players[i] = updated;
+            if (i >= 0) {
+                state.players[i] = normalizePlayerState(updated, state.players[i]);
+            }
         },
 
         updateCell(
