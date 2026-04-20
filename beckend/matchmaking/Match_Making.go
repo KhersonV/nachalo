@@ -23,6 +23,8 @@ import (
 	"gameservice/repository"
 )
 
+const maxPartySize = 5
+
 // Типы запросов и структур остаются без изменений.
 type JoinRequest struct {
 	PlayerID int    `json:"player_id"`
@@ -353,9 +355,9 @@ func sendPartyInviteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	partyMu.Lock()
-	defer partyMu.Unlock()
 
 	if _, exists := playerParties[req.MemberID]; exists {
+		partyMu.Unlock()
 		http.Error(w, "Игрок уже состоит в другой пати", http.StatusBadRequest)
 		return
 	}
@@ -363,20 +365,27 @@ func sendPartyInviteHandler(w http.ResponseWriter, r *http.Request) {
 	partyID, exists := playerParties[req.LeaderID]
 	if !exists {
 		partyID = uuid.New().String()
-		parties[partyID] = &PartyInfo{PartyID: partyID, LeaderID: req.LeaderID, Members: []int{req.LeaderID}}
+		parties[partyID] = &PartyInfo{
+			PartyID:  partyID,
+			LeaderID: req.LeaderID,
+			Members:  []int{req.LeaderID},
+		}
 		playerParties[req.LeaderID] = partyID
 	}
 
 	party := parties[partyID]
 	if party == nil || party.LeaderID != req.LeaderID {
+		partyMu.Unlock()
 		http.Error(w, "Только лидер может приглашать в пати", http.StatusForbidden)
 		return
 	}
-	if len(party.Members) >= 5 {
-		http.Error(w, "Максимальный размер пати 5 игроков", http.StatusBadRequest)
+	if len(party.Members) >= maxPartySize {
+		partyMu.Unlock()
+		http.Error(w, fmt.Sprintf("Максимальный размер пати %d игроков", maxPartySize), http.StatusBadRequest)
 		return
 	}
 	if containsPlayer(party.Members, req.MemberID) {
+		partyMu.Unlock()
 		http.Error(w, "Игрок уже в пати", http.StatusBadRequest)
 		return
 	}
@@ -388,11 +397,12 @@ func sendPartyInviteHandler(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 	}
 
+	partyMu.Unlock()
+
+	resp := buildPartyStateForPlayer(req.LeaderID)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "ok",
-		"message": "invite_sent",
-	})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func acceptPartyInviteHandler(w http.ResponseWriter, r *http.Request) {
@@ -444,7 +454,7 @@ func acceptPartyInviteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Пати больше не существует", http.StatusBadRequest)
 		return
 	}
-	if len(party.Members) >= 5 {
+	if len(party.Members) >= maxPartySize {
 		delete(partyInvites, req.PlayerID)
 		partyMu.Unlock()
 		http.Error(w, "Пати уже заполнена", http.StatusBadRequest)

@@ -53,6 +53,8 @@ const TEAM_SIZE: Record<GameMode, number> = {
     "5x5": 5,
 };
 
+const MAX_PARTY_SIZE = 5;
+
 function withBust(url: string): string {
     const sep = url.includes("?") ? "&" : "?";
     return `${url}${sep}t=${Date.now()}`;
@@ -339,6 +341,18 @@ export default function ModeSelectionPage() {
                         (await res.text()) || "Failed to send invite",
                     );
                 }
+                const nextParty: PartyStateResponse = await res.json();
+                setPartyState((prev) =>
+                    prev
+                        ? {
+                              ...nextParty,
+                              queueMode:
+                                  prev.queueMode || nextParty.queueMode || "",
+                          }
+                        : nextParty,
+                );
+                const friends = await fetchFriends(user.token);
+                setPartyFriends(friends);
                 setPartyInfo("Party invite sent");
             } catch (e: any) {
                 setPartyError(e?.message || "Failed to send invite");
@@ -838,7 +852,7 @@ export default function ModeSelectionPage() {
                         </p>
                     </div>
                     <div className={styles.partyMeta}>
-                        {partyState?.partySize ?? 1} players
+                        {partyState?.partySize ?? 1} / {MAX_PARTY_SIZE} players
                         {partyState?.queueMode
                             ? ` • queue ${partyState.queueMode}`
                             : ""}
@@ -1044,7 +1058,8 @@ export default function ModeSelectionPage() {
                                             disabled={
                                                 partyBusyUserId ===
                                                     friend.userId ||
-                                                (partyState.partySize ?? 1) >= 5
+                                                (partyState.partySize ?? 1) >=
+                                                    MAX_PARTY_SIZE
                                             }
                                         >
                                             Invite
