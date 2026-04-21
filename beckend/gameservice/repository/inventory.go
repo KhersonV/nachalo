@@ -112,6 +112,12 @@ func AddInventoryItem(
 	// 3) Обновляем map-представление инвентаря
 	key := fmt.Sprintf("%s_%d", itemType, itemID)
 	if entry, exists := inv[key]; exists {
+		entry["item_type"] = itemType
+		entry["item_id"] = itemID
+		entry["item_name"] = itemName
+		entry["name"] = itemName
+		entry["image"] = imageURL
+		entry["description"] = description
 		if cur, ok := entry["item_count"].(float64); ok {
 			entry["item_count"] = cur + float64(count)
 		} else {
@@ -119,6 +125,9 @@ func AddInventoryItem(
 		}
 	} else {
 		inv[key] = map[string]interface{}{
+			"item_type":   itemType,
+			"item_id":     itemID,
+			"item_name":   itemName,
 			"name":        itemName,
 			"item_count":  count,
 			"image":       imageURL,
