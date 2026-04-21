@@ -1006,7 +1006,7 @@ func EnsureMatchStatsRetentionSchema() {
 }
 
 func RestoreMatchStates() error {
-	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order FROM matches")
+	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order, turn_number FROM matches")
 	if err != nil {
 		return err
 	}
@@ -1016,7 +1016,8 @@ func RestoreMatchStates() error {
 		var instanceID string
 		var activeUserID int
 		var turnOrderJSON []byte
-		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON); err != nil {
+		var turnNumber int
+		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber); err != nil {
 			return err
 		}
 
@@ -1026,10 +1027,18 @@ func RestoreMatchStates() error {
 			continue
 		}
 
+		if activeUserID == 0 && len(turnOrder) > 0 {
+			activeUserID = turnOrder[0]
+		}
+		if turnNumber <= 0 {
+			turnNumber = 1
+		}
+
 		matchState := &game.MatchState{
 			InstanceID:   instanceID,
 			ActiveUserID: activeUserID,
 			TurnOrder:    turnOrder,
+			TurnNumber:   turnNumber,
 		}
 		game.MatchStatesMu.Lock()
 		game.MatchStates[instanceID] = matchState

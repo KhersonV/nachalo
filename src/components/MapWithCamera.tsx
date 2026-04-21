@@ -16,6 +16,12 @@ import {
 } from "../hooks/useCombatFloaters";
 import { useCombatPresentationPlayback } from "../hooks/useCombatPresentationPlayback";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
+import {
+    buildTeamExplorationBaseKey,
+    collectVisibleCellIndices,
+    isSameTeamPlayer,
+    type VisibilitySource,
+} from "../utils/fogOfWar";
 import type { ActiveAttackMotion, ActiveEffect } from "@/types/combat";
 import styles from "../styles/Map.module.css";
 
@@ -259,7 +265,12 @@ function buildVisibleWindowCells(
     sightRange: number,
     buffer: number,
 ) {
-    if (!Array.isArray(grid) || grid.length === 0 || mapWidth <= 0 || mapHeight <= 0) {
+    if (
+        !Array.isArray(grid) ||
+        grid.length === 0 ||
+        mapWidth <= 0 ||
+        mapHeight <= 0
+    ) {
         return [];
     }
 
@@ -305,7 +316,10 @@ function useStableOwnerGroupByUserId(players: PlayerState[]) {
     }, [players]);
 }
 
-function useStableOccupiedCellIndices(players: PlayerState[], mapWidth: number) {
+function useStableOccupiedCellIndices(
+    players: PlayerState[],
+    mapWidth: number,
+) {
     const ref = React.useRef<ReadonlySet<number>>(new Set());
     const signatureRef = React.useRef("");
 
@@ -803,17 +817,11 @@ const PlayerLayer = React.memo(function PlayerLayer({
                     ? attackMotion.direction.y
                     : 0;
             const attackOffsetX =
-                motionDirectionX *
-                motionOffsetTiles *
-                (tileSize + gap);
+                motionDirectionX * motionOffsetTiles * (tileSize + gap);
             const attackOffsetY =
-                motionDirectionY *
-                motionOffsetTiles *
-                (tileSize + gap);
+                motionDirectionY * motionOffsetTiles * (tileSize + gap);
             const spriteScale =
-                attackMotion?.kind === "castPulse"
-                    ? 1 + 0.08 * motionArc
-                    : 1;
+                attackMotion?.kind === "castPulse" ? 1 + 0.08 * motionArc : 1;
 
             result.push({
                 player,
@@ -937,7 +945,8 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
 }: CombatEffectsLayerProps) {
     const timelineEffects = effects.filter(
         (effect) =>
-            nowMs >= effect.startMs && nowMs <= effect.startMs + effect.durationMs,
+            nowMs >= effect.startMs &&
+            nowMs <= effect.startMs + effect.durationMs,
     );
 
     return (
@@ -1006,9 +1015,13 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                             }
                             style={{
                                 left:
-                                    worldX * (tileSize + gap) + tileSize / 2 - 5,
+                                    worldX * (tileSize + gap) +
+                                    tileSize / 2 -
+                                    5,
                                 top:
-                                    worldY * (tileSize + gap) + tileSize / 2 - 5,
+                                    worldY * (tileSize + gap) +
+                                    tileSize / 2 -
+                                    5,
                             }}
                         />
                     );
@@ -1115,23 +1128,64 @@ function MapWithCamera({
 
     const playerPosition = myPlayer?.position || { x: 0, y: 0 };
     const cameraCenterPoint = focusPoint ?? playerPosition;
-    const sightRange = myPlayer?.sightRange ?? 3;
+    const myGroupId = myPlayer?.group_id;
     const explorationStorageKey = React.useMemo(() => {
-        if (!instanceId || !myPlayer?.user_id) return "";
-        return `fog-explored:${instanceId}:${myPlayer.user_id}`;
-    }, [instanceId, myPlayer?.user_id]);
+        return buildTeamExplorationBaseKey(
+            instanceId,
+            myPlayer?.user_id,
+            myGroupId,
+        );
+    }, [instanceId, myGroupId, myPlayer?.user_id]);
     const tileSize = Number(inputTileSize) || 60;
     const safeMapWidth = Number(mapWidth) || 15;
     const safeMapHeight = Number(mapHeight) || 15;
     const gap = GAP;
 
-    const visiblePlayers = React.useMemo(() => {
-        return players.filter((player) => {
-            const dx = Math.abs(player.position.x - playerPosition.x);
-            const dy = Math.abs(player.position.y - playerPosition.y);
-            return dx <= sightRange && dy <= sightRange;
-        });
-    }, [players, playerPosition.x, playerPosition.y, sightRange]);
+    const teamPlayers = React.useMemo(
+        () =>
+            players.filter((player) =>
+                isSameTeamPlayer(player, myPlayer?.user_id, myGroupId),
+            ),
+        [myGroupId, myPlayer?.user_id, players],
+    );
+    const visibilitySources = React.useMemo<VisibilitySource[]>(
+        () =>
+            teamPlayers.map((player) => ({
+                position: player.position,
+                sightRange: player.sightRange ?? myPlayer?.sightRange ?? 3,
+            })),
+        [myPlayer?.sightRange, teamPlayers],
+    );
+    const maxTeamSightRange = React.useMemo(
+        () =>
+            visibilitySources.reduce(
+                (maxRange, source) => Math.max(maxRange, source.sightRange),
+                myPlayer?.sightRange ?? 3,
+            ),
+        [myPlayer?.sightRange, visibilitySources],
+    );
+    const visibleCellIndices = React.useMemo(
+        () =>
+            collectVisibleCellIndices(
+                visibilitySources,
+                safeMapWidth,
+                safeMapHeight,
+            ),
+        [safeMapHeight, safeMapWidth, visibilitySources],
+    );
+    const visiblePlayers = React.useMemo(
+        () =>
+            players.filter((player) =>
+                visibleCellIndices.has(
+                    getCellIndexForMap(
+                        player.position.x,
+                        player.position.y,
+                        safeMapWidth,
+                    ),
+                ),
+            ),
+        [players, safeMapWidth, visibleCellIndices],
+    );
     const ownerGroupByUserId = useStableOwnerGroupByUserId(players);
     const occupiedCellIndices = useStableOccupiedCellIndices(
         visiblePlayers,
@@ -1144,7 +1198,7 @@ function MapWithCamera({
                 safeMapWidth,
                 safeMapHeight,
                 cameraCenterPoint,
-                sightRange,
+                maxTeamSightRange,
                 EXPLORED_BUFFER,
             ),
         [
@@ -1152,7 +1206,7 @@ function MapWithCamera({
             safeMapWidth,
             safeMapHeight,
             cameraCenterPoint,
-            sightRange,
+            maxTeamSightRange,
         ],
     );
 
@@ -1232,10 +1286,14 @@ function MapWithCamera({
         [viewportWidth, viewportHeight],
     );
 
-    const { floaters, flashes } = useCombatFloaters(visiblePlayers, trackedGrid, {
-        suppressedPlayerIds: suppression.playerIds,
-        suppressedMonsterIds: suppression.monsterIds,
-    });
+    const { floaters, flashes } = useCombatFloaters(
+        visiblePlayers,
+        trackedGrid,
+        {
+            suppressedPlayerIds: suppression.playerIds,
+            suppressedMonsterIds: suppression.monsterIds,
+        },
+    );
 
     const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
         Record<string, SpriteImageMeta>
@@ -1313,13 +1371,14 @@ function MapWithCamera({
                     mapHeight={safeMapHeight}
                     tileSize={tileSize}
                     gap={gap}
-                    sightRange={sightRange}
+                    sightRange={maxTeamSightRange}
                     playerPosition={playerPosition}
                     onCellClick={onCellClick}
                     startOwners={initialStartOwnersRef.current}
                     occupiedCellIndices={occupiedCellIndices}
                     ownerGroupByUserId={ownerGroupByUserId}
                     explorationStorageKey={explorationStorageKey}
+                    visibleCellIndices={visibleCellIndices}
                     renderCenterPosition={cameraCenterPoint}
                 />
 

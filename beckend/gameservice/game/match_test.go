@@ -36,6 +36,27 @@ func TestEndTurn(t *testing.T) {
 	}
 }
 
+func TestEndTurn_InterleavedTeamsStayRoundRobinAcrossRounds(t *testing.T) {
+	ms := CreateMatchState("interleaved", []int{1, 4, 2, 5, 3, 6})
+
+	sequence := []int{4, 2, 5, 3, 6, 1}
+	current := 1
+	for idx, wantNext := range sequence {
+		next, err := ms.EndTurn(current)
+		if err != nil {
+			t.Fatalf("step %d: unexpected error: %v", idx+1, err)
+		}
+		if next != wantNext {
+			t.Fatalf("step %d: expected next %d, got %d", idx+1, wantNext, next)
+		}
+		current = next
+	}
+
+	if ms.TurnNumber != 2 {
+		t.Fatalf("expected second round after full cycle, got %d", ms.TurnNumber)
+	}
+}
+
 func TestRemovePlayerFromTurnOrder(t *testing.T) {
 	ms := &MatchState{
 		TurnOrder:            []int{1, 2, 3},

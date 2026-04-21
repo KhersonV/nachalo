@@ -19,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
-	"gameservice/game"
 	"gameservice/repository"
 )
 
@@ -41,16 +40,42 @@ type QueueEntry struct {
 	PlayerID  int       `json:"player_id"`
 	LeaderID  int       `json:"leader_id"`
 	PartyID   string    `json:"party_id,omitempty"`
+	SeedID    string    `json:"seed_id"`
 	MemberIDs []int     `json:"member_ids,omitempty"`
 	PartySize int       `json:"party_size"`
 	Rating    int       `json:"rating"`
 	JoinTime  time.Time `json:"join_time"`
 }
 
+type MatchTeam struct {
+	TeamID    int   `json:"team_id"`
+	MemberIDs []int `json:"member_ids"`
+}
+
+type MatchPlan struct {
+	Teams     []MatchTeam
+	PlayerIDs []int
+	GroupIDs  []int
+	TurnOrder []int
+}
+
+type GameServiceMatchRequest struct {
+	InstanceID   string      `json:"instance_id"`
+	Mode         string      `json:"mode"`
+	PlayerIDs    []int       `json:"player_ids"`
+	GroupIDs     []int       `json:"group_ids,omitempty"`
+	Teams        []MatchTeam `json:"teams"`
+	TurnOrder    []int       `json:"turn_order"`
+	TeamsCount   int         `json:"teams_count"`
+	TotalPlayers int         `json:"total_players"`
+}
+
 type MatchInfo struct {
 	InstanceID   string       `json:"instance_id"`
 	Mode         string       `json:"mode"`
 	Players      []QueueEntry `json:"players"`
+	Teams        []MatchTeam  `json:"teams,omitempty"`
+	TurnOrder    []int        `json:"turn_order,omitempty"`
 	TeamsCount   int          `json:"teams_count"`
 	TotalPlayers int          `json:"total_players"`
 }
@@ -183,6 +208,104 @@ func copyIDs(ids []int) []int {
 	result := make([]int, len(ids))
 	copy(result, ids)
 	return result
+}
+
+func buildQueueSeedID(partyID string, leaderID int) string {
+	if partyID != "" {
+		return partyID
+	}
+	return fmt.Sprintf("solo:%d", leaderID)
+}
+
+func buildMatchTeams(entries []QueueEntry, assignments map[int]int, teamsCount int) ([]MatchTeam, error) {
+	teamMembers := make([][]int, teamsCount)
+	for _, entry := range entries {
+		if len(entry.MemberIDs) == 0 {
+			return nil, fmt.Errorf("queue entry %d has no members", entry.LeaderID)
+		}
+		teamID, ok := assignments[entry.MemberIDs[0]]
+		if !ok || teamID <= 0 || teamID > teamsCount {
+			return nil, fmt.Errorf("missing team assignment for leader %d", entry.LeaderID)
+		}
+		for _, memberID := range entry.MemberIDs {
+			if assignments[memberID] != teamID {
+				return nil, fmt.Errorf("party of leader %d was split across teams", entry.LeaderID)
+			}
+		}
+		teamMembers[teamID-1] = append(teamMembers[teamID-1], entry.MemberIDs...)
+	}
+
+	teams := make([]MatchTeam, 0, teamsCount)
+	for teamIdx := 0; teamIdx < teamsCount; teamIdx++ {
+		teams = append(teams, MatchTeam{
+			TeamID:    teamIdx + 1,
+			MemberIDs: copyIDs(teamMembers[teamIdx]),
+		})
+	}
+	return teams, nil
+}
+
+func flattenMatchTeams(teams []MatchTeam) []int {
+	totalPlayers := 0
+	for _, team := range teams {
+		totalPlayers += len(team.MemberIDs)
+	}
+	playerIDs := make([]int, 0, totalPlayers)
+	for _, team := range teams {
+		playerIDs = append(playerIDs, team.MemberIDs...)
+	}
+	return playerIDs
+}
+
+func buildGroupIDsForPlayerOrder(playerIDs []int, teams []MatchTeam) []int {
+	groupByPlayer := make(map[int]int, len(playerIDs))
+	for _, team := range teams {
+		for _, memberID := range team.MemberIDs {
+			groupByPlayer[memberID] = team.TeamID
+		}
+	}
+
+	groupIDs := make([]int, 0, len(playerIDs))
+	for _, playerID := range playerIDs {
+		groupIDs = append(groupIDs, groupByPlayer[playerID])
+	}
+	return groupIDs
+}
+
+func buildInterleavedTurnOrder(teams []MatchTeam) []int {
+	maxTeamSize := 0
+	totalPlayers := 0
+	for _, team := range teams {
+		totalPlayers += len(team.MemberIDs)
+		if len(team.MemberIDs) > maxTeamSize {
+			maxTeamSize = len(team.MemberIDs)
+		}
+	}
+
+	turnOrder := make([]int, 0, totalPlayers)
+	for memberIdx := 0; memberIdx < maxTeamSize; memberIdx++ {
+		for _, team := range teams {
+			if memberIdx < len(team.MemberIDs) {
+				turnOrder = append(turnOrder, team.MemberIDs[memberIdx])
+			}
+		}
+	}
+	return turnOrder
+}
+
+func buildMatchPlan(entries []QueueEntry, assignments map[int]int, teamsCount int) (MatchPlan, error) {
+	teams, err := buildMatchTeams(entries, assignments, teamsCount)
+	if err != nil {
+		return MatchPlan{}, err
+	}
+
+	playerIDs := flattenMatchTeams(teams)
+	return MatchPlan{
+		Teams:     teams,
+		PlayerIDs: playerIDs,
+		GroupIDs:  buildGroupIDsForPlayerOrder(playerIDs, teams),
+		TurnOrder: buildInterleavedTurnOrder(teams),
+	}, nil
 }
 
 func queueContainsPlayerLocked(playerID int) bool {
@@ -708,23 +831,26 @@ func assignEntriesToTeams(entries []QueueEntry, teamsCount int, teamSize int) (m
 	return assignment, true
 }
 
-func findMatchCandidates(mode string, q []QueueEntry) ([]QueueEntry, map[int]int, bool) {
+func findMatchCandidates(mode string, q []QueueEntry) ([]QueueEntry, MatchPlan, bool) {
 	needed := requiredPlayersForMode(mode)
 	teamsCount := teamsCountForMode(mode)
 	teamSize := teamSizeForMode(mode)
 
 	selected := make([]QueueEntry, 0)
 	var chosen []QueueEntry
-	var chosenAssignments map[int]int
+	var chosenPlan MatchPlan
 
 	var search func(index int, total int) bool
 	search = func(index int, total int) bool {
 		if total == needed {
 			assignments, ok := assignEntriesToTeams(selected, teamsCount, teamSize)
 			if ok {
-				chosen = append([]QueueEntry{}, selected...)
-				chosenAssignments = assignments
-				return true
+				plan, err := buildMatchPlan(selected, assignments, teamsCount)
+				if err == nil {
+					chosen = append([]QueueEntry{}, selected...)
+					chosenPlan = plan
+					return true
+				}
 			}
 			return false
 		}
@@ -745,9 +871,9 @@ func findMatchCandidates(mode string, q []QueueEntry) ([]QueueEntry, map[int]int
 	}
 
 	if !search(0, 0) {
-		return nil, nil, false
+		return nil, MatchPlan{}, false
 	}
-	return chosen, chosenAssignments, true
+	return chosen, chosenPlan, true
 }
 
 // DELETE /matchmaking/player/{playerID}
@@ -830,6 +956,7 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		PlayerID:  leaderID,
 		LeaderID:  leaderID,
 		PartyID:   partyID,
+		SeedID:    buildQueueSeedID(partyID, leaderID),
 		MemberIDs: copyIDs(memberIDs),
 		PartySize: len(memberIDs),
 		Rating:    req.Rating,
@@ -1012,7 +1139,7 @@ func checkAndMakeMatch(mode string) {
 	}
 
 	q := queues[mode]
-	group, groupAssignments, ok := findMatchCandidates(mode, q)
+	group, plan, ok := findMatchCandidates(mode, q)
 	if ok {
 		remaining := make([]QueueEntry, 0, len(q)-len(group))
 		usedLeaders := make(map[int]bool)
@@ -1026,41 +1153,30 @@ func checkAndMakeMatch(mode string) {
 			remaining = append(remaining, entry)
 		}
 		queues[mode] = remaining
-		go createMatch(mode, group, groupAssignments)
+		go createMatch(mode, group, plan)
 	}
 }
 
 // createMatch – создает новый матч, обновляет currentMatches и playerMatches
-func createMatch(mode string, group []QueueEntry, groupAssignments map[int]int) {
+func createMatch(mode string, group []QueueEntry, plan MatchPlan) {
 	instanceID := uuid.New().String()
 
 	totalPlayers := requiredPlayersForMode(mode)
 	teamsCount := teamsCountForMode(mode)
 	if totalPlayers == 0 {
-		totalPlayers = len(group)
+		totalPlayers = len(plan.PlayerIDs)
 	}
-
-	playerIDs := make([]int, 0, totalPlayers)
-	groupIDs := make([]int, 0, totalPlayers)
-	for _, entry := range group {
-		for _, memberID := range entry.MemberIDs {
-			playerIDs = append(playerIDs, memberID)
-			groupIDs = append(groupIDs, groupAssignments[memberID])
-		}
-	}
-
-	// Создаём внутреннее состояние матча
-	matchState := game.CreateMatchState(instanceID, playerIDs)
-	log.Printf("Создано состояние матча: %+v", matchState)
 
 	// Отправляем запрос в Game-сервис
-	matchReq := map[string]interface{}{
-		"instance_id":   instanceID,
-		"mode":          mode,
-		"player_ids":    playerIDs,
-		"group_ids":     groupIDs,
-		"teams_count":   teamsCount,
-		"total_players": totalPlayers,
+	matchReq := GameServiceMatchRequest{
+		InstanceID:   instanceID,
+		Mode:         mode,
+		PlayerIDs:    copyIDs(plan.PlayerIDs),
+		GroupIDs:     copyIDs(plan.GroupIDs),
+		Teams:        append([]MatchTeam(nil), plan.Teams...),
+		TurnOrder:    copyIDs(plan.TurnOrder),
+		TeamsCount:   teamsCount,
+		TotalPlayers: totalPlayers,
 	}
 	reqJSON, err := json.Marshal(matchReq)
 	if err != nil {
@@ -1093,6 +1209,8 @@ func createMatch(mode string, group []QueueEntry, groupAssignments map[int]int) 
 		InstanceID:   instanceID,
 		Mode:         mode,
 		Players:      group,
+		Teams:        append([]MatchTeam(nil), plan.Teams...),
+		TurnOrder:    copyIDs(plan.TurnOrder),
 		TeamsCount:   teamsCount,
 		TotalPlayers: totalPlayers,
 	}
@@ -1115,9 +1233,9 @@ func createMatch(mode string, group []QueueEntry, groupAssignments map[int]int) 
 		m, ok := currentMatches[instanceID]
 		matchMu.Unlock()
 		if ok {
-			playerIDs := make([]int, 0, len(m.Players))
+			playerIDs := make([]int, 0, m.TotalPlayers)
 			for _, p := range m.Players {
-				playerIDs = append(playerIDs, p.PlayerID)
+				playerIDs = append(playerIDs, p.MemberIDs...)
 			}
 			BroadcastMatchToPlayers(playerIDs, m)
 		}

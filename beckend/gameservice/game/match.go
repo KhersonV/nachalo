@@ -108,11 +108,11 @@ func (m *MatchState) RemovePlayerFromTurnOrder(userID int) {
 	}
 }
 
-// CreateMatchState создаёт новую игру с указанными игроками.
-func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
+// CreateMatchState создаёт новое состояние матча с уже подготовленным порядком ходов.
+func CreateMatchState(instanceID string, turnOrder []int) *MatchState {
 	ms := &MatchState{
 		InstanceID:           instanceID,
-		TurnOrder:            append([]int(nil), playerIDs...), // копия слайса
+		TurnOrder:            append([]int(nil), turnOrder...), // копия слайса
 		TurnNumber:           1,
 		ActiveUserID:         0,
 		ArmorBreak:           make(map[string]ArmorBreakState),
@@ -120,8 +120,8 @@ func CreateMatchState(instanceID string, playerIDs []int) *MatchState {
 		MysticDrains:         make(map[string]int),
 		GuardianAuraPressure: make(map[int]GuardianAuraPressureState),
 	}
-	if len(playerIDs) > 0 {
-		ms.ActiveUserID = playerIDs[0]
+	if len(turnOrder) > 0 {
+		ms.ActiveUserID = turnOrder[0]
 	}
 	MatchStatesMu.Lock()
 	MatchStates[instanceID] = ms

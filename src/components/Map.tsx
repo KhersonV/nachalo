@@ -28,6 +28,7 @@ export interface MapProps {
     occupiedCellIndices?: ReadonlySet<number>;
     ownerGroupByUserId?: Readonly<Record<number, number>>;
     explorationStorageKey?: string;
+    visibleCellIndices?: ReadonlySet<number>;
     renderCenterPosition?: { x: number; y: number };
 }
 
@@ -119,6 +120,7 @@ function Map({
     occupiedCellIndices,
     ownerGroupByUserId,
     explorationStorageKey,
+    visibleCellIndices,
     renderCenterPosition,
 }: MapProps) {
     const fullWidth = mapWidth * tileSize + (mapWidth - 1) * gap;
@@ -153,47 +155,44 @@ function Map({
         }
 
         const result: RenderCell[] = [];
-        const seenKeys = new Set<number>();
+        const effectiveVisibleCellIndices = visibleCellIndices
+            ? new Set<number>(visibleCellIndices)
+            : (() => {
+                  const next = new Set<number>();
+                  const visibleMinX = Math.max(
+                      0,
+                      playerPosition.x - sightRange,
+                  );
+                  const visibleMaxX = Math.min(
+                      mapWidth - 1,
+                      playerPosition.x + sightRange,
+                  );
+                  const visibleMinY = Math.max(
+                      0,
+                      playerPosition.y - sightRange,
+                  );
+                  const visibleMaxY = Math.min(
+                      mapHeight - 1,
+                      playerPosition.y + sightRange,
+                  );
 
-        // Player's visible area
-        const visibleMinX = Math.max(0, playerPosition.x - sightRange);
-        const visibleMaxX = Math.min(
-            mapWidth - 1,
-            playerPosition.x + sightRange,
-        );
-        const visibleMinY = Math.max(0, playerPosition.y - sightRange);
-        const visibleMaxY = Math.min(
-            mapHeight - 1,
-            playerPosition.y + sightRange,
-        );
+                  for (let y = visibleMinY; y <= visibleMaxY; y++) {
+                      for (let x = visibleMinX; x <= visibleMaxX; x++) {
+                          next.add(getCellIndex(x, y, mapWidth));
+                      }
+                  }
 
-        // Add visible cells and mark them as explored
-        for (let y = visibleMinY; y <= visibleMaxY; y++) {
-            for (let x = visibleMinX; x <= visibleMaxX; x++) {
-                const cell = getCellAt(grid, x, y, mapWidth, mapHeight);
-                if (!cell) continue;
+                  return next;
+              })();
 
-                const key = getCellIndex(x, y, mapWidth);
-                exploredCellsRef.current.add(key);
-                seenKeys.add(key);
-
-                result.push({
-                    cell,
-                    visibility: "visible",
-                    hasPlayer: occupiedCellIndices?.has(key) ?? false,
-                    background: getTileBackground(
-                        cell,
-                        ownerGroupByUserId,
-                        startOwners,
-                    ),
-                });
-            }
-        }
+        effectiveVisibleCellIndices.forEach((cellIndex) => {
+            exploredCellsRef.current.add(cellIndex);
+        });
 
         /**
          * IMPORTANT:
          * Do not render all explored cells of the entire map.
-         * Render only a local window around the player.
+         * Render only a local window around the player/camera.
          */
         const exploredBuffer = 3;
         const renderCenterX = renderCenterPosition?.x ?? playerPosition.x;
@@ -209,7 +208,10 @@ function Map({
         );
         const renderMinY = Math.max(
             0,
-            Math.min(renderCenterY - sightRange - exploredBuffer, mapHeight - 1),
+            Math.min(
+                renderCenterY - sightRange - exploredBuffer,
+                mapHeight - 1,
+            ),
         );
         const renderMaxY = Math.min(
             mapHeight - 1,
@@ -219,12 +221,10 @@ function Map({
         for (let y = renderMinY; y <= renderMaxY; y++) {
             for (let x = renderMinX; x <= renderMaxX; x++) {
                 const key = getCellIndex(x, y, mapWidth);
+                const isVisible = effectiveVisibleCellIndices.has(key);
+                const isExplored = exploredCellsRef.current.has(key);
 
-                if (seenKeys.has(key)) {
-                    continue;
-                }
-
-                if (!exploredCellsRef.current.has(key)) {
+                if (!isVisible && !isExplored) {
                     continue;
                 }
 
@@ -233,8 +233,9 @@ function Map({
 
                 result.push({
                     cell,
-                    visibility: "explored",
-                    hasPlayer: false,
+                    visibility: isVisible ? "visible" : "explored",
+                    hasPlayer:
+                        isVisible && (occupiedCellIndices?.has(key) ?? false),
                     background: getTileBackground(
                         cell,
                         ownerGroupByUserId,
@@ -253,6 +254,7 @@ function Map({
         playerPosition.y,
         sightRange,
         explorationStorageKey,
+        visibleCellIndices,
         occupiedCellIndices,
         ownerGroupByUserId,
         startOwners,
@@ -286,34 +288,35 @@ function Map({
         >
             {cellsWithVisibility.map(
                 ({ cell, visibility, hasPlayer, background }) => {
-                const cellKey = getCellIndex(cell.x, cell.y, mapWidth);
+                    const cellKey = getCellIndex(cell.x, cell.y, mapWidth);
 
-                return (
-                    <div
-                        key={cellKey}
-                        style={{
-                            position: "absolute",
-                            left: cell.x * step,
-                            top: cell.y * step,
-                            width: tileSize,
-                            height: tileSize,
-                        }}
-                    >
-                        <MapCell
-                            cell={cell}
-                            visibility={visibility}
-                            hasPlayer={hasPlayer}
-                            background={background}
-                            tileSize={tileSize}
-                            isCurrentPlayerCell={
-                                cell.x === playerPosition.x &&
-                                cell.y === playerPosition.y
-                            }
-                            onClick={onCellClick}
-                        />
-                    </div>
-                );
-            })}
+                    return (
+                        <div
+                            key={cellKey}
+                            style={{
+                                position: "absolute",
+                                left: cell.x * step,
+                                top: cell.y * step,
+                                width: tileSize,
+                                height: tileSize,
+                            }}
+                        >
+                            <MapCell
+                                cell={cell}
+                                visibility={visibility}
+                                hasPlayer={hasPlayer}
+                                background={background}
+                                tileSize={tileSize}
+                                isCurrentPlayerCell={
+                                    cell.x === playerPosition.x &&
+                                    cell.y === playerPosition.y
+                                }
+                                onClick={onCellClick}
+                            />
+                        </div>
+                    );
+                },
+            )}
         </div>
     );
 }

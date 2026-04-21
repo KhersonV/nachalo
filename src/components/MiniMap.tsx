@@ -4,7 +4,10 @@ import React from "react";
 import type { Cell, PlayerState } from "@/types";
 import {
     buildExplorationStorageKey,
+    buildTeamExplorationBaseKey,
+    collectVisibleCellIndices,
     getCellIndex,
+    isSameTeamPlayer,
     loadExploredCells,
     persistExploredCells,
 } from "@/utils/fogOfWar";
@@ -95,12 +98,26 @@ function MiniMap({
         React.useDeferredValue(cameraCenterPosition);
 
     const myPlayer = React.useMemo(
-        () =>
-            deferredPlayers.find((player) => player.user_id === myPlayerId),
+        () => deferredPlayers.find((player) => player.user_id === myPlayerId),
         [deferredPlayers, myPlayerId],
     );
 
-    const effectiveSightRange = myPlayer?.sightRange ?? sightRange;
+    const teamPlayers = React.useMemo(
+        () =>
+            deferredPlayers.filter((player) =>
+                isSameTeamPlayer(player, myPlayerId, myPlayer?.group_id),
+            ),
+        [deferredPlayers, myPlayer?.group_id, myPlayerId],
+    );
+    const effectiveSightRange = React.useMemo(
+        () =>
+            teamPlayers.reduce(
+                (maxRange, player) =>
+                    Math.max(maxRange, player.sightRange ?? sightRange),
+                myPlayer?.sightRange ?? sightRange,
+            ),
+        [myPlayer?.sightRange, sightRange, teamPlayers],
+    );
 
     React.useEffect(() => {
         if (typeof window === "undefined") return;
@@ -142,41 +159,27 @@ function MiniMap({
     }, [instanceId, myPlayerId]);
 
     const explorationStorageKey = React.useMemo(() => {
-        if (!instanceId || !myPlayerId) return "";
-
         return buildExplorationStorageKey(
-            `fog-explored:${instanceId}:${myPlayerId}`,
+            buildTeamExplorationBaseKey(
+                instanceId,
+                myPlayerId,
+                myPlayer?.group_id,
+            ),
             mapWidth,
             mapHeight,
         );
-    }, [instanceId, mapHeight, mapWidth, myPlayerId]);
+    }, [instanceId, mapHeight, mapWidth, myPlayer?.group_id, myPlayerId]);
 
     const visibleCells = React.useMemo(() => {
-        const next = new Set<number>();
-
-        if (!myPlayer || mapWidth <= 0 || mapHeight <= 0) {
-            return next;
-        }
-
-        const minX = Math.max(0, myPlayer.position.x - effectiveSightRange);
-        const maxX = Math.min(
-            mapWidth - 1,
-            myPlayer.position.x + effectiveSightRange,
+        return collectVisibleCellIndices(
+            teamPlayers.map((player) => ({
+                position: player.position,
+                sightRange: player.sightRange ?? sightRange,
+            })),
+            mapWidth,
+            mapHeight,
         );
-        const minY = Math.max(0, myPlayer.position.y - effectiveSightRange);
-        const maxY = Math.min(
-            mapHeight - 1,
-            myPlayer.position.y + effectiveSightRange,
-        );
-
-        for (let y = minY; y <= maxY; y++) {
-            for (let x = minX; x <= maxX; x++) {
-                next.add(getCellIndex(x, y, mapWidth));
-            }
-        }
-
-        return next;
-    }, [effectiveSightRange, mapHeight, mapWidth, myPlayer]);
+    }, [mapHeight, mapWidth, sightRange, teamPlayers]);
 
     const exploredCells = React.useMemo(() => {
         const next = loadExploredCells(explorationStorageKey);
@@ -358,7 +361,8 @@ function MiniMap({
                 <div>
                     <div className={styles.title}>Minimap</div>
                     <div className={styles.subtitle}>
-                        {mapWidth}x{mapHeight} · vision {effectiveSightRange}
+                        {mapWidth}x{mapHeight} · team vision{" "}
+                        {effectiveSightRange}
                     </div>
                 </div>
 
@@ -386,7 +390,9 @@ function MiniMap({
                 </div>
             </div>
 
-            <div className={styles.hint}>Click a known cell to focus and ping.</div>
+            <div className={styles.hint}>
+                Click a known cell to focus and ping.
+            </div>
 
             <div className={styles.legend}>
                 <span className={styles.legendItem}>
@@ -432,60 +438,53 @@ function MiniMap({
     );
 }
 
-const MiniMapCellButton = React.memo(
-    function MiniMapCellButton({
-        state,
-        myPlayerId,
-        activeUserId,
-        onCellClick,
-    }: MiniMapCellButtonProps) {
-        const visiblePlayers = state.players.slice(0, MAX_RENDERED_PLAYER_MARKERS);
+const MiniMapCellButton = React.memo(function MiniMapCellButton({
+    state,
+    myPlayerId,
+    activeUserId,
+    onCellClick,
+}: MiniMapCellButtonProps) {
+    const visiblePlayers = state.players.slice(0, MAX_RENDERED_PLAYER_MARKERS);
 
-        return (
-            <button
-                type="button"
-                className={getCellClassName(state)}
-                title={buildCellTitle(
-                    state.cell,
-                    state.players,
-                    state.visibility,
-                )}
-                onClick={() => onCellClick(state)}
-                disabled={state.visibility === "unknown"}
-            >
-                {state.visibility === "visible" && (
-                    <>
-                        {renderPointOfInterest(state.cell)}
-                        {visiblePlayers.map((player, playerIndex) => {
-                            const markerLayout =
-                                PLAYER_MARKER_LAYOUT[playerIndex] ??
-                                PLAYER_MARKER_LAYOUT[0];
+    return (
+        <button
+            type="button"
+            className={getCellClassName(state)}
+            title={buildCellTitle(state.cell, state.players, state.visibility)}
+            onClick={() => onCellClick(state)}
+            disabled={state.visibility === "unknown"}
+        >
+            {state.visibility === "visible" && (
+                <>
+                    {renderPointOfInterest(state.cell)}
+                    {visiblePlayers.map((player, playerIndex) => {
+                        const markerLayout =
+                            PLAYER_MARKER_LAYOUT[playerIndex] ??
+                            PLAYER_MARKER_LAYOUT[0];
 
-                            return (
-                                <span
-                                    key={`player:${player.user_id}:${playerIndex}`}
-                                    className={getPlayerMarkerClassName(
-                                        player,
-                                        myPlayerId,
-                                        activeUserId,
-                                        playerIndex > 0,
-                                    )}
-                                    style={{
-                                        left: `${markerLayout.x * 100}%`,
-                                        top: `${markerLayout.y * 100}%`,
-                                    }}
-                                />
-                            );
-                        })}
-                    </>
-                )}
+                        return (
+                            <span
+                                key={`player:${player.user_id}:${playerIndex}`}
+                                className={getPlayerMarkerClassName(
+                                    player,
+                                    myPlayerId,
+                                    activeUserId,
+                                    playerIndex > 0,
+                                )}
+                                style={{
+                                    left: `${markerLayout.x * 100}%`,
+                                    top: `${markerLayout.y * 100}%`,
+                                }}
+                            />
+                        );
+                    })}
+                </>
+            )}
 
-                {state.isPinged && <span className={styles.pingMarker} />}
-            </button>
-        );
-    },
-    areMiniMapCellButtonPropsEqual,
-);
+            {state.isPinged && <span className={styles.pingMarker} />}
+        </button>
+    );
+}, areMiniMapCellButtonPropsEqual);
 
 export default React.memo(MiniMap, areMiniMapPropsEqual);
 
@@ -544,21 +543,14 @@ function areRenderableCellsEqual(prev: Cell, next: Cell) {
             !!prev.barbel === !!next.barbel &&
             (prev.resource?.type ?? "") === (next.resource?.type ?? "") &&
             (prev.monster?.name ?? "") === (next.monster?.name ?? "") &&
-            (prev.monster?.db_instance_id ??
-                prev.monster?.id ??
-                0) ===
-                (next.monster?.db_instance_id ??
-                    next.monster?.id ??
-                    0) &&
+            (prev.monster?.db_instance_id ?? prev.monster?.id ?? 0) ===
+                (next.monster?.db_instance_id ?? next.monster?.id ?? 0) &&
             (prev.structure_type ?? "") === (next.structure_type ?? "") &&
             !!prev.is_under_construction === !!next.is_under_construction)
     );
 }
 
-function areRenderablePlayersEqual(
-    prev: PlayerState[],
-    next: PlayerState[],
-) {
+function areRenderablePlayersEqual(prev: PlayerState[], next: PlayerState[]) {
     if (prev === next) {
         return true;
     }
@@ -654,15 +646,21 @@ function renderPointOfInterest(cell: Cell) {
     }
 
     if (cell.isPortal) {
-        return <span className={`${styles.poiMarker} ${styles.portalMarker}`} />;
+        return (
+            <span className={`${styles.poiMarker} ${styles.portalMarker}`} />
+        );
     }
 
     if (cell.monster) {
-        return <span className={`${styles.poiMarker} ${styles.monsterMarker}`} />;
+        return (
+            <span className={`${styles.poiMarker} ${styles.monsterMarker}`} />
+        );
     }
 
     if (cell.barbel) {
-        return <span className={`${styles.poiMarker} ${styles.barrelMarker}`} />;
+        return (
+            <span className={`${styles.poiMarker} ${styles.barrelMarker}`} />
+        );
     }
 
     if (cell.resource) {
@@ -680,7 +678,10 @@ function getPlayerMarkerClassName(
     activeUserId?: number,
     isStacked = false,
 ) {
-    const classNames = [styles.playerMarker, getGroupClassName(player.group_id)];
+    const classNames = [
+        styles.playerMarker,
+        getGroupClassName(player.group_id),
+    ];
 
     if (isStacked) {
         classNames.push(styles.stackMarker);
@@ -727,7 +728,9 @@ function buildCellTitle(
     }
 
     if (players.length > 0) {
-        parts.push(`players: ${players.map((player) => player.name).join(", ")}`);
+        parts.push(
+            `players: ${players.map((player) => player.name).join(", ")}`,
+        );
     }
     if (cell.monster) {
         parts.push(`monster: ${cell.monster.name}`);
