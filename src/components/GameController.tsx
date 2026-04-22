@@ -75,6 +75,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   const router = useRouter();
   const state = useSelector((state: RootState) => state.game);
   const { user } = useAuth();
+  
 
   useEffect(() => {
     if (state.instanceId !== instanceId) {
@@ -462,6 +463,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     },
   });
 
+   const shouldRenderCompactMiniMap = isCompactViewport && !!myPlayer;
+	  
   const minimapViewportCells = React.useMemo(() => {
     const step = mapViewport.tileSize + 1;
     return {
@@ -477,8 +480,55 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
   const handleMiniMapVisibilityToggle = useCallback(() => {
     minimapPreferenceLockedRef.current = true;
-    setShowMiniMap((current) => !current);
-  }, []);
+    setShowMiniMap((current) => {
+      const next = !current;
+      if (next && isCompactViewport) {
+        setShowInventory(false);
+        setObjectHUD(null);
+      }
+      return next;
+    });
+  }, [isCompactViewport]);
+
+  const handleInventoryToggle = useCallback(() => {
+    setShowInventory((current) => {
+      const next = !current;
+      if (next && isCompactViewport) {
+        setShowMiniMap(false);
+        setObjectHUD(null);
+      }
+      return next;
+    });
+  }, [isCompactViewport]);
+
+  const presentObjectHUD = useCallback(
+    (
+      nextHud: {
+        type: "monster" | "structure" | "player" | "object";
+        name: string;
+        details?: string;
+        health?: number;
+        maxHealth?: number;
+        energy?: number;
+        maxEnergy?: number;
+        attack?: number;
+        defense?: number;
+        sightRange?: number;
+        structureType?: "scout_tower" | "turret" | "wall";
+        userId?: number;
+        groupId?: number;
+        x?: number;
+        y?: number;
+      } | null,
+    ) => {
+      if (nextHud && isCompactViewport) {
+        setShowMiniMap(false);
+        setShowInventory(false);
+      }
+      setObjectHUD(nextHud);
+    },
+    [isCompactViewport],
+  );
 
   useEffect(() => {
     if (!minimapFocusPoint) return;
@@ -515,7 +565,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       // If the clicked player is ourselves, open the object HUD showing
       // our current stats so the user can view profile/HUD by click.
       if (targetPlayer.user_id === myPlayer.user_id) {
-        setObjectHUD({
+        presentObjectHUD({
           type: "player",
           name: myPlayer.name,
           health: myPlayer.health,
@@ -537,7 +587,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         await fightPlayer(targetPlayer.user_id);
         return;
       }
-      setObjectHUD({
+      presentObjectHUD({
         type: "player",
         name: targetPlayer.name,
         health: targetPlayer.health,
@@ -550,7 +600,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         groupId: targetPlayer.group_id,
       });
     },
-    [myPlayer, isMyTurn, fightPlayer],
+    [myPlayer, isMyTurn, fightPlayer, presentObjectHUD],
   );
 
   const handleMapCellClick = useCallback(
@@ -567,7 +617,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await fightMonster(cell.x, cell.y);
           return;
         }
-        setObjectHUD({
+        presentObjectHUD({
           type: "monster",
           x: cell.x,
           y: cell.y,
@@ -592,7 +642,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
-        setObjectHUD({
+        presentObjectHUD({
           type: "structure",
           x: cell.x,
           y: cell.y,
@@ -620,7 +670,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
-        setObjectHUD({
+        presentObjectHUD({
           type: "object",
           name: `Resource: ${cell.resource.type}`,
           details: cell.resource.description || "Useful resource",
@@ -633,7 +683,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
-        setObjectHUD({
+        presentObjectHUD({
           type: "object",
           name: "Barrel",
           details: "Can be opened to receive a reward",
@@ -646,7 +696,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
-        setObjectHUD({
+        presentObjectHUD({
           type: "object",
           name: "Portal",
           details: "Exit point from the match after conditions are met",
@@ -658,7 +708,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         await handleCellClick(cell);
       }
     },
-    [myPlayer, isMyTurn, fightMonster, handleCellClick],
+    [myPlayer, isMyTurn, fightMonster, handleCellClick, presentObjectHUD],
   );
 
   // Show centered "YOUR TURN" modal when turn transitions to the current player
@@ -738,7 +788,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   useGameKeyboard({
     onMove: handleMoveOrAttack,
     onAction: handleAction,
-    onInventory: () => setShowInventory((v) => !v),
+    onInventory: handleInventoryToggle,
   });
 
   const handleTurnEnded = useCallback(
@@ -1305,35 +1355,73 @@ export default function GameController({ instanceId }: GameControllerProps) {
           groupId={myPlayer.group_id}
         />
       )}
-      {showMiniMap ? (
-        <MiniMap
-          key={instanceId}
-          grid={state.grid}
-          mapWidth={state.mapWidth}
-          mapHeight={state.mapHeight}
-          players={state.players}
-          instanceId={instanceId}
-          myPlayerId={myPlayer?.user_id}
-          activeUserId={state.active_user}
-          sightRange={myPlayer?.sightRange ?? 3}
-          viewportCells={minimapViewportCells}
-          cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
-          onCellPing={handleMiniMapPing}
-          onCollapse={handleMiniMapVisibilityToggle}
-        />
-      ) : (
-        <button
-          type="button"
-          className={`${styles.minimapToggleButton} ${
-            isCompactViewport ? styles.minimapToggleButtonCompact : ""
-          }`}
-          onClick={handleMiniMapVisibilityToggle}
-          aria-label="Open minimap"
-          title="Open minimap"
-        >
-          Minimap
-        </button>
-      )}
+
+
+	  {shouldRenderCompactMiniMap ? (
+  <>
+    <MiniMap
+      key={instanceId}
+      grid={state.grid}
+      mapWidth={state.mapWidth}
+      mapHeight={state.mapHeight}
+      players={state.players}
+      instanceId={instanceId}
+      myPlayerId={myPlayer?.user_id}
+      activeUserId={state.active_user}
+      sightRange={myPlayer?.sightRange ?? 3}
+      compact
+      viewportCells={minimapViewportCells}
+      cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+      onCellPing={handleMiniMapPing}
+      onCollapse={handleMiniMapVisibilityToggle}
+      panelClassName={`${styles.minimapPanelShell} ${
+        showMiniMap
+          ? styles.minimapPanelShellOpen
+          : styles.minimapPanelShellClosed
+      }`}
+    />
+
+    <button
+      type="button"
+      className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
+        showMiniMap ? styles.minimapToggleButtonHidden : ""
+      }`}
+      onClick={handleMiniMapVisibilityToggle}
+      aria-label="Open minimap"
+      title="Open minimap"
+    >
+      Minimap
+    </button>
+  </>
+) : showMiniMap ? (
+  <MiniMap
+    key={instanceId}
+    grid={state.grid}
+    mapWidth={state.mapWidth}
+    mapHeight={state.mapHeight}
+    players={state.players}
+    instanceId={instanceId}
+    myPlayerId={myPlayer?.user_id}
+    activeUserId={state.active_user}
+    sightRange={myPlayer?.sightRange ?? 3}
+    compact={false}
+    viewportCells={minimapViewportCells}
+    cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+    onCellPing={handleMiniMapPing}
+    onCollapse={handleMiniMapVisibilityToggle}
+  />
+) : (
+  <button
+    type="button"
+    className={styles.minimapToggleButton}
+    onClick={handleMiniMapVisibilityToggle}
+    aria-label="Open minimap"
+    title="Open minimap"
+  >
+    Minimap
+  </button>
+)}
+
       <div
         className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
       >
@@ -1389,7 +1477,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <button
               type="button"
               className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
-              onClick={() => setShowInventory((v) => !v)}
+              onClick={handleInventoryToggle}
               aria-label={showInventory ? "Close inventory" : "Open inventory"}
               title={showInventory ? "Close inventory" : "Open inventory"}
             >
@@ -1441,7 +1529,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
             <button
               type="button"
               className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
-              onClick={() => setShowInventory((v) => !v)}
+              onClick={handleInventoryToggle}
               aria-label={showInventory ? "Close inventory" : "Open inventory"}
               title={showInventory ? "Close inventory" : "Open inventory"}
             >

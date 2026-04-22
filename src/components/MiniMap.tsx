@@ -29,6 +29,8 @@ type MiniMapProps = {
   cameraCenterPosition?: { x: number; y: number } | null;
   onCellPing?: (point: { x: number; y: number }) => void;
   onCollapse?: () => void;
+  compact?: boolean;
+  panelClassName?: string;
 };
 
 type CellVisibility = "visible" | "explored" | "unknown";
@@ -72,6 +74,219 @@ const FALLBACK_UNKNOWN_CELL: Cell = {
   isPlayer: false,
 };
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function areViewportCellsEqual(
+  prev?: { width: number; height: number },
+  next?: { width: number; height: number },
+) {
+  return (
+    (prev?.width ?? 0) === (next?.width ?? 0) &&
+    (prev?.height ?? 0) === (next?.height ?? 0)
+  );
+}
+
+function arePointsEqual(
+  prev: { x: number; y: number } | null,
+  next: { x: number; y: number } | null,
+) {
+  return (
+    (prev?.x ?? -1) === (next?.x ?? -1) &&
+    (prev?.y ?? -1) === (next?.y ?? -1)
+  );
+}
+
+function getCellClassName(state: MiniMapCellState) {
+  const classNames = [styles.cellButton, styles.cell];
+
+  if (state.visibility === "visible") {
+    classNames.push(styles.visibleCell);
+  } else if (state.visibility === "explored") {
+    classNames.push(styles.exploredCell);
+  } else {
+    classNames.push(styles.unknownCell);
+  }
+
+  if (state.visibility !== "unknown") {
+    classNames.push(getTerrainClassName(state.cell));
+  }
+
+  if (state.isViewportEdge) {
+    classNames.push(styles.viewportEdge);
+  }
+
+  return classNames.join(" ");
+}
+
+function getTerrainClassName(cell: Cell) {
+  if (cell.isPortal) return styles.portalCell;
+  if (cell.structure_type) return styles.structureCell;
+  if (cell.monster) return styles.monsterCell;
+  if (cell.resource) return styles.resourceCell;
+  if (cell.barbel) return styles.barrelCell;
+  if (cell.tileCode === 32) return styles.blockedCell;
+  if (cell.tileCode === 80) return styles.startCell;
+  if (cell.tileCode === 48) return styles.walkableCell;
+  return styles.borderCell;
+}
+
+function renderPointOfInterest(cell: Cell) {
+  if (cell.is_under_construction) {
+    return (
+      <span className={`${styles.poiMarker} ${styles.constructionMarker}`} />
+    );
+  }
+
+  if (cell.structure_type) {
+    return <span className={`${styles.poiMarker} ${styles.structureMarker}`} />;
+  }
+
+  if (cell.isPortal) {
+    return <span className={`${styles.poiMarker} ${styles.portalMarker}`} />;
+  }
+
+  if (cell.monster) {
+    return <span className={`${styles.poiMarker} ${styles.monsterMarker}`} />;
+  }
+
+  if (cell.barbel) {
+    return <span className={`${styles.poiMarker} ${styles.barrelMarker}`} />;
+  }
+
+  if (cell.resource) {
+    return <span className={`${styles.poiMarker} ${styles.resourceMarker}`} />;
+  }
+
+  return null;
+}
+
+function getGroupClassName(groupId?: number) {
+  switch (groupId) {
+    case 1:
+      return styles.groupOne;
+    case 2:
+      return styles.groupTwo;
+    case 3:
+      return styles.groupThree;
+    default:
+      return styles.groupNeutral;
+  }
+}
+
+function getPlayerMarkerClassName(
+  player: PlayerState,
+  myPlayerId?: number,
+  activeUserId?: number,
+  isStacked = false,
+) {
+  const classNames = [styles.playerMarker, getGroupClassName(player.group_id)];
+
+  if (isStacked) classNames.push(styles.stackMarker);
+  if (player.user_id === myPlayerId) classNames.push(styles.myPlayerMarker);
+  if (player.user_id === activeUserId)
+    classNames.push(styles.activePlayerMarker);
+
+  return classNames.join(" ");
+}
+
+function areRenderableCellsEqual(prev: Cell, next: Cell) {
+  return (
+    prev === next ||
+    (prev.cell_id === next.cell_id &&
+      prev.x === next.x &&
+      prev.y === next.y &&
+      prev.tileCode === next.tileCode &&
+      prev.isPortal === next.isPortal &&
+      !!prev.barbel === !!next.barbel &&
+      (prev.resource?.type ?? "") === (next.resource?.type ?? "") &&
+      (prev.monster?.name ?? "") === (next.monster?.name ?? "") &&
+      (prev.monster?.db_instance_id ?? prev.monster?.id ?? 0) ===
+        (next.monster?.db_instance_id ?? next.monster?.id ?? 0) &&
+      (prev.structure_type ?? "") === (next.structure_type ?? "") &&
+      !!prev.is_under_construction === !!next.is_under_construction)
+  );
+}
+
+function areRenderablePlayersEqual(prev: PlayerState[], next: PlayerState[]) {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+
+  for (let i = 0; i < prev.length; i++) {
+    if (
+      prev[i]?.user_id !== next[i]?.user_id ||
+      prev[i]?.group_id !== next[i]?.group_id ||
+      prev[i]?.name !== next[i]?.name
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areMiniMapCellStatesEqual(
+  prev: MiniMapCellState,
+  next: MiniMapCellState,
+) {
+  return (
+    prev.visibility === next.visibility &&
+    prev.isViewportEdge === next.isViewportEdge &&
+    prev.isPinged === next.isPinged &&
+    areRenderableCellsEqual(prev.cell, next.cell) &&
+    areRenderablePlayersEqual(prev.players, next.players)
+  );
+}
+
+function areMiniMapCellButtonPropsEqual(
+  prev: MiniMapCellButtonProps,
+  next: MiniMapCellButtonProps,
+) {
+  return (
+    prev.myPlayerId === next.myPlayerId &&
+    prev.activeUserId === next.activeUserId &&
+    prev.onCellClick === next.onCellClick &&
+    areMiniMapCellStatesEqual(prev.state, next.state)
+  );
+}
+
+function buildCellTitle(
+  cell: Cell,
+  players: PlayerState[],
+  visibility: CellVisibility,
+) {
+  const parts = [`${cell.x}:${cell.y}`];
+
+  if (visibility === "unknown") {
+    parts.push("unexplored");
+    return parts.join(" · ");
+  }
+
+  parts.push(visibility === "visible" ? "visible" : "explored");
+
+  if (visibility !== "visible") {
+    return parts.join(" · ");
+  }
+
+  if (players.length > 0) {
+    parts.push(`players: ${players.map((player) => player.name).join(", ")}`);
+  }
+  if (cell.monster) parts.push(`monster: ${cell.monster.name}`);
+  if (cell.resource) parts.push(`resource: ${cell.resource.type}`);
+  if (cell.barbel) parts.push("barrel");
+  if (cell.isPortal) parts.push("portal");
+  if (cell.structure_type) {
+    parts.push(
+      cell.is_under_construction
+        ? `${cell.structure_type} (building)`
+        : cell.structure_type,
+    );
+  }
+
+  return parts.join(" · ");
+}
+
 function MiniMap({
   grid,
   mapWidth,
@@ -85,6 +300,8 @@ function MiniMap({
   cameraCenterPosition,
   onCellPing,
   onCollapse,
+  compact = false,
+  panelClassName = "",
 }: MiniMapProps) {
   const [size, setSize] = React.useState<MiniMapSize>("small");
   const [localPingPoint, setLocalPingPoint] = React.useState<{
@@ -111,6 +328,7 @@ function MiniMap({
       ),
     [deferredPlayers, myPlayer?.group_id, myPlayerId],
   );
+
   const effectiveSightRange = React.useMemo(
     () =>
       teamPlayers.reduce(
@@ -129,9 +347,7 @@ function MiniMap({
       if (savedSize === "small" || savedSize === "large") {
         setSize(savedSize);
       }
-    } catch {
-      // ignore storage failures
-    }
+    } catch {}
   }, []);
 
   React.useEffect(() => {
@@ -139,9 +355,7 @@ function MiniMap({
 
     try {
       window.sessionStorage.setItem(SIZE_STORAGE_KEY, size);
-    } catch {
-      // ignore storage failures
-    }
+    } catch {}
   }, [size]);
 
   React.useEffect(() => {
@@ -168,16 +382,18 @@ function MiniMap({
     );
   }, [instanceId, mapHeight, mapWidth, myPlayer?.group_id, myPlayerId]);
 
-  const visibleCells = React.useMemo(() => {
-    return collectVisibleCellIndices(
-      teamPlayers.map((player) => ({
-        position: player.position,
-        sightRange: player.sightRange ?? sightRange,
-      })),
-      mapWidth,
-      mapHeight,
-    );
-  }, [mapHeight, mapWidth, sightRange, teamPlayers]);
+  const visibleCells = React.useMemo(
+    () =>
+      collectVisibleCellIndices(
+        teamPlayers.map((player) => ({
+          position: player.position,
+          sightRange: player.sightRange ?? effectiveSightRange,
+        })),
+        mapWidth,
+        mapHeight,
+      ),
+    [effectiveSightRange, mapHeight, mapWidth, teamPlayers],
+  );
 
   const exploredCells = React.useMemo(() => {
     const next = loadExploredCells(explorationStorageKey);
@@ -210,21 +426,19 @@ function MiniMap({
 
   const viewportRect = React.useMemo(() => {
     if (
-      !myPlayer ||
       !deferredViewportCells ||
-      mapWidth <= 0 ||
-      mapHeight <= 0 ||
-      deferredViewportCells.width <= 0 ||
-      deferredViewportCells.height <= 0
+      !deferredCameraCenterPosition ||
+      !mapWidth ||
+      !mapHeight
     ) {
       return null;
     }
 
-    const center = deferredCameraCenterPosition ?? myPlayer.position;
-    const width = Math.min(mapWidth, deferredViewportCells.width);
-    const height = Math.min(mapHeight, deferredViewportCells.height);
+    const width = clamp(deferredViewportCells.width, 1, mapWidth);
+    const height = clamp(deferredViewportCells.height, 1, mapHeight);
     const halfWidth = Math.floor(width / 2);
     const halfHeight = Math.floor(height / 2);
+    const center = deferredCameraCenterPosition;
 
     const minX = clamp(center.x - halfWidth, 0, mapWidth - width);
     const minY = clamp(center.y - halfHeight, 0, mapHeight - height);
@@ -240,7 +454,6 @@ function MiniMap({
     deferredViewportCells,
     mapHeight,
     mapWidth,
-    myPlayer,
   ]);
 
   const playersByCellIndex = React.useMemo(() => {
@@ -254,11 +467,8 @@ function MiniMap({
       const idx = getCellIndex(player.position.x, player.position.y, mapWidth);
       const existing = next.get(idx);
 
-      if (existing) {
-        existing.push(player);
-      } else {
-        next.set(idx, [player]);
-      }
+      if (existing) existing.push(player);
+      else next.set(idx, [player]);
     }
 
     return next;
@@ -273,13 +483,16 @@ function MiniMap({
         x,
         y,
       };
+
       const isVisible = visibleCells.has(cellIndex);
       const isExplored = exploredCells.has(cellIndex);
+
       const visibility: CellVisibility = isVisible
         ? "visible"
         : isExplored
           ? "explored"
           : "unknown";
+
       const isViewportEdge =
         !!viewportRect &&
         x >= viewportRect.minX &&
@@ -290,6 +503,7 @@ function MiniMap({
           x === viewportRect.maxX ||
           y === viewportRect.minY ||
           y === viewportRect.maxY);
+
       const isPinged =
         !!localPingPoint && localPingPoint.x === x && localPingPoint.y === y;
 
@@ -342,42 +556,51 @@ function MiniMap({
     return null;
   }
 
+  const effectiveSize: MiniMapSize = compact ? "small" : size;
+
   return (
     <aside
-      className={`${styles.panel} ${
-        size === "large" ? styles.panelLarge : styles.panelSmall
-      }`}
+      className={`${styles.panel} ${compact ? styles.panelCompact : ""} ${
+        effectiveSize === "large" ? styles.panelLarge : styles.panelSmall
+      } ${panelClassName}`}
       aria-label="Battlefield minimap"
     >
       <div className={styles.header}>
         <div>
           <div className={styles.title}>Minimap</div>
-          <div className={styles.subtitle}>
-            {mapWidth}x{mapHeight} · team vision {effectiveSightRange}
-          </div>
+          {!compact && (
+            <div className={styles.subtitle}>
+              {mapWidth}x{mapHeight} · team vision {effectiveSightRange}
+            </div>
+          )}
         </div>
 
         <div className={styles.controls}>
-          <button
-            type="button"
-            className={`${styles.sizeButton} ${
-              size === "small" ? styles.sizeButtonActive : ""
-            }`}
-            onClick={() => setSize("small")}
-            aria-pressed={size === "small"}
-          >
-            Small
-          </button>
-          <button
-            type="button"
-            className={`${styles.sizeButton} ${
-              size === "large" ? styles.sizeButtonActive : ""
-            }`}
-            onClick={() => setSize("large")}
-            aria-pressed={size === "large"}
-          >
-            Large
-          </button>
+          {!compact && (
+            <>
+              <button
+                type="button"
+                className={`${styles.sizeButton} ${
+                  size === "small" ? styles.sizeButtonActive : ""
+                }`}
+                onClick={() => setSize("small")}
+                aria-pressed={size === "small"}
+              >
+                Small
+              </button>
+              <button
+                type="button"
+                className={`${styles.sizeButton} ${
+                  size === "large" ? styles.sizeButtonActive : ""
+                }`}
+                onClick={() => setSize("large")}
+                aria-pressed={size === "large"}
+              >
+                Large
+              </button>
+            </>
+          )}
+
           {onCollapse && (
             <button
               type="button"
@@ -392,22 +615,26 @@ function MiniMap({
         </div>
       </div>
 
-      <div className={styles.hint}>Click a known cell to focus and ping.</div>
+      {!compact && (
+        <div className={styles.hint}>Click a known cell to focus and ping.</div>
+      )}
 
-      <div className={styles.legend}>
-        <span className={styles.legendItem}>
-          <span className={`${styles.legendSwatch} ${styles.youSwatch}`} />
-          You
-        </span>
-        <span className={styles.legendItem}>
-          <span className={`${styles.legendSwatch} ${styles.activeSwatch}`} />
-          Turn
-        </span>
-        <span className={styles.legendItem}>
-          <span className={`${styles.legendSwatch} ${styles.unknownSwatch}`} />
-          Fog
-        </span>
-      </div>
+      {!compact && (
+        <div className={styles.legend}>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendSwatch} ${styles.youSwatch}`} />
+            You
+          </span>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendSwatch} ${styles.activeSwatch}`} />
+            Turn
+          </span>
+          <span className={styles.legendItem}>
+            <span className={`${styles.legendSwatch} ${styles.unknownSwatch}`} />
+            Fog
+          </span>
+        </div>
+      )}
 
       <div className={styles.grid}>
         <div
@@ -491,241 +718,14 @@ function areMiniMapPropsEqual(prev: MiniMapProps, next: MiniMapProps) {
     prev.myPlayerId === next.myPlayerId &&
     prev.activeUserId === next.activeUserId &&
     prev.sightRange === next.sightRange &&
+    prev.compact === next.compact &&
+    prev.panelClassName === next.panelClassName &&
     prev.onCellPing === next.onCellPing &&
+    prev.onCollapse === next.onCollapse &&
     areViewportCellsEqual(prev.viewportCells, next.viewportCells) &&
     arePointsEqual(
       prev.cameraCenterPosition ?? null,
       next.cameraCenterPosition ?? null,
     )
   );
-}
-
-function areMiniMapCellButtonPropsEqual(
-  prev: MiniMapCellButtonProps,
-  next: MiniMapCellButtonProps,
-) {
-  return (
-    prev.myPlayerId === next.myPlayerId &&
-    prev.activeUserId === next.activeUserId &&
-    prev.onCellClick === next.onCellClick &&
-    areMiniMapCellStatesEqual(prev.state, next.state)
-  );
-}
-
-function areMiniMapCellStatesEqual(
-  prev: MiniMapCellState,
-  next: MiniMapCellState,
-) {
-  return (
-    prev.visibility === next.visibility &&
-    prev.isViewportEdge === next.isViewportEdge &&
-    prev.isPinged === next.isPinged &&
-    areRenderableCellsEqual(prev.cell, next.cell) &&
-    areRenderablePlayersEqual(prev.players, next.players)
-  );
-}
-
-function areRenderableCellsEqual(prev: Cell, next: Cell) {
-  return (
-    prev === next ||
-    (prev.cell_id === next.cell_id &&
-      prev.x === next.x &&
-      prev.y === next.y &&
-      prev.tileCode === next.tileCode &&
-      prev.isPortal === next.isPortal &&
-      !!prev.barbel === !!next.barbel &&
-      (prev.resource?.type ?? "") === (next.resource?.type ?? "") &&
-      (prev.monster?.name ?? "") === (next.monster?.name ?? "") &&
-      (prev.monster?.db_instance_id ?? prev.monster?.id ?? 0) ===
-        (next.monster?.db_instance_id ?? next.monster?.id ?? 0) &&
-      (prev.structure_type ?? "") === (next.structure_type ?? "") &&
-      !!prev.is_under_construction === !!next.is_under_construction)
-  );
-}
-
-function areRenderablePlayersEqual(prev: PlayerState[], next: PlayerState[]) {
-  if (prev === next) {
-    return true;
-  }
-
-  if (prev.length !== next.length) {
-    return false;
-  }
-
-  for (let i = 0; i < prev.length; i++) {
-    if (
-      prev[i]?.user_id !== next[i]?.user_id ||
-      prev[i]?.group_id !== next[i]?.group_id ||
-      prev[i]?.name !== next[i]?.name
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function areViewportCellsEqual(
-  prev?: { width: number; height: number },
-  next?: { width: number; height: number },
-) {
-  return (
-    (prev?.width ?? 0) === (next?.width ?? 0) &&
-    (prev?.height ?? 0) === (next?.height ?? 0)
-  );
-}
-
-function arePointsEqual(
-  prev: { x: number; y: number } | null,
-  next: { x: number; y: number } | null,
-) {
-  return (
-    (prev?.x ?? -1) === (next?.x ?? -1) && (prev?.y ?? -1) === (next?.y ?? -1)
-  );
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function getCellClassName(state: MiniMapCellState) {
-  const classNames = [styles.cellButton, styles.cell];
-
-  if (state.visibility === "visible") {
-    classNames.push(styles.visibleCell);
-  } else if (state.visibility === "explored") {
-    classNames.push(styles.exploredCell);
-  } else {
-    classNames.push(styles.unknownCell);
-  }
-
-  if (state.visibility !== "unknown") {
-    classNames.push(getTerrainClassName(state.cell));
-  }
-
-  if (state.isViewportEdge) {
-    classNames.push(styles.viewportEdge);
-  }
-
-  return classNames.join(" ");
-}
-
-function getTerrainClassName(cell: Cell) {
-  if (cell.isPortal) return styles.portalCell;
-  if (cell.structure_type) return styles.structureCell;
-  if (cell.monster) return styles.monsterCell;
-  if (cell.resource) return styles.resourceCell;
-  if (cell.barbel) return styles.barrelCell;
-  if (cell.tileCode === 32) return styles.blockedCell;
-  if (cell.tileCode === 80) return styles.startCell;
-  if (cell.tileCode === 48) return styles.walkableCell;
-  return styles.borderCell;
-}
-
-function renderPointOfInterest(cell: Cell) {
-  if (cell.is_under_construction) {
-    return (
-      <span className={`${styles.poiMarker} ${styles.constructionMarker}`} />
-    );
-  }
-
-  if (cell.structure_type) {
-    return <span className={`${styles.poiMarker} ${styles.structureMarker}`} />;
-  }
-
-  if (cell.isPortal) {
-    return <span className={`${styles.poiMarker} ${styles.portalMarker}`} />;
-  }
-
-  if (cell.monster) {
-    return <span className={`${styles.poiMarker} ${styles.monsterMarker}`} />;
-  }
-
-  if (cell.barbel) {
-    return <span className={`${styles.poiMarker} ${styles.barrelMarker}`} />;
-  }
-
-  if (cell.resource) {
-    return <span className={`${styles.poiMarker} ${styles.resourceMarker}`} />;
-  }
-
-  return null;
-}
-
-function getPlayerMarkerClassName(
-  player: PlayerState,
-  myPlayerId?: number,
-  activeUserId?: number,
-  isStacked = false,
-) {
-  const classNames = [styles.playerMarker, getGroupClassName(player.group_id)];
-
-  if (isStacked) {
-    classNames.push(styles.stackMarker);
-  }
-  if (player.user_id === myPlayerId) {
-    classNames.push(styles.myPlayerMarker);
-  }
-  if (player.user_id === activeUserId) {
-    classNames.push(styles.activePlayerMarker);
-  }
-
-  return classNames.join(" ");
-}
-
-function getGroupClassName(groupId?: number) {
-  switch (groupId) {
-    case 1:
-      return styles.groupOne;
-    case 2:
-      return styles.groupTwo;
-    case 3:
-      return styles.groupThree;
-    default:
-      return styles.groupNeutral;
-  }
-}
-
-function buildCellTitle(
-  cell: Cell,
-  players: PlayerState[],
-  visibility: CellVisibility,
-) {
-  const parts = [`${cell.x}:${cell.y}`];
-
-  if (visibility === "unknown") {
-    parts.push("unexplored");
-    return parts.join(" · ");
-  }
-
-  parts.push(visibility === "visible" ? "visible" : "explored");
-
-  if (visibility !== "visible") {
-    return parts.join(" · ");
-  }
-
-  if (players.length > 0) {
-    parts.push(`players: ${players.map((player) => player.name).join(", ")}`);
-  }
-  if (cell.monster) {
-    parts.push(`monster: ${cell.monster.name}`);
-  }
-  if (cell.resource) {
-    parts.push(`resource: ${cell.resource.type}`);
-  }
-  if (cell.barbel) {
-    parts.push("barrel");
-  }
-  if (cell.isPortal) {
-    parts.push("portal");
-  }
-  if (cell.structure_type) {
-    parts.push(
-      cell.is_under_construction
-        ? `${cell.structure_type} (building)`
-        : cell.structure_type,
-    );
-  }
-
-  return parts.join(" · ");
 }

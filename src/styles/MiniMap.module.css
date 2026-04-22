@@ -2,7 +2,7 @@
   --panel-width: 208px;
   position: fixed;
   right: max(12px, env(safe-area-inset-right));
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px);
+  top: max(12px, env(safe-area-inset-top));
   z-index: 127;
   width: min(var(--panel-width), calc(100vw - 24px));
   display: grid;
@@ -21,6 +21,11 @@
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
   color: #e6eef6;
   contain: layout paint;
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease,
+    box-shadow 0.24s ease;
+  transform-origin: top right;
 }
 
 .panelSmall {
@@ -29,6 +34,14 @@
 
 .panelLarge {
   --panel-width: 292px;
+}
+
+.panelCompact {
+  --panel-width: 176px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+  bottom: auto;
+  padding: 10px;
+  gap: 8px;
 }
 
 .header {
@@ -380,18 +393,25 @@
 @media (max-width: 760px) and (orientation: portrait) {
   .panel {
     right: 8px;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 132px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+    bottom: auto;
     padding: 9px;
     border-radius: 14px;
     gap: 6px;
   }
 
   .panelSmall {
-    --panel-width: 190px;
+    --panel-width: 176px;
   }
 
   .panelLarge {
-    --panel-width: 258px;
+    --panel-width: 232px;
+  }
+
+  .panelCompact {
+    --panel-width: 176px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+    bottom: auto;
   }
 
   .title {
@@ -413,16 +433,23 @@
 @media (max-width: 920px) and (orientation: landscape) {
   .panel {
     right: 8px;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    bottom: auto;
     padding: 9px;
     gap: 6px;
   }
 
   .panelSmall {
-    --panel-width: 182px;
+    --panel-width: 170px;
   }
 
   .panelLarge {
-    --panel-width: 242px;
+    --panel-width: 220px;
+  }
+
+  .panelCompact {
+    --panel-width: 170px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    bottom: auto;
   }
 }

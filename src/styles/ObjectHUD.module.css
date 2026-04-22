@@ -14,6 +14,7 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   font-size: 13px;
   pointer-events: auto;
+  backdrop-filter: blur(12px);
 }
 
 .header {
@@ -69,8 +70,6 @@
   margin-bottom: 5px;
   font-size: 12px;
 }
-
-/* Make HP row match PlayerHUD layout */
 
 .hudRow {
   display: grid;
@@ -248,34 +247,38 @@
 
 @media (max-width: 760px) and (orientation: portrait) {
   .objectHudPanel {
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 142px);
-    transform: translateX(-50%);
-    width: min(320px, calc(100vw - 16px));
-    min-width: 0;
-    max-width: min(320px, calc(100vw - 16px));
+    top: max(8px, env(safe-area-inset-top));
+    right: 8px;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    width: 182px;
+    min-width: 182px;
+    max-width: 182px;
+    padding: 7px 8px;
+    border-radius: 10px;
   }
 
   .name {
-    white-space: normal;
+    white-space: nowrap;
   }
 }
 
 @media (max-width: 920px) and (orientation: landscape) {
   .objectHudPanel {
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 84px);
-    transform: translateX(-50%);
-    width: min(320px, calc(100vw - 24px));
-    min-width: 0;
-    max-width: min(320px, calc(100vw - 24px));
+    top: max(8px, env(safe-area-inset-top));
+    right: 8px;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    width: 186px;
+    min-width: 186px;
+    max-width: 186px;
+    padding: 7px 8px;
+    border-radius: 10px;
   }
 
   .name {
-    white-space: normal;
+    white-space: nowrap;
   }
 }

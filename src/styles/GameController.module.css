@@ -214,12 +214,10 @@
 }
 
 @media (min-width: 1181px) {
-  /* Place disconnect banner to the right of the Player HUD on large screens */
   .disconnectBanner {
     right: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + min(320px, 30vw));
     top: max(12px, env(safe-area-inset-top));
-    /* keep it above most UI but below full-screen modals */
     z-index: 140;
   }
 
@@ -365,9 +363,7 @@
 
 .turnStatusFloating {
   position: fixed;
-  /* push the floating status below the player HUD to avoid overlap
-       on large screens (HUD height ~56px) */
-  top: calc(max(12px, env(safe-area-inset-top)) + 64px);
+  top: calc(max(12px, env(safe-area-inset-top)) + 82px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 128;
@@ -399,11 +395,15 @@
   background: rgba(42, 12, 18, 0.88);
 }
 
+/* =========================================================
+   MINIMAP TOGGLE / TRANSFORM ANCHOR
+   ========================================================= */
+
 .minimapToggleButton {
   position: fixed;
   right: max(12px, env(safe-area-inset-right));
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px);
-  z-index: 127;
+  top: calc(max(12px, env(safe-area-inset-top)) + 88px);
+  z-index: 132;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -421,10 +421,46 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease,
+    visibility 0.22s ease;
 }
 
 .minimapToggleButtonCompact {
-  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 132px);
+  top: calc(max(8px, env(safe-area-inset-top)) + 88px);
+  min-width: 96px;
+  height: 38px;
+  padding: 0 12px;
+}
+
+.minimapToggleButtonHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.94);
+}
+
+.minimapPanelShell {
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease,
+    visibility 0.24s ease;
+  transform-origin: top right;
+}
+
+.minimapPanelShellOpen {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.minimapPanelShellClosed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.92);
 }
 
 /* =========================================================
@@ -482,71 +518,6 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #fff;
   backdrop-filter: blur(6px);
-}
-
-.useScrollFab {
-  position: fixed;
-  left: 16px;
-  bottom: 120px;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  background: #fffbe6;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  border: 1px solid #f0e6b8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 90;
-}
-
-.useScrollPanel {
-  position: fixed;
-  left: 16px;
-  bottom: 176px;
-  width: 300px;
-  max-height: 360px;
-  background: white;
-  border: 1px solid #ddd;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  padding: 8px;
-  z-index: 95;
-  overflow: auto;
-}
-
-.useScrollHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.useScrollList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.useScrollItem {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.useScrollImage {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-}
-.useScrollMeta {
-  flex: 1;
-}
-.useScrollCount {
-  color: #666;
-  font-size: 12px;
-}
-.useScrollMessage {
-  margin-bottom: 6px;
-  color: #222;
 }
 
 .endTurnButton {
@@ -639,9 +610,6 @@
   box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16);
 }
 
-/* =========================================================
-   BATTLE / MODES BUTTON
-   ========================================================= */
 .battleFab {
   position: fixed;
   right: calc(max(12px, env(safe-area-inset-right)) + 64px);
@@ -676,7 +644,7 @@
 }
 
 /* =========================================================
-   QUEST BANNER
+   QUEST / TURN MODAL
    ========================================================= */
 
 .questFoundBanner {
@@ -716,10 +684,6 @@
 .questFoundClose:hover {
   color: #e2b855;
 }
-
-/* =========================================================
-   TURN START MODAL
-   ========================================================= */
 
 .turnModalOverlay {
   position: fixed;
@@ -809,14 +773,14 @@
 
 @media (max-width: 760px) and (orientation: portrait) {
   .hud {
-    top: max(8px, env(safe-area-inset-top));
-    left: max(8px, env(safe-area-inset-left));
-    right: auto;
-    min-width: 150px;
-    max-width: min(220px, calc(100vw - 16px));
-    padding: 7px 8px;
-    border-radius: 10px;
-  }
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  right: auto;
+  min-width: 150px;
+  max-width: min(182px, calc(100vw - 132px));
+  padding: 7px 8px;
+  border-radius: 10px;
+}
 
   .hudRow {
     grid-template-columns: 40px 1fr auto;
@@ -832,10 +796,11 @@
   }
 
   .objectHudPanel {
-    top: auto;
-    right: max(8px, env(safe-area-inset-right));
-    bottom: calc(env(safe-area-inset-bottom) + 86px);
-    max-width: min(220px, calc(100vw - 16px));
+    top: calc(max(8px, env(safe-area-inset-top)) + 54px);
+    right: 8px;
+    left: auto;
+    bottom: auto;
+    max-width: 160px;
   }
 
   .disconnectBanner {
@@ -887,31 +852,21 @@
     padding: 0 8px;
   }
 
-  .turnStatusFloating {
-    top: calc(env(safe-area-inset-top) + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    min-width: 92px;
-    max-width: 140px;
-    padding: 5px 8px;
-    font-size: 10px;
-  }
+.turnStatusFloating {
+  top: calc(env(safe-area-inset-top) + 92px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 96px;
+  max-width: 144px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
 
   .inventoryFab {
     width: 50px;
     height: 50px;
     right: 8px;
     top: 42%;
-  }
-
-  .minimapToggleButton,
-  .minimapToggleButtonCompact {
-    right: 8px;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 132px);
-    min-width: 96px;
-    height: 38px;
-    padding: 0 12px;
-    font-size: 10px;
   }
 
   .waitingEtaLabel,
@@ -930,19 +885,30 @@
   }
 }
 
+.minimapToggleButton,
+.minimapToggleButtonCompact {
+  right: 8px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 88px);
+  bottom: auto;
+  min-width: 96px;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 10px;
+}
+
 /* =========================================================
    PHONE LANDSCAPE
    ========================================================= */
 
 @media (max-width: 920px) and (orientation: landscape) {
-  .hud {
-    top: max(8px, env(safe-area-inset-top));
-    left: max(8px, env(safe-area-inset-left));
-    min-width: 150px;
-    max-width: 220px;
-    padding: 6px 8px;
-    border-radius: 10px;
-  }
+.hud {
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  min-width: 150px;
+  max-width: 200px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
 
   .hudRow {
     grid-template-columns: 40px 1fr auto;
@@ -958,10 +924,10 @@
   }
 
   .objectHudPanel {
-    top: max(8px, env(safe-area-inset-top));
-    right: max(8px, env(safe-area-inset-right));
-    min-width: 150px;
-    max-width: 220px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 8px);
+    right: 8px;
+    min-width: 160px;
+    max-width: 176px;
   }
 
   .disconnectBanner {
@@ -1011,15 +977,15 @@
     padding: 0 8px;
   }
 
-  .turnStatusFloating {
-    top: calc(env(safe-area-inset-top) + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    min-width: 96px;
-    max-width: 150px;
-    padding: 5px 8px;
-    font-size: 10px;
-  }
+.turnStatusFloating {
+  top: calc(env(safe-area-inset-top) + 56px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 96px;
+  max-width: 150px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
 
   .inventoryFab {
     width: 50px;
@@ -1029,19 +995,20 @@
     transform: translateY(-50%);
   }
 
-  .minimapToggleButton,
-  .minimapToggleButtonCompact {
-    right: 8px;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
-    min-width: 96px;
-    height: 38px;
-    padding: 0 12px;
-    font-size: 10px;
-  }
-
   .inventoryFab:active {
     transform: translateY(calc(-50% + 1px));
   }
+
+  .minimapToggleButton,
+.minimapToggleButtonCompact {
+  right: 8px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 62px);
+  bottom: auto;
+  min-width: 96px;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 10px;
+}
 
   .waitingEtaLabel,
   .waitingQueue {
