@@ -13,11 +13,16 @@ import (
 
 // BarrelDeps — все зависимости, используемые в barrel.go
 type BarrelDeps struct {
-	GetPlayer    func(instanceID string, userID int) (*models.PlayerResponse, error)
-	UpdatePlayer func(instanceID string, p *models.PlayerResponse) error
-	AddItem      func(instanceID string, userID int, itemType string, id int, name, image, desc string, count int) error
-	LoadMap      func(instanceID string) ([]game.FullCell, error)
-	SaveMap      func(instanceID string, cells []game.FullCell) error
+	GetPlayer             func(instanceID string, userID int) (*models.PlayerResponse, error)
+	UpdatePlayer          func(instanceID string, p *models.PlayerResponse) error
+	AddItem               func(instanceID string, userID int, itemType string, id int, name, image, desc string, count int) error
+	LoadMap               func(instanceID string) ([]game.FullCell, error)
+	SaveMap               func(instanceID string, cells []game.FullCell) error
+	SaveMapCell           func(instanceID string, cell game.FullCell) error
+	GetMatch              func(instanceID string) (*models.MatchInfo, error)
+	MatchHasQuestArtifact func(instanceID string, artifactID int) (bool, error)
+	CountBarrels          func(instanceID string) (int, error)
+	GetArtifactByID       func(id int) (*repository.CatalogArtifact, error)
 }
 
 // CombatDeps — все зависимости, используемые в combat.go
@@ -40,11 +45,16 @@ type CombatDeps struct {
 // defaultDeps содержит реальные реализации
 var (
 	defaultBarrelDeps = BarrelDeps{
-		GetPlayer:    repository.GetMatchPlayerByID,
-		UpdatePlayer: repository.UpdateMatchPlayer,
-		AddItem:      repository.AddInventoryItem,
-		LoadMap:      repository.LoadMapCells,
-		SaveMap:      repository.SaveMapCells,
+		GetPlayer:             repository.GetMatchPlayerByID,
+		UpdatePlayer:          repository.UpdateMatchPlayer,
+		AddItem:               repository.AddInventoryItem,
+		LoadMap:               repository.LoadMapCells,
+		SaveMap:               repository.SaveMapCells,
+		SaveMapCell:           repository.SaveMapCell,
+		GetMatch:              repository.GetMatchByID,
+		MatchHasQuestArtifact: repository.MatchHasQuestArtifact,
+		CountBarrels:          repository.CountBarrelCells,
+		GetArtifactByID:       repository.GetArtifactFromCatalogByID,
 	}
 
 	defaultCombatDeps = CombatDeps{

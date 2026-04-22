@@ -59,7 +59,60 @@ func serialiseUpdatedCell(cell game.FullCell) UpdatedCellResponse {
 	}
 }
 
+func barrelGetMatch(instanceID string) (*models.MatchInfo, error) {
+	if Barrel.GetMatch != nil {
+		return Barrel.GetMatch(instanceID)
+	}
+	return repository.GetMatchByID(instanceID)
+}
+
+func barrelMatchHasQuestArtifact(instanceID string, artifactID int) (bool, error) {
+	if Barrel.MatchHasQuestArtifact != nil {
+		return Barrel.MatchHasQuestArtifact(instanceID, artifactID)
+	}
+	return repository.MatchHasQuestArtifact(instanceID, artifactID)
+}
+
+func barrelCountCells(instanceID string) (int, error) {
+	if Barrel.CountBarrels != nil {
+		return Barrel.CountBarrels(instanceID)
+	}
+	return repository.CountBarrelCells(instanceID)
+}
+
+func barrelGetArtifactByID(id int) (*repository.CatalogArtifact, error) {
+	if Barrel.GetArtifactByID != nil {
+		return Barrel.GetArtifactByID(id)
+	}
+	return repository.GetArtifactFromCatalogByID(id)
+}
+
+func pickFallbackBarrelResource(
+	cell game.FullCell,
+	resources []game.ResourceData,
+) (game.ResourceData, bool) {
+	for _, res := range resources {
+		if res.Type == "barrel" {
+			continue
+		}
+		if cell.Barbel != nil && res.ID == cell.Barbel.ID && res.Type == cell.Barbel.Type {
+			continue
+		}
+		res.ItemType = "resource"
+		return res, true
+	}
+
+	return game.ResourceData{}, false
+}
+
 func updateCellInMap(instanceID string, cell game.FullCell) {
+	if Barrel.SaveMapCell != nil {
+		if err := Barrel.SaveMapCell(instanceID, cell); err != nil {
+			log.Printf("updateCellInMap: save map cell failed: %v", err)
+		}
+		return
+	}
+
 	if err := repository.SaveMapCell(instanceID, cell); err != nil {
 		log.Printf("updateCellInMap: save map cell failed: %v", err)
 		return
@@ -81,7 +134,7 @@ func HandleOpenBarrel(
 	}
 
 	// 2) Load quest artifact state for this match to control drop rules.
-	matchInfo, err := repository.GetMatchByID(instanceID)
+	matchInfo, err := barrelGetMatch(instanceID)
 	if err != nil {
 		return cell, nil, false, fmt.Errorf("get match: %w", err)
 	}
@@ -89,12 +142,12 @@ func HandleOpenBarrel(
 	questDropped := false
 	remainingBarrels := 0
 	if matchInfo.QuestArtifactID > 0 {
-		questDropped, err = repository.MatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
+		questDropped, err = barrelMatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
 		if err != nil {
 			return cell, nil, false, fmt.Errorf("check quest artifact dropped: %w", err)
 		}
 
-		remainingBarrels, err = repository.CountBarrelCells(instanceID)
+		remainingBarrels, err = barrelCountCells(instanceID)
 		if err != nil {
 			return cell, nil, false, fmt.Errorf("count barrel cells: %w", err)
 		}
@@ -124,7 +177,7 @@ func HandleOpenBarrel(
 			}
 		}
 		if !forced {
-			qa, err := repository.GetArtifactFromCatalogByID(matchInfo.QuestArtifactID)
+			qa, err := barrelGetArtifactByID(matchInfo.QuestArtifactID)
 			if err != nil {
 				return cell, nil, false, fmt.Errorf("load forced quest artifact: %w", err)
 			}
@@ -225,36 +278,48 @@ func HandleOpenBarrel(
 		// Если это квест-артефакт — финальная проверка перед добавлением в инвентарь.
 		// Защита от состояния гонки: questDropped мог устареть к моменту выполнения.
 		if isQuestArtifact {
-			alreadyFound, _ := repository.MatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
+			alreadyFound, err := barrelMatchHasQuestArtifact(instanceID, matchInfo.QuestArtifactID)
+			if err != nil {
+				return cell, nil, false, fmt.Errorf("recheck quest artifact dropped: %w", err)
+			}
 			if alreadyFound {
-				// Артефакт уже есть у кого-то — просто убираем бочку и ничего не выдаём.
-				cell.Barbel = nil
-				cell.TileCode = 48
-				updateCellInMap(instanceID, cell)
-				cellJSON := serialiseUpdatedCell(cell)
-				upd := map[string]interface{}{
-					"type": "UPDATE_CELL",
-					"payload": map[string]interface{}{
-						"instanceId":  instanceID,
-						"updatedCell": cellJSON,
-					},
+				// Если из-за гонки бочка всё же выбрала уже найденный квестовый артефакт,
+				// заменяем его обычным ресурсом и явно отправляем в ресурсный инвентарь.
+				replacement, ok := pickFallbackBarrelResource(cell, resources)
+				if !ok {
+					cell.Barbel = nil
+					cell.TileCode = 48
+					updateCellInMap(instanceID, cell)
+					cellJSON := serialiseUpdatedCell(cell)
+					upd := map[string]interface{}{
+						"type": "UPDATE_CELL",
+						"payload": map[string]interface{}{
+							"instanceId":  instanceID,
+							"updatedCell": cellJSON,
+						},
+					}
+					updBytes, _ := json.Marshal(upd)
+					Broadcast(updBytes)
+					updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
+					if err != nil {
+						return cell, nil, false, fmt.Errorf("reload player: %w", err)
+					}
+					return cell, updatedPlayer, false, nil
 				}
-				updBytes, _ := json.Marshal(upd)
-				Broadcast(updBytes)
-				updatedPlayer, err := Barrel.GetPlayer(instanceID, userID)
-				if err != nil {
-					return cell, nil, false, fmt.Errorf("reload player: %w", err)
-				}
-				return cell, updatedPlayer, false, nil
+
+				v = replacement
+				isQuestArtifact = false
 			}
 		}
 
 		// Для квест-артефакта всегда используем item_type="artifact", чтобы
 		// MatchHasQuestArtifact корректно нашёл его при следующей проверке.
+		isRegularArtifact := isArtifact(v, artifacts)
 		itemType := "resource"
-		if isArtifact(v, artifacts) || isQuestArtifact {
+		if isRegularArtifact || isQuestArtifact {
 			itemType = "artifact"
 		}
+		v.ItemType = itemType
 
 		// а) кладём в инвентарь
 		if err := Barrel.AddItem(
@@ -295,7 +360,7 @@ func HandleOpenBarrel(
 
 		cellJSON := serialiseUpdatedCell(cell)
 		evtType := "BARREL_RESOURCE"
-		if isArtifact(v, artifacts) || isQuestArtifact {
+		if isRegularArtifact || isQuestArtifact {
 			evtType = "BARREL_ARTIFACT"
 		}
 		resMsg := map[string]interface{}{

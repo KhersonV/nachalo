@@ -1,422 +1,455 @@
 .panel {
-    --panel-width: 208px;
-    position: fixed;
-    right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px);
-    z-index: 127;
-    width: min(var(--panel-width), calc(100vw - 24px));
-    display: grid;
-    gap: 8px;
-    padding: 12px;
-    border: 1px solid rgba(160, 184, 206, 0.22);
-    border-radius: 16px;
-    background:
-        radial-gradient(
-            circle at top left,
-            rgba(72, 127, 184, 0.18),
-            transparent 34%
-        ),
-        rgba(8, 14, 24, 0.82);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
-    color: #e6eef6;
-    contain: layout paint;
+  --panel-width: 208px;
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  top: max(12px, env(safe-area-inset-top));
+  z-index: 127;
+  width: min(var(--panel-width), calc(100vw - 24px));
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(160, 184, 206, 0.22);
+  border-radius: 16px;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(72, 127, 184, 0.18),
+      transparent 34%
+    ),
+    rgba(8, 14, 24, 0.82);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  color: #e6eef6;
+  contain: layout paint;
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease,
+    box-shadow 0.24s ease;
+  transform-origin: top right;
 }
 
 .panelSmall {
-    --panel-width: 208px;
+  --panel-width: 208px;
 }
 
 .panelLarge {
-    --panel-width: 292px;
+  --panel-width: 292px;
+}
+
+.panelCompact {
+  --panel-width: 176px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+  bottom: auto;
+  padding: 10px;
+  gap: 8px;
 }
 
 .header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .title {
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f8fafc;
 }
 
 .subtitle {
-    margin-top: 2px;
-    font-size: 11px;
-    color: #9cb3c8;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #9cb3c8;
 }
 
 .controls {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .sizeButton {
-    appearance: none;
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 999px;
-    background: rgba(18, 29, 45, 0.8);
-    color: #d8e3ee;
-    font-size: 10px;
-    font-weight: 700;
-    line-height: 1;
-    padding: 6px 9px;
-    cursor: pointer;
-    transition:
-        transform 0.18s ease,
-        border-color 0.18s ease,
-        background 0.18s ease,
-        color 0.18s ease;
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  background: rgba(18, 29, 45, 0.8);
+  color: #d8e3ee;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 6px 9px;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .sizeButton:hover {
-    transform: translateY(-1px);
-    border-color: rgba(186, 230, 253, 0.42);
-    background: rgba(24, 40, 61, 0.95);
+  transform: translateY(-1px);
+  border-color: rgba(186, 230, 253, 0.42);
+  background: rgba(24, 40, 61, 0.95);
 }
 
 .sizeButtonActive {
-    border-color: rgba(125, 211, 252, 0.48);
-    background: rgba(17, 94, 89, 0.92);
-    color: #ecfeff;
+  border-color: rgba(125, 211, 252, 0.48);
+  background: rgba(17, 94, 89, 0.92);
+  color: #ecfeff;
+}
+
+.collapseButton {
+  border-color: rgba(248, 113, 113, 0.25);
+  background: rgba(40, 18, 24, 0.82);
+  color: #fecaca;
 }
 
 .hint {
-    font-size: 10px;
-    color: #b8c7d7;
+  font-size: 10px;
+  color: #b8c7d7;
 }
 
 .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    font-size: 10px;
-    color: #b8c7d7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 10px;
+  color: #b8c7d7;
 }
 
 .legendItem {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .legendSwatch {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .youSwatch {
-    background: #22c55e;
-    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
 }
 
 .activeSwatch {
-    background: #facc15;
-    box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16);
+  background: #facc15;
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.16);
 }
 
 .unknownSwatch {
-    background: #0f1720;
-    border-color: rgba(148, 163, 184, 0.4);
+  background: #0f1720;
+  border-color: rgba(148, 163, 184, 0.4);
 }
 
 .grid {
-    display: block;
-    width: 100%;
-    overflow: hidden;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 12px;
-    background: rgba(2, 6, 12, 0.96);
-    contain: layout paint;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(2, 6, 12, 0.96);
+  contain: layout paint;
 }
 
 .cells {
-    display: grid;
-    width: 100%;
-    min-height: 120px;
-    contain: layout paint style;
-    touch-action: manipulation;
+  display: grid;
+  width: 100%;
+  min-height: 120px;
+  contain: layout paint style;
+  touch-action: manipulation;
 }
 
 .canvasFrame {
-    position: relative;
-    width: 100%;
-    min-height: 120px;
+  position: relative;
+  width: 100%;
+  min-height: 120px;
 }
 
 .canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    cursor: crosshair;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
 }
 
 .cellButton {
-    appearance: none;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    margin: 0;
-    color: inherit;
-    font: inherit;
+  appearance: none;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
 }
 
 .cellButton:disabled {
-    cursor: default;
+  cursor: default;
 }
 
 .cell {
-    position: relative;
-    min-width: 0;
-    aspect-ratio: 1 / 1;
-    box-shadow: inset 0 0 0 1px rgba(5, 12, 20, 0.28);
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1 / 1;
+  box-shadow: inset 0 0 0 1px rgba(5, 12, 20, 0.28);
 }
 
 .cell:not(:disabled) {
-    cursor: pointer;
+  cursor: pointer;
 }
 
 .visibleCell {
-    opacity: 1;
+  opacity: 1;
 }
 
 .exploredCell {
-    opacity: 0.56;
+  opacity: 0.56;
 }
 
 .unknownCell {
-    opacity: 1;
-    background: #09111a;
+  opacity: 1;
+  background: #09111a;
 }
 
 .walkableCell {
-    background: #8e99a6;
+  background: #8e99a6;
 }
 
 .blockedCell {
-    background: #34424f;
+  background: #34424f;
 }
 
 .borderCell {
-    background: #53352d;
+  background: #53352d;
 }
 
 .startCell {
-    background: #2563eb;
+  background: #2563eb;
 }
 
 .portalCell {
-    background: #0f8b85;
+  background: #0f8b85;
 }
 
 .resourceCell {
-    background: #277a63;
+  background: #277a63;
 }
 
 .barrelCell {
-    background: #9d6b37;
+  background: #9d6b37;
 }
 
 .monsterCell {
-    background: #8b3535;
+  background: #8b3535;
 }
 
 .structureCell {
-    background: #7459c4;
+  background: #7459c4;
 }
 
 .unknownTerrain {
-    background:
-        linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(6, 9, 14, 0.98)),
-        rgba(6, 9, 14, 0.98);
+  background:
+    linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(6, 9, 14, 0.98)),
+    rgba(6, 9, 14, 0.98);
 }
 
 .viewportEdge {
-    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.9);
 }
 
 .poiMarker {
-    position: absolute;
-    inset: 50% auto auto 50%;
-    width: 28%;
-    height: 28%;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 28%;
+  height: 28%;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .monsterMarker {
-    background: #fee2e2;
-    border: 1px solid rgba(127, 39, 39, 0.8);
+  background: #fee2e2;
+  border: 1px solid rgba(127, 39, 39, 0.8);
 }
 
 .resourceMarker {
-    background: #7dd3fc;
-    border: 1px solid rgba(3, 105, 161, 0.85);
+  background: #7dd3fc;
+  border: 1px solid rgba(3, 105, 161, 0.85);
 }
 
 .barrelMarker {
-    background: #fdba74;
-    border: 1px solid rgba(146, 64, 14, 0.9);
+  background: #fdba74;
+  border: 1px solid rgba(146, 64, 14, 0.9);
 }
 
 .portalMarker {
-    width: 42%;
-    height: 42%;
-    border: 1px solid rgba(240, 253, 250, 0.92);
-    background: transparent;
+  width: 42%;
+  height: 42%;
+  border: 1px solid rgba(240, 253, 250, 0.92);
+  background: transparent;
 }
 
 .structureMarker {
-    width: 38%;
-    height: 38%;
-    border-radius: 4px;
-    background: rgba(17, 24, 39, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.55);
+  width: 38%;
+  height: 38%;
+  border-radius: 4px;
+  background: rgba(17, 24, 39, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 
 .constructionMarker {
-    width: 42%;
-    height: 42%;
-    border-radius: 4px;
-    background: rgba(251, 191, 36, 0.88);
-    border: 1px solid rgba(120, 53, 15, 0.92);
+  width: 42%;
+  height: 42%;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.88);
+  border: 1px solid rgba(120, 53, 15, 0.92);
 }
 
 .playerMarker {
-    position: absolute;
-    width: 34%;
-    height: 34%;
-    border-radius: 999px;
-    border: 1px solid rgba(6, 11, 18, 0.85);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    z-index: 2;
+  position: absolute;
+  width: 34%;
+  height: 34%;
+  border-radius: 999px;
+  border: 1px solid rgba(6, 11, 18, 0.85);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .stackMarker {
-    width: 26%;
-    height: 26%;
+  width: 26%;
+  height: 26%;
 }
 
 .myPlayerMarker {
-    outline: 2px solid rgba(34, 197, 94, 0.45);
-    outline-offset: 1px;
+  outline: 2px solid rgba(34, 197, 94, 0.45);
+  outline-offset: 1px;
 }
 
 .activePlayerMarker {
-    outline: 1px solid rgba(250, 204, 21, 0.9);
-    outline-offset: 1px;
+  outline: 1px solid rgba(250, 204, 21, 0.9);
+  outline-offset: 1px;
 }
 
 .groupNeutral {
-    background: #f8fafc;
+  background: #f8fafc;
 }
 
 .groupOne {
-    background: #60a5fa;
+  background: #60a5fa;
 }
 
 .groupTwo {
-    background: #f87171;
+  background: #f87171;
 }
 
 .groupThree {
-    background: #facc15;
+  background: #facc15;
 }
 
 @keyframes minimapPingPulse {
-    0% {
-        transform: translate(-50%, -50%) scale(0.42);
-        opacity: 1;
-    }
-    70% {
-        transform: translate(-50%, -50%) scale(1.12);
-        opacity: 0.22;
-    }
-    100% {
-        transform: translate(-50%, -50%) scale(1.24);
-        opacity: 0;
-    }
+  0% {
+    transform: translate(-50%, -50%) scale(0.42);
+    opacity: 1;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 0.22;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.24);
+    opacity: 0;
+  }
 }
 
 .pingMarker {
-    position: absolute;
-    inset: 50% auto auto 50%;
-    width: 72%;
-    height: 72%;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-    border: 1px solid rgba(186, 230, 253, 0.95);
-    animation: minimapPingPulse 1s ease-out forwards;
-    pointer-events: none;
-    z-index: 3;
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 72%;
+  height: 72%;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(186, 230, 253, 0.95);
+  animation: minimapPingPulse 1s ease-out forwards;
+  pointer-events: none;
+  z-index: 3;
 }
 
 @media (hover: hover) and (pointer: fine) {
-    .cell:not(:disabled):hover {
-        box-shadow:
-            inset 0 0 0 1px rgba(186, 230, 253, 0.85),
-            inset 0 0 0 2px rgba(14, 165, 233, 0.18);
-        z-index: 1;
-    }
+  .cell:not(:disabled):hover {
+    box-shadow:
+      inset 0 0 0 1px rgba(186, 230, 253, 0.85),
+      inset 0 0 0 2px rgba(14, 165, 233, 0.18);
+    z-index: 1;
+  }
 }
 
 @media (max-width: 760px) and (orientation: portrait) {
-    .panel {
-        right: 8px;
-        bottom: calc(max(8px, env(safe-area-inset-bottom)) + 132px);
-        padding: 9px;
-        border-radius: 14px;
-        gap: 6px;
-    }
+  .panel {
+    right: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+    bottom: auto;
+    padding: 9px;
+    border-radius: 14px;
+    gap: 6px;
+  }
 
-    .panelSmall {
-        --panel-width: 190px;
-    }
+  .panelSmall {
+    --panel-width: 176px;
+  }
 
-    .panelLarge {
-        --panel-width: 258px;
-    }
+  .panelLarge {
+    --panel-width: 232px;
+  }
 
-    .title {
-        font-size: 11px;
-    }
+  .panelCompact {
+    --panel-width: 176px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 6px);
+    bottom: auto;
+  }
 
-    .subtitle,
-    .hint,
-    .legend {
-        font-size: 9px;
-    }
+  .title {
+    font-size: 11px;
+  }
 
-    .sizeButton {
-        font-size: 9px;
-        padding: 5px 8px;
-    }
+  .subtitle,
+  .hint,
+  .legend {
+    font-size: 9px;
+  }
+
+  .sizeButton {
+    font-size: 9px;
+    padding: 5px 8px;
+  }
 }
 
 @media (max-width: 920px) and (orientation: landscape) {
-    .panel {
-        right: 8px;
-        bottom: calc(max(8px, env(safe-area-inset-bottom)) + 78px);
-        padding: 9px;
-        gap: 6px;
-    }
+  .panel {
+    right: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    bottom: auto;
+    padding: 9px;
+    gap: 6px;
+  }
 
-    .panelSmall {
-        --panel-width: 182px;
-    }
+  .panelSmall {
+    --panel-width: 170px;
+  }
 
-    .panelLarge {
-        --panel-width: 242px;
-    }
+  .panelLarge {
+    --panel-width: 220px;
+  }
+
+  .panelCompact {
+    --panel-width: 170px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    bottom: auto;
+  }
 }
