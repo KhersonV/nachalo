@@ -276,7 +276,7 @@ func GenerateFullMap(cfg MapConfig, resources []ResourceData, monsters []Monster
 	}
 
 	var width, height int
-	if (cfg.TotalPlayers == 1 || cfg.TotalPlayers == 2) {
+	if cfg.TotalPlayers == 1 || cfg.TotalPlayers == 2 {
 		width = 15
 		height = 15
 	} else {
@@ -444,6 +444,10 @@ func OpenBarbel(
 	artifacts []ResourceData,
 
 ) (interface{}, error) {
+	if cell.Barbel == nil {
+		return nil, nil
+	}
+
 	r := rnd()
 	// Параметры урона (можно вынести в константы или Config)
 	const minDamage = 3

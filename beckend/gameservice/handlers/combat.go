@@ -971,18 +971,11 @@ func saveTargetHealth(
 			return
 		}
 
-		cell, err := repository.LoadMapCell(instanceID, m.X, m.Y)
-		if err != nil {
-			log.Printf("[saveTargetHealth] LoadMapCell error: %v", err)
+		if _, ok, err := updateMonsterCellHealth(instanceID, m, ar.NewHealth); err != nil {
+			log.Printf("[saveTargetHealth] updateMonsterCellHealth error: %v", err)
 			return
-		}
-		if cell != nil && cell.Monster != nil {
+		} else if ok {
 			log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
-			cell.Monster.Health = m.Health
-			if err := repository.SaveMapCell(instanceID, *cell); err != nil {
-				log.Printf("[saveTargetHealth] SaveMapCell error: %v", err)
-				return
-			}
 			// Monster HP is now synced to clients via COMBAT_EXCHANGE.
 			// Broadcasting a non-lethal UPDATE_CELL here makes the frontend
 			// see the same combat twice: once as a legacy HP diff on the grid
@@ -1004,6 +997,66 @@ func saveTargetHealth(
 			handleMonsterDeath(instanceID, targetID)
 		}
 	}
+}
+
+func findMonsterCellIndex(cells []game.FullCell, monster *repository.MatchMonster) int {
+	if monster == nil {
+		return -1
+	}
+	if monster.MonsterInstanceID != 0 {
+		for i := range cells {
+			if cells[i].Monster != nil && cells[i].Monster.DBInstanceID == monster.MonsterInstanceID {
+				return i
+			}
+		}
+	}
+	for i := range cells {
+		if cells[i].X == monster.X && cells[i].Y == monster.Y {
+			return i
+		}
+	}
+	return -1
+}
+
+func updateMonsterCellHealth(instanceID string, monster *repository.MatchMonster, hp int) (game.FullCell, bool, error) {
+	cells, err := Combat.LoadMap(instanceID)
+	if err != nil {
+		return game.FullCell{}, false, err
+	}
+
+	idx := findMonsterCellIndex(cells, monster)
+	if idx < 0 || cells[idx].Monster == nil {
+		return game.FullCell{}, false, nil
+	}
+
+	cells[idx].Monster.Health = hp
+	if err := Combat.SaveMap(instanceID, cells); err != nil {
+		return game.FullCell{}, false, err
+	}
+
+	return cells[idx], true, nil
+}
+
+func clearMonsterCell(instanceID string, monster *repository.MatchMonster) (*game.FullCell, error) {
+	cells, err := Combat.LoadMap(instanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var updatedCell *game.FullCell
+	idx := findMonsterCellIndex(cells, monster)
+	if idx >= 0 {
+		cells[idx].Monster = nil
+		cells[idx].TileCode = int(game.Walkable)
+		cell := cells[idx]
+		updatedCell = &cell
+	}
+
+	if err := Combat.SaveMap(instanceID, cells); err != nil {
+		return updatedCell, err
+	}
+
+	return updatedCell, nil
 }
 
 // transferQuestArtifact handles quest-artifact fate when a player dies.
@@ -1268,14 +1321,9 @@ func handleMonsterDeath(instanceID string, monsterID int) {
 	x, y := m.X, m.Y
 	_ = Combat.DeleteMonster(instanceID, monsterID)
 
-	cell, err := repository.LoadMapCell(instanceID, x, y)
+	cell, err := clearMonsterCell(instanceID, m)
 	if err != nil {
 		return
-	}
-	if cell != nil {
-		cell.Monster = nil
-		cell.TileCode = 48
-		_ = repository.SaveMapCell(instanceID, *cell)
 	}
 
 	// Fallback to minimal payload if for some reason we don't have the full cell

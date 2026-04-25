@@ -3,11 +3,14 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 
 	"gameservice/game"
 )
+
+var errDBNotInitialized = errors.New("repository DB is not initialized")
 
 func CreateMatchMapCellsTable() {
 	query := `
@@ -41,6 +44,10 @@ func CreateMatchMapCellsTable() {
 }
 
 func EnsureMatchMapCellsBackfilled(instanceID string) error {
+	if DB == nil {
+		return errDBNotInitialized
+	}
+
 	var rowsCount int
 	if err := DB.QueryRow(
 		`SELECT COUNT(1) FROM match_map_cells WHERE instance_id = $1`,
@@ -155,6 +162,9 @@ func LoadMapCellForUpdateTx(tx *sql.Tx, instanceID string, x int, y int) (*game.
 }
 
 func SaveMapCell(instanceID string, cell game.FullCell) error {
+	if DB == nil {
+		return errDBNotInitialized
+	}
 	if err := EnsureMatchMapCellsBackfilled(instanceID); err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -250,6 +260,10 @@ func scanMatchMapCell(scanner matchMapCellScanner) (*game.FullCell, error) {
 }
 
 func replaceMatchMapCells(instanceID string, cells []game.FullCell) error {
+	if DB == nil {
+		return errDBNotInitialized
+	}
+
 	tx, err := DB.Begin()
 	if err != nil {
 		return err
