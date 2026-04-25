@@ -1095,6 +1095,13 @@
   }
 }
 
+@media (max-width: 480px) and (orientation: portrait) {
+  .hudCombatMeta,
+  .turnStatusFloating {
+    display: none;
+  }
+}
+
 /* =========================================================
    ANIMATIONS
    ========================================================= */
