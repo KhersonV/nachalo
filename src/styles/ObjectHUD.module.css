@@ -178,6 +178,12 @@
   transform: translateY(-1px);
 }
 
+.objectHudPanelBelowMinimap {
+  top: calc(max(12px, env(safe-area-inset-top)) + 158px);
+  right: auto;
+  left: max(12px, env(safe-area-inset-left));
+}
+
 @media (max-width: 920px) {
   .objectHudPanel {
     min-width: 150px;
@@ -242,6 +248,14 @@
     margin-top: 6px;
     font-size: 11px;
     padding: 5px 0;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .objectHudPanelBelowMinimap {
+    top: calc(max(14px, env(safe-area-inset-top)) + 150px);
+    left: 14px;
+    right: auto;
   }
 }
 

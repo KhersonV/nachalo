@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MATCHMAKING_BASE as API_MATCH } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
@@ -10,6 +10,16 @@ const PREP_REDIRECT_SECONDS = Number.isFinite(prepSecondsFromEnv)
     ? Math.max(5, Math.min(120, Math.floor(prepSecondsFromEnv)))
     : 15;
 const PREP_REDIRECT_MS = PREP_REDIRECT_SECONDS * 1000;
+
+type CurrentMatchResponse = {
+    instance_id?: string;
+    instanceId?: string;
+};
+
+function withBust(url: string) {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}_=${Date.now()}`;
+}
 
 export default function GlobalMatchListener() {
     const { user } = useAuth();
@@ -33,6 +43,58 @@ export default function GlobalMatchListener() {
             : "dismissedPendingInstance";
     const suppressedUntilKeyFor = (userId: number | string | undefined) =>
         userId ? `suppressedPendingUntil:${userId}` : "suppressedPendingUntil";
+
+    const handlePendingMatch = useCallback(
+        (instanceId: string | null | undefined) => {
+            if (!instanceId) return;
+
+            const now = Date.now();
+            const isNewInstance = instanceId !== pendingInstanceId;
+
+            if (typeof window !== "undefined") {
+                const currentPath = window.location.pathname;
+                const currentInstance = new URLSearchParams(
+                    window.location.search,
+                ).get("instance_id");
+
+                if (
+                    currentPath.startsWith("/game") &&
+                    currentInstance === instanceId
+                ) {
+                    setPendingInstanceId(null);
+                    setRedirectAtMs(null);
+                    setShowMatchModal(false);
+                    return;
+                }
+            }
+
+            setPendingInstanceId(instanceId);
+            if (isNewInstance || !redirectAtMs || redirectAtMs <= now) {
+                setRedirectAtMs(now + PREP_REDIRECT_MS);
+            }
+
+            const suppressionActive =
+                suppressedUntil !== null && now < suppressedUntil;
+
+            if (
+                instanceId === suppressedInstanceId ||
+                suppressionActive ||
+                instanceId === dismissedInstanceId
+            ) {
+                setShowMatchModal(false);
+                return;
+            }
+
+            setShowMatchModal(true);
+        },
+        [
+            dismissedInstanceId,
+            pendingInstanceId,
+            redirectAtMs,
+            suppressedInstanceId,
+            suppressedUntil,
+        ],
+    );
 
     // restore dismissed/suppressed ids from localStorage so refresh doesn't re-show modal
     useEffect(() => {
@@ -75,55 +137,7 @@ export default function GlobalMatchListener() {
                 const data = JSON.parse(ev.data);
                 if (!data || !data.instance_id) return;
 
-                const isNewInstance = data.instance_id !== pendingInstanceId;
-
-                // If user is already on the game page for this instance, clear pending and don't show
-                let currentInstance: string | null = null;
-                let currentPath: string | null = null;
-                if (typeof window !== "undefined") {
-                    currentPath = window.location.pathname;
-                    currentInstance = new URLSearchParams(
-                        window.location.search,
-                    ).get("instance_id");
-                }
-                if (
-                    currentPath?.startsWith("/game") &&
-                    currentInstance === data.instance_id
-                ) {
-                    setPendingInstanceId(null);
-                    setShowMatchModal(false);
-                    return;
-                }
-
-                // If this instance was suppressed (user dismissed after join), set pending but don't show
-                if (data.instance_id === suppressedInstanceId) {
-                    setPendingInstanceId(data.instance_id);
-                    if (isNewInstance)
-                        setRedirectAtMs(Date.now() + PREP_REDIRECT_MS);
-                    setShowMatchModal(false);
-                    return;
-                }
-
-                // If the user suppressed showing modals until a certain time, respect it
-                if (suppressedUntil && Date.now() < suppressedUntil) {
-                    setPendingInstanceId(data.instance_id);
-                    if (isNewInstance)
-                        setRedirectAtMs(Date.now() + PREP_REDIRECT_MS);
-                    setShowMatchModal(false);
-                    return;
-                }
-
-                // Only set redirectAtMs when a new instance appears; don't reset on repeated events
-                setPendingInstanceId(data.instance_id);
-                if (isNewInstance) {
-                    setRedirectAtMs(Date.now() + PREP_REDIRECT_MS);
-                }
-                // only show modal if user hasn't dismissed this same instance
-                if (data.instance_id !== dismissedInstanceId) {
-                    setShowMatchModal(true);
-                } else {
-                    setShowMatchModal(false);
-                }
+                handlePendingMatch(data.instance_id);
             } catch (e) {
                 console.error("Invalid SSE message", e);
             }
@@ -142,11 +156,45 @@ export default function GlobalMatchListener() {
     }, [
         user?.token,
         user?.id,
-        dismissedInstanceId,
-        suppressedInstanceId,
-        suppressedUntil,
-        pendingInstanceId,
+        handlePendingMatch,
     ]);
+
+    useEffect(() => {
+        if (!user?.token || !user?.id) return;
+
+        let alive = true;
+        const checkCurrentMatch = async () => {
+            try {
+                const res = await fetch(
+                    withBust(
+                        `${API_MATCH}/matchmaking/currentMatch?player_id=${user.id}`,
+                    ),
+                    {
+                        headers: {
+                            Authorization: `Bearer ${user.token}`,
+                        },
+                        cache: "no-store",
+                    },
+                );
+                if (!res.ok) return;
+
+                const data: CurrentMatchResponse = await res.json();
+                if (!alive) return;
+
+                handlePendingMatch(data.instance_id ?? data.instanceId);
+            } catch (e) {
+                console.error("currentMatch fallback poll failed", e);
+            }
+        };
+
+        checkCurrentMatch();
+        const intervalId = window.setInterval(checkCurrentMatch, 3000);
+
+        return () => {
+            alive = false;
+            window.clearInterval(intervalId);
+        };
+    }, [handlePendingMatch, user?.id, user?.token]);
 
     useEffect(() => {
         if (!pendingInstanceId || !redirectAtMs) return;
