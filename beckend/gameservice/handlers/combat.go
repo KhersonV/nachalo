@@ -395,7 +395,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 			if ms, ok := game.GetMatchState(instanceID); ok {
 				ms.RecordDamageEvent(exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
 				if exitDamage.NewHealth <= 0 {
-					ms.RecordKillEvent(exitDamage.SourceGuardianID, "player", exitDamage.Damage)
+					ms.RecordKillEvent(exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
 				}
 			}
 		}
@@ -934,14 +934,23 @@ func saveTargetHealth(
 			return
 		}
 		log.Printf("[saveTargetHealth] player %d HP before: %d, after: %d", targetID, p.Health, ar.NewHealth)
+		if p.Health <= 0 {
+			log.Printf("[saveTargetHealth] player %d is already dead, skipping duplicate death handling.", targetID)
+			return
+		}
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
 			log.Printf("[saveTargetHealth] player %d survives, updating HP.", targetID)
 			Combat.UpdatePlayer(instanceID, p)
 		} else {
 			log.Printf("[saveTargetHealth] player %d died, calling handlePlayerDeath.", targetID)
+			recordedKill := true
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				ms.RecordKillEvent(attackerID, "player", ar.Damage)
+				recordedKill = ms.RecordKillEvent(attackerID, "player", targetID, ar.Damage)
+			}
+			if !recordedKill {
+				log.Printf("[saveTargetHealth] player %d death was already counted, skipping duplicate handling.", targetID)
+				return
 			}
 			handlePlayerDeath(instanceID, p, attackerID, attackerType == "player")
 			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
@@ -984,8 +993,13 @@ func saveTargetHealth(
 
 		if ar.NewHealth <= 0 {
 			log.Printf("[saveTargetHealth] monster %d died, calling handleMonsterDeath.", targetID)
+			recordedKill := true
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				ms.RecordKillEvent(attackerID, "monster", ar.Damage)
+				recordedKill = ms.RecordKillEvent(attackerID, "monster", targetID, ar.Damage)
+			}
+			if !recordedKill {
+				log.Printf("[saveTargetHealth] monster %d death was already counted, skipping duplicate handling.", targetID)
+				return
 			}
 			handleMonsterDeath(instanceID, targetID)
 		}
@@ -1074,6 +1088,12 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 
 	log.Printf("[handlePlayerDeath] start, userID=%d, pos=%+v", userID, oldPos)
 
+	ms, hasMatchState := game.GetMatchState(instanceID)
+	if hasMatchState && !ms.RecordPlayerDefeat(userID) {
+		log.Printf("[handlePlayerDeath] duplicate death ignored, userID=%d", userID)
+		return
+	}
+
 	// Transfer quest artifact before removing player from match
 	transferQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
 
@@ -1084,8 +1104,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 	unbindPlayer(p.UserID)
 
 	// 2 Если в памяти есть матч
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RecordPlayerDefeat(userID)
+	if hasMatchState {
 		ms.RemovePlayerFromTurnOrder(userID)
 
 		// 2а Если больше нет игроков — завершаем матч
@@ -1640,7 +1659,7 @@ func doCounterattackWithEnergy(
 	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
 		ms.RecordDamageEvent(defenderID, attackerType, attackerID, ar.Damage)
 		if ar.NewHealth <= 0 {
-			ms.RecordKillEvent(defenderID, attackerType, ar.Damage)
+			ms.RecordKillEvent(defenderID, attackerType, attackerID, ar.Damage)
 		}
 	}
 
@@ -1680,6 +1699,9 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		lockPlayer(req.AttackerID)
+		defer unlockPlayer(req.AttackerID)
+
 		matchState, ok := Combat.LoadGameState(req.InstanceID)
 		if !ok {
 			http.Error(w, "match not found", http.StatusNotFound)
@@ -1689,9 +1711,6 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
 			return
 		}
-
-		lockPlayer(req.AttackerID)
-		defer unlockPlayer(req.AttackerID)
 	}
 
 	universalAttackLocked(w, req)
@@ -1704,10 +1723,18 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		http.Error(w, "failed to load attacker stats", http.StatusInternalServerError)
 		return
 	}
+	if req.AttackerType == "player" && atkStats.Health <= 0 {
+		http.Error(w, "attacker is already defeated", http.StatusBadRequest)
+		return
+	}
 	defStats, err := loadStats(req.InstanceID, req.TargetType, req.TargetID)
 	if err != nil {
 		log.Printf("[DEBUG] UniversalAttackHandler: loadStats target error: %v", err)
 		http.Error(w, "failed to load target stats", http.StatusInternalServerError)
+		return
+	}
+	if defStats.Health <= 0 {
+		http.Error(w, "target is already defeated", http.StatusBadRequest)
 		return
 	}
 	mode, err := resolveAttackMode(atkStats, defStats)
@@ -1787,7 +1814,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
 
-	if atkStats.CharacterType == "mystic" {
+	if atkStats.CharacterType == "mystic" && finalTargetHP > 0 {
 		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
 		if err != nil {
 			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)

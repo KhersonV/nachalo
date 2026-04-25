@@ -33,8 +33,18 @@ func CalculateResults(
 	}
 
 	// 2) Считаем убийства
+	countedKills := make(map[string]struct{}, len(state.KillEvents))
 	for _, ke := range state.KillEvents {
-		if ke.KillerID != userID {
+		isDuplicateKill := false
+		if ke.VictimID > 0 {
+			key := fmt.Sprintf("%s:%d", ke.VictimType, ke.VictimID)
+			if _, exists := countedKills[key]; exists {
+				isDuplicateKill = true
+			} else {
+				countedKills[key] = struct{}{}
+			}
+		}
+		if isDuplicateKill || ke.KillerID != userID {
 			continue
 		}
 		switch ke.VictimType {

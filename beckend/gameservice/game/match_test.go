@@ -77,6 +77,44 @@ func TestRemovePlayerFromTurnOrder(t *testing.T) {
 	}
 }
 
+func TestRecordKillEvent_DeduplicatesVictim(t *testing.T) {
+	ms := &MatchState{}
+
+	if !ms.RecordKillEvent(10, "player", 20, 7) {
+		t.Fatal("expected first kill event to be recorded")
+	}
+	if ms.RecordKillEvent(10, "player", 20, 7) {
+		t.Fatal("expected duplicate kill for the same victim to be ignored")
+	}
+	if ms.RecordKillEvent(11, "player", 20, 9) {
+		t.Fatal("expected duplicate kill from another source to be ignored")
+	}
+	if !ms.RecordKillEvent(10, "player", 21, 5) {
+		t.Fatal("expected a different victim to be recorded")
+	}
+
+	if len(ms.KillEvents) != 2 {
+		t.Fatalf("expected exactly 2 unique kill events, got %d", len(ms.KillEvents))
+	}
+	if ms.KillEvents[0].VictimID != 20 || ms.KillEvents[1].VictimID != 21 {
+		t.Fatalf("unexpected kill events: %+v", ms.KillEvents)
+	}
+}
+
+func TestRecordKillEvent_IgnoresAlreadyDefeatedPlayer(t *testing.T) {
+	ms := &MatchState{}
+
+	if !ms.RecordPlayerDefeat(20) {
+		t.Fatal("expected first defeat to be recorded")
+	}
+	if ms.RecordPlayerDefeat(20) {
+		t.Fatal("expected duplicate defeat to be ignored")
+	}
+	if ms.RecordKillEvent(10, "player", 20, 7) {
+		t.Fatal("expected kill event for already defeated player to be ignored")
+	}
+}
+
 func TestEndTurn_NoPlayers(t *testing.T) {
 	ms := &MatchState{TurnOrder: []int{}}
 	if _, err := ms.EndTurn(1); err != ErrNoPlayers {

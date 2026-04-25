@@ -164,27 +164,48 @@ func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, targetID
 }
 
 // RecordKillEvent добавляет в память факт убийства (смерти).
-func (m *MatchState) RecordKillEvent(killerID int, victimType string, damage int) {
+// Возвращает false, если эта жертва уже была учтена раньше.
+func (m *MatchState) RecordKillEvent(killerID int, victimType string, victimID int, damage int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if victimID > 0 {
+		for _, event := range m.KillEvents {
+			if event.VictimType == victimType && event.VictimID == victimID {
+				return false
+			}
+		}
+	}
+
+	if victimType == "player" {
+		for _, defeatedUserID := range m.DefeatedUsers {
+			if defeatedUserID == victimID {
+				return false
+			}
+		}
+	}
+
 	m.KillEvents = append(m.KillEvents, KillEvent{
 		KillerID:   killerID,
 		VictimType: victimType,
+		VictimID:   victimID,
 		Damage:     damage,
 	})
+	return true
 }
 
-func (m *MatchState) RecordPlayerDefeat(userID int) {
+func (m *MatchState) RecordPlayerDefeat(userID int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for _, defeatedUserID := range m.DefeatedUsers {
 		if defeatedUserID == userID {
-			return
+			return false
 		}
 	}
 
 	m.DefeatedUsers = append(m.DefeatedUsers, userID)
+	return true
 }
 
 func (m *MatchState) SnapshotDefeatedUsers() []int {

@@ -61,7 +61,8 @@ type Reward struct {
 type KillEvent struct {
 	KillerID   int
 	VictimType string // "player" или "monster"
-	Damage     int    // сколько урона привело к смерти
+	VictimID   int
+	Damage     int // сколько урона привело к смерти
 }
 
 // одно нанесение урона (не обязательно смертельное)

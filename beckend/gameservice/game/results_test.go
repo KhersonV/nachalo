@@ -70,6 +70,43 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 	}
 }
 
+func TestCalculateResults_DeduplicatesRepeatedKillEvents(t *testing.T) {
+	const instanceID = "test-instance-results-duplicate-kills"
+	const userID = 42
+
+	MatchStatesMu.Lock()
+	MatchStates[instanceID] = &MatchState{
+		InstanceID: instanceID,
+		KillEvents: []KillEvent{
+			{KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
+			{KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
+			{KillerID: userID, VictimType: "player", VictimID: 12, Damage: 8},
+			{KillerID: 99, VictimType: "player", VictimID: 12, Damage: 8},
+			{KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
+			{KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
+		},
+	}
+	MatchStatesMu.Unlock()
+
+	t.Cleanup(func() {
+		MatchStatesMu.Lock()
+		delete(MatchStates, instanceID)
+		MatchStatesMu.Unlock()
+	})
+
+	_, _, playerKills, monsterKills, _, _, _, _, err := CalculateResults(instanceID, userID, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if playerKills != 2 {
+		t.Fatalf("expected 2 unique player kills, got %d", playerKills)
+	}
+	if monsterKills != 1 {
+		t.Fatalf("expected 1 unique monster kill, got %d", monsterKills)
+	}
+}
+
 func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
 	const instanceID = "test-instance-results-dead"
 	const userID = 7
