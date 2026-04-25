@@ -273,6 +273,11 @@ export function useGameSocket(
                                     "1",
                                 );
                                 sessionStorage.setItem(
+                                    "lastMatchEliminated",
+                                    "1",
+                                );
+                                sessionStorage.removeItem("lastMatchEscaped");
+                                sessionStorage.setItem(
                                     "lastMatchPendingInstanceId",
                                     msg.payload?.instanceId ??
                                         msg.payload?.instance_id ??

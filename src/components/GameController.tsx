@@ -265,6 +265,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     setHasEscaped(false);
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("lastMatchPlayerStats");
+      sessionStorage.removeItem("lastMatchEscaped");
+      sessionStorage.removeItem("lastMatchEliminated");
     }
   }, [instanceId]);
 
@@ -761,6 +763,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         "lastMatchPlayerStats",
         JSON.stringify(data.stats),
       );
+      sessionStorage.setItem("lastMatchEscaped", "1");
+      sessionStorage.removeItem("lastMatchEliminated");
       setCanOpenStats(true);
     }
     setHasEscaped(true);
