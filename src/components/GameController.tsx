@@ -1009,7 +1009,13 @@ export default function GameController({ instanceId }: GameControllerProps) {
     <div className={styles.container}>
       {/* HUD для выбранного объекта (монстр, постройка, игрок) */}
       {objectHUD && (
-        <div className={objectHudStyles.objectHudPanel}>
+        <div
+          className={`${objectHudStyles.objectHudPanel} ${
+            showMiniMap && !isCompactViewport
+              ? objectHudStyles.objectHudPanelBelowMinimap
+              : ""
+          }`}
+        >
           {(() => {
             // Derive up-to-date stats from the global game state so
             // the HUD reflects damage/changes immediately.
@@ -1384,6 +1390,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     <button
       type="button"
       className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
+        objectHUD ? styles.minimapToggleButtonWithHud : ""
+      } ${
         showMiniMap ? styles.minimapToggleButtonHidden : ""
       }`}
       onClick={handleMiniMapVisibilityToggle}
@@ -1413,7 +1421,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
 ) : (
   <button
     type="button"
-    className={styles.minimapToggleButton}
+    className={`${styles.minimapToggleButton} ${
+      objectHUD ? styles.minimapToggleButtonWithHud : ""
+    }`}
     onClick={handleMiniMapVisibilityToggle}
     aria-label="Open minimap"
     title="Open minimap"

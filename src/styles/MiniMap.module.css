@@ -401,15 +401,15 @@
   }
 
   .panelSmall {
-    --panel-width: 176px;
+    --panel-width: 152px;
   }
 
   .panelLarge {
-    --panel-width: 232px;
+    --panel-width: 208px;
   }
 
   .panelCompact {
-    --panel-width: 176px;
+    --panel-width: 152px;
     top: calc(max(8px, env(safe-area-inset-top)) + 6px);
     bottom: auto;
   }
@@ -433,23 +433,38 @@
 @media (max-width: 920px) and (orientation: landscape) {
   .panel {
     right: 8px;
-    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    top: max(8px, env(safe-area-inset-top));
     bottom: auto;
     padding: 9px;
     gap: 6px;
   }
 
   .panelSmall {
-    --panel-width: 170px;
+    --panel-width: 150px;
   }
 
   .panelLarge {
-    --panel-width: 220px;
+    --panel-width: 190px;
   }
 
   .panelCompact {
-    --panel-width: 170px;
-    top: calc(max(8px, env(safe-area-inset-top)) + 82px);
+    --panel-width: 150px;
+    top: max(8px, env(safe-area-inset-top));
     bottom: auto;
+  }
+
+  .title {
+    font-size: 10px;
+  }
+
+  .subtitle,
+  .hint,
+  .legend {
+    font-size: 8px;
+  }
+
+  .sizeButton {
+    font-size: 8px;
+    padding: 5px 7px;
   }
 }

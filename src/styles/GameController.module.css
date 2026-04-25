@@ -434,6 +434,10 @@
   padding: 0 12px;
 }
 
+.minimapToggleButtonWithHud {
+  top: calc(max(12px, env(safe-area-inset-top)) + 188px);
+}
+
 .minimapToggleButtonHidden {
   opacity: 0;
   visibility: hidden;
@@ -773,14 +777,14 @@
 
 @media (max-width: 760px) and (orientation: portrait) {
   .hud {
-  top: max(8px, env(safe-area-inset-top));
-  left: max(8px, env(safe-area-inset-left));
-  right: auto;
-  min-width: 150px;
-  max-width: min(182px, calc(100vw - 132px));
-  padding: 7px 8px;
-  border-radius: 10px;
-}
+    top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    right: auto;
+    min-width: 144px;
+    max-width: min(162px, calc(100vw - 166px));
+    padding: 7px 8px;
+    border-radius: 10px;
+  }
 
   .hudRow {
     grid-template-columns: 40px 1fr auto;
@@ -852,15 +856,30 @@
     padding: 0 8px;
   }
 
-.turnStatusFloating {
-  top: calc(env(safe-area-inset-top) + 92px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 96px;
-  max-width: 144px;
-  padding: 5px 8px;
-  font-size: 10px;
-}
+  .turnStatusFloating {
+    top: calc(max(8px, env(safe-area-inset-top)) + 142px);
+    left: max(8px, env(safe-area-inset-left));
+    transform: none;
+    min-width: 96px;
+    max-width: 148px;
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .minimapToggleButton,
+  .minimapToggleButtonCompact {
+    right: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 88px);
+    bottom: auto;
+    min-width: 96px;
+    height: 38px;
+    padding: 0 12px;
+    font-size: 10px;
+  }
+
+  .minimapToggleButtonWithHud {
+    top: calc(max(8px, env(safe-area-inset-top)) + 174px);
+  }
 
   .inventoryFab {
     width: 50px;
@@ -885,30 +904,19 @@
   }
 }
 
-.minimapToggleButton,
-.minimapToggleButtonCompact {
-  right: 8px;
-  top: calc(max(8px, env(safe-area-inset-top)) + 88px);
-  bottom: auto;
-  min-width: 96px;
-  height: 38px;
-  padding: 0 12px;
-  font-size: 10px;
-}
-
 /* =========================================================
    PHONE LANDSCAPE
    ========================================================= */
 
 @media (max-width: 920px) and (orientation: landscape) {
-.hud {
-  top: max(8px, env(safe-area-inset-top));
-  left: max(8px, env(safe-area-inset-left));
-  min-width: 150px;
-  max-width: 200px;
-  padding: 6px 8px;
-  border-radius: 10px;
-}
+  .hud {
+    top: max(8px, env(safe-area-inset-top));
+    left: max(8px, env(safe-area-inset-left));
+    min-width: 150px;
+    max-width: 200px;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
 
   .hudRow {
     grid-template-columns: 40px 1fr auto;
@@ -977,15 +985,15 @@
     padding: 0 8px;
   }
 
-.turnStatusFloating {
-  top: calc(env(safe-area-inset-top) + 56px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 96px;
-  max-width: 150px;
-  padding: 5px 8px;
-  font-size: 10px;
-}
+  .turnStatusFloating {
+    top: calc(env(safe-area-inset-top) + 56px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 96px;
+    max-width: 150px;
+    padding: 5px 8px;
+    font-size: 10px;
+  }
 
   .inventoryFab {
     width: 50px;
@@ -1000,15 +1008,19 @@
   }
 
   .minimapToggleButton,
-.minimapToggleButtonCompact {
-  right: 8px;
-  top: calc(max(8px, env(safe-area-inset-top)) + 62px);
-  bottom: auto;
-  min-width: 96px;
-  height: 38px;
-  padding: 0 12px;
-  font-size: 10px;
-}
+  .minimapToggleButtonCompact {
+    right: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 62px);
+    bottom: auto;
+    min-width: 96px;
+    height: 38px;
+    padding: 0 12px;
+    font-size: 10px;
+  }
+
+  .minimapToggleButtonWithHud {
+    top: calc(max(8px, env(safe-area-inset-top)) + 178px);
+  }
 
   .waitingEtaLabel,
   .waitingQueue {
@@ -1026,9 +1038,9 @@
 
 @media (max-width: 420px) {
   .hudRow {
-    grid-template-columns: 50px 1fr auto;
+    grid-template-columns: 40px 1fr auto;
     gap: 6px;
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .mapLoading {
@@ -1037,6 +1049,7 @@
 
   .turnStatusFloating {
     min-width: 80px;
+    max-width: 132px;
     font-size: 9px;
   }
 
