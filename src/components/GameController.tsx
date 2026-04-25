@@ -15,6 +15,7 @@ import TurnIndicator from "./TurnIndicator";
 import Inventory from "./Inventory";
 import PlayerHUD from "./PlayerHUD";
 import { ObjectHUD } from "./ObjectHUD";
+import ObjectiveTracker from "./ObjectiveTracker";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import objectHudStyles from "../styles/ObjectHUD.module.css";
@@ -114,6 +115,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   const [showQuestAlert, setShowQuestAlert] = useState(false);
   const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
   const [canOpenStats, setCanOpenStats] = useState(false);
+  const [hasEscaped, setHasEscaped] = useState(false);
   const [disconnectedDeadlines, setDisconnectedDeadlines] = useState<
     Record<number, number>
   >({});
@@ -260,6 +262,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   useEffect(() => {
     // Новый матч: сбрасываем флаг и возможный кэш прошлой статистики.
     setCanOpenStats(false);
+    setHasEscaped(false);
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("lastMatchPlayerStats");
     }
@@ -760,6 +763,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       );
       setCanOpenStats(true);
     }
+    setHasEscaped(true);
   }, [instanceId, user]);
 
   // Можно оптимизировать: вынести в useCallback
@@ -813,6 +817,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
     notificationEventType === "PLAYER_LEFT_PORTAL";
 
   const isDeathNotification = notificationEventType === "MY_PLAYER_DEFEATED";
+  const isCurrentPlayerDefeated =
+    isDeathNotification ||
+    (!!user?.id && state.isMapLoaded && state.players.length > 0 && !myPlayer);
+  const isObjectiveMatchFinished = canOpenStats && !hasEscaped;
   const questFoundConfirmLabel =
     isDeathNotification || (isPortalExitNotification && canOpenStats)
       ? "To Stats"
@@ -1361,6 +1369,17 @@ export default function GameController({ instanceId }: GameControllerProps) {
           groupId={myPlayer.group_id}
         />
       )}
+      <ObjectiveTracker
+        player={myPlayer}
+        players={state.players}
+        grid={state.grid}
+        mode={state.mode}
+        questArtifactId={state.questArtifactId}
+        isMyTurn={isMyTurn}
+        isPlayerDefeated={isCurrentPlayerDefeated}
+        hasEscaped={hasEscaped}
+        isMatchFinished={isObjectiveMatchFinished}
+      />
 
 
 	  {shouldRenderCompactMiniMap ? (

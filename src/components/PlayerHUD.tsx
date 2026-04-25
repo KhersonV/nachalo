@@ -57,11 +57,11 @@ export default React.memo(function PlayerHUD({
                     {energy} / {maxEnergy}
                 </span>
             </div>
-            <div className={styles.hudMetaRow}>
+            <div className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}>
                 <span className={styles.hudMetaLabel}>Attack Type</span>
                 <span className={styles.hudMetaValue}>{attackTypeLabel}</span>
             </div>
-            <div className={styles.hudMetaRow}>
+            <div className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}>
                 <span className={styles.hudMetaLabel}>Range</span>
                 <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>

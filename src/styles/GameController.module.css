@@ -1032,11 +1032,21 @@
   }
 }
 
+@media (max-width: 920px) and (max-height: 390px) and (orientation: landscape) {
+  .turnStatusFloating {
+    display: none;
+  }
+}
+
 /* =========================================================
    SMALL PHONE
    ========================================================= */
 
 @media (max-width: 420px) {
+  .hudCombatMeta {
+    display: none;
+  }
+
   .hudRow {
     grid-template-columns: 40px 1fr auto;
     gap: 6px;
@@ -1076,6 +1086,12 @@
   .inventoryFabIcon {
     width: 25px;
     height: 25px;
+  }
+}
+
+@media (max-width: 420px) and (orientation: portrait) {
+  .turnStatusFloating {
+    display: none;
   }
 }
 
