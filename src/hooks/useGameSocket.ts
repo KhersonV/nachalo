@@ -236,6 +236,8 @@ export function useGameSocket(
                             }
                         }
 
+                        onMessageRef.current(msg);
+
                         const hasLastMatchStats =
                             typeof window !== "undefined" &&
                             !!sessionStorage.getItem("lastMatchPlayerStats");
@@ -368,6 +370,7 @@ export function useGameSocket(
                     case "SET_ACTIVE_USER":
                     case "UPDATE_INVENTORY":
                     case "RESOURCE_COLLECTED":
+                    case "BARREL_DAMAGE":
                     case "BARREL_RESOURCE":
                     case "BARREL_ARTIFACT":
                         onMessageRef.current(msg);

@@ -869,7 +869,7 @@
   .minimapToggleButton,
   .minimapToggleButtonCompact {
     right: 8px;
-    top: calc(max(8px, env(safe-area-inset-top)) + 88px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 139px);
     bottom: auto;
     min-width: 96px;
     height: 38px;
@@ -879,6 +879,16 @@
 
   .minimapToggleButtonWithHud {
     top: calc(max(8px, env(safe-area-inset-top)) + 174px);
+  }
+
+  .minimapToggleButtonLogOpen {
+    right: auto;
+    left: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 139px);
+    box-sizing: border-box;
+    width: min(220px, calc(100vw - 208px));
+    min-width: 0;
+    height: 44px;
   }
 
   .inventoryFab {
@@ -1010,7 +1020,7 @@
   .minimapToggleButton,
   .minimapToggleButtonCompact {
     right: 8px;
-    top: calc(max(8px, env(safe-area-inset-top)) + 62px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 139px);
     bottom: auto;
     min-width: 96px;
     height: 38px;
@@ -1020,6 +1030,16 @@
 
   .minimapToggleButtonWithHud {
     top: calc(max(8px, env(safe-area-inset-top)) + 178px);
+  }
+
+  .minimapToggleButtonLogOpen {
+    right: auto;
+    left: 8px;
+    top: calc(max(8px, env(safe-area-inset-top)) + 139px);
+    box-sizing: border-box;
+    width: min(220px, calc(100vw - 208px));
+    min-width: 0;
+    height: 44px;
   }
 
   .waitingEtaLabel,

@@ -180,20 +180,20 @@
 
 @media (max-width: 480px) and (orientation: portrait) {
   .panel {
-    top: calc(max(8px, env(safe-area-inset-top)) + 110px);
+    top: calc(max(8px, env(safe-area-inset-top)) + 68px);
     bottom: auto;
     left: 8px;
-    width: min(224px, calc(100vw - 176px));
-    min-width: 184px;
-    max-height: 96px;
+    width: min(184px, calc(100vw - 216px));
+    min-width: 176px;
+    max-height: 90px;
     padding: 7px 8px;
-    padding-right: 88px;
   }
 
   .turnChip {
     position: absolute;
-    top: 9px;
+    top: auto;
     right: 8px;
+    bottom: 20px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -222,11 +222,15 @@
   }
 
   .title {
+    max-width: calc(100% - 84px);
     font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .winCondition {
+    max-width: calc(100% - 84px);
     -webkit-line-clamp: 1;
   }
 
@@ -237,7 +241,7 @@
 
 @media (max-width: 420px) and (max-height: 720px) and (orientation: portrait) {
   .panel {
-    width: min(216px, calc(100vw - 176px));
+    width: min(184px, calc(100vw - 216px));
   }
 }
 

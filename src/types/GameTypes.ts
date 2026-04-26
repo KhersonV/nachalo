@@ -115,6 +115,34 @@ export interface QuestFoundNotification {
     userId?: number;
 }
 
+export type ActionLogCategory =
+    | "movement"
+    | "attack"
+    | "counterattack"
+    | "effect"
+    | "defeat"
+    | "resource"
+    | "barrel"
+    | "artifact"
+    | "portal"
+    | "match"
+    | "turn"
+    | "error";
+
+export type ActionLogTone = "info" | "success" | "warning" | "danger";
+
+export type ActionLogEntry = {
+    id: string;
+    timestamp: number;
+    category: ActionLogCategory;
+    message: string;
+    tone?: ActionLogTone;
+    dedupeKey?: string;
+};
+
+export type ActionLogEntryInput = Omit<ActionLogEntry, "id" | "timestamp"> &
+    Partial<Pick<ActionLogEntry, "id" | "timestamp">>;
+
 export type GameState = {
     instanceId: string;
     mode: string;
@@ -130,6 +158,7 @@ export type GameState = {
     questArtifactImage: string;
     questArtifactDescription: string;
     questFoundNotification: QuestFoundNotification | null;
+    actionLog: ActionLogEntry[];
 };
 
 // Здесь перечисляем возможные направления

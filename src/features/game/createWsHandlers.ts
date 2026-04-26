@@ -16,6 +16,8 @@ import {
     updatePlayerPosition,
     updatePlayerHealth,
     setQuestFoundNotification,
+    addActionLogEntry,
+    addActionLogEntries,
 } from "@/store/slices/gameSlice";
 import {
     enqueueCombatExchange,
@@ -25,6 +27,19 @@ import type {
     CombatExchangePayload,
     CombatTargetRef,
 } from "@/types/combat";
+import type { ActionLogEntryInput, GameState } from "@/types";
+import {
+    buildBarrelDamageLogEntry,
+    buildBarrelLogEntry,
+    buildCombatLogEntries,
+    buildMatchEndedLogEntry,
+    buildMoveLogEntry,
+    buildPlayerDefeatedLogEntry,
+    buildPortalLogEntry,
+    buildQuestArtifactLogEntry,
+    buildResourceLogEntry,
+    buildTurnLogEntry,
+} from "@/utils/actionLog";
 
 // The User type can be imported from your AuthContext
 type User = { id: number } | null;
@@ -88,6 +103,29 @@ export function createWsHandlers(
     instanceId: string,
     user: User,
 ) {
+    const currentUserId = user?.id;
+    const addLogEntry = (entry: ActionLogEntryInput | null) => {
+        if (entry) dispatch(addActionLogEntry(entry));
+    };
+    const addLogEntryFromState = (
+        buildEntry: (gameState: GameState) => ActionLogEntryInput | null,
+    ) => {
+        dispatch((innerDispatch: AppDispatch, getState: () => RootState) => {
+            const entry = buildEntry(getState().game);
+            if (entry) innerDispatch(addActionLogEntry(entry));
+        });
+    };
+    const addLogEntriesFromState = (
+        buildEntries: (gameState: GameState) => ActionLogEntryInput[],
+    ) => {
+        dispatch((innerDispatch: AppDispatch, getState: () => RootState) => {
+            const entries = buildEntries(getState().game);
+            if (entries.length > 0) {
+                innerDispatch(addActionLogEntries(entries));
+            }
+        });
+    };
+
     return {
         // --- MATCH UPDATE ---
         MATCH_UPDATE: (payload: any) => {
@@ -103,20 +141,30 @@ export function createWsHandlers(
                     newPosition: payload.newPosition,
                 }),
             ),
-        UPDATE_PLAYER_POSITION: (payload: any) =>
+        UPDATE_PLAYER_POSITION: (payload: any) => {
+            addLogEntry(buildMoveLogEntry(payload, currentUserId));
             dispatch(
                 updatePlayerPosition({
                     userId: payload.userId,
                     newPosition: payload.newPosition,
                 }),
-            ),
-        BARREL_DAMAGE: (payload: any) =>
+            );
+        },
+        BARREL_DAMAGE: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildBarrelDamageLogEntry(
+                    payload,
+                    gameState,
+                    currentUserId,
+                ),
+            );
             dispatch(
                 updatePlayerHealth({
                     userId: payload.userId,
                     hp: payload.hp,
                 }),
-            ),
+            );
+        },
         // --- CELL/PLAYER UPDATES ---
         UPDATE_CELL: (payload: any) =>
             dispatch(
@@ -134,6 +182,13 @@ export function createWsHandlers(
             ),
         // --- BARREL/RESOURCE ---
         RESOURCE_COLLECTED: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildResourceLogEntry(
+                    payload,
+                    gameState,
+                    currentUserId,
+                ),
+            );
             dispatch(
                 updateCell({ instanceId, updatedCell: payload.updatedCell }),
             );
@@ -142,6 +197,14 @@ export function createWsHandlers(
             );
         },
         BARREL_RESOURCE: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildBarrelLogEntry(
+                    payload,
+                    gameState,
+                    "BARREL_RESOURCE",
+                    currentUserId,
+                ),
+            );
             dispatch(
                 updateCell({ instanceId, updatedCell: payload.updatedCell }),
             );
@@ -150,6 +213,14 @@ export function createWsHandlers(
             );
         },
         BARREL_ARTIFACT: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildBarrelLogEntry(
+                    payload,
+                    gameState,
+                    "BARREL_ARTIFACT",
+                    currentUserId,
+                ),
+            );
             dispatch(
                 updateCell({ instanceId, updatedCell: payload.updatedCell }),
             );
@@ -158,10 +229,15 @@ export function createWsHandlers(
             );
         },
         // --- BATTLE/COMBAT ---
-        COMBAT_EXCHANGE: (payload: CombatExchangePayload) =>
-            dispatch(enqueueCombatExchangeFromWs(payload)),
+        COMBAT_EXCHANGE: (payload: CombatExchangePayload) => {
+            addLogEntriesFromState((gameState) =>
+                buildCombatLogEntries(payload, gameState, currentUserId),
+            );
+            dispatch(enqueueCombatExchangeFromWs(payload));
+        },
         // --- TURN/USER ---
-        SET_ACTIVE_USER: (payload: any) =>
+        SET_ACTIVE_USER: (payload: any) => {
+            addLogEntry(buildTurnLogEntry(payload, currentUserId));
             dispatch(
                 setActiveUser({
                     instanceId,
@@ -169,7 +245,8 @@ export function createWsHandlers(
                     turnNumber: payload.turnNumber,
                     energy: payload.energy,
                 }),
-            ),
+            );
+        },
         TURN_PASSED: (payload: any) =>
             dispatch(
                 turnPassed({
@@ -178,6 +255,13 @@ export function createWsHandlers(
                 }),
             ),
         PLAYER_DEFEATED: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildPlayerDefeatedLogEntry(
+                    payload,
+                    gameState,
+                    currentUserId,
+                ),
+            );
             dispatch(
                 playerDefeated({
                     instanceId,
@@ -195,7 +279,15 @@ export function createWsHandlers(
                 }),
             ),
         // --- END ---
-        MATCH_ENDED: () => {
+        MATCH_ENDED: (payload: any) => {
+            dispatch(
+                addActionLogEntry(
+                    buildMatchEndedLogEntry({
+                        ...payload,
+                        instanceId,
+                    }),
+                ),
+            );
             const hasLastMatchStats =
                 typeof window !== "undefined" &&
                 !!sessionStorage.getItem("lastMatchPlayerStats");
@@ -207,6 +299,7 @@ export function createWsHandlers(
             router.replace("/mode");
         },
         QUEST_ARTIFACT_FOUND: (payload: any) => {
+            dispatch(addActionLogEntry(buildQuestArtifactLogEntry(payload)));
             dispatch(
                 setQuestFoundNotification({
                     eventType: "QUEST_ARTIFACT_FOUND",
@@ -219,6 +312,7 @@ export function createWsHandlers(
             );
         },
         PLAYER_LEFT_PORTAL: (payload: any) => {
+            dispatch(addActionLogEntry(buildPortalLogEntry(payload)));
             dispatch(
                 setQuestFoundNotification({
                     eventType: "PLAYER_LEFT_PORTAL",

@@ -16,6 +16,7 @@ import Inventory from "./Inventory";
 import PlayerHUD from "./PlayerHUD";
 import { ObjectHUD } from "./ObjectHUD";
 import ObjectiveTracker from "./ObjectiveTracker";
+import ActionLog from "./ActionLog";
 import QuestArtifactAlert from "./QuestArtifactAlert";
 import styles from "../styles/GameController.module.css";
 import objectHudStyles from "../styles/ObjectHUD.module.css";
@@ -25,9 +26,11 @@ import {
   setInstanceId,
   setActiveUser,
   setQuestFoundNotification,
+  addActionLogEntry,
 } from "../store/slices/gameSlice";
 import { usePlayerActions } from "../hooks/usePlayerActions";
 import { useGameKeyboard } from "../hooks/useGameKeyboard";
+import { humanizeActionError } from "@/utils/actionLog";
 
 type PlacementStructureType = "scout_tower" | "turret" | "wall";
 
@@ -116,6 +119,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   const [showQuestFoundAlert, setShowQuestFoundAlert] = useState(false);
   const [canOpenStats, setCanOpenStats] = useState(false);
   const [hasEscaped, setHasEscaped] = useState(false);
+  const [isActionLogExpanded, setIsActionLogExpanded] = useState(false);
   const [disconnectedDeadlines, setDisconnectedDeadlines] = useState<
     Record<number, number>
   >({});
@@ -449,6 +453,24 @@ export default function GameController({ instanceId }: GameControllerProps) {
     setShowInventory(false);
   }, []);
 
+  const pushActionLog = useCallback(
+    (
+      message: string,
+      category: "error" | "movement" | "attack" | "portal" | "turn" = "error",
+      tone: "info" | "success" | "warning" | "danger" = "warning",
+    ) => {
+      dispatch(
+        addActionLogEntry({
+          category,
+          tone,
+          message,
+          dedupeKey: `local:${category}:${message}:${Math.floor(Date.now() / 1400)}`,
+        }),
+      );
+    },
+    [dispatch],
+  );
+
   const {
     myPlayer,
     isMyTurn,
@@ -464,7 +486,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
     structureType: placementMode?.structureType ?? null,
     onPlaced: () => setPlacementMode(null),
     onError: (message: string) => {
-      alert(message);
+      pushActionLog(humanizeActionError(message), "error", "warning");
     },
   });
 
@@ -490,6 +512,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       if (next && isCompactViewport) {
         setShowInventory(false);
         setObjectHUD(null);
+        setIsActionLogExpanded(false);
       }
       return next;
     });
@@ -501,6 +524,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       if (next && isCompactViewport) {
         setShowMiniMap(false);
         setObjectHUD(null);
+        setIsActionLogExpanded(false);
       }
       return next;
     });
@@ -529,6 +553,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       if (nextHud && isCompactViewport) {
         setShowMiniMap(false);
         setShowInventory(false);
+        setIsActionLogExpanded(false);
       }
       setObjectHUD(nextHud);
     },
@@ -562,7 +587,20 @@ export default function GameController({ instanceId }: GameControllerProps) {
   useEffect(() => {
     setMinimapFocusPoint(null);
     setMinimapPingPoint(null);
+    setIsActionLogExpanded(false);
   }, [instanceId, myPlayer?.user_id]);
+
+  const handleActionLogExpandedChange = useCallback(
+    (expanded: boolean) => {
+      setIsActionLogExpanded(expanded);
+      if (expanded && isCompactViewport) {
+        setShowMiniMap(false);
+        setObjectHUD(null);
+        setShowInventory(false);
+      }
+    },
+    [isCompactViewport],
+  );
 
   const handleMapPlayerClick = useCallback(
     async (targetPlayer: PlayerState) => {
@@ -592,6 +630,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
         await fightPlayer(targetPlayer.user_id);
         return;
       }
+      if (isMyTurn && dist > attackRange) {
+        pushActionLog("Target is out of range. Move closer to attack.", "attack");
+      }
       presentObjectHUD({
         type: "player",
         name: targetPlayer.name,
@@ -605,7 +646,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
         groupId: targetPlayer.group_id,
       });
     },
-    [myPlayer, isMyTurn, fightPlayer, presentObjectHUD],
+    [myPlayer, isMyTurn, fightPlayer, presentObjectHUD, pushActionLog],
   );
 
   const handleMapCellClick = useCallback(
@@ -621,6 +662,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
         if (isMyTurn && distance <= attackRange) {
           await fightMonster(cell.x, cell.y);
           return;
+        }
+        if (isMyTurn && distance > attackRange) {
+          pushActionLog("Monster is out of range. Move closer to attack.", "attack");
         }
         presentObjectHUD({
           type: "monster",
@@ -675,6 +719,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
+        if (isMyTurn && distance !== 1) {
+          pushActionLog("Move next to the resource to collect it.", "movement");
+        }
         presentObjectHUD({
           type: "object",
           name: `Resource: ${cell.resource.type}`,
@@ -687,6 +734,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
         if (isMyTurn && distance === 1) {
           await handleCellClick(cell);
           return;
+        }
+        if (isMyTurn && distance !== 1) {
+          pushActionLog("Move next to the barrel to open it.", "movement");
         }
         presentObjectHUD({
           type: "object",
@@ -701,6 +751,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
           await handleCellClick(cell);
           return;
         }
+        if (isMyTurn && distance !== 1) {
+          pushActionLog("Step onto the portal, then use the action button to escape.", "portal");
+        }
         presentObjectHUD({
           type: "object",
           name: "Portal",
@@ -711,9 +764,21 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
       if (isMyTurn && distance === 1) {
         await handleCellClick(cell);
+        return;
+      }
+
+      if (isMyTurn && distance > 1) {
+        pushActionLog("Move one adjacent tile at a time.", "movement");
       }
     },
-    [myPlayer, isMyTurn, fightMonster, handleCellClick, presentObjectHUD],
+    [
+      myPlayer,
+      isMyTurn,
+      fightMonster,
+      handleCellClick,
+      presentObjectHUD,
+      pushActionLog,
+    ],
   );
 
   // Show centered "YOUR TURN" modal when turn transitions to the current player
@@ -748,10 +813,17 @@ export default function GameController({ instanceId }: GameControllerProps) {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       if (data?.error === "quest_artifact_missing") {
-        alert(
-          "You need to find the quest artifact before exiting through the portal!",
+        pushActionLog(
+          "Find the quest artifact before entering the portal.",
+          "portal",
+          "warning",
         );
       } else {
+        pushActionLog(
+          humanizeActionError(data?.error ?? "Could not enter the portal."),
+          "portal",
+          "warning",
+        );
         console.error("[Portal] finishMatch error", res.status, data);
       }
       return;
@@ -768,21 +840,29 @@ export default function GameController({ instanceId }: GameControllerProps) {
       setCanOpenStats(true);
     }
     setHasEscaped(true);
-  }, [instanceId, user]);
+  }, [instanceId, pushActionLog, user]);
 
   // Можно оптимизировать: вынести в useCallback
   const handleAction = useCallback(() => {
-    if (!isMyTurn || !myPlayer) return;
+    if (!myPlayer) return;
+    if (!isMyTurn) {
+      pushActionLog("Wait for your turn before acting.", "turn");
+      return;
+    }
     const currentCell = state.grid.find(
       (cell: any) =>
         cell.x === myPlayer.position.x && cell.y === myPlayer.position.y,
     );
-    if (!currentCell) return;
+    if (!currentCell) {
+      pushActionLog("No action is available on this tile.");
+      return;
+    }
     if (currentCell.monster) fightMonster(currentCell.x, currentCell.y);
     else if (currentCell.resource)
       collectResource(currentCell.x, currentCell.y);
     else if (currentCell.barbel) openBarrel(currentCell.x, currentCell.y);
     else if (currentCell.isPortal) handlePortalExit();
+    else pushActionLog("No action is available on this tile.");
   }, [
     isMyTurn,
     myPlayer,
@@ -791,6 +871,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
     collectResource,
     openBarrel,
     handlePortalExit,
+    pushActionLog,
   ]);
 
   useGameKeyboard({
@@ -1384,6 +1465,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
         hasEscaped={hasEscaped}
         isMatchFinished={isObjectiveMatchFinished}
       />
+      <ActionLog
+        entries={state.actionLog}
+        compact={isCompactViewport}
+        expanded={isCompactViewport ? isActionLogExpanded : undefined}
+        onExpandedChange={handleActionLogExpandedChange}
+      />
 
 
 	  {shouldRenderCompactMiniMap ? (
@@ -1414,6 +1501,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
       type="button"
       className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
         objectHUD ? styles.minimapToggleButtonWithHud : ""
+      } ${
+        isActionLogExpanded ? styles.minimapToggleButtonLogOpen : ""
       } ${
         showMiniMap ? styles.minimapToggleButtonHidden : ""
       }`}

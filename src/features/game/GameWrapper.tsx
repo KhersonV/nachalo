@@ -153,6 +153,7 @@ export default function GameWrapper({
     | "TURN_PASSED"
     | "UPDATE_INVENTORY"
     | "RESOURCE_COLLECTED"
+    | "BARREL_DAMAGE"
     | "BARREL_RESOURCE"
     | "BARREL_ARTIFACT"
     | "QUEST_ARTIFACT_FOUND"

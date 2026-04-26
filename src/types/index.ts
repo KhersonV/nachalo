@@ -45,6 +45,10 @@ export type {
     MonsterType,
     ResourceType,
     Cell,
+    ActionLogCategory,
+    ActionLogTone,
+    ActionLogEntry,
+    ActionLogEntryInput,
     GameState,
     Dir,
 } from "./GameTypes";

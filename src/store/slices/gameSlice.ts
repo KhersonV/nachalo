@@ -1,9 +1,20 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import type { GameState, PlayerState, Inventory, Cell } from "../../types";
+import type {
+    ActionLogEntry,
+    ActionLogEntryInput,
+    GameState,
+    PlayerState,
+    Inventory,
+    Cell,
+} from "../../types";
 import type { CombatExchangePayload, CombatTargetRef } from "@/types/combat";
 
 // Fast lookup index for cells by "x:y" → index in state.grid.
 // Kept at module level for minimal changes (O(1) updates).
+
+const ACTION_LOG_LIMIT = 10;
+const ACTION_LOG_DEDUPE_MS = 1400;
+let actionLogSeq = 0;
 
 export type QuestNotificationType =
     | "QUEST_ARTIFACT_FOUND"
@@ -21,6 +32,41 @@ export interface QuestFoundNotification {
 }
 
 let gridIndex: Record<string, number> = {};
+
+function prepareActionLogEntry(input: ActionLogEntryInput): ActionLogEntry {
+    const timestamp = input.timestamp ?? Date.now();
+
+    return {
+        ...input,
+        id: input.id ?? `${timestamp}-${actionLogSeq++}`,
+        timestamp,
+    };
+}
+
+function appendActionLogEntry(state: GameState, entry: ActionLogEntry) {
+    if (!entry.message.trim()) return;
+
+    if (
+        entry.dedupeKey &&
+        state.actionLog.some((item) => item.dedupeKey === entry.dedupeKey)
+    ) {
+        return;
+    }
+
+    const previous = state.actionLog[state.actionLog.length - 1];
+    if (
+        previous &&
+        previous.message === entry.message &&
+        entry.timestamp - previous.timestamp < ACTION_LOG_DEDUPE_MS
+    ) {
+        return;
+    }
+
+    state.actionLog.push(entry);
+    if (state.actionLog.length > ACTION_LOG_LIMIT) {
+        state.actionLog = state.actionLog.slice(-ACTION_LOG_LIMIT);
+    }
+}
 
 function applyActorHp(
     state: GameState,
@@ -209,6 +255,7 @@ const initialState: GameState = {
     questArtifactImage: "",
     questArtifactDescription: "",
     questFoundNotification: null,
+    actionLog: [],
 };
 
 const gameSlice = createSlice({
@@ -479,6 +526,34 @@ const gameSlice = createSlice({
         ) {
             state.questFoundNotification = action.payload;
         },
+        addActionLogEntry: {
+            reducer(state, action: PayloadAction<ActionLogEntry>) {
+                appendActionLogEntry(state, action.payload);
+            },
+            prepare(input: ActionLogEntryInput) {
+                return { payload: prepareActionLogEntry(input) };
+            },
+        },
+        addActionLogEntries: {
+            reducer(state, action: PayloadAction<ActionLogEntry[]>) {
+                for (const entry of action.payload) {
+                    appendActionLogEntry(state, entry);
+                }
+            },
+            prepare(inputs: ActionLogEntryInput[]) {
+                return {
+                    payload: inputs.map((input, index) =>
+                        prepareActionLogEntry({
+                            ...input,
+                            timestamp: input.timestamp ?? Date.now() + index,
+                        }),
+                    ),
+                };
+            },
+        },
+        clearActionLog(state) {
+            state.actionLog = [];
+        },
     },
 });
 
@@ -497,6 +572,9 @@ export const {
     updatePlayerPosition,
     updatePlayerHealth,
     setQuestFoundNotification,
+    addActionLogEntry,
+    addActionLogEntries,
+    clearActionLog,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;
