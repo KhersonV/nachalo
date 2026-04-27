@@ -490,8 +490,17 @@ export default function GameController({ instanceId }: GameControllerProps) {
     },
   });
 
-   const shouldRenderCompactMiniMap = isCompactViewport && !!myPlayer;
-	  
+  const shouldRenderCompactMiniMap = isCompactViewport && !!myPlayer;
+  const isCompactActionLogVisible =
+    isCompactViewport &&
+    !showMiniMap &&
+    !objectHUD &&
+    state.actionLog.length > 0;
+  const shouldShowActionLog =
+    !isCompactViewport || (!showMiniMap && !objectHUD);
+  const shouldShowObjectHUD =
+    !!objectHUD && (!isCompactViewport || !showMiniMap);
+
   const minimapViewportCells = React.useMemo(() => {
     const step = mapViewport.tileSize + 1;
     return {
@@ -1101,7 +1110,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   return (
     <div className={styles.container}>
       {/* HUD для выбранного объекта (монстр, постройка, игрок) */}
-      {objectHUD && (
+      {shouldShowObjectHUD && objectHUD && (
         <div
           className={`${objectHudStyles.objectHudPanel} ${
             showMiniMap && !isCompactViewport
@@ -1465,12 +1474,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
         hasEscaped={hasEscaped}
         isMatchFinished={isObjectiveMatchFinished}
       />
-      <ActionLog
-        entries={state.actionLog}
-        compact={isCompactViewport}
-        expanded={isCompactViewport ? isActionLogExpanded : undefined}
-        onExpandedChange={handleActionLogExpandedChange}
-      />
+      {shouldShowActionLog && (
+        <ActionLog
+          entries={state.actionLog}
+          compact={isCompactViewport}
+          expanded={isCompactViewport ? isActionLogExpanded : undefined}
+          onExpandedChange={handleActionLogExpandedChange}
+        />
+      )}
 
 
 	  {shouldRenderCompactMiniMap ? (
@@ -1497,21 +1508,25 @@ export default function GameController({ instanceId }: GameControllerProps) {
       }`}
     />
 
-    <button
-      type="button"
-      className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
-        objectHUD ? styles.minimapToggleButtonWithHud : ""
-      } ${
-        isActionLogExpanded ? styles.minimapToggleButtonLogOpen : ""
-      } ${
-        showMiniMap ? styles.minimapToggleButtonHidden : ""
-      }`}
-      onClick={handleMiniMapVisibilityToggle}
-      aria-label="Open minimap"
-      title="Open minimap"
-    >
-      Minimap
-    </button>
+    {!objectHUD && (
+      <button
+        type="button"
+        className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
+          isCompactActionLogVisible ? styles.minimapToggleButtonWithLog : ""
+        } ${
+          isCompactActionLogVisible && isActionLogExpanded
+            ? styles.minimapToggleButtonLogOpen
+            : ""
+        } ${
+          showMiniMap ? styles.minimapToggleButtonHidden : ""
+        }`}
+        onClick={handleMiniMapVisibilityToggle}
+        aria-label="Open minimap"
+        title="Open minimap"
+      >
+        Minimap
+      </button>
+    )}
   </>
 ) : showMiniMap ? (
   <MiniMap

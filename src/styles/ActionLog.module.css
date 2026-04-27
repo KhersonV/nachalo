@@ -136,25 +136,25 @@
         bottom: auto;
         left: auto;
         box-sizing: border-box;
-        width: min(180px, calc(100vw - 208px));
+        width: min(188px, calc(100vw - 200px));
         height: 180px;
-        min-width: 160px;
+        min-width: 152px;
         max-height: 180px;
     }
 
     .panelCompact {
-        width: min(180px, calc(100vw - 208px));
+        width: min(188px, calc(100vw - 200px));
     }
 
     .panelCollapsed {
-        top: calc(max(8px, env(safe-area-inset-top)) + 139px);
-        right: auto;
-        left: 8px;
+        top: max(8px, env(safe-area-inset-top));
+        right: 8px;
+        left: auto;
         box-sizing: border-box;
-        width: min(220px, calc(100vw - 208px));
-        max-width: min(220px, calc(100vw - 208px));
+        width: min(188px, calc(100vw - 200px));
+        max-width: min(188px, calc(100vw - 200px));
         height: 44px;
-        min-width: 0;
+        min-width: 152px;
         max-height: none;
     }
 
@@ -175,7 +175,7 @@
     }
 
     .collapsedMessage {
-        max-width: calc(100vw - 300px);
+        max-width: 86px;
         margin-top: 2px;
         font-size: 10px;
         line-height: 1.05;
@@ -208,39 +208,69 @@
 
 @media (max-width: 920px) and (orientation: landscape) {
     .panel {
-        top: calc(max(8px, env(safe-area-inset-top)) + 104px);
-        left: 8px;
-        width: min(260px, calc(100vw - 140px));
-        max-height: 142px;
+        top: max(8px, env(safe-area-inset-top));
+        right: 8px;
+        left: auto;
+        box-sizing: border-box;
+        width: clamp(128px, 18vw, 150px);
+        max-height: 124px;
     }
 
     .panelCollapsed {
-        width: auto;
+        width: clamp(128px, 18vw, 150px);
+        max-width: clamp(128px, 18vw, 150px);
     }
 
     .header {
-        padding: 8px 10px;
+        padding: 7px 8px;
+        gap: 8px;
+    }
+
+    .eyebrow {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+    }
+
+    .subtitle {
+        font-size: 10px;
+    }
+
+    .collapsedMessage {
+        max-width: 72px;
+        font-size: 10px;
+    }
+
+    .toggle {
+        min-height: 28px;
+        padding: 0 8px;
+        font-size: 10px;
     }
 
     .list {
-        max-height: 86px;
-        padding: 0 8px 8px;
+        max-height: 66px;
+        padding: 0 7px 7px;
     }
 
     .entry {
-        grid-template-columns: 52px minmax(0, 1fr);
-        padding: 5px 7px;
+        grid-template-columns: 42px minmax(0, 1fr);
+        gap: 6px;
+        padding: 5px 6px;
+    }
+
+    .category {
+        font-size: 8px;
     }
 
     .message {
-        font-size: 11px;
+        font-size: 10px;
     }
 }
 
 @media (max-width: 420px) and (orientation: portrait) {
     .panelCollapsed {
-        top: calc(max(8px, env(safe-area-inset-top)) + 139px);
-        width: min(220px, calc(100vw - 208px));
-        max-width: min(220px, calc(100vw - 208px));
+        top: max(8px, env(safe-area-inset-top));
+        width: min(172px, calc(100vw - 188px));
+        max-width: min(172px, calc(100vw - 188px));
+        min-width: 144px;
     }
 }

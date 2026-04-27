@@ -179,9 +179,9 @@
 }
 
 .objectHudPanelBelowMinimap {
-  top: calc(max(12px, env(safe-area-inset-top)) + 158px);
-  right: auto;
-  left: max(12px, env(safe-area-inset-left));
+  top: calc(max(12px, env(safe-area-inset-top)) + clamp(308px, 40vh, 360px));
+  right: max(12px, env(safe-area-inset-right));
+  left: auto;
 }
 
 @media (max-width: 920px) {
@@ -253,9 +253,9 @@
 
 @media (min-width: 761px) and (max-width: 1180px) {
   .objectHudPanelBelowMinimap {
-    top: calc(max(14px, env(safe-area-inset-top)) + 150px);
-    left: 14px;
-    right: auto;
+    top: calc(max(14px, env(safe-area-inset-top)) + clamp(292px, 39vh, 336px));
+    right: 14px;
+    left: auto;
   }
 }
 
@@ -285,11 +285,22 @@
     left: auto;
     bottom: auto;
     transform: none;
-    width: 186px;
-    min-width: 186px;
-    max-width: 186px;
-    padding: 7px 8px;
+    width: clamp(144px, 20vw, 160px);
+    min-width: 144px;
+    max-width: 160px;
+    padding: 6px 7px;
     border-radius: 10px;
+  }
+
+  .hudRow,
+  .statRow {
+    grid-template-columns: 36px 1fr auto;
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .smallStatGrid {
+    gap: 3px;
   }
 
   .name {

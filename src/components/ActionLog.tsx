@@ -60,6 +60,7 @@ export default function ActionLog({
     onExpandedChange,
 }: ActionLogProps) {
     const [internalCollapsed, setInternalCollapsed] = React.useState(compact);
+    const listRef = React.useRef<HTMLOListElement | null>(null);
     const isControlled = typeof expanded === "boolean";
     const collapsed = isControlled ? !expanded : internalCollapsed;
     const latestEntry = entries[entries.length - 1];
@@ -67,6 +68,18 @@ export default function ActionLog({
     React.useEffect(() => {
         if (compact && !isControlled) setInternalCollapsed(true);
     }, [compact, isControlled]);
+
+    React.useEffect(() => {
+        if (collapsed) return;
+        const list = listRef.current;
+        if (!list) return;
+
+        const frameId = window.requestAnimationFrame(() => {
+            list.scrollTop = list.scrollHeight;
+        });
+
+        return () => window.cancelAnimationFrame(frameId);
+    }, [collapsed, entries.length]);
 
     const handleToggle = React.useCallback(() => {
         const nextExpanded = collapsed;
@@ -113,7 +126,7 @@ export default function ActionLog({
             </header>
 
             {!collapsed && (
-                <ol className={styles.list}>
+                <ol ref={listRef} className={styles.list}>
                     {entries.map((entry) => (
                         <li
                             key={entry.id}

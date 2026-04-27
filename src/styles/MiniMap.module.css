@@ -409,9 +409,11 @@
   }
 
   .panelCompact {
-    --panel-width: 152px;
+    --panel-width: 188px;
     top: calc(max(8px, env(safe-area-inset-top)) + 6px);
     bottom: auto;
+    width: min(var(--panel-width), calc(100vw - 200px));
+    min-width: 152px;
   }
 
   .title {
@@ -435,7 +437,8 @@
     right: 8px;
     top: max(8px, env(safe-area-inset-top));
     bottom: auto;
-    padding: 9px;
+    box-sizing: border-box;
+    padding: 8px;
     gap: 6px;
   }
 
@@ -448,7 +451,7 @@
   }
 
   .panelCompact {
-    --panel-width: 150px;
+    --panel-width: clamp(128px, 18vw, 150px);
     top: max(8px, env(safe-area-inset-top));
     bottom: auto;
   }
