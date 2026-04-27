@@ -36,8 +36,20 @@ ensure_database() {
 ensure_database "${AUTH_DB_NAME}"
 ensure_database "${GAME_DB_NAME}"
 
-psql_base -c "ALTER ROLE ${APP_DB_USER} WITH LOGIN PASSWORD '${APP_DB_PASSWORD}'"
-psql_base -c "GRANT ALL PRIVILEGES ON DATABASE ${AUTH_DB_NAME} TO ${APP_DB_USER}"
-psql_base -c "GRANT ALL PRIVILEGES ON DATABASE ${GAME_DB_NAME} TO ${APP_DB_USER}"
+if [ "${POSTGRES_USER}" != "${APP_DB_USER}" ]; then
+  psql_base -c "ALTER ROLE ${APP_DB_USER} WITH LOGIN PASSWORD '${APP_DB_PASSWORD}'"
+else
+  echo "Using existing database role ${APP_DB_USER}; password update skipped."
+fi
+
+grant_database() {
+  db_name="$1"
+  if ! psql_base -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${APP_DB_USER}"; then
+    echo "Warning: could not grant privileges on ${db_name}; continuing."
+  fi
+}
+
+grant_database "${AUTH_DB_NAME}"
+grant_database "${GAME_DB_NAME}"
 
 echo "Database bootstrap finished successfully."

@@ -67,9 +67,32 @@ $env:JWT_SECRET_KEY="super_secret_key"
 
 ## Local Run
 
+### Docker Compose
+
+From a fresh clone, the full application can be started with:
+
+```bash
+docker compose up -d --build
+```
+
+Compose starts PostgreSQL first, runs `postgres-bootstrap` to ensure both `admin` and `game_db` exist, and only then starts the backend services.
+
+Frontend will be available at `http://localhost`.
+
+Adminer for visual database access will be available at `http://localhost:8080`.
+Use:
+
+- System: `PostgreSQL`
+- Server: `postgres`
+- Username: `admin`
+- Password: `admin`
+- Database: `admin` or `game_db`
+
+### Manual Run
+
 It is recommended to run the project in 4 separate terminals.
 
-### 1) Frontend
+#### 1) Frontend
 
 From the project root:
 
@@ -82,7 +105,7 @@ Frontend will be available at `http://localhost:3000`.
 For devices in the same local network, open `http://<your-computer-ip>:3000`.
 The frontend now automatically swaps `localhost` service URLs to the host machine IP when opened from another device.
 
-### 2) Auth service
+#### 2) Auth service
 
 ```bash
 cd beckend/auth
@@ -92,7 +115,7 @@ go run Auth.go
 
 Service will run at `http://localhost:8000`.
 
-### 3) Game service
+#### 3) Game service
 
 ```bash
 cd beckend/gameservice
@@ -102,7 +125,7 @@ go run ./cmd
 
 Service will run at `http://localhost:8001`.
 
-### 4) Matchmaking service
+#### 4) Matchmaking service
 
 ```bash
 cd beckend/matchmaking
@@ -114,12 +137,12 @@ Service will run at `http://localhost:8002`.
 
 ## Database
 
-In the current codebase, PostgreSQL connection strings are hardcoded in:
+Docker Compose reads PostgreSQL connection strings from `.env`:
 
-- `beckend/auth/Auth.go`
-- `beckend/gameservice/repository/db.go`
+- `AUTH_DB_DSN=postgres://admin:admin@postgres:5432/admin?sslmode=disable`
+- `GAME_DB_DSN=postgres://admin:admin@postgres:5432/game_db?sslmode=disable`
 
-Before first run, make sure required databases/users exist and `connStr` values match your local setup.
+For manual runs without Docker Compose, create the matching databases/users yourself or point these variables at your local PostgreSQL instance.
 
 ## Main API (Short)
 
