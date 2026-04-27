@@ -390,6 +390,41 @@
   }
 }
 
+@media (min-width: 921px) and (max-width: 1180px) {
+  .panel {
+    right: 14px;
+    top: 14px;
+    box-sizing: border-box;
+    padding: 10px;
+    gap: 7px;
+    border-radius: 14px;
+  }
+
+  .panelSmall,
+  .panelLarge {
+    --panel-width: 236px;
+  }
+
+  .header {
+    gap: 8px;
+  }
+
+  .title {
+    font-size: 11px;
+  }
+
+  .subtitle,
+  .hint,
+  .legend {
+    font-size: 9px;
+  }
+
+  .sizeButton {
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+}
+
 @media (max-width: 760px) and (orientation: portrait) {
   .panel {
     right: 8px;

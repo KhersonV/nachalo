@@ -259,6 +259,52 @@
   }
 }
 
+@media (min-width: 921px) and (max-width: 1180px) {
+  .objectHudPanel {
+    right: 14px;
+    width: 236px;
+    min-width: 236px;
+    max-width: 236px;
+    padding: 7px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  .objectHudPanelBelowMinimap {
+    top: calc(max(14px, env(safe-area-inset-top)) + 356px);
+  }
+
+  .header {
+    margin-bottom: 6px;
+  }
+
+  .hudRow,
+  .statRow {
+    grid-template-columns: 42px 1fr auto;
+    gap: 5px;
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+
+  .progressBar {
+    height: 7px;
+  }
+
+  .smallStatGrid {
+    gap: 4px;
+  }
+
+  .smallStat {
+    padding: 4px;
+  }
+
+  .profileBtn {
+    margin-top: 6px;
+    padding: 5px 0;
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 760px) and (orientation: portrait) {
   .objectHudPanel {
     top: max(8px, env(safe-area-inset-top));

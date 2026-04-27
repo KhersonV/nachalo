@@ -771,6 +771,87 @@
   }
 }
 
+@media (min-width: 921px) and (max-width: 1180px) {
+  .hud {
+    top: 14px;
+    left: 14px;
+    min-width: 214px;
+    max-width: 228px;
+    padding: 9px 10px;
+    border-radius: 12px;
+  }
+
+  .hudRow {
+    grid-template-columns: 50px 1fr auto;
+    gap: 7px;
+    font-size: 12px;
+  }
+
+  .hudMetaRow {
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .controlsContainer {
+    left: 14px;
+    bottom: 14px;
+    box-sizing: border-box;
+    width: 184px;
+    padding: 10px;
+    border-radius: 14px;
+    gap: 0;
+  }
+
+  .turnPrompt,
+  .turnIndicator,
+  .turnTimerInline {
+    display: none;
+  }
+
+  .controlsContainer .inventoryDockButton {
+    position: absolute;
+    top: -58px;
+    right: 0;
+    width: 52px;
+    height: 52px;
+    border-radius: 13px;
+  }
+
+  .controlsContainer .inventoryFabIcon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .turnActionDock {
+    right: 14px;
+    bottom: 14px;
+    width: 116px;
+    gap: 7px;
+  }
+
+  .turnTimerDock {
+    min-width: 0;
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.95rem;
+  }
+
+  .turnActionDock .endTurnButton {
+    height: 40px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .turnStatusFloating {
+    top: calc(max(14px, env(safe-area-inset-top)) + 66px);
+    left: 50%;
+    min-width: 116px;
+    max-width: 170px;
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+}
+
 /* =========================================================
    PHONE PORTRAIT
    ========================================================= */

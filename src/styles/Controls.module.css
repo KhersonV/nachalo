@@ -111,6 +111,36 @@
     }
 }
 
+@media (min-width: 921px) and (max-width: 1180px) {
+    .controlsContainer {
+        width: 164px;
+        gap: 5px;
+    }
+
+    .buttonRow {
+        gap: 6px;
+    }
+
+    .controlButton {
+        width: 48px;
+        height: 44px;
+        border-radius: 10px;
+        font-size: 16px;
+    }
+
+    .actionRow {
+        margin-top: 3px;
+    }
+
+    .actionButton {
+        width: 164px;
+        min-width: 0;
+        height: 40px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+}
+
 @media (max-width: 920px) and (orientation: landscape) {
     .controlsContainer {
         width: 132px;

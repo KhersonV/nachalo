@@ -86,6 +86,48 @@
   }
 }
 
+@media (min-width: 921px) and (max-width: 1180px) {
+  .panel {
+    top: calc(max(14px, env(safe-area-inset-top)) + 142px);
+    left: 14px;
+    width: 228px;
+    max-height: 112px;
+    overflow: hidden;
+    padding: 8px 10px;
+    border-radius: 11px;
+  }
+
+  .kicker {
+    margin-bottom: 2px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .title {
+    font-size: 14px;
+    line-height: 1.12;
+  }
+
+  .detail {
+    display: none;
+  }
+
+  .winCondition {
+    display: -webkit-box;
+    margin-top: 5px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .steps {
+    gap: 4px;
+    margin-top: 7px;
+  }
+}
+
 @media (max-width: 760px) and (orientation: portrait) {
   .panel {
     top: auto;

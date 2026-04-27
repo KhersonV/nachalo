@@ -202,6 +202,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
       const screenH = window.innerHeight;
       const isPhonePortrait = screenW <= 760 && screenH >= screenW;
       const isPhoneLandscape = screenW <= 920 && screenH < screenW;
+      const isLaptopRail = screenW > 920 && screenW <= 1180;
       const isMobile = screenW <= 900;
       const nextCompactViewport = isCompactPhoneViewport(screenW, screenH);
 
@@ -217,6 +218,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
       if (isPhoneLandscape) {
         setMapViewport(buildViewport(screenW - 24, screenH - 122, 8, 5, 36));
+        return;
+      }
+
+      if (isLaptopRail) {
+        setMapViewport(buildViewport(screenW - 504, screenH - 340, 8, 6, 48));
         return;
       }
 
