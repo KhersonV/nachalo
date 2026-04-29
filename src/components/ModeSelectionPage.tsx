@@ -24,6 +24,7 @@ import type {
     InQueueResponse,
     PlayerInfo,
     QueueSizeResponse,
+    HeroesState,
 } from "../types";
 import LobbyHeader from "./LobbyHeader";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
@@ -54,6 +55,92 @@ const TEAM_SIZE: Record<GameMode, number> = {
 };
 
 const MAX_PARTY_SIZE = 5;
+
+type ActiveHeroPreview = {
+    id: string;
+    displayName: string;
+    description: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+}
+
+function readString(
+    source: Record<string, unknown>,
+    key: string,
+    fallback = "",
+): string {
+    const value = source[key];
+    return typeof value === "string" ? value : fallback;
+}
+
+function titleFromHeroId(heroId: string): string {
+    return heroId
+        .split(/[-_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
+function normalizeActiveHeroPreview(value: unknown): {
+    activeHeroClassId: string;
+    activeHero: ActiveHeroPreview | null;
+} {
+    if (!isRecord(value)) {
+        return { activeHeroClassId: "", activeHero: null };
+    }
+
+    const activeHeroClassId = readString(value, "activeHeroClassId").trim();
+    const rawHeroes = Array.isArray(value.heroes) ? value.heroes : [];
+    const heroes = rawHeroes
+        .filter(isRecord)
+        .map((hero) => {
+            const id = readString(hero, "id").trim();
+            if (!id) return null;
+            const displayName =
+                readString(hero, "displayName").trim() || titleFromHeroId(id);
+            const description = readString(hero, "description").trim();
+            return {
+                id,
+                displayName,
+                description,
+                active: hero.active === true,
+            };
+        })
+        .filter((hero): hero is ActiveHeroPreview & { active: boolean } =>
+            Boolean(hero),
+        );
+
+    const activeHero =
+        heroes.find((hero) => hero.id === activeHeroClassId) ||
+        heroes.find((hero) => hero.active) ||
+        null;
+
+    if (activeHero) {
+        return {
+            activeHeroClassId: activeHeroClassId || activeHero.id,
+            activeHero: {
+                id: activeHero.id,
+                displayName: activeHero.displayName,
+                description: activeHero.description,
+            },
+        };
+    }
+
+    if (activeHeroClassId) {
+        return {
+            activeHeroClassId,
+            activeHero: {
+                id: activeHeroClassId,
+                displayName: titleFromHeroId(activeHeroClassId),
+                description: "",
+            },
+        };
+    }
+
+    return { activeHeroClassId: "", activeHero: null };
+}
 
 function withBust(url: string): string {
     const sep = url.includes("?") ? "&" : "?";
@@ -131,6 +218,19 @@ async function fetchPartyInvites(
     }
     const data: PartyInvitesResponse = await res.json();
     return data.invites || [];
+}
+
+async function fetchHeroes(token: string): Promise<HeroesState> {
+    const res = await fetch(withBust(`${API_GAME}/game/heroes`), {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+    });
+    if (!res.ok) {
+        throw new Error((await res.text()) || "Failed to load active hero");
+    }
+    return res.json();
 }
 
 async function joinQueue(
@@ -216,6 +316,12 @@ export default function ModeSelectionPage() {
     const [partyBusyUserId, setPartyBusyUserId] = useState<number | null>(null);
     const [partyBusyAction, setPartyBusyAction] = useState<string | null>(null);
     const [partyInvites, setPartyInvites] = useState<PartyInviteState[]>([]);
+    const [activeHero, setActiveHero] = useState<ActiveHeroPreview | null>(
+        null,
+    );
+    const [activeHeroClassId, setActiveHeroClassId] = useState("");
+    const [activeHeroLoading, setActiveHeroLoading] = useState(false);
+    const [activeHeroError, setActiveHeroError] = useState("");
     const dispatch = useDispatch();
     const currentPartySize = partyState?.partySize ?? 1;
     const partyRefreshInFlightRef = useRef(false);
@@ -548,6 +654,44 @@ export default function ModeSelectionPage() {
     useEffect(() => {
         loadPartyData();
     }, [loadPartyData]);
+
+    useEffect(() => {
+        if (!user?.token) {
+            setActiveHero(null);
+            setActiveHeroClassId("");
+            setActiveHeroError("");
+            setActiveHeroLoading(false);
+            return;
+        }
+
+        let alive = true;
+        setActiveHeroLoading(true);
+        setActiveHeroError("");
+        fetchHeroes(user.token)
+            .then((data) => {
+                if (!alive) return;
+                const preview = normalizeActiveHeroPreview(data);
+                setActiveHero(preview.activeHero);
+                setActiveHeroClassId(preview.activeHeroClassId);
+            })
+            .catch((error) => {
+                if (!alive) return;
+                setActiveHero(null);
+                setActiveHeroClassId("");
+                setActiveHeroError(
+                    error instanceof Error
+                        ? error.message
+                        : "Active hero unavailable",
+                );
+            })
+            .finally(() => {
+                if (alive) setActiveHeroLoading(false);
+            });
+
+        return () => {
+            alive = false;
+        };
+    }, [user?.token]);
 
     useEffect(() => {
         if (!user?.token) return;
@@ -940,7 +1084,7 @@ export default function ModeSelectionPage() {
                                 <div className={styles.partyMemberMeta}>
                                     <strong>{member.name}</strong>
                                     <span>
-                                        {member.characterType || "adventurer"}
+                                        {member.characterType || "guardian"}
                                     </span>
                                     <span>Level {member.level}</span>
                                     {member.user_id ===
@@ -1127,6 +1271,60 @@ export default function ModeSelectionPage() {
                     })(),
                 )}
             </div>
+
+            <section className={styles.activeHeroPanel}>
+                <div className={styles.activeHeroContent}>
+                    <div>
+                        <h3 className={styles.activeHeroTitle}>
+                            Active Hero
+                        </h3>
+                        {activeHeroLoading ? (
+                            <p className={styles.activeHeroText}>
+                                Loading active hero...
+                            </p>
+                        ) : activeHero ? (
+                            <>
+                                <p className={styles.activeHeroText}>
+                                    You will enter the next match as:{" "}
+                                    <strong>{activeHero.displayName}</strong>
+                                </p>
+                                {activeHero.description && (
+                                    <p className={styles.activeHeroDescription}>
+                                        {activeHero.description}
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <p className={styles.activeHeroText}>
+                                Active hero unavailable. Your default hero will
+                                be used.
+                            </p>
+                        )}
+                        {activeHeroError && (
+                            <p className={styles.activeHeroWarning}>
+                                {activeHeroError}
+                            </p>
+                        )}
+                    </div>
+                    <div className={styles.activeHeroActions}>
+                        {activeHeroClassId && (
+                            <span className={styles.activeHeroBadge}>
+                                {activeHeroClassId}
+                            </span>
+                        )}
+                        <button
+                            type="button"
+                            className={styles.activeHeroButton}
+                            onClick={() => router.push("/base")}
+                        >
+                            Go to Tavern
+                        </button>
+                    </div>
+                </div>
+                <p className={styles.activeHeroHint}>
+                    Change hero in the Tavern.
+                </p>
+            </section>
 
             <div className={styles.buttonGroup}>
                 <button

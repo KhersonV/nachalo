@@ -66,16 +66,12 @@ func RunMigrations() {
 	CreateResourcesTable()
 	CreateArtifactsTable()
 
-	// Существующие таблицы
-	CreatePlayersTable()
-	EnsurePlayersCharacterTypeColumn()
-	EnsurePlayersStatColumns()
+	CreatePlayerProfilesTable()
+	CreatePlayerCharactersTable()
 	CreateMatchesTable()
 	CreateMatchMapCellsTable()
 	CreateMatchPlayersTable()
-	EnsureMatchPlayersStatColumns()
 	CreateInventoryTable()
-	// Добавляем нашу новую
 	CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
 	EnsureStaticGameData()
@@ -138,7 +134,8 @@ func SchemaReady() (bool, error) {
 		"monsters",
 		"resources",
 		"artifacts",
-		"players",
+		"player_profiles",
+		"player_characters",
 		"matches",
 		"match_map_cells",
 		"match_players",
@@ -164,15 +161,40 @@ func SchemaReady() (bool, error) {
 	}
 
 	requiredColumns := map[string][]string{
-		"players": {
-			"character_type",
+		"player_profiles": {
+			"user_id",
+			"name",
+			"image",
+			"balance",
+			"inventory",
+			"selected_character_id",
+			"created_at",
+			"updated_at",
+		},
+		"player_characters": {
+			"id",
+			"user_id",
+			"hero_class_id",
+			"image",
+			"level",
+			"exp",
+			"max_exp",
+			"max_energy",
+			"max_health",
+			"attack",
+			"defense",
 			"mobility",
 			"agility",
 			"sight_range",
 			"is_ranged",
 			"attack_range",
+			"source",
+			"created_at",
+			"updated_at",
 		},
 		"match_players": {
+			"character_id",
+			"character_type",
 			"mobility",
 			"agility",
 			"sight_range",
@@ -197,6 +219,9 @@ func SchemaReady() (bool, error) {
 			"damage_taken",
 			"placement",
 			"inventory_snapshot",
+		},
+		"player_base_buildings": {
+			"tavern_level",
 		},
 	}
 
@@ -303,79 +328,55 @@ func CreateArtifactsTable() {
 	}
 }
 
-func CreatePlayersTable() {
+func CreatePlayerProfilesTable() {
 	query := `
-	CREATE TABLE IF NOT EXISTS players (
-		user_id SERIAL PRIMARY KEY,
-		name TEXT DEFAULT 'Unnamed Player',
-		image TEXT DEFAULT '/ranger/ranger.webp',
-		character_type TEXT DEFAULT 'adventurer',
-		energy INTEGER DEFAULT 100,
-		max_energy INTEGER DEFAULT 100,
-		health INTEGER DEFAULT 100,
-		max_health INTEGER DEFAULT 100,
-		level INTEGER DEFAULT 1,
-		experience INTEGER DEFAULT 0,
-		max_experience INTEGER DEFAULT 500,
-		attack INTEGER DEFAULT 10,
-		defense INTEGER DEFAULT 5,
-		mobility INTEGER DEFAULT 3,
-		agility INTEGER DEFAULT 2,
-		sight_range INTEGER DEFAULT 2,
-		is_ranged BOOLEAN DEFAULT FALSE,
-		attack_range INTEGER DEFAULT 1,
-		balance INTEGER DEFAULT 0,
-		inventory JSONB DEFAULT '{}'
+	CREATE TABLE IF NOT EXISTS player_profiles (
+		user_id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL DEFAULT 'Unnamed Player',
+		image TEXT NOT NULL DEFAULT '/guardian/guardian.webp',
+		balance INTEGER NOT NULL DEFAULT 0,
+		inventory JSONB NOT NULL DEFAULT '{}'::jsonb,
+		selected_character_id INTEGER,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
 	`
 	if _, err := DB.Exec(query); err != nil {
-		log.Fatalf("Ошибка создания таблицы players: %v", err)
+		log.Fatalf("Ошибка создания таблицы player_profiles: %v", err)
 	}
 }
 
-func EnsurePlayersCharacterTypeColumn() {
-	_, err := DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS character_type TEXT DEFAULT 'adventurer'`)
-	if err != nil {
-		log.Printf("EnsurePlayersCharacterTypeColumn: %v", err)
-	}
-}
-
-func EnsurePlayersStatColumns() {
-	if err := renameColumnIfNeeded("players", "speed", "mobility"); err != nil {
-		log.Printf("EnsurePlayersStatColumns rename speed->mobility: %v", err)
-	}
-	if err := renameColumnIfNeeded("players", "maneuverability", "agility"); err != nil {
-		log.Printf("EnsurePlayersStatColumns rename maneuverability->agility: %v", err)
-	}
-	if err := renameColumnIfNeeded("players", "vision_range", "sight_range"); err != nil {
-		log.Printf("EnsurePlayersStatColumns rename vision_range->sight_range: %v", err)
-	}
-	if err := renameColumnIfNeeded("players", "range_attack", "is_ranged"); err != nil {
-		log.Printf("EnsurePlayersStatColumns rename range_attack->is_ranged: %v", err)
-	}
-	if err := renameColumnIfNeeded("players", "range_distance", "attack_range"); err != nil {
-		log.Printf("EnsurePlayersStatColumns rename range_distance->attack_range: %v", err)
-	}
-
-	_, err := DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
-	if err != nil {
-		log.Printf("EnsurePlayersStatColumns mobility: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 2`)
-	if err != nil {
-		log.Printf("EnsurePlayersStatColumns agility: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS sight_range INTEGER DEFAULT 2`)
-	if err != nil {
-		log.Printf("EnsurePlayersStatColumns sight_range: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS is_ranged BOOLEAN DEFAULT FALSE`)
-	if err != nil {
-		log.Printf("EnsurePlayersStatColumns is_ranged: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE players ADD COLUMN IF NOT EXISTS attack_range INTEGER DEFAULT 1`)
-	if err != nil {
-		log.Printf("EnsurePlayersStatColumns attack_range: %v", err)
+func CreatePlayerCharactersTable() {
+	query := `
+	CREATE TABLE IF NOT EXISTS player_characters (
+		id SERIAL PRIMARY KEY,
+		user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
+		hero_class_id TEXT NOT NULL,
+		image TEXT,
+		level INTEGER NOT NULL DEFAULT 1,
+		exp INTEGER NOT NULL DEFAULT 0,
+		max_exp INTEGER NOT NULL DEFAULT 500,
+		max_energy INTEGER NOT NULL,
+		max_health INTEGER NOT NULL,
+		attack INTEGER NOT NULL,
+		defense INTEGER NOT NULL,
+		mobility INTEGER NOT NULL,
+		agility INTEGER NOT NULL,
+		sight_range INTEGER NOT NULL,
+		is_ranged BOOLEAN NOT NULL,
+		attack_range INTEGER NOT NULL,
+		source TEXT NOT NULL DEFAULT 'registration',
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE (user_id, hero_class_id),
+		CHECK (BTRIM(hero_class_id) <> ''),
+		CHECK (hero_class_id <> 'adventurer')
+	);
+	CREATE INDEX IF NOT EXISTS idx_player_characters_user_id ON player_characters(user_id);
+	CREATE INDEX IF NOT EXISTS idx_player_characters_hero_class_id ON player_characters(hero_class_id);
+	`
+	if _, err := DB.Exec(query); err != nil {
+		log.Fatalf("Ошибка создания таблицы player_characters: %v", err)
 	}
 }
 
@@ -414,8 +415,8 @@ func EnsureQuestArtifactColumn() {
 func CreatePlayerFriendsTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS player_friends (
-		user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
-		friend_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
+		friend_user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (user_id, friend_user_id),
 		CHECK (user_id <> friend_user_id)
@@ -431,8 +432,8 @@ func CreatePlayerFriendsTable() {
 func CreatePlayerFriendRequestsTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS player_friend_requests (
-		requester_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
-		target_user_id INTEGER NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+		requester_user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
+		target_user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (requester_user_id, target_user_id),
 		CHECK (requester_user_id <> target_user_id)
@@ -449,26 +450,28 @@ func CreateMatchPlayersTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS match_players (
 		instance_id TEXT NOT NULL REFERENCES matches(instance_id) ON DELETE CASCADE,
-		user_id INTEGER NOT NULL,
+		user_id INTEGER NOT NULL REFERENCES player_profiles(user_id) ON DELETE CASCADE,
+		character_id INTEGER NOT NULL,
 		name TEXT,
+		character_type TEXT NOT NULL DEFAULT 'guardian',
 		position JSONB,
-		inventory JSONB,
-		level INTEGER,
-		energy INTEGER,
-		max_energy INTEGER,
-		health INTEGER,
-		max_health INTEGER,
-		experience INTEGER,
-		max_experience INTEGER,
-		attack INTEGER,
-		defense INTEGER,
-		mobility INTEGER,
-		agility INTEGER,
-		sight_range INTEGER,
-		is_ranged BOOLEAN,
-		attack_range INTEGER,
-		balance INTEGER,
-        image TEXT,
+		inventory JSONB NOT NULL DEFAULT '{}'::jsonb,
+		level INTEGER NOT NULL,
+		energy INTEGER NOT NULL,
+		max_energy INTEGER NOT NULL,
+		health INTEGER NOT NULL,
+		max_health INTEGER NOT NULL,
+		experience INTEGER NOT NULL,
+		max_experience INTEGER NOT NULL,
+		attack INTEGER NOT NULL,
+		defense INTEGER NOT NULL,
+		mobility INTEGER NOT NULL,
+		agility INTEGER NOT NULL,
+		sight_range INTEGER NOT NULL,
+		is_ranged BOOLEAN NOT NULL,
+		attack_range INTEGER NOT NULL,
+		balance INTEGER NOT NULL DEFAULT 0,
+		image TEXT,
 		group_id INTEGER,
 		PRIMARY KEY (instance_id, user_id)
 	);
@@ -476,71 +479,6 @@ func CreateMatchPlayersTable() {
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_players: %v", err)
 	}
-}
-
-func EnsureMatchPlayersStatColumns() {
-	if err := renameColumnIfNeeded("match_players", "speed", "mobility"); err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns rename speed->mobility: %v", err)
-	}
-	if err := renameColumnIfNeeded("match_players", "maneuverability", "agility"); err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns rename maneuverability->agility: %v", err)
-	}
-	if err := renameColumnIfNeeded("match_players", "vision_range", "sight_range"); err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns rename vision_range->sight_range: %v", err)
-	}
-	if err := renameColumnIfNeeded("match_players", "range_attack", "is_ranged"); err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns rename range_attack->is_ranged: %v", err)
-	}
-	if err := renameColumnIfNeeded("match_players", "range_distance", "attack_range"); err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns rename range_distance->attack_range: %v", err)
-	}
-
-	_, err := DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS mobility INTEGER DEFAULT 3`)
-	if err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns mobility: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS agility INTEGER DEFAULT 2`)
-	if err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns agility: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS sight_range INTEGER DEFAULT 2`)
-	if err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns sight_range: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS is_ranged BOOLEAN DEFAULT FALSE`)
-	if err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns is_ranged: %v", err)
-	}
-	_, err = DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS attack_range INTEGER DEFAULT 1`)
-	if err != nil {
-		log.Printf("EnsureMatchPlayersStatColumns attack_range: %v", err)
-	}
-}
-
-func renameColumnIfNeeded(tableName, oldColumnName, newColumnName string) error {
-	oldExists, err := columnExists(tableName, oldColumnName)
-	if err != nil {
-		return err
-	}
-	if !oldExists {
-		return nil
-	}
-
-	newExists, err := columnExists(tableName, newColumnName)
-	if err != nil {
-		return err
-	}
-	if newExists {
-		return nil
-	}
-
-	_, err = DB.Exec(fmt.Sprintf(
-		`ALTER TABLE %s RENAME COLUMN %s TO %s`,
-		tableName,
-		oldColumnName,
-		newColumnName,
-	))
-	return err
 }
 
 func CreateInventoryTable() {
@@ -551,7 +489,7 @@ func CreateInventoryTable() {
 	                    REFERENCES matches(instance_id)
 	                    ON DELETE CASCADE,
 	  user_id       INTEGER NOT NULL
-	                    REFERENCES players(user_id)
+	                    REFERENCES player_profiles(user_id)
 	                    ON DELETE CASCADE,
 	  item_type     TEXT    NOT NULL,    -- 'resource' или 'artifact'
 	  item_id       INTEGER NOT NULL,    -- ID ресурса или артефакта
@@ -605,7 +543,7 @@ func CreatePersistedArtifactsTable() {
   CREATE TABLE IF NOT EXISTS persisted_artifacts (
     id              SERIAL PRIMARY KEY,
     user_id         INTEGER NOT NULL
-                       REFERENCES players(user_id)
+                       REFERENCES player_profiles(user_id)
                        ON DELETE CASCADE,
     artifact_type   TEXT    NOT NULL,
     artifact_id     INTEGER NOT NULL,
@@ -874,14 +812,10 @@ func EnsureMatchStatsHistoryColumns() {
 						'userId', mps.user_id,
 						'name', CASE
 							WHEN COALESCE(mps.player_name, '') <> '' THEN mps.player_name
-							WHEN COALESCE(p.name, '') <> '' THEN p.name
 							ELSE 'Player ' || mps.user_id::text
 						END,
 						'groupId', COALESCE(mps.group_id, 0),
-						'characterType', CASE
-							WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
-							ELSE COALESCE(p.character_type, 'adventurer')
-						END,
+						'characterType', COALESCE(NULLIF(mps.character_type, ''), 'guardian'),
 						'placement', COALESCE(mps.placement, 0),
 						'isWinner', COALESCE(mps.is_winner, FALSE),
 						'survived', COALESCE(mps.survived, FALSE)
@@ -889,7 +823,6 @@ func EnsureMatchStatsHistoryColumns() {
 					ORDER BY COALESCE(NULLIF(mps.placement, 0), 9999), mps.user_id
 				) AS participants
 			FROM match_player_stats mps
-			LEFT JOIN players p ON p.user_id = mps.user_id
 			GROUP BY mps.instance_id
 		) AS src
 		WHERE ms.instance_id = src.instance_id
@@ -910,7 +843,7 @@ func CreateMatchPlayerStatsTable() {
         user_id            INTEGER  NOT NULL,
         player_name        TEXT     NOT NULL DEFAULT '',
         group_id           INTEGER  NOT NULL DEFAULT 0,
-        character_type     TEXT     NOT NULL DEFAULT 'adventurer',
+		character_type     TEXT     NOT NULL DEFAULT 'guardian',
 		is_winner          BOOLEAN  NOT NULL DEFAULT FALSE,
         survived           BOOLEAN  NOT NULL DEFAULT FALSE,
         deaths             INTEGER  NOT NULL DEFAULT 0,
@@ -957,7 +890,7 @@ func EnsureMatchPlayerStatsHistoryColumns() {
 	commands := []string{
 		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS player_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS group_id INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS character_type TEXT NOT NULL DEFAULT 'adventurer'`,
+		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS character_type TEXT NOT NULL DEFAULT 'guardian'`,
 		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS survived BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS deaths INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE match_player_stats ADD COLUMN IF NOT EXISTS damage_taken INTEGER NOT NULL DEFAULT 0`,
@@ -973,19 +906,13 @@ func EnsureMatchPlayerStatsHistoryColumns() {
 	}
 
 	_, err := DB.Exec(`
-		UPDATE match_player_stats mps
+		UPDATE match_player_stats
 		SET
 			player_name = CASE
-				WHEN COALESCE(mps.player_name, '') <> '' THEN mps.player_name
-				WHEN COALESCE(p.name, '') <> '' THEN p.name
-				ELSE 'Player ' || mps.user_id::text
+				WHEN COALESCE(player_name, '') <> '' THEN player_name
+				ELSE 'Player ' || user_id::text
 			END,
-			character_type = CASE
-				WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
-				ELSE COALESCE(p.character_type, 'adventurer')
-			END
-		FROM players p
-		WHERE p.user_id = mps.user_id
+			character_type = COALESCE(NULLIF(character_type, ''), 'guardian')
 	`)
 	if err != nil {
 		log.Printf("EnsureMatchPlayerStatsHistoryColumns backfill player info: %v", err)
@@ -1235,13 +1162,13 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		`SELECT
 			mp.user_id,
 			COALESCE(mp.name, ''),
-			COALESCE(p.character_type, 'adventurer'),
+			mp.character_id,
+			COALESCE(NULLIF(mp.character_type, ''), 'guardian'),
 			COALESCE(mp.group_id, 0),
 			COALESCE(mp.health, 0),
 			COALESCE(mp.inventory, '{}'::jsonb)
-           FROM match_players mp
-		   LEFT JOIN players p ON p.user_id = mp.user_id
-          WHERE mp.instance_id = $1`,
+		   FROM match_players mp
+		  WHERE mp.instance_id = $1`,
 		instanceID,
 	)
 	if err != nil {
@@ -1257,7 +1184,8 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		var playerName string
 		var characterType string
 		var inventorySnapshot []byte
-		if err := rows.Scan(&userID, &playerName, &characterType, &groupID, &health, &inventorySnapshot); err != nil {
+		var characterID sql.NullInt64
+		if err := rows.Scan(&userID, &playerName, &characterID, &characterType, &groupID, &health, &inventorySnapshot); err != nil {
 			log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
 			continue
 		}
@@ -1278,7 +1206,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 			continue
 		}
 
-		mr.PlayerResults = append(mr.PlayerResults, game.PlayerResult{
+		pr := game.PlayerResult{
 			UserID:            userID,
 			PlayerName:        playerName,
 			GroupID:           groupID,
@@ -1295,7 +1223,11 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 			DamageToMonsters:  dmgMonsters,
 			DamageTaken:       dmgTaken,
 			InventorySnapshot: append([]byte(nil), inventorySnapshot...),
-		})
+		}
+		if characterID.Valid {
+			pr.CharacterID = int(characterID.Int64)
+		}
+		mr.PlayerResults = append(mr.PlayerResults, pr)
 	}
 
 	// 3.1) Победный бонус: +XP и +деньги победителю (или его команде).

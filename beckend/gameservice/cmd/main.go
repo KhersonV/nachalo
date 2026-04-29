@@ -91,6 +91,22 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildLibraryHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/base/tavern/build",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildTavernHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/heroes",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetHeroesHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/heroes/{heroClassId}/hire",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.HireHeroHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/heroes/active",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SetActiveHeroHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
 	).Methods("GET")

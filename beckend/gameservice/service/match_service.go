@@ -32,9 +32,14 @@ func FinalizeMatch(instanceID string) error {
 			log.Printf("SyncPersistentInventoryFromMatchResources failed for user %d: %v", r.UserID, err)
 		}
 
-		if err := repository.AddPlayerExperience(r.UserID, r.ExpGained); err != nil {
-			log.Printf("AddPlayerExperience failed for user %d: %v", r.UserID, err)
+		if r.CharacterID > 0 {
+			if err := repository.AddCharacterExperience(r.CharacterID, r.ExpGained); err != nil {
+				log.Printf("AddCharacterExperience failed for character %d (user %d): %v", r.CharacterID, r.UserID, err)
+			}
+		} else {
+			log.Printf("[FinalizeMatch][ERROR] instance=%s user=%d missing match_players.character_id; exp not awarded", instanceID, r.UserID)
 		}
+
 		if err := repository.AddPlayerRewards(r.UserID, r.RewardsData); err != nil {
 			log.Printf("AddPlayerRewards failed for user %d: %v", r.UserID, err)
 		}

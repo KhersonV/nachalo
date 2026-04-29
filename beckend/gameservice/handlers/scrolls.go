@@ -65,7 +65,7 @@ func UseScrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	entry, exists := inv[scrollItem.InventoryKey]
 	if !exists {
-		// fallback: check persistent player inventory (players.inventory)
+		// fallback: check shared profile inventory
 		player, err := repository.GetPlayerByUserID(userID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to load player: %v", err), http.StatusInternalServerError)
@@ -199,7 +199,7 @@ func UseScrollHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Try to consume one scroll from match inventory; fallback to persistent inventory
 	if err := repository.RemoveInventoryItemAndSyncJSON(instanceID, userID, "scroll", scrollItem.ID, 1); err != nil {
-		// fallback to persistent players.inventory
+		// fallback to shared profile inventory
 		if err2 := repository.ConsumePlayerInventoryItem(userID, "scroll", scrollItem.ID, 1); err2 != nil {
 			http.Error(w, fmt.Sprintf("failed to consume scroll: %v / %v", err, err2), http.StatusInternalServerError)
 			return

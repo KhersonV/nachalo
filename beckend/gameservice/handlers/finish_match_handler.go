@@ -65,7 +65,7 @@ func avatarForCharacterType(characterType string) string {
 	case "mystic":
 		return "/mag/mag.webp"
 	default:
-		return "/ranger/ranger.webp"
+		return "/guardian/guardian.webp"
 	}
 }
 

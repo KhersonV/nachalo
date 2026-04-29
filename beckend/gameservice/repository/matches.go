@@ -5,6 +5,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -79,7 +80,8 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 			mp.user_id,
 			mp.name,
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.character_id,
+			COALESCE(NULLIF(mp.character_type, ''), 'guardian') AS character_type,
 			mp.position,
 			mp.energy,
 			mp.max_energy,
@@ -99,7 +101,6 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 			mp.group_id,
 			mp.inventory
 		FROM match_players mp
-		LEFT JOIN players p ON p.user_id = mp.user_id
 		WHERE mp.instance_id = $1
 		ORDER BY mp.user_id
 	`, instanceID)
@@ -114,11 +115,13 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 		var p models.PlayerResponse
 		var positionRaw []byte
 		var inventoryRaw []byte
+		var characterID sql.NullInt64
 
 		err := rows.Scan(
 			&p.UserID,
 			&p.Name,
 			&p.Image,
+			&characterID,
 			&p.CharacterType,
 			&positionRaw,
 			&p.Energy,
@@ -162,6 +165,10 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 			p.Inventory = "{}"
 		}
 
+		if characterID.Valid {
+			v := int(characterID.Int64)
+			p.SelectedCharacterID = &v
+		}
 		players = append(players, p)
 	}
 
@@ -300,7 +307,6 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 
 // CreateMatchPlayerCopy – создает копию игрока в таблице match_players для конкретного матча.
 func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, startY, groupID int) error {
-	// Формируем JSON для поля position.
 	position, err := json.Marshal(struct {
 		X int `json:"x"`
 		Y int `json:"y"`
@@ -309,38 +315,49 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 		return err
 	}
 
+	character, err := GetSelectedCharacterForUser(p.UserID)
+	if err != nil {
+		return fmt.Errorf("CreateMatchPlayerCopy: selected character for user %d: %w", p.UserID, err)
+	}
+	characterImage := character.Image
+	if characterImage == "" {
+		characterImage = ResolveHeroClassMeta(character.HeroClassID).Image
+	}
+
 	query := `
 		INSERT INTO match_players (
-			instance_id, user_id, name, image, position, inventory,
+			instance_id, user_id, name, image, character_id, character_type, position, inventory,
 			level, energy, max_energy, health, max_health, experience, max_experience,
 			attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, group_id
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19, $20, $21, $22
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19, $20, $21, $22, $23, $24
 		);
 	`
 	res, err := DB.Exec(query,
 		matchID,
 		p.UserID,
 		p.Name,
-		p.Image,
+		characterImage,
+		character.ID,
+		character.HeroClassID,
 		position,
 		p.Inventory,
-		p.Level,
-		p.Energy,
-		p.MaxEnergy,
-		p.Health,
-		p.MaxHealth,
-		p.Experience,
-		p.MaxExperience,
-		p.Attack,
-		p.Defense,
-		p.Mobility,
-		p.Agility,
-		p.SightRange,
-		p.IsRanged,
-		p.AttackRange,
+		character.Level,
+		character.MaxEnergy,
+		character.MaxEnergy,
+		character.MaxHealth,
+		character.MaxHealth,
+		character.Exp,
+		character.MaxExp,
+		character.Attack,
+		character.Defense,
+		character.Mobility,
+		character.Agility,
+		character.SightRange,
+		character.IsRanged,
+		character.AttackRange,
 		p.Balance,
 		groupID,
 	)
@@ -362,7 +379,8 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			mp.user_id,
 			mp.name, 
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.character_id,
+			COALESCE(NULLIF(mp.character_type, ''), 'guardian') AS character_type,
 			mp.position, 
 			mp.inventory,
 			mp.level,
@@ -382,17 +400,18 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			mp.group_id,
 			mp.balance
 		FROM match_players mp
-		LEFT JOIN players p ON p.user_id = mp.user_id
 		WHERE mp.instance_id = $1 AND mp.user_id = $2
 		LIMIT 1;
 	`
 	var pr models.PlayerResponse
 	var positionJSON []byte
+	var characterID sql.NullInt64
 
 	err := DB.QueryRow(query, matchID, userID).Scan(
 		&pr.UserID,
 		&pr.Name,
 		&pr.Image,
+		&characterID,
 		&pr.CharacterType,
 		&positionJSON,
 		&pr.Inventory,
@@ -420,6 +439,11 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 
 	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
 		return nil, err
+	}
+
+	if characterID.Valid {
+		v := int(characterID.Int64)
+		pr.SelectedCharacterID = &v
 	}
 
 	return &pr, nil
@@ -458,7 +482,8 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			mp.user_id,
 			mp.name,
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			mp.character_id,
+			COALESCE(NULLIF(mp.character_type, ''), 'guardian') AS character_type,
 			mp.position,
 			mp.inventory,
 			mp.level,
@@ -478,7 +503,6 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			mp.group_id,
 			mp.balance
 		FROM match_players mp
-		LEFT JOIN players p ON p.user_id = mp.user_id
 		WHERE mp.instance_id = $1
 		AND mp.health > 0
 	`
@@ -492,10 +516,12 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 	for rows.Next() {
 		var pr models.PlayerResponse
 		var positionJSON []byte
+		var characterID sql.NullInt64
 		err := rows.Scan(
 			&pr.UserID,
 			&pr.Name,
 			&pr.Image,
+			&characterID,
 			&pr.CharacterType,
 			&positionJSON,
 			&pr.Inventory,
@@ -521,6 +547,10 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 		}
 		if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
 			return nil, err
+		}
+		if characterID.Valid {
+			v := int(characterID.Int64)
+			pr.SelectedCharacterID = &v
 		}
 		players = append(players, pr)
 	}

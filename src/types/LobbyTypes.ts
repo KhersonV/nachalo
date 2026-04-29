@@ -57,4 +57,29 @@ export type BaseState = {
     recipes: ForgeRecipe[];
     forge: BuildingState;
     library: BuildingState;
+    tavern: BuildingState;
+};
+
+export type HeroState = {
+    id: string;
+    displayName: string;
+    description: string;
+    image?: string;
+    owned: boolean;
+    characterId?: number;
+    active: boolean;
+    locked: boolean;
+    unlockPrice: number;
+    requiresTavern: boolean;
+    canHire: boolean;
+    lockReason: string | null;
+    enabled: boolean;
+    sortOrder: number;
+};
+
+export type HeroesState = {
+    activeHeroClassId: string;
+    tavernBuilt: boolean;
+    gold: number;
+    heroes: HeroState[];
 };

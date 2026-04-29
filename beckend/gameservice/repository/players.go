@@ -5,7 +5,9 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -14,97 +16,275 @@ import (
 	"gameservice/models"
 )
 
-// GetPlayerByUserID получает игрока из таблицы players по user_id.
-// position хранится в match_players, поэтому здесь не читается.
+const defaultProfileImage = "/guardian/guardian.webp"
+
+type CreatePlayerProfileInput struct {
+	UserID        int
+	Name          string
+	Image         string
+	CharacterType string
+	Balance       int
+	Inventory     string
+}
+
+// Level thresholds for character progression.
+var levelThresholds = map[int]int{
+	1:  500,
+	2:  2000,
+	3:  8000,
+	4:  32000,
+	5:  128000,
+	6:  512000,
+	7:  2048000,
+	8:  8192000,
+	9:  32768000,
+	10: 131072000,
+}
+
+func CreatePlayerProfile(input CreatePlayerProfileInput) (*models.PlayerResponse, error) {
+	if input.UserID == 0 {
+		return nil, fmt.Errorf("CreatePlayerProfile: user id is required")
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		input.Name = "Player"
+	}
+	if strings.TrimSpace(input.Image) == "" {
+		input.Image = defaultProfileImage
+	}
+	if strings.TrimSpace(input.Inventory) == "" {
+		input.Inventory = "{}"
+	}
+
+	heroClassID := ResolveSelectedHeroClass(input.CharacterType, "")
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("CreatePlayerProfile begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		INSERT INTO player_profiles (
+			user_id,
+			name,
+			image,
+			balance,
+			inventory
+		)
+		VALUES ($1,$2,$3,$4,$5)
+	`, input.UserID, input.Name, input.Image, input.Balance, input.Inventory); err != nil {
+		return nil, fmt.Errorf("CreatePlayerProfile insert profile: %w", err)
+	}
+
+	character, err := CreatePlayerCharacterTx(tx, input.UserID, heroClassID, HeroUnlockSourceRegistration)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE player_profiles
+		SET selected_character_id = $1,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = $2
+	`, character.ID, input.UserID); err != nil {
+		return nil, fmt.Errorf("CreatePlayerProfile set selected character: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("CreatePlayerProfile commit: %w", err)
+	}
+
+	return GetPlayerByUserID(input.UserID)
+}
+
+// GetPlayerByUserID returns account-level profile data enriched with the active character.
 func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 	player := &models.PlayerResponse{}
 	query := `
-		SELECT 
-			user_id, 
-			name, 
-			image, 
-			character_type,
-			energy, 
-			max_energy, 
-			health, 
-			max_health, 
-			level, 
-			experience, 
-			max_experience, 
-			attack, 
-			defense, 
-			mobility, 
-			agility, 
-			sight_range, 
-			is_ranged,
-			attack_range,
-			balance, 
-			inventory
-		FROM players
-		WHERE user_id = $1
+		SELECT
+			p.user_id,
+			COALESCE(p.name, ''),
+			COALESCE(p.image, ''),
+			p.selected_character_id,
+			p.balance,
+			COALESCE(p.inventory, '{}'::jsonb),
+			pc.id,
+			pc.hero_class_id,
+			COALESCE(pc.image, ''),
+			pc.level,
+			pc.exp,
+			pc.max_exp,
+			pc.max_energy,
+			pc.max_health,
+			pc.attack,
+			pc.defense,
+			pc.mobility,
+			pc.agility,
+			pc.sight_range,
+			pc.is_ranged,
+			pc.attack_range
+		FROM player_profiles p
+		LEFT JOIN player_characters pc ON pc.id = p.selected_character_id
+		WHERE p.user_id = $1
 	`
 	row := DB.QueryRow(query, userID)
+	var selectedChar sql.NullInt64
+	var inventoryRaw []byte
+	var characterID sql.NullInt64
+	var heroClass sql.NullString
+	var characterImage sql.NullString
+	var level sql.NullInt64
+	var exp sql.NullInt64
+	var maxExp sql.NullInt64
+	var maxEnergy sql.NullInt64
+	var maxHealth sql.NullInt64
+	var attack sql.NullInt64
+	var defense sql.NullInt64
+	var mobility sql.NullInt64
+	var agility sql.NullInt64
+	var sightRange sql.NullInt64
+	var isRanged sql.NullBool
+	var attackRange sql.NullInt64
+
 	err := row.Scan(
 		&player.UserID,
 		&player.Name,
 		&player.Image,
-		&player.CharacterType,
-		&player.Energy,
-		&player.MaxEnergy,
-		&player.Health,
-		&player.MaxHealth,
-		&player.Level,
-		&player.Experience,
-		&player.MaxExperience,
-		&player.Attack,
-		&player.Defense,
-		&player.Mobility,
-		&player.Agility,
-		&player.SightRange,
-		&player.IsRanged,
-		&player.AttackRange,
+		&selectedChar,
 		&player.Balance,
-		&player.Inventory,
+		&inventoryRaw,
+		&characterID,
+		&heroClass,
+		&characterImage,
+		&level,
+		&exp,
+		&maxExp,
+		&maxEnergy,
+		&maxHealth,
+		&attack,
+		&defense,
+		&mobility,
+		&agility,
+		&sightRange,
+		&isRanged,
+		&attackRange,
 	)
 	if err != nil {
-		log.Printf("GetPlayerByUserID: ошибка получения игрока user_id=%d: %v", userID, err)
+		log.Printf("GetPlayerByUserID: failed to load user_id=%d: %v", userID, err)
 		return nil, err
+	}
+
+	if len(inventoryRaw) > 0 && json.Valid(inventoryRaw) {
+		player.Inventory = string(inventoryRaw)
+	} else {
+		player.Inventory = "{}"
+	}
+
+	if selectedChar.Valid {
+		v := int(selectedChar.Int64)
+		player.SelectedCharacterID = &v
+	}
+
+	resolvedHeroClass := DefaultHeroClassID
+	if heroClass.Valid {
+		resolvedHeroClass = ResolveSelectedHeroClass(heroClass.String, "")
+	}
+	player.CharacterType = resolvedHeroClass
+	player.SelectedHeroClassID = resolvedHeroClass
+
+	if characterID.Valid {
+		v := int(characterID.Int64)
+		player.SelectedCharacterID = &v
+	}
+
+	if characterImage.Valid && characterImage.String != "" {
+		player.Image = characterImage.String
+	} else if player.Image == "" {
+		player.Image = ResolveHeroClassMeta(resolvedHeroClass).Image
+	}
+
+	player.Level = 1
+	if level.Valid {
+		player.Level = int(level.Int64)
+	}
+	if exp.Valid {
+		player.Experience = int(exp.Int64)
+	}
+	player.MaxExperience = maxExperienceForLevel(player.Level)
+	if maxExp.Valid && maxExp.Int64 > 0 {
+		player.MaxExperience = int(maxExp.Int64)
+	}
+
+	if maxEnergy.Valid {
+		player.Energy = int(maxEnergy.Int64)
+		player.MaxEnergy = int(maxEnergy.Int64)
+	}
+	if maxHealth.Valid {
+		player.Health = int(maxHealth.Int64)
+		player.MaxHealth = int(maxHealth.Int64)
+	}
+	if attack.Valid {
+		player.Attack = int(attack.Int64)
+	}
+	if defense.Valid {
+		player.Defense = int(defense.Int64)
+	}
+	if mobility.Valid {
+		player.Mobility = int(mobility.Int64)
+	}
+	if agility.Valid {
+		player.Agility = int(agility.Int64)
+	}
+	if sightRange.Valid {
+		player.SightRange = int(sightRange.Int64)
+	}
+	if isRanged.Valid {
+		player.IsRanged = isRanged.Bool
+	}
+	if attackRange.Valid {
+		player.AttackRange = int(attackRange.Int64)
+	}
+
+	if !characterID.Valid {
+		stats := ResolveHeroClassStats(DefaultHeroClassID)
+		meta := ResolveHeroClassMeta(DefaultHeroClassID)
+		player.CharacterType = DefaultHeroClassID
+		player.SelectedHeroClassID = DefaultHeroClassID
+		player.Image = meta.Image
+		player.Level = 1
+		player.Experience = 0
+		player.MaxExperience = maxExperienceForLevel(1)
+		player.Energy = stats.MaxEnergy
+		player.MaxEnergy = stats.MaxEnergy
+		player.Health = stats.MaxHealth
+		player.MaxHealth = stats.MaxHealth
+		player.Attack = stats.Attack
+		player.Defense = stats.Defense
+		player.Mobility = stats.Mobility
+		player.Agility = stats.Agility
+		player.SightRange = stats.SightRange
+		player.IsRanged = stats.IsRanged
+		player.AttackRange = stats.AttackRange
 	}
 
 	return player, nil
 }
 
-// UpdatePlayer обновляет данные игрока в таблице players,
-// включая баланс и инвентарь (JSON-строку).
+// UpdatePlayer persists only account-level shared profile state.
 func UpdatePlayer(player *models.PlayerResponse) error {
-    query := `
-    UPDATE players
-    SET
-        energy         = $1,
-        health         = $2,
-        level          = $3,
-        experience     = $4,
-        max_experience = $5,
-        balance        = $6,
-        inventory      = $7
-    WHERE user_id = $8
-    `
-    if _, err := DB.Exec(query,
-        player.Energy,
-        player.Health,
-        player.Level,
-        player.Experience,
-        player.MaxExperience,
-        player.Balance,
-        player.Inventory,
-        player.UserID,
-    ); err != nil {
-        return fmt.Errorf("UpdatePlayer: %w", err)
-    }
-    return nil
+	if _, err := DB.Exec(`
+		UPDATE player_profiles
+		SET balance = $1,
+			inventory = $2,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = $3
+	`, player.Balance, player.Inventory, player.UserID); err != nil {
+		return fmt.Errorf("UpdatePlayer: %w", err)
+	}
+	return nil
 }
 
-// DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.
+// DeleteMatchPlayer removes a player snapshot from a match.
 func DeleteMatchPlayer(instanceID string, userID int) error {
 	_, err := DB.Exec(`
         DELETE FROM match_players
@@ -124,42 +304,58 @@ func MarkPlayerDead(instanceID string, userID int) error {
 	return err
 }
 
-// пороги опыта для повышения уровня — дублируют логику из handlers/players.go
-var levelThresholds = map[int]int{
-	1:  500,
-	2:  2000,
-	3:  8000,
-	4:  32000,
-	5:  128000,
-	6:  512000,
-	7:  2048000,
-	8:  8192000,
-	9:  32768000,
-	10: 131072000,
+// AddPlayerExperience applies experience to the active character.
+func AddPlayerExperience(userID, exp int) error {
+	character, err := GetSelectedCharacterForUser(userID)
+	if err != nil {
+		return fmt.Errorf("AddPlayerExperience: selected character: %w", err)
+	}
+	return AddCharacterExperience(character.ID, exp)
 }
 
-// AddPlayerExperience добавляет опыт перманентному игроку, проверяет и повышает уровень при необходимости.
-func AddPlayerExperience(userID, exp int) error {
-	// 1) Получаем текущего игрока
-	player, err := GetPlayerByUserID(userID)
+// AddCharacterExperience adds experience to a concrete character and updates level/max_exp.
+func AddCharacterExperience(characterID int, exp int) error {
+	tx, err := DB.Begin()
 	if err != nil {
-		return fmt.Errorf("AddPlayerExperience: fetch player: %w", err)
+		return fmt.Errorf("AddCharacterExperience begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var level int
+	var experience int
+	if err := tx.QueryRow(`
+		SELECT level, exp
+		FROM player_characters
+		WHERE id = $1
+		FOR UPDATE
+	`, characterID).Scan(&level, &experience); err != nil {
+		return fmt.Errorf("AddCharacterExperience select: %w", err)
 	}
 
-	// 2) Увеличиваем опыт
-	player.Experience += exp
+	experience += exp
+	for {
+		threshold, ok := levelThresholds[level]
+		if !ok || experience < threshold {
+			break
+		}
+		level++
+		experience -= threshold
+	}
+	maxExp := maxExperienceForLevel(level)
 
-	// 3) Проверяем, не перешёл ли через порог для повышения уровня
-	if threshold, ok := levelThresholds[player.Level]; ok && player.Experience >= threshold {
-		player.Level++
-		player.Experience -= threshold
-		player.MaxExperience = levelThresholds[player.Level]
-		log.Printf("GetPlayerByUserID: MaxExperience = %d", player.MaxExperience)
+	if _, err := tx.Exec(`
+		UPDATE player_characters
+		SET level = $1,
+			exp = $2,
+			max_exp = $3,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $4
+	`, level, experience, maxExp, characterID); err != nil {
+		return fmt.Errorf("AddCharacterExperience update: %w", err)
 	}
 
-	// 4) Сохраняем изменения
-	if err := UpdatePlayer(player); err != nil {
-		return fmt.Errorf("AddPlayerExperience: update player: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddCharacterExperience commit: %w", err)
 	}
 	return nil
 }
@@ -172,7 +368,6 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 		Amount int    `json:"amount"`
 	}
 
-	// 1) Распарсим JSON наград (поддерживаем и map, и массив объектов).
 	rewards := make(map[string]int)
 	var rewardsMap map[string]int
 	if err := json.Unmarshal(rewardsData, &rewardsMap); err == nil {
@@ -192,15 +387,12 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 		}
 	}
 
-	// 2) Получаем игрока
 	player, err := GetPlayerByUserID(userID)
 	if err != nil {
 		return fmt.Errorf("AddPlayerRewards: fetch player: %w", err)
 	}
 
-	// 3) Применяем каждую награду
 	for key, amount := range rewards {
-		// По политике переноса инвентаря артефакты не должны переходить между матчами.
 		if strings.HasPrefix(key, "artifact_") || key == "artifact" {
 			continue
 		}
@@ -210,7 +402,6 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 			player.Balance += amount
 
 		default:
-			// Обновляем inventory, храня его как JSON-строку
 			var inv map[string]map[string]interface{}
 			if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
 				inv = make(map[string]map[string]interface{})
@@ -224,15 +415,13 @@ func AddPlayerRewards(userID int, rewardsData []byte) error {
 		}
 	}
 
-	// 4) Сохраняем изменени
 	if err := UpdatePlayer(player); err != nil {
 		return fmt.Errorf("AddPlayerRewards: update player: %w", err)
 	}
 	return nil
 }
 
-// SyncPersistentInventoryFromMatchResources переносит в players.inventory итог матча
-// и удаляет артефакты из постоянного инвентаря.
+// SyncPersistentInventoryFromMatchResources copies the final match resource inventory to the profile inventory.
 func SyncPersistentInventoryFromMatchResources(instanceID string, userID int) error {
 	matchPlayer, err := GetMatchPlayerByID(instanceID, userID)
 	if err != nil {
@@ -246,7 +435,6 @@ func SyncPersistentInventoryFromMatchResources(instanceID string, userID int) er
 		}
 	}
 
-	// Явно удаляем артефакты по ключу из JSON инвентаря.
 	for key := range finalInv {
 		if strings.HasPrefix(key, "artifact_") || key == "artifact" {
 			delete(finalInv, key)
@@ -271,8 +459,7 @@ func SyncPersistentInventoryFromMatchResources(instanceID string, userID int) er
 	return nil
 }
 
-// ConsumePlayerInventoryItem уменьшает количество предмета в перманентном players.inventory.
-// Это нужно для синхронизации трат купленных в магазине предметов между матчами.
+// ConsumePlayerInventoryItem decrements an item from shared profile inventory.
 func ConsumePlayerInventoryItem(userID int, itemType string, itemID int, count int) error {
 	if count <= 0 {
 		count = 1
@@ -293,7 +480,6 @@ func ConsumePlayerInventoryItem(userID int, itemType string, itemID int, count i
 	key := fmt.Sprintf("%s_%d", itemType, itemID)
 	entry, ok := inv[key]
 	if !ok {
-		// Нечего списывать — считаем это no-op.
 		return nil
 	}
 
@@ -309,8 +495,6 @@ func ConsumePlayerInventoryItem(userID int, itemType string, itemID int, count i
 		parsed, parseErr := strconv.Atoi(v)
 		if parseErr == nil {
 			current = parsed
-		} else {
-			current = 0
 		}
 	default:
 		current = 0
@@ -334,4 +518,8 @@ func ConsumePlayerInventoryItem(userID int, itemType string, itemID int, count i
 		return fmt.Errorf("ConsumePlayerInventoryItem: update player: %w", err)
 	}
 	return nil
+}
+
+func IsPlayerNotFound(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, ErrPlayerNotFound)
 }
