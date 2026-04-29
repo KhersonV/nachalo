@@ -8,6 +8,7 @@ import (
 
 	"gameservice/middleware"
 	"gameservice/repository"
+
 	"github.com/gorilla/mux"
 )
 
@@ -29,7 +30,9 @@ type heroStateResponse struct {
 	ID             string  `json:"id"`
 	DisplayName    string  `json:"displayName"`
 	Description    string  `json:"description"`
+	Image          string  `json:"image"`
 	Owned          bool    `json:"owned"`
+	CharacterID    *int    `json:"characterId,omitempty"`
 	Active         bool    `json:"active"`
 	Locked         bool    `json:"locked"`
 	UnlockPrice    int     `json:"unlockPrice"`
@@ -52,16 +55,6 @@ type setActiveHeroRequest struct {
 }
 
 var heroCatalog = []heroCatalogEntry{
-	{
-		ID:             repository.DefaultHeroClassID,
-		DisplayName:    "Adventurer",
-		Description:    "Balanced fallback explorer.",
-		UnlockPrice:    0,
-		RequiresTavern: false,
-		Enabled:        true,
-		SortOrder:      0,
-		AlwaysOwned:    true,
-	},
 	{
 		ID:             "guardian",
 		DisplayName:    "Guardian",
@@ -127,31 +120,16 @@ func findEnabledHeroCatalogEntry(heroClassID string) (heroCatalogEntry, bool) {
 	return heroCatalogEntry{}, false
 }
 
-func resolveActiveHeroForCatalog(userID int, selectedHeroClassID, characterType string, catalogByID map[string]heroCatalogEntry) string {
-	selected := repository.NormalizeHeroClassID(selectedHeroClassID)
-	if _, ok := catalogByID[selected]; ok {
-		return selected
-	}
-
-	current := repository.NormalizeHeroClassID(characterType)
-	if _, ok := catalogByID[current]; ok {
-		if selected != "" {
-			log.Printf("GetHeroesHandler: user %d selected unknown hero %q, falling back to current class %q", userID, selected, current)
-		}
-		return current
-	}
-
-	log.Printf("GetHeroesHandler: user %d has no known selected/current hero, falling back to %q", userID, repository.DefaultHeroClassID)
-	return repository.DefaultHeroClassID
-}
-
-func buildHeroState(hero heroCatalogEntry, owned bool, active bool, tavernBuilt bool, gold int) heroStateResponse {
+func buildHeroState(hero heroCatalogEntry, owned bool, characterID *int, active bool, tavernBuilt bool, gold int) heroStateResponse {
+	meta := repository.ResolveHeroClassMeta(hero.ID)
 	if owned {
 		return heroStateResponse{
 			ID:             hero.ID,
 			DisplayName:    hero.DisplayName,
 			Description:    hero.Description,
+			Image:          meta.Image,
 			Owned:          true,
+			CharacterID:    characterID,
 			Active:         active,
 			Locked:         false,
 			UnlockPrice:    hero.UnlockPrice,
@@ -179,6 +157,7 @@ func buildHeroState(hero heroCatalogEntry, owned bool, active bool, tavernBuilt 
 		ID:             hero.ID,
 		DisplayName:    hero.DisplayName,
 		Description:    hero.Description,
+		Image:          meta.Image,
 		Owned:          false,
 		Active:         active,
 		Locked:         true,
@@ -191,21 +170,14 @@ func buildHeroState(hero heroCatalogEntry, owned bool, active bool, tavernBuilt 
 	}
 }
 
-func heroOwnedForAccount(hero heroCatalogEntry, ownedHeroIDs map[string]bool, characterType string, selectedHeroClassID string) bool {
-	heroID := repository.NormalizeHeroClassID(hero.ID)
-	return hero.AlwaysOwned ||
-		ownedHeroIDs[heroID] ||
-		heroID == repository.NormalizeHeroClassID(characterType) ||
-		heroID == repository.NormalizeHeroClassID(selectedHeroClassID)
-}
-
 func buildHeroesStateResponse(userID int) (*heroesStateResponse, error) {
 	player, err := repository.GetPlayerByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	ownedHeroIDs, err := repository.GetPlayerHeroClassIDs(userID)
+	// Map of hero_class_id -> character_id for owned characters
+	charactersMap, err := repository.GetPlayerCharactersMap(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +189,11 @@ func buildHeroesStateResponse(userID int) (*heroesStateResponse, error) {
 	tavernBuilt := tavernLevel > 0
 
 	catalogByID := enabledHeroCatalogByID()
-	activeHeroClassID := resolveActiveHeroForCatalog(userID, player.SelectedHeroClassID, player.CharacterType, catalogByID)
+	activeHeroClassID := repository.NormalizeHeroClassID(player.CharacterType)
+	if _, ok := catalogByID[activeHeroClassID]; !ok {
+		log.Printf("GetHeroesHandler: user %d active character has unknown hero %q, falling back to %q", userID, activeHeroClassID, repository.DefaultHeroClassID)
+		activeHeroClassID = repository.DefaultHeroClassID
+	}
 
 	heroes := make([]heroStateResponse, 0, len(heroCatalog))
 	for _, hero := range heroCatalog {
@@ -226,9 +202,14 @@ func buildHeroesStateResponse(userID int) (*heroesStateResponse, error) {
 		}
 
 		heroID := repository.NormalizeHeroClassID(hero.ID)
-		owned := heroOwnedForAccount(hero, ownedHeroIDs, player.CharacterType, activeHeroClassID)
+		var characterIDPtr *int
+		if cid, ok := charactersMap[heroID]; ok {
+			v := cid
+			characterIDPtr = &v
+		}
+		owned := hero.AlwaysOwned || characterIDPtr != nil
 		active := heroID == activeHeroClassID
-		heroes = append(heroes, buildHeroState(hero, owned, active, tavernBuilt, player.Balance))
+		heroes = append(heroes, buildHeroState(hero, owned, characterIDPtr, active, tavernBuilt, player.Balance))
 	}
 
 	return &heroesStateResponse{
@@ -280,24 +261,19 @@ func SetActiveHeroHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	player, err := repository.GetPlayerByUserID(userID)
-	if err != nil {
-		http.Error(w, `{"error":"failed_to_load_player"}`, http.StatusInternalServerError)
-		return
-	}
-
-	ownedHeroIDs, err := repository.GetPlayerHeroClassIDs(userID)
+	charactersMap, err := repository.GetPlayerCharactersMap(userID)
 	if err != nil {
 		http.Error(w, `{"error":"failed_to_load_hero_ownership"}`, http.StatusInternalServerError)
 		return
 	}
-
-	if !heroOwnedForAccount(hero, ownedHeroIDs, player.CharacterType, player.SelectedHeroClassID) {
+	heroID := repository.NormalizeHeroClassID(hero.ID)
+	owned := hero.AlwaysOwned || charactersMap[heroID] != 0
+	if !owned {
 		http.Error(w, `{"error":"hero_not_owned"}`, http.StatusForbidden)
 		return
 	}
 
-	if err := repository.SetSelectedHeroClassID(userID, hero.ID); err != nil {
+	if err := repository.SetSelectedCharacterByHeroClass(userID, hero.ID); err != nil {
 		if errors.Is(err, repository.ErrPlayerNotFound) {
 			http.Error(w, `{"error":"player_not_found"}`, http.StatusNotFound)
 			return

@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gameservice/models"
 	"gameservice/repository"
+
 	"github.com/gorilla/mux"
 )
 
@@ -42,20 +42,11 @@ type characterTemplate struct {
 	AttackRange   int
 }
 
-const defaultCharacterType = "adventurer"
+const defaultCharacterType = "guardian"
 
 var characterTemplates = map[string]characterTemplate{
 	defaultCharacterType: {
 		CharacterType: defaultCharacterType,
-		Energy:        100, EnergyRegen: 10, MaxEnergy: 100,
-		Health: 100, MaxHealth: 100,
-		Attack: 10, Defense: 5,
-		Mobility: 3, Agility: 2,
-		SightRange: 2,
-		IsRanged:   false, AttackRange: 1,
-	},
-	"guardian": {
-		CharacterType: "guardian",
 		Energy:        90, EnergyRegen: 10, MaxEnergy: 90,
 		Health: 130, MaxHealth: 130,
 		Attack: 9, Defense: 8,
@@ -108,20 +99,6 @@ func resolveCharacterRegen(characterType string) int {
 	return characterTemplates[defaultCharacterType].EnergyRegen
 }
 
-// Уровневые пороги для повышения уровня
-var levelThresholds = map[int]int{
-	1:  500,
-	2:  2000,
-	3:  8000,
-	4:  32000,
-	5:  128000,
-	6:  512000,
-	7:  2048000,
-	8:  8192000,
-	9:  32768000,
-	10: 131072000,
-}
-
 // CreatePlayerHandler – создает нового игрока.
 func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreatePlayerRequest
@@ -139,74 +116,19 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.Name = "Player"
 	}
 	if req.Image == "" {
-		req.Image = "/ranger/ranger.webp"
+		req.Image = "/guardian/guardian.webp"
 	}
 
-	template := resolveCharacterTemplate(req.CharacterType)
-
-	query := `
-		INSERT INTO players (
-			user_id, name, image, character_type, selected_hero_class_id, energy, max_energy,
-			health, max_health, level, experience, max_experience,
-			attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, inventory
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, 1, 0, 500, $10, $11,
-			$12, $13, $14, $15, $16, 0, '{}'
-		)
-		RETURNING user_id, name, image, character_type, selected_hero_class_id, energy, max_energy,
-				  health, max_health, level, experience, max_experience,
-				  attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, inventory
-	`
-	player := &models.PlayerResponse{}
-	err := repository.DB.QueryRow(
-		query,
-		req.UserID,
-		req.Name,
-		req.Image,
-		template.CharacterType,
-		template.CharacterType,
-		template.Energy,
-		template.MaxEnergy,
-		template.Health,
-		template.MaxHealth,
-		template.Attack,
-		template.Defense,
-		template.Mobility,
-		template.Agility,
-		template.SightRange,
-		template.IsRanged,
-		template.AttackRange,
-	).Scan(
-		&player.UserID,
-		&player.Name,
-		&player.Image,
-		&player.CharacterType,
-		&player.SelectedHeroClassID,
-		&player.Energy,
-		&player.MaxEnergy,
-		&player.Health,
-		&player.MaxHealth,
-		&player.Level,
-		&player.Experience,
-		&player.MaxExperience,
-		&player.Attack,
-		&player.Defense,
-		&player.Mobility,
-		&player.Agility,
-		&player.SightRange,
-		&player.IsRanged,
-		&player.AttackRange,
-		&player.Balance,
-		&player.Inventory,
-	)
+	player, err := repository.CreatePlayerProfile(repository.CreatePlayerProfileInput{
+		UserID:        req.UserID,
+		Name:          req.Name,
+		Image:         req.Image,
+		CharacterType: req.CharacterType,
+		Balance:       0,
+		Inventory:     "{}",
+	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка создания игрока: %v", err), http.StatusInternalServerError)
-		return
-	}
-	if err := repository.EnsurePlayerHeroUnlocked(player.UserID, player.SelectedHeroClassID, repository.HeroUnlockSourceRegistration, 0); err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка регистрации героя игрока: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -257,21 +179,14 @@ func GainExperienceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Увеличиваем опыт
-	player.Experience += req.Experience
-
-	// Проверка порога для левел-апа
-	threshold, ok := levelThresholds[player.Level]
-	if ok && player.Experience >= threshold {
-		player.Level++
-		player.Experience = 0
-		log.Printf("Игрок %d повышен до уровня %d", player.UserID, player.Level)
+	if err := repository.AddPlayerExperience(id, req.Experience); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка обновления игрока: %v", err), http.StatusInternalServerError)
+		return
 	}
 
-	// Сохраняем изменения (без обновления updated_at)
-	err = repository.UpdatePlayer(player)
+	player, err = repository.GetPlayerByUserID(id)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Ошибка обновления игрока: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Ошибка получения игрока: %v", err), http.StatusInternalServerError)
 		return
 	}
 

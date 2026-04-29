@@ -331,7 +331,7 @@ func getQueueModeForLeaderLocked(leaderID int) string {
 }
 
 func buildPartyMemberState(playerID int) PartyMemberState {
-	state := PartyMemberState{UserID: playerID, Name: fmt.Sprintf("Player %d", playerID), Image: "/ranger/ranger.webp", CharacterType: "adventurer"}
+	state := PartyMemberState{UserID: playerID, Name: fmt.Sprintf("Player %d", playerID), Image: "/ranger/ranger.webp", CharacterType: "guardian"}
 	if p, err := repository.GetPlayerByUserID(playerID); err == nil && p != nil {
 		state.Name = p.Name
 		if state.Name == "" {

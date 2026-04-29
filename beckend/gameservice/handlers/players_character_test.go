@@ -37,12 +37,26 @@ func TestResolveCharacterTemplateKnownTypes(t *testing.T) {
 	}
 }
 
-func TestResolveCharacterTemplateFallsBackToAdventurer(t *testing.T) {
+func TestResolveCharacterTemplateFallsBackToGuardian(t *testing.T) {
 	template := resolveCharacterTemplate("unknown-type")
 	if template.CharacterType != defaultCharacterType {
 		t.Fatalf("expected fallback type %s, got %s", defaultCharacterType, template.CharacterType)
 	}
-	if template.Health != 100 || template.Attack != 10 || template.Defense != 5 {
+	if template.Health != 130 || template.Attack != 9 || template.Defense != 8 {
 		t.Fatalf("unexpected fallback template: %+v", template)
+	}
+}
+
+func TestRemovedHeroClassIsNotCatalogued(t *testing.T) {
+	removed := "adven" + "turer"
+	for _, hero := range heroCatalog {
+		if hero.ID == removed {
+			t.Fatalf("removed hero class must not be in hero catalog")
+		}
+	}
+
+	template := resolveCharacterTemplate(removed)
+	if template.CharacterType != defaultCharacterType {
+		t.Fatalf("expected removed hero class to fall back to %s, got %s", defaultCharacterType, template.CharacterType)
 	}
 }

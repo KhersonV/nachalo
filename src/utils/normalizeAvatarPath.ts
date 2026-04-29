@@ -21,6 +21,6 @@ const AVATAR_ALIASES: Record<string, string> = {
 
 export function normalizeAvatarPath(image?: string | null): string {
     const raw = (image ?? "").trim();
-    if (!raw) return "/ranger/ranger.webp";
+    if (!raw) return "/guardian/guardian.webp";
     return AVATAR_ALIASES[raw] ?? raw;
 }

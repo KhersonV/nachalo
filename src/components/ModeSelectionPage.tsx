@@ -1084,7 +1084,7 @@ export default function ModeSelectionPage() {
                                 <div className={styles.partyMemberMeta}>
                                     <strong>{member.name}</strong>
                                     <span>
-                                        {member.characterType || "adventurer"}
+                                        {member.characterType || "guardian"}
                                     </span>
                                     <span>Level {member.level}</span>
                                     {member.user_id ===

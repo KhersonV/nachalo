@@ -16,6 +16,7 @@ type PlayerResponse struct {
 	Image               string `json:"image"`
 	CharacterType       string `json:"characterType"`
 	SelectedHeroClassID string `json:"selectedHeroClassId,omitempty"`
+	SelectedCharacterID *int   `json:"selectedCharacterId,omitempty"`
 	Position            struct {
 		X int `json:"x"`
 		Y int `json:"y"`

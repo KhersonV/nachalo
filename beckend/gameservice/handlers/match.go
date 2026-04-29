@@ -492,7 +492,7 @@ func assignMatchPlayers(
 		for _, uid := range team.MemberIDs {
 			p, err := repository.GetPlayerByUserID(uid)
 			if err != nil {
-				return fmt.Errorf("player %d not found in players: %w", uid, err)
+				return fmt.Errorf("player %d profile not found: %w", uid, err)
 			}
 
 			start, ok := startByPlayer[uid]

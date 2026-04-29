@@ -15,6 +15,7 @@ type PlayerResult struct {
 	PlayerName        string          // имя игрока на момент завершения матча
 	GroupID           int             // команда / группа игрока в матче
 	CharacterType     string          // архетип персонажа на момент матча
+	CharacterID       int             // id в player_characters (если известен)
 	IsWinner          bool            // победил ли игрок в этом матче
 	Survived          bool            // дожил ли игрок до финала матча
 	Deaths            int             // количество смертей в матче

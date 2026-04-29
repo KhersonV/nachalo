@@ -64,7 +64,9 @@ export type HeroState = {
     id: string;
     displayName: string;
     description: string;
+    image?: string;
     owned: boolean;
+    characterId?: number;
     active: boolean;
     locked: boolean;
     unlockPrice: number;

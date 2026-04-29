@@ -107,7 +107,7 @@ func setResourceCount(inv map[string]map[string]interface{}, key string, next in
 func EnsurePlayerBaseBuildingsTable() {
 	query := `
     CREATE TABLE IF NOT EXISTS player_base_buildings (
-        user_id INTEGER PRIMARY KEY REFERENCES players(user_id) ON DELETE CASCADE,
+        user_id INTEGER PRIMARY KEY REFERENCES player_profiles(user_id) ON DELETE CASCADE,
         forge_level INTEGER NOT NULL DEFAULT 0,
         library_level INTEGER NOT NULL DEFAULT 0,
         tavern_level INTEGER NOT NULL DEFAULT 0,
@@ -195,7 +195,7 @@ func buildBaseBuilding(userID int, cfg baseBuildingConfig) error {
 	}
 
 	var invRaw string
-	if err := tx.QueryRow(`SELECT inventory FROM players WHERE user_id = $1 FOR UPDATE`, userID).Scan(&invRaw); err != nil {
+	if err := tx.QueryRow(`SELECT inventory FROM player_profiles WHERE user_id = $1 FOR UPDATE`, userID).Scan(&invRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errors.New("player not found")
 		}
@@ -243,7 +243,7 @@ func buildBaseBuilding(userID int, cfg baseBuildingConfig) error {
 		return fmt.Errorf("Build%s marshal inventory: %w", cfg.Name, err)
 	}
 
-	if _, err := tx.Exec(`UPDATE players SET inventory = $1 WHERE user_id = $2`, string(invBytes), userID); err != nil {
+	if _, err := tx.Exec(`UPDATE player_profiles SET inventory = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, string(invBytes), userID); err != nil {
 		return fmt.Errorf("Build%s update player inventory: %w", cfg.Name, err)
 	}
 
