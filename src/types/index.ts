@@ -4,6 +4,8 @@ export type {
     ForgeRecipe,
     BuildingState,
     BaseState,
+    HeroState,
+    HeroesState,
 } from "./LobbyTypes";
 
 export type {

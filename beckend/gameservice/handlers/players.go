@@ -146,17 +146,17 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		INSERT INTO players (
-			user_id, name, image, character_type, energy, max_energy, 
-			health, max_health, level, experience, max_experience, 
+			user_id, name, image, character_type, selected_hero_class_id, energy, max_energy,
+			health, max_health, level, experience, max_experience,
 			attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, inventory
 		)
 		VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, 1, 0, 500, $9, $10,
-			$11, $12, $13, $14, $15, 0, '{}'
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, 1, 0, 500, $10, $11,
+			$12, $13, $14, $15, $16, 0, '{}'
 		)
-		RETURNING user_id, name, image, character_type, energy, max_energy,
-				  health, max_health, level, experience, max_experience, 
+		RETURNING user_id, name, image, character_type, selected_hero_class_id, energy, max_energy,
+				  health, max_health, level, experience, max_experience,
 				  attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, inventory
 	`
 	player := &models.PlayerResponse{}
@@ -165,6 +165,7 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		req.UserID,
 		req.Name,
 		req.Image,
+		template.CharacterType,
 		template.CharacterType,
 		template.Energy,
 		template.MaxEnergy,
@@ -182,6 +183,7 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 		&player.Name,
 		&player.Image,
 		&player.CharacterType,
+		&player.SelectedHeroClassID,
 		&player.Energy,
 		&player.MaxEnergy,
 		&player.Health,
@@ -201,6 +203,10 @@ func CreatePlayerHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка создания игрока: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := repository.EnsurePlayerHeroUnlocked(player.UserID, player.SelectedHeroClassID, repository.HeroUnlockSourceRegistration, 0); err != nil {
+		http.Error(w, fmt.Sprintf("Ошибка регистрации героя игрока: %v", err), http.StatusInternalServerError)
 		return
 	}
 

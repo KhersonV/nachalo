@@ -246,6 +246,85 @@
     filter: grayscale(0.25);
 }
 
+.activeHeroPanel {
+    border: 1px solid rgba(126, 228, 255, 0.26);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    background: linear-gradient(rgba(12, 38, 58, 0.9), rgba(6, 18, 30, 0.82));
+    color: #eefbff;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.activeHeroContent {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.activeHeroTitle {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+    color: #7ee4ff;
+}
+
+.activeHeroText {
+    margin: 0;
+    color: rgba(238, 251, 255, 0.92);
+    font-size: 0.94rem;
+    line-height: 1.35;
+}
+
+.activeHeroDescription,
+.activeHeroHint,
+.activeHeroWarning {
+    margin: 0.22rem 0 0;
+    font-size: 0.84rem;
+    line-height: 1.35;
+}
+
+.activeHeroDescription,
+.activeHeroHint {
+    color: rgba(238, 251, 255, 0.72);
+}
+
+.activeHeroWarning {
+    color: #ffb3a8;
+}
+
+.activeHeroActions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.activeHeroBadge {
+    border-radius: 999px;
+    padding: 0.25rem 0.6rem;
+    background: rgba(181, 247, 194, 0.16);
+    color: #b5f7c2;
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.activeHeroButton {
+    border: 1px solid rgba(126, 228, 255, 0.42);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    background: rgba(12, 45, 68, 0.78);
+    color: #d7f5ff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.activeHeroButton:hover {
+    background: rgba(18, 72, 104, 0.82);
+}
+
 .startButton {
     padding: 0.75rem 1.5rem;
     font-size: 1rem;
@@ -553,6 +632,135 @@
     gap: 0.3rem;
 }
 
+.tavernHeroSection {
+    margin-top: 1rem;
+    border-top: 1px solid rgba(255, 210, 122, 0.2);
+    padding-top: 1rem;
+    display: grid;
+    gap: 0.85rem;
+}
+
+.tavernHeroHeader {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.9rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.tavernHeroHeader h4 {
+    margin: 0;
+    color: #ffd27a;
+}
+
+.tavernHeroHeader p {
+    margin: 0.25rem 0 0;
+    color: rgba(253, 245, 221, 0.82);
+    font-size: 0.88rem;
+}
+
+.tavernGold {
+    color: #b5f7c2;
+    white-space: nowrap;
+}
+
+.tavernHeroGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.75rem;
+}
+
+.tavernHeroCard {
+    border: 1px solid rgba(126, 228, 255, 0.18);
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: rgba(15, 34, 43, 0.66);
+    display: grid;
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.tavernHeroCardTop {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    align-items: flex-start;
+}
+
+.tavernHeroCardTop h5 {
+    margin: 0;
+    color: #eefbff;
+    font-size: 0.98rem;
+}
+
+.tavernBadges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+}
+
+.tavernBadge {
+    border-radius: 999px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.tavernBadgeActive {
+    background: rgba(181, 247, 194, 0.18);
+    color: #b5f7c2;
+}
+
+.tavernBadgeOwned {
+    background: rgba(126, 228, 255, 0.16);
+    color: #7ee4ff;
+}
+
+.tavernBadgeLocked {
+    background: rgba(255, 154, 139, 0.14);
+    color: #ffb3a8;
+}
+
+.tavernHeroText {
+    margin: 0;
+    color: rgba(238, 251, 255, 0.82);
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+
+.tavernHeroMeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.7rem;
+    color: rgba(253, 245, 221, 0.84);
+    font-size: 0.82rem;
+}
+
+.tavernHeroActions {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.tavernHeroButton {
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 0.7rem;
+    background: linear-gradient(
+        rgba(126, 228, 255, 0.92),
+        rgba(18, 162, 205, 0.9)
+    );
+    color: #042a35;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.tavernHeroButton:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
 @media (max-width: 880px) {
     .pageRoot {
         padding: 1rem;
@@ -576,6 +784,15 @@
         gap: 0.6rem;
     }
 
+    .activeHeroContent {
+        display: grid;
+        gap: 0.7rem;
+    }
+
+    .activeHeroActions {
+        justify-content: flex-start;
+    }
+
     .queueButton {
         flex: 1 1 calc(50% - 0.6rem);
         min-width: 150px;
@@ -587,6 +804,10 @@
 
     .baseResourcesGrid {
         grid-template-columns: 1fr;
+    }
+
+    .tavernHeroGrid {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     }
 }
 
@@ -625,8 +846,21 @@
 
     .shopPanel,
     .basePanel,
+    .activeHeroPanel,
     .matchReadyBox {
         padding: 0.75rem;
+    }
+
+    .activeHeroActions {
+        display: grid;
+        justify-content: stretch;
+    }
+
+    .activeHeroBadge,
+    .activeHeroButton {
+        width: 100%;
+        box-sizing: border-box;
+        text-align: center;
     }
 
     .shopCard {
@@ -646,6 +880,18 @@
 
     .shopQtyInput {
         width: 60px;
+    }
+
+    .tavernHeroGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .tavernHeroCardTop {
+        display: grid;
+    }
+
+    .tavernBadges {
+        justify-content: flex-start;
     }
 
     .shopQtyQuick {

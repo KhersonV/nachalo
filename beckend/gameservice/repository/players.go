@@ -24,6 +24,7 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 			name, 
 			image, 
 			character_type,
+			COALESCE(selected_hero_class_id, '') AS selected_hero_class_id,
 			energy, 
 			max_energy, 
 			health, 
@@ -49,6 +50,7 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 		&player.Name,
 		&player.Image,
 		&player.CharacterType,
+		&player.SelectedHeroClassID,
 		&player.Energy,
 		&player.MaxEnergy,
 		&player.Health,
@@ -70,6 +72,7 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 		log.Printf("GetPlayerByUserID: ошибка получения игрока user_id=%d: %v", userID, err)
 		return nil, err
 	}
+	player.SelectedHeroClassID = ResolveSelectedHeroClass(player.SelectedHeroClassID, player.CharacterType)
 
 	return player, nil
 }
@@ -77,7 +80,7 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 // UpdatePlayer обновляет данные игрока в таблице players,
 // включая баланс и инвентарь (JSON-строку).
 func UpdatePlayer(player *models.PlayerResponse) error {
-    query := `
+	query := `
     UPDATE players
     SET
         energy         = $1,
@@ -89,19 +92,19 @@ func UpdatePlayer(player *models.PlayerResponse) error {
         inventory      = $7
     WHERE user_id = $8
     `
-    if _, err := DB.Exec(query,
-        player.Energy,
-        player.Health,
-        player.Level,
-        player.Experience,
-        player.MaxExperience,
-        player.Balance,
-        player.Inventory,
-        player.UserID,
-    ); err != nil {
-        return fmt.Errorf("UpdatePlayer: %w", err)
-    }
-    return nil
+	if _, err := DB.Exec(query,
+		player.Energy,
+		player.Health,
+		player.Level,
+		player.Experience,
+		player.MaxExperience,
+		player.Balance,
+		player.Inventory,
+		player.UserID,
+	); err != nil {
+		return fmt.Errorf("UpdatePlayer: %w", err)
+	}
+	return nil
 }
 
 // DeleteMatchPlayer удаляет игрока из таблицы match_players по идентификатору матча и user_id.

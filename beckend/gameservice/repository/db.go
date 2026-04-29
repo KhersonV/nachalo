@@ -69,11 +69,13 @@ func RunMigrations() {
 	// Существующие таблицы
 	CreatePlayersTable()
 	EnsurePlayersCharacterTypeColumn()
+	EnsurePlayerHeroFoundation()
 	EnsurePlayersStatColumns()
 	CreateMatchesTable()
 	CreateMatchMapCellsTable()
 	CreateMatchPlayersTable()
 	EnsureMatchPlayersStatColumns()
+	EnsureMatchPlayersHeroSnapshotColumn()
 	CreateInventoryTable()
 	// Добавляем нашу новую
 	CreateMatchMonstersTable()
@@ -150,6 +152,7 @@ func SchemaReady() (bool, error) {
 		"player_friends",
 		"player_friend_requests",
 		"player_base_buildings",
+		"player_heroes",
 		"match_player_structures",
 	}
 
@@ -166,6 +169,7 @@ func SchemaReady() (bool, error) {
 	requiredColumns := map[string][]string{
 		"players": {
 			"character_type",
+			"selected_hero_class_id",
 			"mobility",
 			"agility",
 			"sight_range",
@@ -173,6 +177,7 @@ func SchemaReady() (bool, error) {
 			"attack_range",
 		},
 		"match_players": {
+			"character_type",
 			"mobility",
 			"agility",
 			"sight_range",
@@ -197,6 +202,9 @@ func SchemaReady() (bool, error) {
 			"damage_taken",
 			"placement",
 			"inventory_snapshot",
+		},
+		"player_base_buildings": {
+			"tavern_level",
 		},
 	}
 
@@ -310,6 +318,7 @@ func CreatePlayersTable() {
 		name TEXT DEFAULT 'Unnamed Player',
 		image TEXT DEFAULT '/ranger/ranger.webp',
 		character_type TEXT DEFAULT 'adventurer',
+		selected_hero_class_id TEXT DEFAULT 'adventurer',
 		energy INTEGER DEFAULT 100,
 		max_energy INTEGER DEFAULT 100,
 		health INTEGER DEFAULT 100,
@@ -451,6 +460,7 @@ func CreateMatchPlayersTable() {
 		instance_id TEXT NOT NULL REFERENCES matches(instance_id) ON DELETE CASCADE,
 		user_id INTEGER NOT NULL,
 		name TEXT,
+		character_type TEXT DEFAULT 'adventurer',
 		position JSONB,
 		inventory JSONB,
 		level INTEGER,
@@ -880,7 +890,7 @@ func EnsureMatchStatsHistoryColumns() {
 						'groupId', COALESCE(mps.group_id, 0),
 						'characterType', CASE
 							WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
-							ELSE COALESCE(p.character_type, 'adventurer')
+							ELSE COALESCE(NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer')
 						END,
 						'placement', COALESCE(mps.placement, 0),
 						'isWinner', COALESCE(mps.is_winner, FALSE),
@@ -982,7 +992,7 @@ func EnsureMatchPlayerStatsHistoryColumns() {
 			END,
 			character_type = CASE
 				WHEN COALESCE(mps.character_type, '') <> '' THEN mps.character_type
-				ELSE COALESCE(p.character_type, 'adventurer')
+				ELSE COALESCE(NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer')
 			END
 		FROM players p
 		WHERE p.user_id = mps.user_id
@@ -1235,7 +1245,7 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		`SELECT
 			mp.user_id,
 			COALESCE(mp.name, ''),
-			COALESCE(p.character_type, 'adventurer'),
+			COALESCE(NULLIF(mp.character_type, ''), NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer'),
 			COALESCE(mp.group_id, 0),
 			COALESCE(mp.health, 0),
 			COALESCE(mp.inventory, '{}'::jsonb)

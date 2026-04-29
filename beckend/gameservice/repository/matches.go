@@ -79,7 +79,7 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 			mp.user_id,
 			mp.name,
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			COALESCE(NULLIF(mp.character_type, ''), NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer') AS character_type,
 			mp.position,
 			mp.energy,
 			mp.max_energy,
@@ -311,13 +311,13 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 
 	query := `
 		INSERT INTO match_players (
-			instance_id, user_id, name, image, position, inventory,
+			instance_id, user_id, name, image, character_type, position, inventory,
 			level, energy, max_energy, health, max_health, experience, max_experience,
 			attack, defense, mobility, agility, sight_range, is_ranged, attack_range, balance, group_id
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19, $20, $21, $22
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19, $20, $21, $22, $23
 		);
 	`
 	res, err := DB.Exec(query,
@@ -325,6 +325,7 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 		p.UserID,
 		p.Name,
 		p.Image,
+		ResolveSelectedHeroClass(p.SelectedHeroClassID, p.CharacterType),
 		position,
 		p.Inventory,
 		p.Level,
@@ -362,7 +363,7 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 			mp.user_id,
 			mp.name, 
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			COALESCE(NULLIF(mp.character_type, ''), NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer') AS character_type,
 			mp.position, 
 			mp.inventory,
 			mp.level,
@@ -458,7 +459,7 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			mp.user_id,
 			mp.name,
 			mp.image,
-			COALESCE(p.character_type, 'adventurer') AS character_type,
+			COALESCE(NULLIF(mp.character_type, ''), NULLIF(p.selected_hero_class_id, ''), NULLIF(p.character_type, ''), 'adventurer') AS character_type,
 			mp.position,
 			mp.inventory,
 			mp.level,
