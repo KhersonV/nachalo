@@ -376,21 +376,18 @@ function buildMatchBadges(
     const totalRewards = totalRewardsAmount(rewards);
     const damageTotal = statValue(stats.player.damageTotal);
     const damageTaken = stats.player.damageTaken;
-    const deaths = stats.player.deaths;
     const survivedMatch =
         outcome.isEscaped || outcome.isSurvived || outcome.playerWon === true;
     const carefulSurvival =
         survivedMatch &&
-        (isFiniteStat(damageTaken)
-            ? damageTaken <=
-              BADGE_THRESHOLDS.CAREFUL_SURVIVOR_DAMAGE_TAKEN_MAX
-            : isFiniteStat(deaths) && deaths === 0);
+        isFiniteStat(damageTaken) &&
+        damageTaken <= BADGE_THRESHOLDS.CAREFUL_SURVIVOR_DAMAGE_TAKEN_MAX;
 
     const badges: MatchBadge[] = [];
 
     if (outcome.isEscaped) {
         badges.push({
-            name: "First Escape",
+            name: "Successful Escape",
             detail: "Escaped through the portal this match.",
         });
     }
