@@ -783,6 +783,16 @@ func findCombatStep(payload CombatExchangePayload, kind string) (CombatStep, boo
 	return CombatStep{}, false
 }
 
+func countCombatEffects(payload CombatExchangePayload, kind string) int {
+	count := 0
+	for _, effect := range payload.Effects {
+		if effect.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
 func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-push-reset", 30, false)
 
@@ -950,6 +960,435 @@ func TestRangerArmorBreakFallbackDeathStillResetsStacks(t *testing.T) {
 	}
 	if h.monster.Health != 0 {
 		t.Fatalf("expected monster death flow to leave hp 0, got %d", h.monster.Health)
+	}
+}
+
+type berserkerBloodFeastMonsterHarness struct {
+	t          *testing.T
+	instanceID string
+	attacker   models.PlayerResponse
+	monster    repository.MatchMonster
+	cells      map[[2]int]game.FullCell
+	matchState *game.MatchState
+	exchanges  []CombatExchangePayload
+	rollResult bool
+	rollCalls  int
+}
+
+func newBerserkerBloodFeastMonsterHarness(t *testing.T, instanceID string) *berserkerBloodFeastMonsterHarness {
+	t.Helper()
+
+	attacker := newCombatTestPlayer(1, "berserker", 0, 30, 1, 1)
+	attacker.MaxHealth = 50
+	attacker.Attack = 20
+	attacker.Defense = 3
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+	attacker.Agility = 5
+
+	h := &berserkerBloodFeastMonsterHarness{
+		t:          t,
+		instanceID: instanceID,
+		attacker:   attacker,
+		monster: repository.MatchMonster{
+			MonsterInstanceID: 99,
+			RefID:             7,
+			Health:            40,
+			MaxHealth:         40,
+			Attack:            0,
+			Defense:           0,
+			X:                 2,
+			Y:                 1,
+		},
+		cells:      make(map[[2]int]game.FullCell),
+		rollResult: true,
+		matchState: &game.MatchState{
+			InstanceID:   instanceID,
+			ActiveUserID: attacker.UserID,
+			TurnOrder:    []int{attacker.UserID},
+			TurnNumber:   1,
+		},
+	}
+	h.syncMonsterCell()
+	registerCombatMatchState(t, instanceID, h.matchState)
+	h.install()
+
+	return h
+}
+
+func (h *berserkerBloodFeastMonsterHarness) syncMonsterCell() {
+	h.cells[[2]int{h.monster.X, h.monster.Y}] = game.FullCell{
+		X:        h.monster.X,
+		Y:        h.monster.Y,
+		TileCode: int('M'),
+		Monster: &game.MonsterData{
+			ID:           h.monster.RefID,
+			DBInstanceID: h.monster.MonsterInstanceID,
+			Health:       h.monster.Health,
+			MaxHealth:    h.monster.MaxHealth,
+			Defense:      h.monster.Defense,
+			Attack:       h.monster.Attack,
+		},
+	}
+}
+
+func (h *berserkerBloodFeastMonsterHarness) install() {
+	h.t.Helper()
+
+	Combat = CombatDeps{
+		UpdatePlayer: func(_ string, p *models.PlayerResponse) error {
+			if p.UserID != h.attacker.UserID {
+				h.t.Fatalf("unexpected player id %d", p.UserID)
+			}
+			h.attacker = *p
+			return nil
+		},
+		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
+			if userID != h.attacker.UserID {
+				h.t.Fatalf("unexpected player id %d", userID)
+			}
+			player := h.attacker
+			return &player, nil
+		},
+		GetMonster: func(_ string, monsterID int) (*repository.MatchMonster, error) {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			monster := h.monster
+			return &monster, nil
+		},
+		UpdateMonsterHealth: func(_ string, monsterID, hp int) error {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			h.monster.Health = hp
+			return nil
+		},
+		DeleteMonster: func(_ string, monsterID int) error {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			h.monster.Health = 0
+			return nil
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) {
+			cells := make([]game.FullCell, 0, len(h.cells))
+			for _, cell := range h.cells {
+				cells = append(cells, cell)
+			}
+			return cells, nil
+		},
+		SaveMap: func(_ string, cells []game.FullCell) error {
+			h.cells = make(map[[2]int]game.FullCell, len(cells))
+			for _, cell := range cells {
+				h.cells[[2]int{cell.X, cell.Y}] = cell
+			}
+			return nil
+		},
+		MarkPlayerDead: func(_ string, _ int) error { return nil },
+		ClearPlayerFlag: func(_ string, _ repository.Position) error {
+			return nil
+		},
+		UpdateTurn: func(_ string, _, _ int) error { return nil },
+		Finalize:   func(_ string) error { return nil },
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return h.matchState, true
+		},
+	}
+
+	origRollReflexProc := rollReflexProc
+	origBroadcast := broadcastFn
+
+	rollReflexProc = func(chance int) bool {
+		h.rollCalls++
+		if chance != 10 {
+			h.t.Fatalf("expected berserker reflex chance 10, got %d", chance)
+		}
+		return h.rollResult
+	}
+	broadcastFn = func(message []byte) {
+		var msg CombatExchangeMessage
+		if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "COMBAT_EXCHANGE" {
+			h.exchanges = append(h.exchanges, msg.Payload)
+		}
+	}
+
+	h.t.Cleanup(func() {
+		RestoreDefaults()
+		rollReflexProc = origRollReflexProc
+		broadcastFn = origBroadcast
+	})
+}
+
+func (h *berserkerBloodFeastMonsterHarness) attackMonster() CombatExchangePayload {
+	h.t.Helper()
+
+	rec := httptest.NewRecorder()
+	universalAttackLocked(rec, AttackRequest{
+		InstanceID:   h.instanceID,
+		AttackerType: "player",
+		AttackerID:   h.attacker.UserID,
+		TargetType:   "monster",
+		TargetID:     h.monster.MonsterInstanceID,
+	})
+	if rec.Code != http.StatusOK {
+		h.t.Fatalf("expected attack status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.exchanges) == 0 {
+		h.t.Fatal("expected combat exchange broadcast")
+	}
+	return h.exchanges[len(h.exchanges)-1]
+}
+
+type bloodFeastPlayerCombatHarness struct {
+	t          *testing.T
+	instanceID string
+	players    map[int]models.PlayerResponse
+	matchState *game.MatchState
+	exchanges  []CombatExchangePayload
+	rollResult bool
+}
+
+func newBloodFeastPlayerCombatHarness(t *testing.T, instanceID string, attacker models.PlayerResponse, target models.PlayerResponse) *bloodFeastPlayerCombatHarness {
+	t.Helper()
+
+	h := &bloodFeastPlayerCombatHarness{
+		t:          t,
+		instanceID: instanceID,
+		players: map[int]models.PlayerResponse{
+			attacker.UserID: attacker,
+			target.UserID:   target,
+		},
+		rollResult: true,
+		matchState: &game.MatchState{
+			InstanceID:   instanceID,
+			ActiveUserID: attacker.UserID,
+			TurnOrder:    []int{attacker.UserID, target.UserID},
+			TurnNumber:   1,
+		},
+	}
+
+	registerCombatMatchState(t, instanceID, h.matchState)
+	h.install()
+
+	return h
+}
+
+func (h *bloodFeastPlayerCombatHarness) install() {
+	h.t.Helper()
+
+	Combat = CombatDeps{
+		UpdatePlayer: func(_ string, p *models.PlayerResponse) error {
+			h.players[p.UserID] = *p
+			return nil
+		},
+		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
+			player, ok := h.players[userID]
+			if !ok {
+				h.t.Fatalf("unexpected player id %d", userID)
+			}
+			return &player, nil
+		},
+		UpdateMonsterHealth: func(_ string, _, _ int) error { return nil },
+		DeleteMonster:       func(_ string, _ int) error { return nil },
+		MarkPlayerDead:      func(_ string, _ int) error { return nil },
+		ClearPlayerFlag: func(_ string, _ repository.Position) error {
+			return nil
+		},
+		UpdateTurn: func(_ string, _, _ int) error { return nil },
+		Finalize:   func(_ string) error { return nil },
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return h.matchState, true
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) { return nil, nil },
+		SaveMap: func(_ string, _ []game.FullCell) error {
+			return nil
+		},
+	}
+
+	origRollReflexProc := rollReflexProc
+	origBroadcast := broadcastFn
+
+	rollReflexProc = func(chance int) bool {
+		if chance != 10 {
+			h.t.Fatalf("expected reflex chance 10, got %d", chance)
+		}
+		return h.rollResult
+	}
+	broadcastFn = func(message []byte) {
+		var msg CombatExchangeMessage
+		if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "COMBAT_EXCHANGE" {
+			h.exchanges = append(h.exchanges, msg.Payload)
+		}
+	}
+
+	h.t.Cleanup(func() {
+		RestoreDefaults()
+		rollReflexProc = origRollReflexProc
+		broadcastFn = origBroadcast
+	})
+}
+
+func (h *bloodFeastPlayerCombatHarness) attackPlayer() CombatExchangePayload {
+	h.t.Helper()
+
+	rec := httptest.NewRecorder()
+	universalAttackLocked(rec, AttackRequest{
+		InstanceID:   h.instanceID,
+		AttackerType: "player",
+		AttackerID:   h.matchState.ActiveUserID,
+		TargetType:   "player",
+		TargetID:     h.matchState.TurnOrder[1],
+	})
+	if rec.Code != http.StatusOK {
+		h.t.Fatalf("expected attack status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.exchanges) == 0 {
+		h.t.Fatal("expected combat exchange broadcast")
+	}
+	return h.exchanges[len(h.exchanges)-1]
+}
+
+func TestBerserkerBloodFeastPrimaryHitHealsHalfActualDamage(t *testing.T) {
+	h := newBerserkerBloodFeastMonsterHarness(t, "blood-feast-primary-heal")
+
+	payload := h.attackMonster()
+	effect, ok := findCombatEffect(payload, "lifesteal")
+	if !ok || effect.Amount != 10 || effect.Source == nil || effect.Source.ID != h.attacker.UserID {
+		t.Fatalf("expected lifesteal amount 10 from berserker, got effect=%+v ok=%v", effect, ok)
+	}
+	if h.attacker.Health != 40 {
+		t.Fatalf("expected berserker hp 40 after 10 heal, got %d", h.attacker.Health)
+	}
+}
+
+func TestBerserkerBloodFeastUsesActualDamageNotOverkill(t *testing.T) {
+	h := newBerserkerBloodFeastMonsterHarness(t, "blood-feast-overkill")
+	h.monster.Health = 5
+	h.monster.MaxHealth = 5
+	h.syncMonsterCell()
+
+	payload := h.attackMonster()
+	effect, ok := findCombatEffect(payload, "lifesteal")
+	if !ok || effect.Amount != 2 {
+		t.Fatalf("expected overkill lifesteal amount 2 from actual damage 5, got effect=%+v ok=%v", effect, ok)
+	}
+	if h.attacker.Health != 32 {
+		t.Fatalf("expected berserker hp 32 after overkill heal, got %d", h.attacker.Health)
+	}
+	if h.monster.Health != 0 {
+		t.Fatalf("expected monster to die, got hp %d", h.monster.Health)
+	}
+}
+
+func TestBerserkerBloodFeastHealCannotExceedMaxHPAndEffectUsesAppliedAmount(t *testing.T) {
+	h := newBerserkerBloodFeastMonsterHarness(t, "blood-feast-clamp")
+	h.attacker.Health = 48
+
+	payload := h.attackMonster()
+	effect, ok := findCombatEffect(payload, "lifesteal")
+	if !ok || effect.Amount != 2 {
+		t.Fatalf("expected clamped lifesteal amount 2, got effect=%+v ok=%v", effect, ok)
+	}
+	if h.attacker.Health != h.attacker.MaxHealth {
+		t.Fatalf("expected berserker hp clamped at max %d, got %d", h.attacker.MaxHealth, h.attacker.Health)
+	}
+}
+
+func TestBerserkerBloodFeastBlockedAttackDoesNotTrigger(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "blood-feast-blocked", newGuardianBlockMeleeAttacker("berserker"))
+
+	payload := h.attackGuardian()
+	if _, ok := findCombatEffect(payload, "lifesteal"); ok {
+		t.Fatalf("expected guardian block to prevent lifesteal, got payload %+v", payload)
+	}
+}
+
+func TestBerserkerBloodFeastZeroDamageAttackDoesNotTrigger(t *testing.T) {
+	h := newBerserkerBloodFeastMonsterHarness(t, "blood-feast-zero-damage")
+	h.monster.Defense = 40
+	h.syncMonsterCell()
+
+	payload := h.attackMonster()
+	if _, ok := findCombatEffect(payload, "lifesteal"); ok {
+		t.Fatalf("expected zero-damage hit not to emit lifesteal, got payload %+v", payload)
+	}
+	if h.rollCalls != 0 {
+		t.Fatalf("expected no reflex roll for zero actual damage, got %d calls", h.rollCalls)
+	}
+	if h.attacker.Health != 30 {
+		t.Fatalf("expected berserker hp unchanged, got %d", h.attacker.Health)
+	}
+}
+
+func TestBerserkerBloodFeastFuryFollowUpDoesNotTriggerLifesteal(t *testing.T) {
+	attacker := newCombatTestPlayer(1, "berserker", 1, 30, 1, 1)
+	attacker.MaxHealth = 50
+	attacker.Attack = 20
+	attacker.Defense = 0
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+	attacker.Agility = 5
+
+	target := newCombatTestPlayer(2, "ranger", 2, 80, 2, 1)
+	target.Attack = 1
+	target.Defense = 0
+	target.Energy = 100
+	target.MaxEnergy = 100
+
+	h := newBloodFeastPlayerCombatHarness(t, "blood-feast-no-followup-lifesteal", attacker, target)
+	payload := h.attackPlayer()
+
+	if !hasCombatStep(payload, "followup") {
+		t.Fatalf("expected berserker fury follow-up in control scenario, got steps %+v", payload.Steps)
+	}
+	if got := countCombatEffects(payload, "lifesteal"); got != 1 {
+		t.Fatalf("expected only primary hit to lifesteal once, got %d effects in %+v", got, payload.Effects)
+	}
+	effect, _ := findCombatEffect(payload, "lifesteal")
+	if effect.Amount != 10 {
+		t.Fatalf("expected primary lifesteal amount 10, got %+v", effect)
+	}
+}
+
+func TestBerserkerBloodFeastCounterattackDoesNotTriggerLifesteal(t *testing.T) {
+	attacker := newCombatTestPlayer(1, "guardian", 1, 40, 1, 1)
+	attacker.Attack = 8
+	attacker.Defense = 0
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+
+	target := newCombatTestPlayer(2, "berserker", 2, 50, 2, 1)
+	target.Attack = 20
+	target.Defense = 0
+	target.Energy = 100
+	target.MaxEnergy = 100
+	target.Agility = 5
+
+	h := newBloodFeastPlayerCombatHarness(t, "blood-feast-no-counter-lifesteal", attacker, target)
+	payload := h.attackPlayer()
+
+	if !hasCombatStep(payload, "counter") {
+		t.Fatalf("expected berserker counterattack in control scenario, got steps %+v", payload.Steps)
+	}
+	if _, ok := findCombatEffect(payload, "lifesteal"); ok {
+		t.Fatalf("expected counterattack not to emit lifesteal, got payload %+v", payload)
+	}
+}
+
+func TestBerserkerBloodFeastNoZeroAmountEffect(t *testing.T) {
+	h := newBerserkerBloodFeastMonsterHarness(t, "blood-feast-no-zero-effect")
+	h.attacker.Attack = 1
+
+	payload := h.attackMonster()
+	if _, ok := findCombatEffect(payload, "lifesteal"); ok {
+		t.Fatalf("expected floor(1 * 0.5) lifesteal not to emit +0 effect, got payload %+v", payload)
+	}
+	if h.attacker.Health != 30 {
+		t.Fatalf("expected berserker hp unchanged for zero heal, got %d", h.attacker.Health)
+	}
+	if h.rollCalls != 1 {
+		t.Fatalf("expected reflex roll after positive actual damage, got %d calls", h.rollCalls)
 	}
 }
 

@@ -381,6 +381,13 @@ function buildCombatEffectMessage(
         return `${targetLabel(target)} blocked the attack.`;
     }
 
+    if (effect.kind === "lifesteal") {
+        if (typeof effect.amount !== "number" || effect.amount <= 0) {
+            return null;
+        }
+        return `${actorVerb(source, "restored")} ${effect.amount} HP with Blood Feast.`;
+    }
+
     return null;
 }
 
@@ -447,7 +454,9 @@ export function buildCombatLogEntries(
         entries.push({
             category: "effect",
             tone:
-                effect.kind === "energyDrain" || effect.kind === "block"
+                effect.kind === "energyDrain" ||
+                effect.kind === "block" ||
+                effect.kind === "lifesteal"
                     ? "success"
                     : "warning",
             message,

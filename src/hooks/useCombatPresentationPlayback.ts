@@ -113,6 +113,28 @@ function addBlockEffect(
     });
 }
 
+function addLifestealEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    actorSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+    amount: number,
+) {
+    if (amount <= 0) return;
+
+    effects.push({
+        id: `${exchangeId}:lifesteal:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: actorSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: `LIFESTEAL +${amount}`,
+        tone: "lifesteal",
+    });
+}
+
 function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
@@ -206,18 +228,39 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
     }
 
     exchange.effects?.forEach((effect, index) => {
-        if (effect.kind !== "block" || !effect.succeeded || !effect.target) {
+        if (!effect.succeeded) {
             return;
         }
-        const blockTarget = getSnapshotForRef(exchange, effect.target);
-        if (blockTarget) {
-            addBlockEffect(
-                effects,
-                exchange.exchangeId,
-                blockTarget,
-                index,
-                lastImpactMs,
-            );
+
+        if (effect.kind === "block" && effect.target) {
+            const blockTarget = getSnapshotForRef(exchange, effect.target);
+            if (blockTarget) {
+                addBlockEffect(
+                    effects,
+                    exchange.exchangeId,
+                    blockTarget,
+                    index,
+                    lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "lifesteal" && typeof effect.amount === "number") {
+            const actorRef = effect.source ?? effect.target;
+            if (!actorRef) return;
+
+            const actor = getSnapshotForRef(exchange, actorRef);
+            if (actor) {
+                addLifestealEffect(
+                    effects,
+                    exchange.exchangeId,
+                    actor,
+                    index,
+                    lastImpactMs,
+                    effect.amount,
+                );
+            }
         }
     });
 

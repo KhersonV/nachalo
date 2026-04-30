@@ -91,6 +91,7 @@ type CombatEffect struct {
 	BonusDamage       int              `json:"bonusDamage,omitempty"`
 	EnergyGranted     int              `json:"energyGranted,omitempty"`
 	EnergyDrained     int              `json:"energyDrained,omitempty"`
+	Amount            int              `json:"amount,omitempty"`
 	SourceEnergyAfter int              `json:"sourceEnergyAfter,omitempty"`
 	TargetEnergyAfter int              `json:"targetEnergyAfter,omitempty"`
 }
@@ -802,6 +803,63 @@ func resolveGuardianShieldBlock(targetType string, defender stats) bool {
 		return false
 	}
 	return rollReflexProc(balance.CalculateReflexProcChance(defender.Agility))
+}
+
+func actualDamageDealt(healthBefore int, healthAfter int) int {
+	damage := healthBefore - healthAfter
+	if damage < 0 {
+		return 0
+	}
+	return damage
+}
+
+func tryApplyBerserkerBloodFeast(
+	instanceID string,
+	attackerID int,
+	attackerRef CombatTargetRef,
+	attackerStats *stats,
+	actualDamage int,
+) (*CombatEffect, error) {
+	if attackerStats == nil || attackerStats.CharacterType != "berserker" || actualDamage <= 0 {
+		return nil, nil
+	}
+	if !rollReflexProc(balance.CalculateReflexProcChance(attackerStats.Agility)) {
+		return nil, nil
+	}
+
+	heal := actualDamage / 2
+	if heal <= 0 {
+		return nil, nil
+	}
+
+	attacker, err := Combat.GetPlayer(instanceID, attackerID)
+	if err != nil {
+		return nil, err
+	}
+	missingHP := attacker.MaxHealth - attacker.Health
+	if missingHP <= 0 {
+		return nil, nil
+	}
+	if heal > missingHP {
+		heal = missingHP
+	}
+	if heal <= 0 {
+		return nil, nil
+	}
+
+	attacker.Health += heal
+	if err := Combat.UpdatePlayer(instanceID, attacker); err != nil {
+		return nil, err
+	}
+	attackerStats.Health = attacker.Health
+
+	return &CombatEffect{
+		Kind:      "lifesteal",
+		Source:    &attackerRef,
+		Target:    &attackerRef,
+		Amount:    heal,
+		Succeeded: true,
+	}, nil
 }
 
 func applyFlatDamage(targetHealth int, damage int) attackResult {
@@ -1902,6 +1960,25 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	}
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
+
+	if req.AttackerType == "player" && targetRes.Triggered && atkStats.CharacterType == "berserker" {
+		actualDamage := actualDamageDealt(defStats.Health, targetRes.NewHealth)
+		lifestealEffect, err := tryApplyBerserkerBloodFeast(
+			req.InstanceID,
+			req.AttackerID,
+			attackerRef,
+			&atkStats,
+			actualDamage,
+		)
+		if err != nil {
+			http.Error(w, "Ошибка применения Blood Feast", http.StatusInternalServerError)
+			return
+		}
+		if lifestealEffect != nil {
+			effects = append(effects, *lifestealEffect)
+			finalAttackerHP = atkStats.Health
+		}
+	}
 
 	if atkStats.CharacterType == "mystic" && targetRes.Triggered && finalTargetHP > 0 {
 		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)

@@ -991,10 +991,14 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                 }
 
                 if (effect.kind === "textFloater") {
+                    const toneClass =
+                        effect.tone === "lifesteal"
+                            ? styles.combatFloaterLifesteal
+                            : styles.combatFloaterBlock;
                     return (
                         <div
                             key={effect.id}
-                            className={`${styles.combatFloater} ${styles.combatFloaterBlock}`}
+                            className={`${styles.combatFloater} ${toneClass}`}
                             style={{
                                 left:
                                     effect.cell.x * (tileSize + gap) +
