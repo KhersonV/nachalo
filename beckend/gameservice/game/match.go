@@ -293,6 +293,14 @@ func (m *MatchState) ApplyArmorBreak(targetType string, targetID int, maxStacks 
 	return state
 }
 
+func (m *MatchState) ResetArmorBreak(targetType string, targetID int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ensureCombatStateLocked()
+	delete(m.ArmorBreak, combatTargetKey(targetType, targetID))
+}
+
 func (m *MatchState) TryUseBerserkerFury(userID int, limit int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

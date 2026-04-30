@@ -556,6 +556,336 @@ func TestResolveRangerPushFallbackDamage_UsesDefenseAwareFormula(t *testing.T) {
 	}
 }
 
+type rangerArmorBreakCombatHarness struct {
+	t             *testing.T
+	instanceID    string
+	attacker      models.PlayerResponse
+	monster       repository.MatchMonster
+	cells         map[[2]int]game.FullCell
+	matchState    *game.MatchState
+	exchanges     []CombatExchangePayload
+	pushCellLoads int
+}
+
+func newRangerArmorBreakCombatHarness(t *testing.T, instanceID string, targetHP int, blockedPush bool) *rangerArmorBreakCombatHarness {
+	t.Helper()
+
+	h := &rangerArmorBreakCombatHarness{
+		t:          t,
+		instanceID: instanceID,
+		attacker: models.PlayerResponse{
+			UserID:        1,
+			CharacterType: "ranger",
+			Attack:        11,
+			Defense:       3,
+			Health:        50,
+			MaxHealth:     50,
+			Energy:        100,
+			MaxEnergy:     100,
+			Mobility:      4,
+			IsRanged:      true,
+			AttackRange:   4,
+		},
+		monster: repository.MatchMonster{
+			MonsterInstanceID: 99,
+			RefID:             7,
+			Health:            targetHP,
+			MaxHealth:         targetHP,
+			Attack:            4,
+			Defense:           10,
+			X:                 2,
+			Y:                 1,
+		},
+		cells: make(map[[2]int]game.FullCell),
+		matchState: &game.MatchState{
+			InstanceID:   instanceID,
+			ActiveUserID: 1,
+			TurnOrder:    []int{1},
+			TurnNumber:   1,
+		},
+	}
+	h.attacker.Position.X = 0
+	h.attacker.Position.Y = 1
+	h.cells[[2]int{2, 1}] = game.FullCell{
+		X:        2,
+		Y:        1,
+		TileCode: int('M'),
+		Monster: &game.MonsterData{
+			ID:           h.monster.RefID,
+			DBInstanceID: h.monster.MonsterInstanceID,
+			Health:       targetHP,
+			MaxHealth:    targetHP,
+			Defense:      h.monster.Defense,
+			Attack:       h.monster.Attack,
+		},
+	}
+	h.cells[[2]int{3, 1}] = game.FullCell{
+		X:        3,
+		Y:        1,
+		TileCode: int(game.Walkable),
+		IsPlayer: blockedPush,
+	}
+
+	registerCombatMatchState(t, instanceID, h.matchState)
+	h.install()
+
+	return h
+}
+
+func (h *rangerArmorBreakCombatHarness) install() {
+	h.t.Helper()
+
+	Combat = CombatDeps{
+		UpdatePlayer: func(_ string, p *models.PlayerResponse) error {
+			h.attacker = *p
+			return nil
+		},
+		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
+			if userID != h.attacker.UserID {
+				h.t.Fatalf("unexpected player id %d", userID)
+			}
+			player := h.attacker
+			return &player, nil
+		},
+		GetMonster: func(_ string, monsterID int) (*repository.MatchMonster, error) {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			monster := h.monster
+			return &monster, nil
+		},
+		UpdateMonsterHealth: func(_ string, monsterID, hp int) error {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			h.monster.Health = hp
+			return nil
+		},
+		DeleteMonster: func(_ string, monsterID int) error {
+			if monsterID != h.monster.MonsterInstanceID {
+				h.t.Fatalf("unexpected monster id %d", monsterID)
+			}
+			h.monster.Health = 0
+			return nil
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) {
+			cells := make([]game.FullCell, 0, len(h.cells))
+			for _, cell := range h.cells {
+				cells = append(cells, cell)
+			}
+			return cells, nil
+		},
+		SaveMap: func(_ string, cells []game.FullCell) error {
+			h.cells = make(map[[2]int]game.FullCell, len(cells))
+			for _, cell := range cells {
+				h.cells[[2]int{cell.X, cell.Y}] = cell
+			}
+			return nil
+		},
+		MarkPlayerDead: func(_ string, _ int) error { return nil },
+		ClearPlayerFlag: func(_ string, _ repository.Position) error {
+			return nil
+		},
+		UpdateTurn: func(_ string, _, _ int) error { return nil },
+		Finalize:   func(_ string) error { return nil },
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return h.matchState, true
+		},
+	}
+
+	origLoadCombatMapCell := loadCombatMapCell
+	origPersistCombatPushCells := persistCombatPushCells
+	origUpdateCombatMonsterPosition := updateCombatMonsterPosition
+	origBroadcast := broadcastFn
+
+	loadCombatMapCell = func(_ string, x int, y int) (*game.FullCell, error) {
+		h.pushCellLoads++
+		cell, ok := h.cells[[2]int{x, y}]
+		if !ok {
+			return nil, nil
+		}
+		copyCell := cell
+		return &copyCell, nil
+	}
+	persistCombatPushCells = func(_ string, oldCell game.FullCell, newCell game.FullCell) error {
+		h.cells[[2]int{oldCell.X, oldCell.Y}] = oldCell
+		h.cells[[2]int{newCell.X, newCell.Y}] = newCell
+		return nil
+	}
+	updateCombatMonsterPosition = func(_ string, monsterID int, x int, y int) error {
+		if monsterID != h.monster.MonsterInstanceID {
+			h.t.Fatalf("unexpected monster id %d", monsterID)
+		}
+		h.monster.X = x
+		h.monster.Y = y
+		return nil
+	}
+	broadcastFn = func(message []byte) {
+		var msg CombatExchangeMessage
+		if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "COMBAT_EXCHANGE" {
+			h.exchanges = append(h.exchanges, msg.Payload)
+		}
+	}
+
+	h.t.Cleanup(func() {
+		RestoreDefaults()
+		loadCombatMapCell = origLoadCombatMapCell
+		persistCombatPushCells = origPersistCombatPushCells
+		updateCombatMonsterPosition = origUpdateCombatMonsterPosition
+		broadcastFn = origBroadcast
+	})
+}
+
+func (h *rangerArmorBreakCombatHarness) attackMonster() CombatExchangePayload {
+	h.t.Helper()
+
+	rec := httptest.NewRecorder()
+	universalAttackLocked(rec, AttackRequest{
+		InstanceID:   h.instanceID,
+		AttackerType: "player",
+		AttackerID:   h.attacker.UserID,
+		TargetType:   "monster",
+		TargetID:     h.monster.MonsterInstanceID,
+	})
+	if rec.Code != http.StatusOK {
+		h.t.Fatalf("expected attack status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.exchanges) == 0 {
+		h.t.Fatal("expected combat exchange broadcast")
+	}
+	return h.exchanges[len(h.exchanges)-1]
+}
+
+func findCombatEffect(payload CombatExchangePayload, kind string) (CombatEffect, bool) {
+	for _, effect := range payload.Effects {
+		if effect.Kind == kind {
+			return effect, true
+		}
+	}
+	return CombatEffect{}, false
+}
+
+func hasCombatStep(payload CombatExchangePayload, kind string) bool {
+	for _, step := range payload.Steps {
+		if step.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-push-reset", 30, false)
+
+	first := h.attackMonster()
+	firstArmorBreak, ok := findCombatEffect(first, "armorBreak")
+	if !ok || firstArmorBreak.Stacks != 1 {
+		t.Fatalf("expected first hit to apply stack 1, got effect=%+v ok=%v", firstArmorBreak, ok)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 1 {
+		t.Fatalf("expected state stack 1 after first hit, got %+v", state)
+	}
+
+	second := h.attackMonster()
+	secondArmorBreak, ok := findCombatEffect(second, "armorBreak")
+	if !ok || secondArmorBreak.Stacks != 2 {
+		t.Fatalf("expected second hit to apply stack 2, got effect=%+v ok=%v", secondArmorBreak, ok)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 2 {
+		t.Fatalf("expected state stack 2 after second hit, got %+v", state)
+	}
+
+	third := h.attackMonster()
+	push, ok := findCombatEffect(third, "push")
+	if !ok || !push.Succeeded {
+		t.Fatalf("expected third hit to push successfully, got effect=%+v ok=%v", push, ok)
+	}
+	if _, ok := findCombatEffect(third, "armorBreak"); ok {
+		t.Fatalf("expected third effect not to reapply armor break, got payload %+v", third)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after push, got %+v", state)
+	}
+	if h.monster.X != 3 || h.monster.Y != 1 {
+		t.Fatalf("expected monster pushed to 3,1, got %d,%d", h.monster.X, h.monster.Y)
+	}
+	if h.attacker.Energy != 79 {
+		t.Fatalf("expected ranger energy refund before reset to leave energy 79, got %d", h.attacker.Energy)
+	}
+
+	next := h.attackMonster()
+	nextArmorBreak, ok := findCombatEffect(next, "armorBreak")
+	if !ok || nextArmorBreak.Stacks != 1 {
+		t.Fatalf("expected next hit after reset to restart at stack 1, got effect=%+v ok=%v", nextArmorBreak, ok)
+	}
+}
+
+func TestRangerArmorBreakBlockedPushFallbackResetsStacksAndNextHitRestarts(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-fallback-reset", 30, true)
+
+	h.attackMonster()
+	h.attackMonster()
+	third := h.attackMonster()
+
+	push, ok := findCombatEffect(third, "push")
+	if !ok || push.Succeeded || push.BonusDamage != 5 {
+		t.Fatalf("expected blocked push fallback damage 5, got effect=%+v ok=%v", push, ok)
+	}
+	if !hasCombatStep(third, "bonus") {
+		t.Fatalf("expected fallback full attack bonus step, got steps %+v", third.Steps)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after fallback, got %+v", state)
+	}
+	if h.monster.X != 2 || h.monster.Y != 1 {
+		t.Fatalf("expected blocked push to keep monster at 2,1, got %d,%d", h.monster.X, h.monster.Y)
+	}
+
+	next := h.attackMonster()
+	nextArmorBreak, ok := findCombatEffect(next, "armorBreak")
+	if !ok || nextArmorBreak.Stacks != 1 {
+		t.Fatalf("expected next hit after fallback reset to restart at stack 1, got effect=%+v ok=%v", nextArmorBreak, ok)
+	}
+}
+
+func TestRangerArmorBreakNoDamageDoesNotStackOrTriggerPush(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage", 30, true)
+	h.attacker.Attack = 5
+	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
+	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
+
+	payload := h.attackMonster()
+	if _, ok := findCombatEffect(payload, "push"); ok {
+		t.Fatalf("expected zero-damage hit not to trigger push/fallback, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "armorBreak"); ok {
+		t.Fatalf("expected zero-damage hit not to add armor break, got payload %+v", payload)
+	}
+	if h.pushCellLoads != 0 {
+		t.Fatalf("expected no push cell loads for zero-damage hit, got %d", h.pushCellLoads)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 2 {
+		t.Fatalf("expected existing stacks to remain unchanged, got %+v", state)
+	}
+}
+
+func TestRangerArmorBreakFallbackDeathStillResetsStacks(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-fallback-death-reset", 8, true)
+	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
+	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
+
+	payload := h.attackMonster()
+	if !hasCombatStep(payload, "bonus") || !hasCombatStep(payload, "death") {
+		t.Fatalf("expected fallback bonus and death steps, got %+v", payload.Steps)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after lethal fallback, got %+v", state)
+	}
+	if h.monster.Health != 0 {
+		t.Fatalf("expected monster death flow to leave hp 0, got %d", h.monster.Health)
+	}
+}
+
 func TestResolveMoveEnergyCostFromPlayers_GuardianAuraBoundaryAndNoStack(t *testing.T) {
 	player := newCombatTestPlayer(10, "ranger", 0, 20, 2, 0)
 	player.Mobility = 4

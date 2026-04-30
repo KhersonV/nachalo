@@ -37,6 +37,12 @@ const (
 	energyDrainPerTargetLimit        = 10
 )
 
+var (
+	loadCombatMapCell           = repository.LoadMapCell
+	persistCombatPushCells      = persistCombatPushCellsWithDB
+	updateCombatMonsterPosition = repository.UpdateMatchMonsterPosition
+)
+
 type CombatActorType string
 
 const (
@@ -1467,11 +1473,11 @@ func tryPushCombatTarget(
 	current stats,
 	destination CombatPoint,
 ) (bool, []game.FullCell, error) {
-	oldCell, err := repository.LoadMapCell(instanceID, current.X, current.Y)
+	oldCell, err := loadCombatMapCell(instanceID, current.X, current.Y)
 	if err != nil {
 		return false, nil, err
 	}
-	newCell, err := repository.LoadMapCell(instanceID, destination.X, destination.Y)
+	newCell, err := loadCombatMapCell(instanceID, destination.X, destination.Y)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1527,7 +1533,7 @@ func tryPushCombatTarget(
 				Image:           monster.Image,
 			}
 		}
-		if err := repository.UpdateMatchMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
+		if err := updateCombatMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
 			return false, nil, err
 		}
 
@@ -1540,23 +1546,31 @@ func tryPushCombatTarget(
 		return false, nil, nil
 	}
 
-	tx, err := repository.DB.Begin()
-	if err != nil {
-		return false, nil, err
-	}
-	defer tx.Rollback()
-
-	if err := repository.SaveMapCellTx(tx, instanceID, *oldCell); err != nil {
-		return false, nil, err
-	}
-	if err := repository.SaveMapCellTx(tx, instanceID, *newCell); err != nil {
-		return false, nil, err
-	}
-	if err := tx.Commit(); err != nil {
+	if err := persistCombatPushCells(instanceID, *oldCell, *newCell); err != nil {
 		return false, nil, err
 	}
 
 	return true, []game.FullCell{*oldCell, *newCell}, nil
+}
+
+func persistCombatPushCellsWithDB(instanceID string, oldCell game.FullCell, newCell game.FullCell) error {
+	tx, err := repository.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := repository.SaveMapCellTx(tx, instanceID, oldCell); err != nil {
+		return err
+	}
+	if err := repository.SaveMapCellTx(tx, instanceID, newCell); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func resolveRangerPushFallbackDamage(
@@ -1882,6 +1896,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	}
 
 	if atkStats.CharacterType == "ranger" && mode == attackModeRanged && finalTargetHP > 0 {
+		armorBreakTriggeredThirdEffect := false
 		if preArmorBreak.Stacks >= armorBreakMaxStacks && targetRes.Damage > 0 {
 			dx := defStats.X - atkStats.X
 			if dx != 0 {
@@ -1927,6 +1942,10 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					PositionAfter: &pushTo,
 					EnergyGranted: energyGranted,
 				})
+				if ms, ok := game.GetMatchState(req.InstanceID); ok {
+					ms.ResetArmorBreak(req.TargetType, req.TargetID)
+				}
+				armorBreakTriggeredThirdEffect = true
 			} else {
 				bonusRes := resolveRangerPushFallbackDamage(
 					req.InstanceID,
@@ -1955,10 +1974,14 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					Succeeded:   false,
 					BonusDamage: bonusRes.Damage,
 				})
+				if ms, ok := game.GetMatchState(req.InstanceID); ok {
+					ms.ResetArmorBreak(req.TargetType, req.TargetID)
+				}
+				armorBreakTriggeredThirdEffect = true
 			}
 		}
 
-		if finalTargetHP > 0 {
+		if finalTargetHP > 0 && targetRes.Damage > 0 && !armorBreakTriggeredThirdEffect {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok {
 				armorBreak := ms.ApplyArmorBreak(req.TargetType, req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
 				effects = append(effects, CombatEffect{

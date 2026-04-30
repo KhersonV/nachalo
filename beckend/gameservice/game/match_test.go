@@ -148,6 +148,26 @@ func TestAdvanceTurnCombatState_ResetsTurnScopedEffectsAndExpiresArmorBreak(t *t
 	}
 }
 
+func TestResetArmorBreakClearsTargetStacks(t *testing.T) {
+	ms := &MatchState{}
+
+	ms.ApplyArmorBreak("monster", 9, 2, 2)
+	ms.ApplyArmorBreak("monster", 9, 2, 2)
+	if state := ms.GetArmorBreakState("monster", 9); state.Stacks != 2 {
+		t.Fatalf("expected setup stacks 2, got %+v", state)
+	}
+
+	ms.ResetArmorBreak("monster", 9)
+	if state := ms.GetArmorBreakState("monster", 9); state.Stacks != 0 || state.RemainingTurns != 0 {
+		t.Fatalf("expected armor break reset, got %+v", state)
+	}
+
+	state := ms.ApplyArmorBreak("monster", 9, 2, 2)
+	if state.Stacks != 1 {
+		t.Fatalf("expected next armor break to restart at stack 1, got %+v", state)
+	}
+}
+
 func TestTryUseTurnScopedClassLimits(t *testing.T) {
 	ms := &MatchState{}
 
