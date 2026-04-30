@@ -848,24 +848,82 @@ func TestRangerArmorBreakBlockedPushFallbackResetsStacksAndNextHitRestarts(t *te
 	}
 }
 
-func TestRangerArmorBreakNoDamageDoesNotStackOrTriggerPush(t *testing.T) {
-	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage", 30, true)
-	h.attacker.Attack = 5
-	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
-	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
+func TestRangerArmorBreakZeroDamageHitAppliesAndAdvancesStacks(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage-stack", 30, false)
+	h.monster.Defense = 20
 
-	payload := h.attackMonster()
-	if _, ok := findCombatEffect(payload, "push"); ok {
-		t.Fatalf("expected zero-damage hit not to trigger push/fallback, got payload %+v", payload)
+	first := h.attackMonster()
+	if first.Steps[0].Damage != 0 {
+		t.Fatalf("expected first hit to deal 0 damage, got %+v", first.Steps[0])
 	}
-	if _, ok := findCombatEffect(payload, "armorBreak"); ok {
-		t.Fatalf("expected zero-damage hit not to add armor break, got payload %+v", payload)
+	firstArmorBreak, ok := findCombatEffect(first, "armorBreak")
+	if !ok || firstArmorBreak.Stacks != 1 {
+		t.Fatalf("expected zero-damage hit to apply stack 1, got effect=%+v ok=%v", firstArmorBreak, ok)
 	}
-	if h.pushCellLoads != 0 {
-		t.Fatalf("expected no push cell loads for zero-damage hit, got %d", h.pushCellLoads)
+
+	second := h.attackMonster()
+	if second.Steps[0].Damage != 0 {
+		t.Fatalf("expected second hit to deal 0 damage, got %+v", second.Steps[0])
+	}
+	secondArmorBreak, ok := findCombatEffect(second, "armorBreak")
+	if !ok || secondArmorBreak.Stacks != 2 {
+		t.Fatalf("expected zero-damage hit to advance to stack 2, got effect=%+v ok=%v", secondArmorBreak, ok)
 	}
 	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 2 {
-		t.Fatalf("expected existing stacks to remain unchanged, got %+v", state)
+		t.Fatalf("expected state stack 2 after two zero-damage hits, got %+v", state)
+	}
+}
+
+func TestRangerArmorBreakZeroDamageThirdHitPushResetsAndRestarts(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage-push-reset", 30, false)
+	h.monster.Defense = 20
+
+	h.attackMonster()
+	h.attackMonster()
+	third := h.attackMonster()
+	if third.Steps[0].Damage != 0 {
+		t.Fatalf("expected third hit to deal 0 damage, got %+v", third.Steps[0])
+	}
+	push, ok := findCombatEffect(third, "push")
+	if !ok || !push.Succeeded {
+		t.Fatalf("expected zero-damage third hit to push, got effect=%+v ok=%v", push, ok)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after zero-damage push, got %+v", state)
+	}
+
+	next := h.attackMonster()
+	nextArmorBreak, ok := findCombatEffect(next, "armorBreak")
+	if !ok || nextArmorBreak.Stacks != 1 {
+		t.Fatalf("expected next hit after zero-damage push reset to restart at stack 1, got effect=%+v ok=%v", nextArmorBreak, ok)
+	}
+}
+
+func TestRangerArmorBreakZeroDamageBlockedPushFallbackResetsAndRestarts(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage-fallback-reset", 30, true)
+	h.monster.Defense = 20
+
+	h.attackMonster()
+	h.attackMonster()
+	third := h.attackMonster()
+	if third.Steps[0].Damage != 0 {
+		t.Fatalf("expected third hit to deal 0 damage, got %+v", third.Steps[0])
+	}
+	push, ok := findCombatEffect(third, "push")
+	if !ok || push.Succeeded || push.BonusDamage != 0 {
+		t.Fatalf("expected blocked zero-damage third hit to run fallback with 0 damage, got effect=%+v ok=%v", push, ok)
+	}
+	if !hasCombatStep(third, "bonus") {
+		t.Fatalf("expected blocked zero-damage third hit to include fallback bonus step, got steps %+v", third.Steps)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after zero-damage fallback, got %+v", state)
+	}
+
+	next := h.attackMonster()
+	nextArmorBreak, ok := findCombatEffect(next, "armorBreak")
+	if !ok || nextArmorBreak.Stacks != 1 {
+		t.Fatalf("expected next hit after zero-damage fallback reset to restart at stack 1, got effect=%+v ok=%v", nextArmorBreak, ok)
 	}
 }
 

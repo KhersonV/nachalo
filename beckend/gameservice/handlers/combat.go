@@ -1897,7 +1897,8 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	if atkStats.CharacterType == "ranger" && mode == attackModeRanged && finalTargetHP > 0 {
 		armorBreakTriggeredThirdEffect := false
-		if preArmorBreak.Stacks >= armorBreakMaxStacks && targetRes.Damage > 0 {
+		rangerHitConnected := targetRes.Triggered
+		if preArmorBreak.Stacks >= armorBreakMaxStacks && rangerHitConnected {
 			dx := defStats.X - atkStats.X
 			if dx != 0 {
 				dx /= abs(dx)
@@ -1981,7 +1982,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			}
 		}
 
-		if finalTargetHP > 0 && targetRes.Damage > 0 && !armorBreakTriggeredThirdEffect {
+		if finalTargetHP > 0 && rangerHitConnected && !armorBreakTriggeredThirdEffect {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok {
 				armorBreak := ms.ApplyArmorBreak(req.TargetType, req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
 				effects = append(effects, CombatEffect{
