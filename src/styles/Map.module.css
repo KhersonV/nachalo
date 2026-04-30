@@ -212,6 +212,13 @@
         0 0 14px rgba(96, 230, 140, 0.58);
 }
 
+.combatFloaterCrit {
+    color: #ffd45c;
+    text-shadow:
+        0 1px 6px rgba(135, 83, 12, 0.82),
+        0 0 14px rgba(255, 212, 92, 0.62);
+}
+
 .combatFlash {
     position: absolute;
     pointer-events: none;

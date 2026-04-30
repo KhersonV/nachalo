@@ -994,7 +994,9 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                     const toneClass =
                         effect.tone === "lifesteal"
                             ? styles.combatFloaterLifesteal
-                            : styles.combatFloaterBlock;
+                            : effect.tone === "crit"
+                              ? styles.combatFloaterCrit
+                              : styles.combatFloaterBlock;
                     return (
                         <div
                             key={effect.id}

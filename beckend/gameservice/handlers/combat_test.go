@@ -793,6 +793,210 @@ func countCombatEffects(payload CombatExchangePayload, kind string) int {
 	return count
 }
 
+func stubReflexRolls(t *testing.T, results ...bool) *int {
+	t.Helper()
+
+	origRollReflexProc := rollReflexProc
+	calls := 0
+	rollReflexProc = func(chance int) bool {
+		calls++
+		if chance != 10 {
+			t.Fatalf("expected reflex chance 10, got %d", chance)
+		}
+		if len(results) == 0 {
+			return false
+		}
+		if calls > len(results) {
+			return results[len(results)-1]
+		}
+		return results[calls-1]
+	}
+
+	t.Cleanup(func() {
+		rollReflexProc = origRollReflexProc
+	})
+
+	return &calls
+}
+
+func TestRangerCriticalShotUsesPostDefenseDamageAndRecordsFinalDamage(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-crit-post-defense", 100, false)
+	h.attacker.Attack = 30
+	h.attacker.Agility = 5
+	h.monster.Defense = 10
+	stubReflexRolls(t, true)
+
+	payload := h.attackMonster()
+	hit, ok := findCombatStep(payload, "hit")
+	if !ok || hit.Damage != 28 || hit.TargetHPAfter != 72 {
+		t.Fatalf("expected crit to turn post-defense damage 20 into 28, got step=%+v ok=%v", hit, ok)
+	}
+	if h.monster.Health != 72 {
+		t.Fatalf("expected crit damage applied to monster HP, got %d", h.monster.Health)
+	}
+	crit, ok := findCombatEffect(payload, "crit")
+	if !ok || !crit.Succeeded || crit.Source == nil || crit.Source.ID != h.attacker.UserID {
+		t.Fatalf("expected explicit crit effect from ranger, got effect=%+v ok=%v", crit, ok)
+	}
+	if len(h.matchState.DamageEvents) != 1 || h.matchState.DamageEvents[0].Amount != 28 {
+		t.Fatalf("expected damage stats to record final crit damage 28, got %+v", h.matchState.DamageEvents)
+	}
+}
+
+func TestRangerCriticalShotDoesNotTriggerOnFallbackFullAttack(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-crit-no-fallback", 200, true)
+	h.attacker.Agility = 5
+	rollCalls := stubReflexRolls(t, true)
+
+	h.attackMonster()
+	h.attackMonster()
+	third := h.attackMonster()
+
+	if got := countCombatEffects(third, "crit"); got != 1 {
+		t.Fatalf("expected only primary hit to crit on fallback exchange, got %d effects in %+v", got, third.Effects)
+	}
+	push, ok := findCombatEffect(third, "push")
+	if !ok || push.Succeeded || push.BonusDamage != 5 {
+		t.Fatalf("expected fallback full attack to keep uncritted damage 5, got effect=%+v ok=%v", push, ok)
+	}
+	if *rollCalls != 3 {
+		t.Fatalf("expected only the three paid primary attacks to roll crit, got %d rolls", *rollCalls)
+	}
+}
+
+func TestRangerCriticalShotDoesNotTriggerWhenBlocked(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "ranger-crit-blocked", newGuardianBlockRangedAttacker("ranger"))
+	attacker := h.players[1]
+	attacker.Agility = 5
+	h.players[1] = attacker
+
+	payload := h.attackGuardian()
+	if _, ok := findCombatEffect(payload, "crit"); ok {
+		t.Fatalf("expected guardian block to prevent ranger crit, got payload %+v", payload)
+	}
+}
+
+func TestRangerCriticalShotDoesNotTriggerOnZeroDamage(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-crit-zero-damage", 40, false)
+	h.attacker.Agility = 5
+	h.monster.Defense = 40
+	rollCalls := stubReflexRolls(t, true)
+
+	payload := h.attackMonster()
+	if _, ok := findCombatEffect(payload, "crit"); ok {
+		t.Fatalf("expected zero-damage hit not to emit crit, got payload %+v", payload)
+	}
+	hit, ok := findCombatStep(payload, "hit")
+	if !ok || hit.Damage != 0 {
+		t.Fatalf("expected primary hit damage 0, got step=%+v ok=%v", hit, ok)
+	}
+	if *rollCalls != 0 {
+		t.Fatalf("expected no crit roll for zero calculated damage, got %d rolls", *rollCalls)
+	}
+}
+
+func TestRangerCriticalShotDoesNotBreakArmorBreakStackProgression(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-crit-armor-break-progression", 200, false)
+	h.attacker.Agility = 5
+	stubReflexRolls(t, true)
+
+	first := h.attackMonster()
+	firstArmorBreak, ok := findCombatEffect(first, "armorBreak")
+	if !ok || firstArmorBreak.Stacks != 1 {
+		t.Fatalf("expected critted first hit to apply armor break stack 1, got effect=%+v ok=%v", firstArmorBreak, ok)
+	}
+	if _, ok := findCombatEffect(first, "crit"); !ok {
+		t.Fatalf("expected first paid hit to emit crit effect, got %+v", first.Effects)
+	}
+
+	second := h.attackMonster()
+	secondArmorBreak, ok := findCombatEffect(second, "armorBreak")
+	if !ok || secondArmorBreak.Stacks != 2 {
+		t.Fatalf("expected critted second hit to advance armor break stack 2, got effect=%+v ok=%v", secondArmorBreak, ok)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 2 {
+		t.Fatalf("expected armor break state stack 2 after critted hits, got %+v", state)
+	}
+}
+
+func TestRangerCriticalShotArmorBreakThirdHitPushResetsAndRestarts(t *testing.T) {
+	h := newRangerArmorBreakCombatHarness(t, "ranger-crit-push-reset", 200, false)
+	h.attacker.Agility = 5
+	stubReflexRolls(t, true)
+
+	h.attackMonster()
+	h.attackMonster()
+	third := h.attackMonster()
+
+	if _, ok := findCombatEffect(third, "crit"); !ok {
+		t.Fatalf("expected third paid hit to emit crit effect, got %+v", third.Effects)
+	}
+	push, ok := findCombatEffect(third, "push")
+	if !ok || !push.Succeeded {
+		t.Fatalf("expected armor break third effect push after crit, got effect=%+v ok=%v", push, ok)
+	}
+	if state := h.matchState.GetArmorBreakState("monster", h.monster.MonsterInstanceID); state.Stacks != 0 {
+		t.Fatalf("expected armor break reset after critted third-hit push, got %+v", state)
+	}
+
+	next := h.attackMonster()
+	nextArmorBreak, ok := findCombatEffect(next, "armorBreak")
+	if !ok || nextArmorBreak.Stacks != 1 {
+		t.Fatalf("expected next hit after reset to restart at stack 1, got effect=%+v ok=%v", nextArmorBreak, ok)
+	}
+}
+
+func TestRangerCriticalShotDoesNotTriggerOnCounterattack(t *testing.T) {
+	attacker := newCombatTestPlayer(1, "guardian", 1, 40, 1, 1)
+	attacker.Attack = 8
+	attacker.Defense = 0
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+
+	target := newCombatTestPlayer(2, "ranger", 2, 50, 2, 1)
+	target.Attack = 20
+	target.Defense = 0
+	target.Energy = 100
+	target.MaxEnergy = 100
+	target.Agility = 5
+
+	h := newBloodFeastPlayerCombatHarness(t, "ranger-crit-no-counter", attacker, target)
+	payload := h.attackPlayer()
+
+	if !hasCombatStep(payload, "counter") {
+		t.Fatalf("expected ranger counterattack in control scenario, got steps %+v", payload.Steps)
+	}
+	if _, ok := findCombatEffect(payload, "crit"); ok {
+		t.Fatalf("expected counterattack not to emit crit, got payload %+v", payload)
+	}
+}
+
+func TestRangerCriticalShotDoesNotTriggerOnBerserkerFuryFollowUp(t *testing.T) {
+	attacker := newCombatTestPlayer(1, "berserker", 1, 30, 1, 1)
+	attacker.MaxHealth = 50
+	attacker.Attack = 20
+	attacker.Defense = 0
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+	attacker.Agility = 5
+
+	target := newCombatTestPlayer(2, "ranger", 2, 80, 2, 1)
+	target.Attack = 1
+	target.Defense = 0
+	target.Energy = 100
+	target.MaxEnergy = 100
+
+	h := newBloodFeastPlayerCombatHarness(t, "ranger-crit-no-fury-followup", attacker, target)
+	payload := h.attackPlayer()
+
+	if !hasCombatStep(payload, "followup") {
+		t.Fatalf("expected berserker fury follow-up in control scenario, got steps %+v", payload.Steps)
+	}
+	if _, ok := findCombatEffect(payload, "crit"); ok {
+		t.Fatalf("expected berserker fury follow-up not to emit crit, got payload %+v", payload)
+	}
+}
+
 func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-push-reset", 30, false)
 

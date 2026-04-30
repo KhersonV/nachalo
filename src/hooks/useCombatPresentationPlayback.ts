@@ -135,6 +135,25 @@ function addLifestealEffect(
     });
 }
 
+function addCritEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:crit:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "CRIT",
+        tone: "crit",
+    });
+}
+
 function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
@@ -259,6 +278,23 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
                     index,
                     lastImpactMs,
                     effect.amount,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "crit") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addCritEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
                 );
             }
         }

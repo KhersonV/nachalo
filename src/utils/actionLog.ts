@@ -388,6 +388,10 @@ function buildCombatEffectMessage(
         return `${actorVerb(source, "restored")} ${effect.amount} HP with Blood Feast.`;
     }
 
+    if (effect.kind === "crit") {
+        return `${actorVerb(source, "landed")} a Critical Shot on ${targetLabel(target)}.`;
+    }
+
     return null;
 }
 

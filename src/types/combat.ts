@@ -99,6 +99,12 @@ export type CombatEffect =
           target?: CombatTargetRef;
           amount?: number;
           succeeded: boolean;
+      }
+    | {
+          kind: "crit";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
       };
 
 export type CombatExchangePayload = {
@@ -188,7 +194,7 @@ export type ActiveEffect =
           startMs: number;
           durationMs: number;
           text: string;
-          tone: "block" | "lifesteal";
+          tone: "block" | "lifesteal" | "crit";
       }
     | {
           id: string;

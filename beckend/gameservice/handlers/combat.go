@@ -33,6 +33,7 @@ const (
 	armorBreakDefensePenaltyPerStack = 2
 	armorBreakDurationTurns          = 2
 	armorBreakMaxStacks              = 2
+	rangerCriticalDamagePercent      = 142
 	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
 	energyDrainPerHit                = 3
 	energyDrainGainPerHit            = 1
@@ -860,6 +861,22 @@ func tryApplyBerserkerBloodFeast(
 		Amount:    heal,
 		Succeeded: true,
 	}, nil
+}
+
+func tryApplyRangerCriticalShot(attacker stats, targetHealth int, result attackResult) (attackResult, bool) {
+	if attacker.CharacterType != "ranger" || !result.Triggered || result.Damage <= 0 {
+		return result, false
+	}
+	if !rollReflexProc(balance.CalculateReflexProcChance(attacker.Agility)) {
+		return result, false
+	}
+
+	result.Damage = (result.Damage * rangerCriticalDamagePercent) / 100
+	result.NewHealth = targetHealth - result.Damage
+	if result.NewHealth < 0 {
+		result.NewHealth = 0
+	}
+	return result, true
 }
 
 func applyFlatDamage(targetHealth int, damage int) attackResult {
@@ -1943,6 +1960,18 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			Target:    &targetRef,
 			Succeeded: true,
 		})
+	}
+	if req.AttackerType == "player" {
+		var criticalShot bool
+		targetRes, criticalShot = tryApplyRangerCriticalShot(atkStats, defStats.Health, targetRes)
+		if criticalShot {
+			effects = append(effects, CombatEffect{
+				Kind:      "crit",
+				Source:    &attackerRef,
+				Target:    &targetRef,
+				Succeeded: true,
+			})
+		}
 	}
 	steps = append(steps, CombatStep{
 		Kind:          "hit",
