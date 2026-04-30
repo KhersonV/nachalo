@@ -1,10 +1,25 @@
+import {
+    getBaseReflexForHero,
+    getReflexEffectDescription,
+    getReflexProcChance,
+} from "../utils/reflex";
+
 export type CharacterArchetype = {
     id: "guardian" | "berserker" | "ranger" | "mystic";
     name: string;
     title: string;
     description: string;
+    reflexEffectDescription: string;
     image: string;
     stats: Array<{ label: string; value: string }>;
+};
+
+const reflexStat = (heroClassId: CharacterArchetype["id"]) => {
+    const reflex = getBaseReflexForHero(heroClassId);
+    return {
+        reflex: String(reflex),
+        chance: `${getReflexProcChance(reflex)}%`,
+    };
 };
 
 export const characterArchetypes: CharacterArchetype[] = [
@@ -14,6 +29,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Frontline",
         description:
             "A hardy frontline fighter with zone control and a free counterattack.",
+        reflexEffectDescription: getReflexEffectDescription("guardian"),
         image: "/guardian/guardian.webp",
         stats: [
             { label: "HP", value: "130" },
@@ -23,7 +39,8 @@ export const characterArchetypes: CharacterArchetype[] = [
             { label: "Defense", value: "8" },
             { label: "Mobility", value: "2" },
             { label: "Move cost (energy)", value: "4" },
-            { label: "Agility", value: "2" },
+            { label: "Reflex", value: reflexStat("guardian").reflex },
+            { label: "Reflex Chance", value: reflexStat("guardian").chance },
             { label: "Sight (tiles)", value: "2" },
             { label: "Combat type", value: "Melee" },
             { label: "Attack range", value: "1" },
@@ -37,6 +54,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "High Damage",
         description:
             "Maximum pressure at close range: bonus damage versus wounded targets and a frenzy follow-up after counterattacks.",
+        reflexEffectDescription: getReflexEffectDescription("berserker"),
         image: "/berserk/berserk.webp",
         stats: [
             { label: "HP", value: "100" },
@@ -46,7 +64,8 @@ export const characterArchetypes: CharacterArchetype[] = [
             { label: "Defense", value: "3" },
             { label: "Mobility", value: "3" },
             { label: "Move cost (energy)", value: "3" },
-            { label: "Agility", value: "2" },
+            { label: "Reflex", value: reflexStat("berserker").reflex },
+            { label: "Reflex Chance", value: reflexStat("berserker").chance },
             { label: "Sight (tiles)", value: "2" },
             { label: "Combat type", value: "Melee" },
             { label: "Attack range", value: "1" },
@@ -60,6 +79,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Long Shot",
         description:
             "A mobile marksman who stacks Armor Break from ranged hits and converts max stacks into push pressure.",
+        reflexEffectDescription: getReflexEffectDescription("ranger"),
         image: "/ranger/ranger.webp",
         stats: [
             { label: "HP", value: "92" },
@@ -69,7 +89,8 @@ export const characterArchetypes: CharacterArchetype[] = [
             { label: "Defense", value: "4" },
             { label: "Mobility", value: "4" },
             { label: "Move cost (energy)", value: "3" },
-            { label: "Agility", value: "4" },
+            { label: "Reflex", value: reflexStat("ranger").reflex },
+            { label: "Reflex Chance", value: reflexStat("ranger").chance },
             { label: "Sight (tiles)", value: "2" },
             { label: "Combat type", value: "Ranged" },
             { label: "Attack range", value: "2" },
@@ -83,6 +104,7 @@ export const characterArchetypes: CharacterArchetype[] = [
         title: "Tempo Control",
         description:
             "A tactical ranged fighter that drains enemy energy on hit and sustains its own tempo.",
+        reflexEffectDescription: getReflexEffectDescription("mystic"),
         image: "/mag/mag.webp",
         stats: [
             { label: "HP", value: "95" },
@@ -92,7 +114,8 @@ export const characterArchetypes: CharacterArchetype[] = [
             { label: "Defense", value: "4" },
             { label: "Mobility", value: "3" },
             { label: "Move cost (energy)", value: "3" },
-            { label: "Agility", value: "3" },
+            { label: "Reflex", value: reflexStat("mystic").reflex },
+            { label: "Reflex Chance", value: reflexStat("mystic").chance },
             { label: "Sight (tiles)", value: "2" },
             { label: "Combat type", value: "Ranged" },
             { label: "Attack range", value: "3" },

@@ -6,6 +6,11 @@ import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import type { BaseState, BuildingState, HeroesState, HeroState } from "../types";
+import {
+    getBaseReflexForHero,
+    getReflexEffectDescription,
+    getReflexProcChance,
+} from "../utils/reflex";
 import styles from "../styles/ModeSelectionPage.module.css";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -505,6 +510,11 @@ export default function LobbyBasePage() {
                             const busyActive =
                                 heroBusyId === `active:${hero.id}`;
                             const actionDisabled = heroBusyId !== null;
+                            const reflex = getBaseReflexForHero(hero.id);
+                            const reflexChance = getReflexProcChance(reflex);
+                            const reflexEffect = getReflexEffectDescription(
+                                hero.id,
+                            );
 
                             return (
                                 <article
@@ -539,6 +549,17 @@ export default function LobbyBasePage() {
                                     <p className={styles.tavernHeroText}>
                                         {hero.description ||
                                             "A hero ready for future runs."}
+                                    </p>
+
+                                    <div className={styles.tavernHeroMeta}>
+                                        <span>Reflex: {reflex}</span>
+                                        <span>
+                                            Reflex Chance: {reflexChance}%
+                                        </span>
+                                    </div>
+
+                                    <p className={styles.tavernHeroText}>
+                                        {reflexEffect}
                                     </p>
 
                                     {!hero.owned && (

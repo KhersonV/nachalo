@@ -6,6 +6,10 @@ import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
+import {
+    getReflexEffectDescription,
+    getReflexProcChance,
+} from "../utils/reflex";
 import styles from "../styles/ProfilePage.module.css";
 
 type ProfileApiResponse = {
@@ -812,6 +816,10 @@ export default function ProfilePage() {
         isExternalProfileMode && viewedProfile
             ? viewedProfile.progress
             : profile.progress;
+    const activePlayerReflexChance = getReflexProcChance(activePlayer.agility);
+    const activePlayerReflexEffect = getReflexEffectDescription(
+        activePlayer.characterType,
+    );
 
     const expPercent = activePlayer.maxExperience
         ? Math.min(
@@ -1441,8 +1449,12 @@ export default function ProfilePage() {
                         <strong>{activePlayer.mobility}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Agility</span>
+                        <span>Reflex</span>
                         <strong>{activePlayer.agility}</strong>
+                    </div>
+                    <div className={styles.statRow}>
+                        <span>Reflex Chance</span>
+                        <strong>{activePlayerReflexChance}%</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Sight</span>
@@ -1458,6 +1470,9 @@ export default function ProfilePage() {
                         <span>Attack range</span>
                         <strong>{activePlayer.attackRange}</strong>
                     </div>
+                    <p className={styles.reflexDescription}>
+                        {activePlayerReflexEffect}
+                    </p>
                 </article>
             </section>
         </div>
