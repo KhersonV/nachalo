@@ -377,6 +377,10 @@ function buildCombatEffectMessage(
         return `${actorVerb(source, "pushed")} ${targetLabel(target)}.`;
     }
 
+    if (effect.kind === "block") {
+        return `${targetLabel(target)} blocked the attack.`;
+    }
+
     return null;
 }
 
@@ -442,7 +446,10 @@ export function buildCombatLogEntries(
         if (!message) return;
         entries.push({
             category: "effect",
-            tone: effect.kind === "energyDrain" ? "success" : "warning",
+            tone:
+                effect.kind === "energyDrain" || effect.kind === "block"
+                    ? "success"
+                    : "warning",
             message,
             dedupeKey: `combat:${payload.exchangeId}:effect:${index}`,
         });

@@ -94,6 +94,25 @@ function addDamageEffects(
     });
 }
 
+function addBlockEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:block:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "BLOCK",
+        tone: "block",
+    });
+}
+
 function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
@@ -185,6 +204,22 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
             );
         }
     }
+
+    exchange.effects?.forEach((effect, index) => {
+        if (effect.kind !== "block" || !effect.succeeded || !effect.target) {
+            return;
+        }
+        const blockTarget = getSnapshotForRef(exchange, effect.target);
+        if (blockTarget) {
+            addBlockEffect(
+                effects,
+                exchange.exchangeId,
+                blockTarget,
+                index,
+                lastImpactMs,
+            );
+        }
+    });
 
     for (const [index, step] of exchange.steps.entries()) {
         if (step.kind === "auraExit") {

@@ -774,6 +774,15 @@ func hasCombatStep(payload CombatExchangePayload, kind string) bool {
 	return false
 }
 
+func findCombatStep(payload CombatExchangePayload, kind string) (CombatStep, bool) {
+	for _, step := range payload.Steps {
+		if step.Kind == kind {
+			return step, true
+		}
+	}
+	return CombatStep{}, false
+}
+
 func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-push-reset", 30, false)
 
@@ -941,6 +950,221 @@ func TestRangerArmorBreakFallbackDeathStillResetsStacks(t *testing.T) {
 	}
 	if h.monster.Health != 0 {
 		t.Fatalf("expected monster death flow to leave hp 0, got %d", h.monster.Health)
+	}
+}
+
+type guardianShieldBlockCombatHarness struct {
+	t          *testing.T
+	instanceID string
+	players    map[int]models.PlayerResponse
+	matchState *game.MatchState
+	exchanges  []CombatExchangePayload
+}
+
+func newGuardianShieldBlockCombatHarness(t *testing.T, instanceID string, attacker models.PlayerResponse) *guardianShieldBlockCombatHarness {
+	t.Helper()
+
+	guardian := newCombatTestPlayer(2, "guardian", 0, 30, 2, 1)
+	guardian.Attack = 9
+	guardian.Defense = 8
+	guardian.Agility = 5
+	guardian.Energy = 0
+	guardian.MaxEnergy = 90
+
+	h := &guardianShieldBlockCombatHarness{
+		t:          t,
+		instanceID: instanceID,
+		players: map[int]models.PlayerResponse{
+			attacker.UserID: attacker,
+			guardian.UserID: guardian,
+		},
+		matchState: &game.MatchState{
+			InstanceID:   instanceID,
+			ActiveUserID: attacker.UserID,
+			TurnOrder:    []int{attacker.UserID, guardian.UserID},
+			TurnNumber:   1,
+		},
+	}
+
+	registerCombatMatchState(t, instanceID, h.matchState)
+	h.install()
+
+	return h
+}
+
+func (h *guardianShieldBlockCombatHarness) install() {
+	h.t.Helper()
+
+	Combat = CombatDeps{
+		UpdatePlayer: func(_ string, p *models.PlayerResponse) error {
+			h.players[p.UserID] = *p
+			return nil
+		},
+		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
+			player, ok := h.players[userID]
+			if !ok {
+				h.t.Fatalf("unexpected player id %d", userID)
+			}
+			return &player, nil
+		},
+		UpdateMonsterHealth: func(_ string, _, _ int) error { return nil },
+		DeleteMonster:       func(_ string, _ int) error { return nil },
+		MarkPlayerDead:      func(_ string, _ int) error { return nil },
+		ClearPlayerFlag: func(_ string, _ repository.Position) error {
+			return nil
+		},
+		UpdateTurn: func(_ string, _, _ int) error { return nil },
+		Finalize:   func(_ string) error { return nil },
+		LoadGameState: func(_ string) (*game.MatchState, bool) {
+			return h.matchState, true
+		},
+		LoadMap: func(_ string) ([]game.FullCell, error) { return nil, nil },
+		SaveMap: func(_ string, _ []game.FullCell) error {
+			return nil
+		},
+	}
+
+	origRollReflexProc := rollReflexProc
+	origBroadcast := broadcastFn
+
+	rollReflexProc = func(chance int) bool {
+		if chance != 10 {
+			h.t.Fatalf("expected guardian reflex chance 10, got %d", chance)
+		}
+		return true
+	}
+	broadcastFn = func(message []byte) {
+		var msg CombatExchangeMessage
+		if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "COMBAT_EXCHANGE" {
+			h.exchanges = append(h.exchanges, msg.Payload)
+		}
+	}
+
+	h.t.Cleanup(func() {
+		RestoreDefaults()
+		rollReflexProc = origRollReflexProc
+		broadcastFn = origBroadcast
+	})
+}
+
+func (h *guardianShieldBlockCombatHarness) attackGuardian() CombatExchangePayload {
+	h.t.Helper()
+
+	rec := httptest.NewRecorder()
+	universalAttackLocked(rec, AttackRequest{
+		InstanceID:   h.instanceID,
+		AttackerType: "player",
+		AttackerID:   1,
+		TargetType:   "player",
+		TargetID:     2,
+	})
+	if rec.Code != http.StatusOK {
+		h.t.Fatalf("expected attack status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.exchanges) == 0 {
+		h.t.Fatal("expected combat exchange broadcast")
+	}
+	return h.exchanges[len(h.exchanges)-1]
+}
+
+func newGuardianBlockMeleeAttacker(characterType string) models.PlayerResponse {
+	attacker := newCombatTestPlayer(1, characterType, 0, 40, 1, 1)
+	attacker.Attack = 14
+	attacker.Defense = 3
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+	return attacker
+}
+
+func newGuardianBlockRangedAttacker(characterType string) models.PlayerResponse {
+	attacker := newCombatTestPlayer(1, characterType, 0, 40, 0, 1)
+	attacker.Attack = 11
+	attacker.Defense = 3
+	attacker.Energy = 100
+	attacker.MaxEnergy = 100
+	attacker.Mobility = 4
+	attacker.IsRanged = true
+	attacker.AttackRange = 4
+	return attacker
+}
+
+func TestGuardianShieldBlockPreventsDamageAndEmitsBlockEffect(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "guardian-block-no-damage", newGuardianBlockRangedAttacker("ranger"))
+
+	payload := h.attackGuardian()
+	block, ok := findCombatEffect(payload, "block")
+	if !ok || !block.Succeeded || block.Target == nil || block.Target.ID != 2 {
+		t.Fatalf("expected block effect for guardian, got effect=%+v ok=%v", block, ok)
+	}
+	if h.players[2].Health != 30 {
+		t.Fatalf("expected guardian hp unchanged after block, got %d", h.players[2].Health)
+	}
+	if len(h.matchState.DamageEvents) != 0 {
+		t.Fatalf("expected no damage events on block, got %+v", h.matchState.DamageEvents)
+	}
+	hit, ok := findCombatStep(payload, "hit")
+	if !ok || hit.Damage != 0 || hit.TargetHPAfter != 30 {
+		t.Fatalf("expected zero-damage hit step with unchanged hp, got step=%+v ok=%v", hit, ok)
+	}
+}
+
+func TestGuardianShieldBlockSkipsRangerArmorBreak(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "guardian-block-ranger", newGuardianBlockRangedAttacker("ranger"))
+
+	payload := h.attackGuardian()
+	if _, ok := findCombatEffect(payload, "armorBreak"); ok {
+		t.Fatalf("expected block to skip ranger armor break, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "push"); ok {
+		t.Fatalf("expected block to skip ranger push, got payload %+v", payload)
+	}
+	if state := h.matchState.GetArmorBreakState("player", 2); state.Stacks != 0 {
+		t.Fatalf("expected no armor break stacks on blocked hit, got %+v", state)
+	}
+}
+
+func TestGuardianShieldBlockSkipsMysticDrain(t *testing.T) {
+	attacker := newGuardianBlockRangedAttacker("mystic")
+	h := newGuardianShieldBlockCombatHarness(t, "guardian-block-mystic", attacker)
+	guardianBeforeEnergy := h.players[2].Energy
+
+	payload := h.attackGuardian()
+	if _, ok := findCombatEffect(payload, "energyDrain"); ok {
+		t.Fatalf("expected block to skip mystic energy drain, got payload %+v", payload)
+	}
+	if h.players[2].Energy != guardianBeforeEnergy {
+		t.Fatalf("expected guardian energy unchanged after blocked mystic hit, got %d", h.players[2].Energy)
+	}
+}
+
+func TestGuardianShieldBlockStillAllowsMeleeCounterattack(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "guardian-block-counter", newGuardianBlockMeleeAttacker("berserker"))
+
+	payload := h.attackGuardian()
+	counter, ok := findCombatStep(payload, "counter")
+	if !ok || counter.Damage != 6 || counter.Target.ID != 1 {
+		t.Fatalf("expected guardian counterattack after melee block, got step=%+v ok=%v", counter, ok)
+	}
+	if hasCombatStep(payload, "followup") {
+		t.Fatalf("expected blocked berserker hit not to trigger followup, got steps %+v", payload.Steps)
+	}
+	if h.players[1].Health != 34 {
+		t.Fatalf("expected attacker hp reduced by guardian counterattack, got %d", h.players[1].Health)
+	}
+	if h.players[2].Health != 30 {
+		t.Fatalf("expected guardian hp unchanged after melee block, got %d", h.players[2].Health)
+	}
+}
+
+func TestGuardianShieldBlockRangedAttackDoesNotCounterWhenNotAdjacent(t *testing.T) {
+	h := newGuardianShieldBlockCombatHarness(t, "guardian-block-ranged-no-counter", newGuardianBlockRangedAttacker("ranger"))
+
+	payload := h.attackGuardian()
+	if hasCombatStep(payload, "counter") {
+		t.Fatalf("expected non-adjacent ranged block not to counterattack, got steps %+v", payload.Steps)
+	}
+	if h.players[1].Health != 40 {
+		t.Fatalf("expected ranged attacker hp unchanged without counterattack, got %d", h.players[1].Health)
 	}
 }
 

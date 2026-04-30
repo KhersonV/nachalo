@@ -990,6 +990,23 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                     );
                 }
 
+                if (effect.kind === "textFloater") {
+                    return (
+                        <div
+                            key={effect.id}
+                            className={`${styles.combatFloater} ${styles.combatFloaterBlock}`}
+                            style={{
+                                left:
+                                    effect.cell.x * (tileSize + gap) +
+                                    tileSize / 2,
+                                top: effect.cell.y * (tileSize + gap) - 2,
+                            }}
+                        >
+                            {effect.text}
+                        </div>
+                    );
+                }
+
                 if (effect.kind === "projectile") {
                     const progress = Math.max(
                         0,

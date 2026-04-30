@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
 
 	"gameservice/game"
+	"gameservice/internal/game/balance"
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
@@ -41,6 +43,7 @@ var (
 	loadCombatMapCell           = repository.LoadMapCell
 	persistCombatPushCells      = persistCombatPushCellsWithDB
 	updateCombatMonsterPosition = repository.UpdateMatchMonsterPosition
+	rollReflexProc              = defaultRollReflexProc
 )
 
 type CombatActorType string
@@ -444,6 +447,7 @@ const (
 type stats struct {
 	Attack        int
 	Defense       int
+	Agility       int
 	Health        int
 	MaxHealth     int
 	IsRanged      bool
@@ -477,6 +481,7 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 		return stats{
 			Attack:        p.Attack,
 			Defense:       p.Defense,
+			Agility:       p.Agility,
 			Health:        p.Health,
 			MaxHealth:     p.MaxHealth,
 			IsRanged:      p.IsRanged,
@@ -786,6 +791,17 @@ func applyDamage(att stats, def stats) attackResult {
 		newHP = 0
 	}
 	return attackResult{Damage: dmg, NewHealth: newHP, Triggered: true}
+}
+
+func defaultRollReflexProc(chance int) bool {
+	return chance > 0 && rand.Intn(100) < chance
+}
+
+func resolveGuardianShieldBlock(targetType string, defender stats) bool {
+	if targetType != "player" || defender.CharacterType != "guardian" {
+		return false
+	}
+	return rollReflexProc(balance.CalculateReflexProcChance(defender.Agility))
 }
 
 func applyFlatDamage(targetHealth int, damage int) attackResult {
@@ -1807,13 +1823,13 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	// Prevent friendly fire: if both are players and belong to same non-zero group
 	if req.AttackerType == "player" && req.TargetType == "player" {
-		atkP, aerr := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		atkP, aerr := Combat.GetPlayer(req.InstanceID, req.AttackerID)
 		if aerr != nil {
 			log.Printf("[DEBUG] UniversalAttackHandler: load attacker player error: %v", aerr)
 			http.Error(w, "failed to load attacker player", http.StatusInternalServerError)
 			return
 		}
-		tgtP, terr := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		tgtP, terr := Combat.GetPlayer(req.InstanceID, req.TargetID)
 		if terr != nil {
 			log.Printf("[DEBUG] UniversalAttackHandler: load target player error: %v", terr)
 			http.Error(w, "failed to load target player", http.StatusInternalServerError)
@@ -1861,6 +1877,15 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	effectiveTargetStats.Defense = effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
 
 	targetRes := applyDamage(atkStats, effectiveTargetStats)
+	guardianShieldBlocked := resolveGuardianShieldBlock(req.TargetType, defStats)
+	if guardianShieldBlocked {
+		targetRes = attackResult{Damage: 0, NewHealth: defStats.Health, Triggered: false}
+		effects = append(effects, CombatEffect{
+			Kind:      "block",
+			Target:    &targetRef,
+			Succeeded: true,
+		})
+	}
 	steps = append(steps, CombatStep{
 		Kind:          "hit",
 		Source:        &attackerRef,
@@ -1869,14 +1894,16 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		TargetHPAfter: targetRes.NewHealth,
 	})
 
-	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Damage > 0 {
+	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Triggered && targetRes.Damage > 0 {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
 	}
-	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+	if targetRes.Triggered {
+		saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+	}
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
 
-	if atkStats.CharacterType == "mystic" && finalTargetHP > 0 {
+	if atkStats.CharacterType == "mystic" && targetRes.Triggered && finalTargetHP > 0 {
 		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
 		if err != nil {
 			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)
@@ -2004,7 +2031,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		req.TargetType, req.TargetID,
 		atkStats, defStats,
 		finalTargetHP > 0,
-		mode == attackModeMelee,
+		mode == attackModeMelee || (guardianShieldBlocked && mode == attackModeRanged && manhattanDistance(atkStats, defStats) <= 1),
 	)
 	if counterRes.Triggered {
 		finalAttackerHP = counterRes.NewHealth
@@ -2021,6 +2048,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		atkStats.CharacterType == "berserker" &&
 		mode == attackModeMelee &&
 		counterRes.Triggered &&
+		targetRes.Triggered &&
 		finalTargetHP > 0 &&
 		finalAttackerHP > 0 {
 		followUpDamage := targetRes.Damage / 2

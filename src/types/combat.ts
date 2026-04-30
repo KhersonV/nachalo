@@ -86,6 +86,12 @@ export type CombatEffect =
           energyDrained?: number;
           sourceEnergyAfter?: number;
           targetEnergyAfter?: number;
+      }
+    | {
+          kind: "block";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
       };
 
 export type CombatExchangePayload = {
@@ -166,6 +172,16 @@ export type ActiveEffect =
           durationMs: number;
           value: number;
           isHeal: boolean;
+      }
+    | {
+          id: string;
+          exchangeId: string;
+          kind: "textFloater";
+          cell: CombatPoint;
+          startMs: number;
+          durationMs: number;
+          text: string;
+          tone: "block";
       }
     | {
           id: string;
