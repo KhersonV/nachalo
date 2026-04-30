@@ -227,10 +227,45 @@ export default function GameController({ instanceId }: GameControllerProps) {
       }
 
       if (!isMobile) {
+        const isLargeDesktop = screenW >= 1600 && screenH >= 900;
+        const shellPadding = isLargeDesktop
+          ? clamp(screenW * 0.012, 18, 24)
+          : screenH <= 720
+            ? 12
+            : 16;
+        const shellGap = isLargeDesktop
+          ? clamp(screenW * 0.014, 16, 24)
+          : screenH <= 720
+            ? 12
+            : 14;
+        const leftRailWidth = isLargeDesktop
+          ? clamp(screenW * 0.18, 260, 360)
+          : clamp(screenW * 0.17, 220, 260);
+        const rightRailWidth = isLargeDesktop
+          ? clamp(screenW * 0.2, 300, 420)
+          : clamp(screenW * 0.19, 232, 292);
+        const desktopScaleLimit = isLargeDesktop ? 1.9 : 1.08;
+        const desktopAvailableWidth =
+          screenW -
+          shellPadding * 2 -
+          shellGap * 2 -
+          leftRailWidth -
+          rightRailWidth;
+        const desktopAvailableHeight = screenH - shellPadding * 2;
+        const desktopScale = clamp(
+          Math.min(
+            desktopAvailableWidth / baseViewportWidth,
+            desktopAvailableHeight / baseViewportHeight,
+            desktopScaleLimit,
+          ),
+          0.58,
+          desktopScaleLimit,
+        );
+
         setMapViewport({
-          width: baseViewportWidth,
-          height: baseViewportHeight,
-          tileSize: baseTileSize,
+          width: Math.floor(baseViewportWidth * desktopScale),
+          height: Math.floor(baseViewportHeight * desktopScale),
+          tileSize: Math.max(46, Math.floor(baseTileSize * desktopScale)),
         });
         return;
       }
@@ -1113,108 +1148,105 @@ export default function GameController({ instanceId }: GameControllerProps) {
     }
   }, [state.grid, state.players, objectHUD]);
 
+  const selectedObjectHud = shouldShowObjectHUD && objectHUD && (
+    <div
+      className={`${objectHudStyles.objectHudPanel} ${
+        showMiniMap && !isCompactViewport
+          ? objectHudStyles.objectHudPanelBelowMinimap
+          : ""
+      }`}
+    >
+      {(() => {
+        // Derive up-to-date stats from the global game state so the HUD
+        // reflects damage/changes immediately.
+        const base = { ...objectHUD } as any;
+        if (
+          objectHUD.type === "monster" &&
+          typeof (objectHUD as any).x === "number"
+        ) {
+          const cell = state.grid.find(
+            (c: any) =>
+              c.x === (objectHUD as any).x && c.y === (objectHUD as any).y,
+          );
+          if (cell && cell.monster) {
+            base.name = cell.monster.name ?? base.name;
+            base.health = cell.monster.health;
+            // Preserve monster's original maxHealth so the HP bar remains
+            // relative to the true maximum.
+            if (typeof cell.monster.maxHealth === "number") {
+              base.maxHealth = cell.monster.maxHealth;
+            } else if (typeof base.maxHealth !== "number") {
+              base.maxHealth = cell.monster.health;
+            }
+            base.attack = cell.monster.attack;
+            base.defense = cell.monster.defense;
+          }
+        } else if (
+          objectHUD.type === "structure" &&
+          typeof (objectHUD as any).x === "number"
+        ) {
+          const cell = state.grid.find(
+            (c: any) =>
+              c.x === (objectHUD as any).x && c.y === (objectHUD as any).y,
+          );
+          if (cell && cell.structure_type) {
+            base.name =
+              base.name ||
+              (cell.structure_type === "scout_tower"
+                ? "Scout Tower"
+                : cell.structure_type === "turret"
+                  ? "Turret"
+                  : "Wall");
+            base.health = cell.structure_health;
+            base.maxHealth =
+              typeof cell.structure_health === "number"
+                ? Math.max(
+                    cell.structure_health,
+                    STRUCTURE_DEFAULT_MAX_HEALTH[
+                      cell.structure_type as PlacementStructureType
+                    ] ?? cell.structure_health,
+                  )
+                : STRUCTURE_DEFAULT_MAX_HEALTH[
+                    cell.structure_type as PlacementStructureType
+                  ];
+            base.defense = cell.structure_defense;
+            base.attack = cell.structure_attack;
+            base.structureType = cell.structure_type;
+          }
+        } else if (objectHUD.type === "player" && objectHUD.userId) {
+          const pl = state.players.find((p) => p.user_id === objectHUD.userId);
+          if (pl) {
+            base.name = pl.name ?? base.name;
+            base.health = pl.health;
+            base.maxHealth = pl.maxHealth;
+            base.energy = pl.energy;
+            base.maxEnergy = pl.maxEnergy;
+            base.attack = pl.attack;
+            base.defense = pl.defense;
+            base.groupId = (pl as any).group_id;
+          }
+        }
+
+        return (
+          <ObjectHUD
+            {...base}
+            onProfileClick={
+              base.type === "player" && base.userId
+                ? () => {
+                    setProfileModalUserId(base.userId ?? null);
+                    setObjectHUD(null);
+                  }
+                : undefined
+            }
+            onClose={() => setObjectHUD(null)}
+          />
+        );
+      })()}
+    </div>
+  );
+
   return (
     <div className={styles.container}>
-      {/* HUD для выбранного объекта (монстр, постройка, игрок) */}
-      {shouldShowObjectHUD && objectHUD && (
-        <div
-          className={`${objectHudStyles.objectHudPanel} ${
-            showMiniMap && !isCompactViewport
-              ? objectHudStyles.objectHudPanelBelowMinimap
-              : ""
-          }`}
-        >
-          {(() => {
-            // Derive up-to-date stats from the global game state so
-            // the HUD reflects damage/changes immediately.
-            const base = { ...objectHUD } as any;
-            if (
-              objectHUD.type === "monster" &&
-              typeof (objectHUD as any).x === "number"
-            ) {
-              const cell = state.grid.find(
-                (c: any) =>
-                  c.x === (objectHUD as any).x && c.y === (objectHUD as any).y,
-              );
-              if (cell && cell.monster) {
-                base.name = cell.monster.name ?? base.name;
-                base.health = cell.monster.health;
-                // Preserve monster's original maxHealth so the
-                // HP bar remains relative to the true maximum.
-                if (typeof cell.monster.maxHealth === "number") {
-                  base.maxHealth = cell.monster.maxHealth;
-                } else if (typeof base.maxHealth !== "number") {
-                  // Initialize maxHealth only once from current health
-                  base.maxHealth = cell.monster.health;
-                }
-                base.attack = cell.monster.attack;
-                base.defense = cell.monster.defense;
-              }
-            } else if (
-              objectHUD.type === "structure" &&
-              typeof (objectHUD as any).x === "number"
-            ) {
-              const cell = state.grid.find(
-                (c: any) =>
-                  c.x === (objectHUD as any).x && c.y === (objectHUD as any).y,
-              );
-              if (cell && cell.structure_type) {
-                base.name =
-                  base.name ||
-                  (cell.structure_type === "scout_tower"
-                    ? "Scout Tower"
-                    : cell.structure_type === "turret"
-                      ? "Turret"
-                      : "Wall");
-                base.health = cell.structure_health;
-                base.maxHealth =
-                  typeof cell.structure_health === "number"
-                    ? Math.max(
-                        cell.structure_health,
-                        STRUCTURE_DEFAULT_MAX_HEALTH[
-                          cell.structure_type as PlacementStructureType
-                        ] ?? cell.structure_health,
-                      )
-                    : STRUCTURE_DEFAULT_MAX_HEALTH[
-                        cell.structure_type as PlacementStructureType
-                      ];
-                base.defense = cell.structure_defense;
-                base.attack = cell.structure_attack;
-                base.structureType = cell.structure_type;
-              }
-            } else if (objectHUD.type === "player" && objectHUD.userId) {
-              const pl = state.players.find(
-                (p) => p.user_id === objectHUD.userId,
-              );
-              if (pl) {
-                base.name = pl.name ?? base.name;
-                base.health = pl.health;
-                base.maxHealth = pl.maxHealth;
-                base.energy = pl.energy;
-                base.maxEnergy = pl.maxEnergy;
-                base.attack = pl.attack;
-                base.defense = pl.defense;
-                base.groupId = (pl as any).group_id;
-              }
-            }
-
-            return (
-              <ObjectHUD
-                {...base}
-                onProfileClick={
-                  base.type === "player" && base.userId
-                    ? () => {
-                        setProfileModalUserId(base.userId ?? null);
-                        setObjectHUD(null);
-                      }
-                    : undefined
-                }
-                onClose={() => setObjectHUD(null)}
-              />
-            );
-          })()}
-        </div>
-      )}
       {profileModalUserId !== null && (
         <div
           style={{
@@ -1458,248 +1490,313 @@ export default function GameController({ instanceId }: GameControllerProps) {
           Player disconnects ▸
         </button>
       )}
-      {myPlayer && (
-        <PlayerHUD
-          health={myPlayer.health}
-          maxHealth={myPlayer.maxHealth}
-          energy={myPlayer.energy}
-          maxEnergy={myPlayer.maxEnergy}
-          isRanged={myPlayer.isRanged}
-          attackRange={myPlayer.attackRange}
-          groupId={myPlayer.group_id}
-        />
-      )}
-      <ObjectiveTracker
-        player={myPlayer}
-        players={state.players}
-        grid={state.grid}
-        mode={state.mode}
-        questArtifactId={state.questArtifactId}
-        isMyTurn={isMyTurn}
-        isPlayerDefeated={isCurrentPlayerDefeated}
-        hasEscaped={hasEscaped}
-        isMatchFinished={isObjectiveMatchFinished}
-      />
-      {shouldShowActionLog && (
-        <ActionLog
-          entries={state.actionLog}
-          compact={isCompactViewport}
-          expanded={isCompactViewport ? isActionLogExpanded : undefined}
-          onExpandedChange={handleActionLogExpandedChange}
-        />
-      )}
-
-
-	  {shouldRenderCompactMiniMap ? (
-  <>
-    <MiniMap
-      key={instanceId}
-      grid={state.grid}
-      mapWidth={state.mapWidth}
-      mapHeight={state.mapHeight}
-      players={state.players}
-      instanceId={instanceId}
-      myPlayerId={myPlayer?.user_id}
-      activeUserId={state.active_user}
-      sightRange={myPlayer?.sightRange ?? 3}
-      compact
-      viewportCells={minimapViewportCells}
-      cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
-      onCellPing={handleMiniMapPing}
-      onCollapse={handleMiniMapVisibilityToggle}
-      panelClassName={`${styles.minimapPanelShell} ${
-        showMiniMap
-          ? styles.minimapPanelShellOpen
-          : styles.minimapPanelShellClosed
-      }`}
-    />
-
-    {!objectHUD && (
-      <button
-        type="button"
-        className={`${styles.minimapToggleButton} ${styles.minimapToggleButtonCompact} ${
-          isCompactActionLogVisible ? styles.minimapToggleButtonWithLog : ""
-        } ${
-          isCompactActionLogVisible && isActionLogExpanded
-            ? styles.minimapToggleButtonLogOpen
-            : ""
-        } ${
-          showMiniMap ? styles.minimapToggleButtonHidden : ""
-        }`}
-        onClick={handleMiniMapVisibilityToggle}
-        aria-label="Open minimap"
-        title="Open minimap"
-      >
-        Minimap
-      </button>
-    )}
-  </>
-) : showMiniMap ? (
-  <MiniMap
-    key={instanceId}
-    grid={state.grid}
-    mapWidth={state.mapWidth}
-    mapHeight={state.mapHeight}
-    players={state.players}
-    instanceId={instanceId}
-    myPlayerId={myPlayer?.user_id}
-    activeUserId={state.active_user}
-    sightRange={myPlayer?.sightRange ?? 3}
-    compact={false}
-    viewportCells={minimapViewportCells}
-    cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
-    onCellPing={handleMiniMapPing}
-    onCollapse={handleMiniMapVisibilityToggle}
-  />
-) : (
-  <button
-    type="button"
-    className={`${styles.minimapToggleButton} ${
-      objectHUD ? styles.minimapToggleButtonWithHud : ""
-    }`}
-    onClick={handleMiniMapVisibilityToggle}
-    aria-label="Open minimap"
-    title="Open minimap"
-  >
-    Minimap
-  </button>
-)}
-
-      <div
-        className={`${styles.turnStatusFloating} ${isMyTurn ? styles.turnStatusFloatingActive : styles.turnStatusFloatingWaiting}`}
-      >
-        {isMyTurn ? "YOUR TURN" : "WAITING FOR TURN"}
-      </div>
-      {placementMode && (
-        <div className={styles.turnStatusFloating}>
-          Build mode: select an adjacent cell to
-          {placementMode.structureType === "scout_tower"
-            ? " tower"
-            : placementMode.structureType === "turret"
-              ? " turret"
-              : " wall"}
-        </div>
-      )}
-      {/* Battle/mode button moved to LobbyHeader (game menu) */}
-      {/* Scrolls moved into Inventory — separate panel removed */}
-      <div className={styles.mapContainer}>
-        {myPlayer ? (
-          <MapWithCamera
-            instanceId={instanceId}
-            tileSize={mapViewport.tileSize}
-            viewportWidth={mapViewport.width}
-            viewportHeight={mapViewport.height}
-            myPlayer={myPlayer}
-            focusPoint={minimapFocusPoint}
-            pingPoint={minimapPingPoint}
-            onCellClick={handleMapCellClick}
-            onPlayerClick={handleMapPlayerClick}
+      <div className={styles.matchShell}>
+        <aside className={styles.leftHudColumn}>
+          {myPlayer && (
+            <PlayerHUD
+              health={myPlayer.health}
+              maxHealth={myPlayer.maxHealth}
+              energy={myPlayer.energy}
+              maxEnergy={myPlayer.maxEnergy}
+              isRanged={myPlayer.isRanged}
+              attackRange={myPlayer.attackRange}
+              groupId={myPlayer.group_id}
+            />
+          )}
+          <ObjectiveTracker
+            player={myPlayer}
+            players={state.players}
+            grid={state.grid}
+            mode={state.mode}
+            questArtifactId={state.questArtifactId}
+            isMyTurn={isMyTurn}
+            isPlayerDefeated={isCurrentPlayerDefeated}
+            hasEscaped={hasEscaped}
+            isMatchFinished={isObjectiveMatchFinished}
           />
-        ) : (
-          <p className={styles.mapLoading}>Loading map...</p>
-        )}
-      </div>
-      <div className={styles.controlsContainer}>
-        {isMyTurn ? (
-          <>
-            <div className={styles.turnPrompt}>
-              <span className={styles.turnPromptBadge}>YOUR TURN</span>
-              <span className={styles.turnPromptText}>
-                Choose an action and end your turn
-              </span>
+          {shouldShowActionLog && (
+            <ActionLog
+              entries={state.actionLog}
+              compact={isCompactViewport}
+              expanded={isCompactViewport ? isActionLogExpanded : undefined}
+              onExpandedChange={handleActionLogExpandedChange}
+            />
+          )}
+          <div className={styles.leftControlStack}>
+            <div className={styles.controlsContainer}>
+              {isMyTurn ? (
+                <>
+                  <div className={styles.turnPrompt}>
+                    <span className={styles.turnPromptBadge}>YOUR TURN</span>
+                    <span className={styles.turnPromptText}>
+                      Choose an action and end your turn
+                    </span>
+                  </div>
+                  <Controls
+                    onMove={handleMoveOrAttack}
+                    onAction={handleAction}
+                  />
+                  <TurnIndicator />
+                  <div className={styles.endTurnInlineDesktop}>
+                    <EndTurnButton
+                      playerId={myPlayer?.user_id!}
+                      instanceId={instanceId}
+                      onTurnEnded={handleTurnEnded}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className={`${styles.inventoryDockButton} ${
+                      showInventory ? styles.inventoryFabActive : ""
+                    }`}
+                    onClick={handleInventoryToggle}
+                    aria-label={
+                      showInventory ? "Close inventory" : "Open inventory"
+                    }
+                    title={showInventory ? "Close inventory" : "Open inventory"}
+                  >
+                    <img
+                      src="/ui-icons/backpack.png"
+                      alt="Inventory"
+                      className={styles.inventoryFabIcon}
+                      draggable={false}
+                    />
+                  </button>
+                </>
+              ) : (
+                <div className={styles.waitingOverlay}>
+                  <div
+                    className={`${styles.turnPrompt} ${styles.turnPromptWaiting}`}
+                  >
+                    <span
+                      className={`${styles.turnPromptBadge} ${styles.turnPromptBadgeWaiting}`}
+                    >
+                      WAITING FOR TURN
+                    </span>
+                    <span
+                      className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
+                    >
+                      {waitingTurnInfo
+                        ? `Now: ${waitingTurnInfo.activePlayerName}`
+                        : "It's another player's turn"}
+                    </span>
+                  </div>
+                  {waitingTurnInfo && (
+                    <>
+                      <div className={styles.waitingEta}>
+                        <span className={styles.waitingEtaLabel}>
+                          Your turn in
+                        </span>
+                        <span className={styles.waitingEtaValue}>
+                          {waitingTurnInfo.etaText}
+                        </span>
+                      </div>
+                      <div className={styles.waitingQueue}>
+                        {waitingTurnInfo.playersAhead > 0
+                          ? `${waitingTurnInfo.playersAhead} player${
+                              waitingTurnInfo.playersAhead === 1 ? "" : "s"
+                            } before you`
+                          : "You're next after this turn"}
+                      </div>
+                    </>
+                  )}
+                  <TurnIndicator />
+                  <div
+                    className={`${styles.turnTimer} ${styles.turnTimerInline} ${
+                      isTurnWarning ? styles.turnTimerWarn : ""
+                    }`}
+                  >
+                    {turnTimerText}
+                  </div>
+                  <button
+                    type="button"
+                    className={`${styles.inventoryDockButton} ${
+                      showInventory ? styles.inventoryFabActive : ""
+                    }`}
+                    onClick={handleInventoryToggle}
+                    aria-label={
+                      showInventory ? "Close inventory" : "Open inventory"
+                    }
+                    title={showInventory ? "Close inventory" : "Open inventory"}
+                  >
+                    <img
+                      src="/ui-icons/backpack.png"
+                      alt="Inventory"
+                      className={styles.inventoryFabIcon}
+                      draggable={false}
+                    />
+                  </button>
+                </div>
+              )}
             </div>
-            <Controls onMove={handleMoveOrAttack} onAction={handleAction} />
-            <TurnIndicator />
-            <div className={styles.endTurnInlineDesktop}>
+            <button
+              type="button"
+              className={`${styles.inventoryRailButton} ${
+                showInventory ? styles.inventoryFabActive : ""
+              }`}
+              onClick={handleInventoryToggle}
+              aria-label={showInventory ? "Close inventory" : "Open inventory"}
+              title={showInventory ? "Close inventory" : "Open inventory"}
+            >
+              <img
+                src="/ui-icons/backpack.png"
+                alt="Inventory"
+                className={styles.inventoryFabIcon}
+                draggable={false}
+              />
+            </button>
+          </div>
+        </aside>
+
+        <main className={styles.mapStage}>
+          <div
+            className={`${styles.turnStatusFloating} ${
+              isMyTurn
+                ? styles.turnStatusFloatingActive
+                : styles.turnStatusFloatingWaiting
+            }`}
+          >
+            {isMyTurn ? "YOUR TURN" : "WAITING FOR TURN"}
+          </div>
+          {placementMode && (
+            <div className={styles.turnStatusFloating}>
+              Build mode: select an adjacent cell to
+              {placementMode.structureType === "scout_tower"
+                ? " tower"
+                : placementMode.structureType === "turret"
+                  ? " turret"
+                  : " wall"}
+            </div>
+          )}
+          {/* Battle/mode button moved to LobbyHeader (game menu) */}
+          {/* Scrolls moved into Inventory — separate panel removed */}
+          <div className={styles.mapContainer}>
+            {myPlayer ? (
+              <MapWithCamera
+                instanceId={instanceId}
+                tileSize={mapViewport.tileSize}
+                viewportWidth={mapViewport.width}
+                viewportHeight={mapViewport.height}
+                myPlayer={myPlayer}
+                focusPoint={minimapFocusPoint}
+                pingPoint={minimapPingPoint}
+                onCellClick={handleMapCellClick}
+                onPlayerClick={handleMapPlayerClick}
+              />
+            ) : (
+              <p className={styles.mapLoading}>Loading map...</p>
+            )}
+          </div>
+        </main>
+
+        <aside className={styles.rightHudColumn}>
+          {shouldRenderCompactMiniMap ? (
+            <>
+              <MiniMap
+                key={instanceId}
+                grid={state.grid}
+                mapWidth={state.mapWidth}
+                mapHeight={state.mapHeight}
+                players={state.players}
+                instanceId={instanceId}
+                myPlayerId={myPlayer?.user_id}
+                activeUserId={state.active_user}
+                sightRange={myPlayer?.sightRange ?? 3}
+                compact
+                viewportCells={minimapViewportCells}
+                cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+                onCellPing={handleMiniMapPing}
+                onCollapse={handleMiniMapVisibilityToggle}
+                panelClassName={`${styles.minimapPanelShell} ${
+                  showMiniMap
+                    ? styles.minimapPanelShellOpen
+                    : styles.minimapPanelShellClosed
+                }`}
+              />
+
+              {!objectHUD && (
+                <button
+                  type="button"
+                  className={`${styles.minimapToggleButton} ${
+                    styles.minimapToggleButtonCompact
+                  } ${
+                    isCompactActionLogVisible
+                      ? styles.minimapToggleButtonWithLog
+                      : ""
+                  } ${
+                    isCompactActionLogVisible && isActionLogExpanded
+                      ? styles.minimapToggleButtonLogOpen
+                      : ""
+                  } ${showMiniMap ? styles.minimapToggleButtonHidden : ""}`}
+                  onClick={handleMiniMapVisibilityToggle}
+                  aria-label="Open minimap"
+                  title="Open minimap"
+                >
+                  Minimap
+                </button>
+              )}
+            </>
+          ) : showMiniMap ? (
+            <MiniMap
+              key={instanceId}
+              grid={state.grid}
+              mapWidth={state.mapWidth}
+              mapHeight={state.mapHeight}
+              players={state.players}
+              instanceId={instanceId}
+              myPlayerId={myPlayer?.user_id}
+              activeUserId={state.active_user}
+              sightRange={myPlayer?.sightRange ?? 3}
+              compact={false}
+              viewportCells={minimapViewportCells}
+              cameraCenterPosition={minimapFocusPoint ?? myPlayer?.position}
+              onCellPing={handleMiniMapPing}
+              onCollapse={handleMiniMapVisibilityToggle}
+            />
+          ) : (
+            <button
+              type="button"
+              className={`${styles.minimapToggleButton} ${
+                objectHUD ? styles.minimapToggleButtonWithHud : ""
+              }`}
+              onClick={handleMiniMapVisibilityToggle}
+              aria-label="Open minimap"
+              title="Open minimap"
+            >
+              Minimap
+            </button>
+          )}
+          {selectedObjectHud}
+          {isMyTurn ? (
+            <div className={styles.turnActionDock}>
+              <div
+                className={`${styles.turnTimer} ${styles.turnTimerDock} ${
+                  isTurnWarning ? styles.turnTimerWarn : ""
+                }`}
+              >
+                {turnTimerText}
+              </div>
               <EndTurnButton
                 playerId={myPlayer?.user_id!}
                 instanceId={instanceId}
                 onTurnEnded={handleTurnEnded}
               />
             </div>
-            <button
-              type="button"
-              className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
-              onClick={handleInventoryToggle}
-              aria-label={showInventory ? "Close inventory" : "Open inventory"}
-              title={showInventory ? "Close inventory" : "Open inventory"}
-            >
-              <img
-                src="/ui-icons/backpack.png"
-                alt="Inventory"
-                className={styles.inventoryFabIcon}
-                draggable={false}
-              />
-            </button>
-          </>
-        ) : (
-          <div className={styles.waitingOverlay}>
-            <div className={`${styles.turnPrompt} ${styles.turnPromptWaiting}`}>
-              <span
-                className={`${styles.turnPromptBadge} ${styles.turnPromptBadgeWaiting}`}
-              >
-                WAITING FOR TURN
-              </span>
-              <span
-                className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
-              >
-                {waitingTurnInfo
-                  ? `Now: ${waitingTurnInfo.activePlayerName}`
-                  : "It's another player's turn"}
-              </span>
-            </div>
-            {waitingTurnInfo && (
-              <>
-                <div className={styles.waitingEta}>
-                  <span className={styles.waitingEtaLabel}>Your turn in</span>
-                  <span className={styles.waitingEtaValue}>
-                    {waitingTurnInfo.etaText}
-                  </span>
-                </div>
-                <div className={styles.waitingQueue}>
-                  {waitingTurnInfo.playersAhead > 0
-                    ? `${waitingTurnInfo.playersAhead} player${waitingTurnInfo.playersAhead === 1 ? "" : "s"} before you`
-                    : "You're next after this turn"}
-                </div>
-              </>
-            )}
-            <TurnIndicator />
+          ) : (
             <div
-              className={`${styles.turnTimer} ${styles.turnTimerInline} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
+              className={`${styles.turnActionDock} ${styles.turnActionDockDesktopOnly}`}
             >
-              {turnTimerText}
+              <div
+                className={`${styles.turnTimer} ${styles.turnTimerDock} ${
+                  isTurnWarning ? styles.turnTimerWarn : ""
+                }`}
+              >
+                {turnTimerText}
+              </div>
             </div>
-            <button
-              type="button"
-              className={`${styles.inventoryDockButton} ${showInventory ? styles.inventoryFabActive : ""}`}
-              onClick={handleInventoryToggle}
-              aria-label={showInventory ? "Close inventory" : "Open inventory"}
-              title={showInventory ? "Close inventory" : "Open inventory"}
-            >
-              <img
-                src="/ui-icons/backpack.png"
-                alt="Inventory"
-                className={styles.inventoryFabIcon}
-                draggable={false}
-              />
-            </button>
-          </div>
-        )}
+          )}
+        </aside>
       </div>
-      {isMyTurn && (
-        <div className={styles.turnActionDock}>
-          <div
-            className={`${styles.turnTimer} ${styles.turnTimerDock} ${isTurnWarning ? styles.turnTimerWarn : ""}`}
-          >
-            {turnTimerText}
-          </div>
-          <EndTurnButton
-            playerId={myPlayer?.user_id!}
-            instanceId={instanceId}
-            onTurnEnded={handleTurnEnded}
-          />
-        </div>
-      )}
       {showInventory && (
         <Inventory
           onBlueprintPlacementStart={handleBlueprintPlacementStart}

@@ -129,6 +129,50 @@
     overflow-wrap: anywhere;
 }
 
+@media (min-width: 1181px) {
+    .panel {
+        position: static;
+        top: auto;
+        left: auto;
+        box-sizing: border-box;
+        width: 100%;
+        max-height: clamp(112px, 25vh, 210px);
+    }
+
+    .panelCollapsed {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .list {
+        max-height: clamp(64px, 17vh, 148px);
+    }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+    .panel {
+        max-height: clamp(148px, 24vh, 250px);
+    }
+
+    .header {
+        padding: 11px 13px;
+    }
+
+    .eyebrow {
+        font-size: 12px;
+    }
+
+    .subtitle,
+    .collapsedMessage {
+        font-size: 12px;
+    }
+
+    .list {
+        max-height: clamp(92px, 17vh, 182px);
+        padding: 0 12px 12px;
+    }
+}
+
 @media (max-width: 760px) and (orientation: portrait) {
     .panel {
         top: max(8px, env(safe-area-inset-top));

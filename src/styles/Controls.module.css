@@ -80,6 +80,68 @@
     transform: translateY(1px);
 }
 
+@media (min-width: 1181px) {
+    .controlsContainer {
+        box-sizing: border-box;
+        display: grid;
+        gap: 5px;
+        justify-items: center;
+        width: 100%;
+    }
+
+    .buttonRow {
+        display: flex;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .actionRow {
+        width: 100%;
+        margin-top: 2px;
+        display: flex;
+        justify-content: center;
+    }
+
+    .controlButton {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        font-size: 16px;
+    }
+
+    .actionButton {
+        width: min(164px, 100%);
+        min-width: 0;
+        height: 40px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+    .controlsContainer {
+        gap: 7px;
+    }
+
+    .buttonRow {
+        gap: 8px;
+    }
+
+    .controlButton {
+        width: 48px;
+        height: 48px;
+        border-radius: 11px;
+        font-size: 18px;
+    }
+
+    .actionButton {
+        width: min(184px, 100%);
+        height: 44px;
+        border-radius: 11px;
+        font-size: 13px;
+    }
+}
+
 @media (max-width: 760px) {
     .controlsContainer {
         width: 100%;

@@ -75,7 +75,35 @@
 
 @media (min-width: 1181px) {
   .panel {
-    top: calc(max(12px, env(safe-area-inset-top)) + 154px);
+    position: static;
+    top: auto;
+    left: auto;
+    box-sizing: border-box;
+    width: 100%;
+    max-height: none;
+    pointer-events: auto;
+  }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+  .panel {
+    padding: 12px 14px;
+  }
+
+  .kicker {
+    font-size: 11px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .detail {
+    font-size: 13px;
+  }
+
+  .winCondition {
+    font-size: 12px;
   }
 }
 

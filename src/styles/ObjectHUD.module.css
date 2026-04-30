@@ -184,6 +184,42 @@
   left: auto;
 }
 
+@media (min-width: 1181px) {
+  .objectHudPanel,
+  .objectHudPanelBelowMinimap {
+    position: static;
+    top: auto;
+    right: auto;
+    left: auto;
+    box-sizing: border-box;
+    width: min(260px, 100%);
+    min-width: min(220px, 100%);
+    max-width: 100%;
+    justify-self: end;
+  }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+  .objectHudPanel,
+  .objectHudPanelBelowMinimap {
+    width: min(320px, 100%);
+    min-width: min(260px, 100%);
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+
+  .name {
+    font-size: 15px;
+  }
+
+  .hudRow,
+  .statRow {
+    grid-template-columns: 58px 1fr auto;
+    gap: 8px;
+    font-size: 13px;
+  }
+}
+
 @media (max-width: 920px) {
   .objectHudPanel {
     min-width: 150px;
