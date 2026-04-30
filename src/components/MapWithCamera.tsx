@@ -991,12 +991,16 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                 }
 
                 if (effect.kind === "textFloater") {
-                    const toneClass =
-                        effect.tone === "lifesteal"
-                            ? styles.combatFloaterLifesteal
-                            : effect.tone === "crit"
-                              ? styles.combatFloaterCrit
-                              : styles.combatFloaterBlock;
+                    let toneClass = styles.combatFloaterBlock;
+                    if (effect.tone === "lifesteal") {
+                        toneClass = styles.combatFloaterLifesteal;
+                    } else if (effect.tone === "crit") {
+                        toneClass = styles.combatFloaterCrit;
+                    } else if (effect.tone === "overburn") {
+                        toneClass = styles.combatFloaterOverburn;
+                    } else if (effect.tone === "pureDamage") {
+                        toneClass = styles.combatFloaterPureDamage;
+                    }
                     return (
                         <div
                             key={effect.id}

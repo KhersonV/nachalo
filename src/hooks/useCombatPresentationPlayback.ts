@@ -154,6 +154,47 @@ function addCritEffect(
     });
 }
 
+function addOverburnEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:overburn:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "OVERBURN",
+        tone: "overburn",
+    });
+}
+
+function addPureDamageEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+    amount: number,
+) {
+    if (amount <= 0) return;
+
+    effects.push({
+        id: `${exchangeId}:pure-damage:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: `PURE +${amount}`,
+        tone: "pureDamage",
+    });
+}
+
 function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
@@ -295,6 +336,41 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
                     target,
                     index,
                     lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "arcaneOverburn") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addOverburnEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "pureDamage" && typeof effect.amount === "number") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addPureDamageEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
+                    effect.amount,
                 );
             }
         }

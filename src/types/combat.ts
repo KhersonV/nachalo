@@ -82,6 +82,7 @@ export type CombatEffect =
           source?: CombatTargetRef;
           target?: CombatTargetRef;
           succeeded: boolean;
+          amount?: number;
           energyGranted?: number;
           energyDrained?: number;
           sourceEnergyAfter?: number;
@@ -104,6 +105,19 @@ export type CombatEffect =
           kind: "crit";
           source?: CombatTargetRef;
           target?: CombatTargetRef;
+          succeeded: boolean;
+      }
+    | {
+          kind: "arcaneOverburn";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+      }
+    | {
+          kind: "pureDamage";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          amount?: number;
           succeeded: boolean;
       };
 
@@ -194,7 +208,7 @@ export type ActiveEffect =
           startMs: number;
           durationMs: number;
           text: string;
-          tone: "block" | "lifesteal" | "crit";
+          tone: "block" | "lifesteal" | "crit" | "overburn" | "pureDamage";
       }
     | {
           id: string;

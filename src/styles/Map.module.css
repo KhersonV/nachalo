@@ -219,6 +219,20 @@
         0 0 14px rgba(255, 212, 92, 0.62);
 }
 
+.combatFloaterOverburn {
+    color: #dca7ff;
+    text-shadow:
+        0 1px 6px rgba(86, 38, 132, 0.82),
+        0 0 14px rgba(202, 132, 255, 0.58);
+}
+
+.combatFloaterPureDamage {
+    color: #ff8bd1;
+    text-shadow:
+        0 1px 6px rgba(132, 28, 86, 0.82),
+        0 0 14px rgba(255, 110, 195, 0.58);
+}
+
 .combatFlash {
     position: absolute;
     pointer-events: none;

@@ -392,6 +392,17 @@ function buildCombatEffectMessage(
         return `${actorVerb(source, "landed")} a Critical Shot on ${targetLabel(target)}.`;
     }
 
+    if (effect.kind === "arcaneOverburn") {
+        return `${actorVerb(source, "triggered")} Arcane Overburn on ${targetLabel(target)}.`;
+    }
+
+    if (effect.kind === "pureDamage") {
+        if (typeof effect.amount !== "number" || effect.amount <= 0) {
+            return null;
+        }
+        return `${actorVerb(source, "dealt")} ${effect.amount} pure damage to ${targetLabel(target)}.`;
+    }
+
     return null;
 }
 
@@ -460,7 +471,8 @@ export function buildCombatLogEntries(
             tone:
                 effect.kind === "energyDrain" ||
                 effect.kind === "block" ||
-                effect.kind === "lifesteal"
+                effect.kind === "lifesteal" ||
+                effect.kind === "arcaneOverburn"
                     ? "success"
                     : "warning",
             message,

@@ -997,6 +997,245 @@ func TestRangerCriticalShotDoesNotTriggerOnBerserkerFuryFollowUp(t *testing.T) {
 	}
 }
 
+func newMysticArcaneOverburnHarness(t *testing.T, instanceID string, targetEnergy int, targetHP int) *bloodFeastPlayerCombatHarness {
+	t.Helper()
+
+	attacker := newCombatTestPlayer(1, "mystic", 1, 40, 1, 1)
+	attacker.Attack = 10
+	attacker.Defense = 0
+	attacker.Energy = 50
+	attacker.MaxEnergy = 100
+	attacker.Agility = 5
+	attacker.IsRanged = true
+	attacker.AttackRange = 4
+	attacker.Position.X = 0
+	attacker.Position.Y = 1
+
+	target := newCombatTestPlayer(2, "ranger", 2, targetHP, 2, 1)
+	target.Attack = 1
+	target.Defense = 0
+	target.Energy = targetEnergy
+	target.MaxEnergy = 100
+
+	return newBloodFeastPlayerCombatHarness(t, instanceID, attacker, target)
+}
+
+func TestMysticEnergyDrainNormalBurnsThreeAndRestoresOneWithoutReflexProc(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-normal-drain", 10, 50)
+	h.rollResult = false
+
+	payload := h.attackPlayer()
+	drain, ok := findCombatEffect(payload, "energyDrain")
+	if !ok || drain.EnergyDrained != 3 || drain.Amount != 3 || drain.EnergyGranted != 1 {
+		t.Fatalf("expected normal drain burn 3 restore 1, got effect=%+v ok=%v", drain, ok)
+	}
+	if h.players[1].Energy != 43 {
+		t.Fatalf("expected mystic energy 43 after ranged attack cost and normal restore, got %d", h.players[1].Energy)
+	}
+	if h.players[2].Energy != 7 {
+		t.Fatalf("expected target energy 7 after normal drain, got %d", h.players[2].Energy)
+	}
+	if _, ok := findCombatEffect(payload, "arcaneOverburn"); ok {
+		t.Fatalf("expected no overburn effect without proc, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "pureDamage"); ok {
+		t.Fatalf("expected no pure damage while target has enough energy, got payload %+v", payload)
+	}
+}
+
+func TestMysticArcaneOverburnBurnsFourAndRestoresThree(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-full-energy", 10, 50)
+
+	payload := h.attackPlayer()
+	drain, ok := findCombatEffect(payload, "energyDrain")
+	if !ok || drain.EnergyDrained != 4 || drain.Amount != 4 || drain.EnergyGranted != 3 {
+		t.Fatalf("expected overburn drain burn 4 restore 3, got effect=%+v ok=%v", drain, ok)
+	}
+	if h.players[1].Energy != 45 {
+		t.Fatalf("expected mystic energy 45 after ranged attack cost and overburn restore, got %d", h.players[1].Energy)
+	}
+	if h.players[2].Energy != 6 {
+		t.Fatalf("expected target energy 6 after overburn drain, got %d", h.players[2].Energy)
+	}
+	if _, ok := findCombatEffect(payload, "arcaneOverburn"); !ok {
+		t.Fatalf("expected explicit arcane overburn effect, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "pureDamage"); ok {
+		t.Fatalf("expected no pure damage while target has enough energy, got payload %+v", payload)
+	}
+}
+
+func TestMysticArcaneOverburnMissingEnergyBecomesPureDamage(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-missing-energy", 2, 50)
+
+	payload := h.attackPlayer()
+	drain, ok := findCombatEffect(payload, "energyDrain")
+	if !ok || drain.EnergyDrained != 2 || drain.Amount != 2 {
+		t.Fatalf("expected actual burn 2 from target energy, got effect=%+v ok=%v", drain, ok)
+	}
+	pure, ok := findCombatEffect(payload, "pureDamage")
+	if !ok || pure.Amount != 2 {
+		t.Fatalf("expected missing burn to deal pure damage 2, got effect=%+v ok=%v", pure, ok)
+	}
+	bonus, ok := findCombatStep(payload, "bonus")
+	if !ok || bonus.Damage != 2 || bonus.TargetHPAfter != 38 {
+		t.Fatalf("expected pure damage bonus step for 2 damage, got step=%+v ok=%v", bonus, ok)
+	}
+	if h.players[2].Health != 38 {
+		t.Fatalf("expected target hp 38 after hit and pure damage, got %d", h.players[2].Health)
+	}
+	if len(h.matchState.DamageEvents) != 2 || h.matchState.DamageEvents[1].Amount != 2 {
+		t.Fatalf("expected pure damage stats amount 2 after primary damage, got %+v", h.matchState.DamageEvents)
+	}
+}
+
+func TestMysticArcaneOverburnPureDamageIgnoresDefense(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-ignores-defense", 0, 20)
+	target := h.players[2]
+	target.Defense = 100
+	h.players[2] = target
+
+	payload := h.attackPlayer()
+	pure, ok := findCombatEffect(payload, "pureDamage")
+	if !ok || pure.Amount != 4 {
+		t.Fatalf("expected pure damage 4 despite high defense, got effect=%+v ok=%v", pure, ok)
+	}
+	hit, ok := findCombatStep(payload, "hit")
+	if !ok || hit.Damage != 0 || hit.TargetHPAfter != 20 {
+		t.Fatalf("expected primary hit to be fully absorbed by defense, got step=%+v ok=%v", hit, ok)
+	}
+	if h.players[2].Health != 16 {
+		t.Fatalf("expected pure damage to ignore defense and leave hp 16, got %d", h.players[2].Health)
+	}
+	if len(h.matchState.DamageEvents) != 1 || h.matchState.DamageEvents[0].Amount != 4 {
+		t.Fatalf("expected only pure damage stats amount 4, got %+v", h.matchState.DamageEvents)
+	}
+}
+
+func TestMysticArcaneOverburnZeroEnergyTargetTakesFourPureDamage(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-zero-energy", 0, 50)
+
+	payload := h.attackPlayer()
+	drain, ok := findCombatEffect(payload, "energyDrain")
+	if !ok || drain.EnergyDrained != 0 || drain.Amount != 0 {
+		t.Fatalf("expected actual burn 0 against empty energy, got effect=%+v ok=%v", drain, ok)
+	}
+	pure, ok := findCombatEffect(payload, "pureDamage")
+	if !ok || pure.Amount != 4 {
+		t.Fatalf("expected zero-energy target to take pure damage 4, got effect=%+v ok=%v", pure, ok)
+	}
+	if h.players[2].Health != 36 {
+		t.Fatalf("expected target hp 36 after primary hit and pure damage, got %d", h.players[2].Health)
+	}
+}
+
+func TestMysticArcaneOverburnPureDamageCanKillAndStatsClampOverkill(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-kill-clamp", 0, 11)
+	h.matchState.ActiveUserID = 0
+
+	rec := httptest.NewRecorder()
+	universalAttackLocked(rec, AttackRequest{
+		InstanceID:   h.instanceID,
+		AttackerType: "player",
+		AttackerID:   1,
+		TargetType:   "player",
+		TargetID:     2,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected attack status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(h.exchanges) == 0 {
+		t.Fatal("expected combat exchange broadcast")
+	}
+	payload := h.exchanges[len(h.exchanges)-1]
+	pure, ok := findCombatEffect(payload, "pureDamage")
+	if !ok || pure.Amount != 1 {
+		t.Fatalf("expected pure damage effect amount clamped to actual hp damage 1, got effect=%+v ok=%v", pure, ok)
+	}
+	if !hasCombatStep(payload, "death") {
+		t.Fatalf("expected pure damage to kill target and emit death step, got steps %+v", payload.Steps)
+	}
+	if h.players[2].Health != 0 {
+		t.Fatalf("expected target to be dead, got hp %d", h.players[2].Health)
+	}
+	if len(h.matchState.DamageEvents) != 2 || h.matchState.DamageEvents[1].Amount != 1 {
+		t.Fatalf("expected pure overkill stats to count actual damage 1, got %+v", h.matchState.DamageEvents)
+	}
+}
+
+func TestMysticArcaneOverburnRestoreCannotExceedMaxEnergy(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-restore-cap", 10, 50)
+	attacker := h.players[1]
+	attacker.Energy = 100
+	attacker.MaxEnergy = 93
+	h.players[1] = attacker
+
+	payload := h.attackPlayer()
+	drain, ok := findCombatEffect(payload, "energyDrain")
+	if !ok || drain.EnergyGranted != 1 || drain.SourceEnergyAfter != 93 {
+		t.Fatalf("expected restore to be capped at max energy with grant 1, got effect=%+v ok=%v", drain, ok)
+	}
+	if h.players[1].Energy != 93 {
+		t.Fatalf("expected mystic energy capped at 93, got %d", h.players[1].Energy)
+	}
+}
+
+func TestMysticArcaneOverburnGuardianBlockPreventsDrainOverburnAndPureDamage(t *testing.T) {
+	attacker := newGuardianBlockRangedAttacker("mystic")
+	attacker.Agility = 5
+	h := newGuardianShieldBlockCombatHarness(t, "mystic-overburn-blocked", attacker)
+
+	payload := h.attackGuardian()
+	if _, ok := findCombatEffect(payload, "energyDrain"); ok {
+		t.Fatalf("expected guardian block to skip energy drain, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "arcaneOverburn"); ok {
+		t.Fatalf("expected guardian block to skip overburn, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "pureDamage"); ok {
+		t.Fatalf("expected guardian block to skip pure damage, got payload %+v", payload)
+	}
+}
+
+func TestMysticArcaneOverburnGuardianBlockDoesNotBlockPureDamageAfterSuccessfulHit(t *testing.T) {
+	attacker := newCombatTestPlayer(1, "mystic", 1, 40, 1, 1)
+	attacker.Attack = 10
+	attacker.Energy = 50
+	attacker.MaxEnergy = 100
+	attacker.Agility = 5
+	attacker.IsRanged = true
+	attacker.AttackRange = 4
+	attacker.Position.X = 0
+	attacker.Position.Y = 1
+
+	guardian := newCombatTestPlayer(2, "guardian", 2, 50, 2, 1)
+	guardian.Defense = 0
+	guardian.Energy = 0
+	guardian.MaxEnergy = 100
+	guardian.Agility = 5
+
+	h := newBloodFeastPlayerCombatHarness(t, "mystic-overburn-guardian-success", attacker, guardian)
+	rollCalls := stubReflexRolls(t, false, true)
+
+	payload := h.attackPlayer()
+	if _, ok := findCombatEffect(payload, "block"); ok {
+		t.Fatalf("expected guardian block roll to fail, got payload %+v", payload)
+	}
+	if countCombatEffects(payload, "arcaneOverburn") != 1 {
+		t.Fatalf("expected overburn to trigger once after successful hit, got effects %+v", payload.Effects)
+	}
+	pure, ok := findCombatEffect(payload, "pureDamage")
+	if !ok || pure.Amount != 4 {
+		t.Fatalf("expected pure damage 4 after successful hit, got effect=%+v ok=%v", pure, ok)
+	}
+	if h.players[2].Health != 36 {
+		t.Fatalf("expected guardian hp 36 after successful hit and pure damage, got %d", h.players[2].Health)
+	}
+	if *rollCalls != 2 {
+		t.Fatalf("expected one guardian block roll and one overburn roll, got %d", *rollCalls)
+	}
+}
+
 func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-push-reset", 30, false)
 
@@ -1395,7 +1634,14 @@ func (h *bloodFeastPlayerCombatHarness) install() {
 		},
 		UpdateMonsterHealth: func(_ string, _, _ int) error { return nil },
 		DeleteMonster:       func(_ string, _ int) error { return nil },
-		MarkPlayerDead:      func(_ string, _ int) error { return nil },
+		MarkPlayerDead: func(_ string, userID int) error {
+			player, ok := h.players[userID]
+			if ok {
+				player.Health = 0
+				h.players[userID] = player
+			}
+			return nil
+		},
 		ClearPlayerFlag: func(_ string, _ repository.Position) error {
 			return nil
 		},
@@ -1412,6 +1658,7 @@ func (h *bloodFeastPlayerCombatHarness) install() {
 
 	origRollReflexProc := rollReflexProc
 	origBroadcast := broadcastFn
+	origTransferCombatQuestArtifact := transferCombatQuestArtifact
 
 	rollReflexProc = func(chance int) bool {
 		if chance != 10 {
@@ -1419,6 +1666,7 @@ func (h *bloodFeastPlayerCombatHarness) install() {
 		}
 		return h.rollResult
 	}
+	transferCombatQuestArtifact = func(_ string, _, _, _, _ int, _ bool) {}
 	broadcastFn = func(message []byte) {
 		var msg CombatExchangeMessage
 		if err := json.Unmarshal(message, &msg); err == nil && msg.Type == "COMBAT_EXCHANGE" {
@@ -1430,6 +1678,7 @@ func (h *bloodFeastPlayerCombatHarness) install() {
 		RestoreDefaults()
 		rollReflexProc = origRollReflexProc
 		broadcastFn = origBroadcast
+		transferCombatQuestArtifact = origTransferCombatQuestArtifact
 	})
 }
 
@@ -1774,6 +2023,12 @@ func TestGuardianShieldBlockSkipsMysticDrain(t *testing.T) {
 	payload := h.attackGuardian()
 	if _, ok := findCombatEffect(payload, "energyDrain"); ok {
 		t.Fatalf("expected block to skip mystic energy drain, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "arcaneOverburn"); ok {
+		t.Fatalf("expected block to skip mystic overburn, got payload %+v", payload)
+	}
+	if _, ok := findCombatEffect(payload, "pureDamage"); ok {
+		t.Fatalf("expected block to skip mystic pure damage, got payload %+v", payload)
 	}
 	if h.players[2].Energy != guardianBeforeEnergy {
 		t.Fatalf("expected guardian energy unchanged after blocked mystic hit, got %d", h.players[2].Energy)

@@ -37,6 +37,8 @@ const (
 	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
 	energyDrainPerHit                = 3
 	energyDrainGainPerHit            = 1
+	arcaneOverburnEnergyBurn         = 4
+	arcaneOverburnEnergyGain         = 3
 	energyDrainPerTargetLimit        = 10
 )
 
@@ -45,6 +47,7 @@ var (
 	persistCombatPushCells      = persistCombatPushCellsWithDB
 	updateCombatMonsterPosition = repository.UpdateMatchMonsterPosition
 	rollReflexProc              = defaultRollReflexProc
+	transferCombatQuestArtifact = transferQuestArtifact
 )
 
 type CombatActorType string
@@ -1245,7 +1248,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 	}
 
 	// Transfer quest artifact before removing player from match
-	transferQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
+	transferCombatQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
 
 	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
 		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
@@ -1678,10 +1681,9 @@ func resolveRangerPushFallbackDamage(
 	return applyDamage(attacker, bonusTargetStats)
 }
 
-// tryApplyMysticEnergyDrain пытается вытянуть энергию у цели.
-// Если у цели нет энергии — наносит небольшой бонусный плоский урон.
-// Возвращает эффект (energyDrain) и опционально шаг (bonus hit), если был нанесён доп. урон.
-func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) (*CombatEffect, *CombatStep, error) {
+// tryApplyMysticEnergyDrain applies Mystic's on-hit energy drain and optional Arcane Overburn.
+// It returns combat effects and an optional pure-damage step when missing energy becomes HP damage.
+func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) ([]CombatEffect, *CombatStep, error) {
 	if targetType != "player" {
 		return nil, nil, nil
 	}
@@ -1695,59 +1697,42 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 		return nil, nil, err
 	}
 
-	// Если у цели нет энергии — наносим бонусный плоский урон.
-	if target.Energy <= 0 {
-		bonusDamage := energyDrainPerHit // используем константу дрейна как величину бонусного урона
-		if bonusDamage <= 0 {
-			return nil, nil, nil
-		}
-		ar := applyFlatDamage(target.Health, bonusDamage)
-		// Сохраняем новый HP цели и обрабатываем возможную смерть
-		saveTargetHealth(instanceID, "player", targetID, attackerID, "player", ar)
-
-		sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
-		targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
-		step := CombatStep{
-			Kind:          "bonus",
-			Source:        &sourceRef,
-			Target:        targetRef,
-			Damage:        ar.Damage,
-			TargetHPAfter: ar.NewHealth,
-		}
-		eff := CombatEffect{
-			Kind:              "energyDrain",
-			Source:            &sourceRef,
-			Target:            &targetRef,
-			Succeeded:         true,
-			BonusDamage:       ar.Damage,
-			EnergyGranted:     0,
-			EnergyDrained:     0,
-			SourceEnergyAfter: attacker.Energy,
-			TargetEnergyAfter: target.Energy,
-		}
-		return &eff, &step, nil
-	}
-
-	// Обычный дренаж энергии
-	drainAmount := energyDrainPerHit
-	if target.Energy < drainAmount {
-		drainAmount = target.Energy
-	}
-	gainAmount := energyDrainGainPerHit
-	if available := attacker.MaxEnergy - attacker.Energy; gainAmount > available {
-		gainAmount = available
-	}
-	if drainAmount <= 0 && gainAmount <= 0 {
-		return nil, nil, nil
-	}
-
 	if ms, ok := game.GetMatchState(instanceID); ok {
 		if !ms.TryUseMysticDrain(attackerID, targetID, energyDrainPerTargetLimit) {
 			return nil, nil, nil
 		}
 	}
 
-	target.Energy -= drainAmount
+	overburn := rollReflexProc(balance.CalculateReflexProcChance(attacker.Agility))
+	burnAmount := energyDrainPerHit
+	restoreAmount := energyDrainGainPerHit
+	if overburn {
+		burnAmount = arcaneOverburnEnergyBurn
+		restoreAmount = arcaneOverburnEnergyGain
+	}
+
+	actualBurn := burnAmount
+	if target.Energy < actualBurn {
+		actualBurn = target.Energy
+	}
+	if actualBurn < 0 {
+		actualBurn = 0
+	}
+	missingBurn := burnAmount - actualBurn
+	if missingBurn < 0 {
+		missingBurn = 0
+	}
+
+	gainAmount := restoreAmount
+	availableEnergy := attacker.MaxEnergy - attacker.Energy
+	if availableEnergy < 0 {
+		availableEnergy = 0
+	}
+	if gainAmount > availableEnergy {
+		gainAmount = availableEnergy
+	}
+
+	target.Energy -= actualBurn
 	attacker.Energy += gainAmount
 
 	if err := Combat.UpdatePlayer(instanceID, target); err != nil {
@@ -1759,16 +1744,55 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 
 	sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
 	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
-	return &CombatEffect{
+	effects := []CombatEffect{{
 		Kind:              "energyDrain",
 		Source:            &sourceRef,
 		Target:            &targetRef,
 		Succeeded:         true,
+		Amount:            actualBurn,
 		EnergyGranted:     gainAmount,
-		EnergyDrained:     drainAmount,
+		EnergyDrained:     actualBurn,
 		SourceEnergyAfter: attacker.Energy,
 		TargetEnergyAfter: target.Energy,
-	}, nil, nil
+	}}
+
+	if overburn {
+		effects = append(effects, CombatEffect{
+			Kind:      "arcaneOverburn",
+			Source:    &sourceRef,
+			Target:    &targetRef,
+			Succeeded: true,
+		})
+	}
+
+	var pureStep *CombatStep
+	if missingBurn > 0 {
+		pureRes := applyFlatDamage(target.Health, missingBurn)
+		actualPureDamage := actualDamageDealt(target.Health, pureRes.NewHealth)
+		pureRes.Damage = actualPureDamage
+		if actualPureDamage > 0 {
+			if ms, ok := game.GetMatchState(instanceID); ok {
+				ms.RecordDamageEvent(attackerID, "player", targetID, actualPureDamage)
+			}
+			saveTargetHealth(instanceID, "player", targetID, attackerID, "player", pureRes)
+			pureStep = &CombatStep{
+				Kind:          "bonus",
+				Source:        &sourceRef,
+				Target:        targetRef,
+				Damage:        actualPureDamage,
+				TargetHPAfter: pureRes.NewHealth,
+			}
+			effects = append(effects, CombatEffect{
+				Kind:      "pureDamage",
+				Source:    &sourceRef,
+				Target:    &targetRef,
+				Amount:    actualPureDamage,
+				Succeeded: true,
+			})
+		}
+	}
+
+	return effects, pureStep, nil
 }
 
 // --- Контратака + логика TURN_PASSED для игрока ----------------------------
@@ -2010,13 +2034,13 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	}
 
 	if atkStats.CharacterType == "mystic" && targetRes.Triggered && finalTargetHP > 0 {
-		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
+		drainEffects, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
 		if err != nil {
 			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)
 			return
 		}
-		if drainEffect != nil {
-			effects = append(effects, *drainEffect)
+		if len(drainEffects) > 0 {
+			effects = append(effects, drainEffects...)
 		}
 		if drainStep != nil {
 			steps = append(steps, *drainStep)
