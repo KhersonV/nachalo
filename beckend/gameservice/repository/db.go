@@ -74,7 +74,9 @@ func RunMigrations() {
 	CreateInventoryTable()
 	CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
+	CreateEquipmentTables()
 	EnsureStaticGameData()
+	EnsureEquipmentSeedData()
 	CreateMatchStatsTable()
 	EnsureMatchStatsWinnerUsersColumn()
 	CreateMatchPlayerStatsTable()
@@ -142,6 +144,12 @@ func SchemaReady() (bool, error) {
 		"inventory_items",
 		"match_monsters",
 		"persisted_artifacts",
+		"item_sets",
+		"item_templates",
+		"item_set_bonuses",
+		"item_instances",
+		"character_equipment",
+		"item_instance_events",
 		"match_stats",
 		"match_player_stats",
 		"player_friends",
@@ -222,6 +230,43 @@ func SchemaReady() (bool, error) {
 		},
 		"player_base_buildings": {
 			"tavern_level",
+		},
+		"item_sets": {
+			"code",
+			"name",
+			"class_restriction",
+			"rarity",
+		},
+		"item_templates": {
+			"code",
+			"set_id",
+			"slot",
+			"item_type",
+			"handedness",
+			"rarity",
+			"class_restriction",
+			"attack_bonus",
+			"agility_bonus",
+			"max_energy_bonus",
+		},
+		"item_instances": {
+			"id",
+			"template_id",
+			"owner_user_id",
+			"current_character_id",
+			"status",
+			"version",
+		},
+		"character_equipment": {
+			"character_id",
+			"item_instance_id",
+			"slot",
+		},
+		"item_instance_events": {
+			"item_instance_id",
+			"event_type",
+			"metadata",
+			"created_at",
 		},
 	}
 
