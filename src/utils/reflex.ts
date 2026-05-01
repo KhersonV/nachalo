@@ -7,11 +7,28 @@ export const BASE_REFLEX_BY_CLASS: Record<ReflexHeroClass, number> = {
     mystic: 5,
 };
 
-export const REFLEX_EFFECT_DESCRIPTIONS: Record<ReflexHeroClass, string> = {
-    guardian: "Reflex gives a chance to block direct attacks.",
-    berserker: "Reflex gives a chance to heal from dealt damage.",
-    ranger: "Reflex gives a chance to land a critical shot.",
-    mystic: "Reflex gives a chance to overburn enemy energy.",
+export type ReflexEffectInfo = {
+    name: string;
+    description: string;
+};
+
+export const CLASS_REFLEX_EFFECTS: Record<ReflexHeroClass, ReflexEffectInfo> = {
+    guardian: {
+        name: "Shield Block",
+        description: "Block incoming direct attacks.",
+    },
+    berserker: {
+        name: "Blood Feast",
+        description: "Heal 50% of dealt damage on proc.",
+    },
+    ranger: {
+        name: "Critical Shot",
+        description: "Critical Shot deals +42% damage.",
+    },
+    mystic: {
+        name: "Arcane Overburn",
+        description: "Arcane Overburn burns 4 energy and restores 3 energy.",
+    },
 };
 
 export function getReflexProcChance(reflex: number): number {
@@ -28,10 +45,19 @@ export function getBaseReflexForHero(heroClassId?: string): number {
 }
 
 export function getReflexEffectDescription(heroClassId?: string): string {
+    return getClassReflexEffectDescription(heroClassId);
+}
+
+export function getClassReflexEffectName(heroClassId?: string): string {
+    const normalized = normalizeReflexHeroClass(heroClassId);
+    return normalized ? CLASS_REFLEX_EFFECTS[normalized].name : "Class effect";
+}
+
+export function getClassReflexEffectDescription(heroClassId?: string): string {
     const normalized = normalizeReflexHeroClass(heroClassId);
     return normalized
-        ? REFLEX_EFFECT_DESCRIPTIONS[normalized]
-        : "Reflex gives a chance to trigger a class-specific combat reaction.";
+        ? CLASS_REFLEX_EFFECTS[normalized].description
+        : "Trigger a class-specific combat reaction.";
 }
 
 function normalizeReflexHeroClass(heroClassId?: string): ReflexHeroClass | null {

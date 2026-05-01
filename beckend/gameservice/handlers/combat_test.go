@@ -1043,6 +1043,28 @@ func TestMysticEnergyDrainNormalBurnsThreeAndRestoresOneWithoutReflexProc(t *tes
 	}
 }
 
+func TestMysticEnergyDrainDoesNotStopAfterTenUses(t *testing.T) {
+	h := newMysticArcaneOverburnHarness(t, "mystic-drain-unlimited", 100, 200)
+	h.rollResult = false
+	attacker := h.players[1]
+	attacker.Energy = 200
+	attacker.MaxEnergy = 200
+	h.players[1] = attacker
+
+	var payload CombatExchangePayload
+	for i := 0; i < 11; i++ {
+		payload = h.attackPlayer()
+		drain, ok := findCombatEffect(payload, "energyDrain")
+		if !ok || drain.EnergyDrained != 3 || drain.Amount != 3 || drain.EnergyGranted != 1 {
+			t.Fatalf("expected Mystic drain on hit %d, got effect=%+v ok=%v", i+1, drain, ok)
+		}
+	}
+
+	if h.players[2].Energy != 67 {
+		t.Fatalf("expected target energy 67 after 11 drains, got %d", h.players[2].Energy)
+	}
+}
+
 func TestMysticArcaneOverburnBurnsFourAndRestoresThree(t *testing.T) {
 	h := newMysticArcaneOverburnHarness(t, "mystic-overburn-full-energy", 10, 50)
 

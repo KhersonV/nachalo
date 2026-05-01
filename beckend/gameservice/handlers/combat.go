@@ -39,7 +39,6 @@ const (
 	energyDrainGainPerHit            = 1
 	arcaneOverburnEnergyBurn         = 4
 	arcaneOverburnEnergyGain         = 3
-	energyDrainPerTargetLimit        = 10
 )
 
 var (
@@ -1695,12 +1694,6 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 	target, err := Combat.GetPlayer(instanceID, targetID)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		if !ms.TryUseMysticDrain(attackerID, targetID, energyDrainPerTargetLimit) {
-			return nil, nil, nil
-		}
 	}
 
 	overburn := rollReflexProc(balance.CalculateReflexProcChance(attacker.Agility))

@@ -7,7 +7,8 @@ import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 import {
-    getReflexEffectDescription,
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
     getReflexProcChance,
 } from "../utils/reflex";
 import styles from "../styles/ProfilePage.module.css";
@@ -817,9 +818,11 @@ export default function ProfilePage() {
             ? viewedProfile.progress
             : profile.progress;
     const activePlayerReflexChance = getReflexProcChance(activePlayer.agility);
-    const activePlayerReflexEffect = getReflexEffectDescription(
+    const activePlayerReflexEffectName = getClassReflexEffectName(
         activePlayer.characterType,
     );
+    const activePlayerReflexEffectDescription =
+        getClassReflexEffectDescription(activePlayer.characterType);
 
     const expPercent = activePlayer.maxExperience
         ? Math.min(
@@ -1453,8 +1456,12 @@ export default function ProfilePage() {
                         <strong>{activePlayer.agility}</strong>
                     </div>
                     <div className={styles.statRow}>
-                        <span>Reflex Chance</span>
+                        <span>Chance</span>
                         <strong>{activePlayerReflexChance}%</strong>
+                    </div>
+                    <div className={styles.statRow}>
+                        <span>Effect</span>
+                        <strong>{activePlayerReflexEffectName}</strong>
                     </div>
                     <div className={styles.statRow}>
                         <span>Sight</span>
@@ -1471,7 +1478,7 @@ export default function ProfilePage() {
                         <strong>{activePlayer.attackRange}</strong>
                     </div>
                     <p className={styles.reflexDescription}>
-                        {activePlayerReflexEffect}
+                        {activePlayerReflexEffectDescription}
                     </p>
                 </article>
             </section>

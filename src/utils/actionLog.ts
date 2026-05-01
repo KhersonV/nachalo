@@ -49,6 +49,100 @@ function getPayloadUserId(value: unknown): number | null {
     return asNumber(rec.user_id ?? rec.userId ?? rec.player_id);
 }
 
+function getCurrentPlayer(state: GameState, currentUserId?: number) {
+    if (!currentUserId) return null;
+    return (
+        state.players.find((player) => player.user_id === currentUserId) ?? null
+    );
+}
+
+function combatRefMatchesCurrentPlayer(
+    ref: CombatTargetRef | undefined,
+    currentUserId?: number,
+) {
+    return !!currentUserId && ref?.type === "player" && ref.id === currentUserId;
+}
+
+export function isCombatExchangeRelevantToCurrentPlayer(
+    payload: CombatExchangePayload,
+    currentUserId?: number,
+) {
+    if (!currentUserId) return false;
+
+    if (
+        payload.attackerType === "player" &&
+        payload.attackerId === currentUserId
+    ) {
+        return true;
+    }
+    if (payload.targetType === "player" && payload.targetId === currentUserId) {
+        return true;
+    }
+
+    const hasRelevantStep = payload.steps.some((step) => {
+        const source =
+            "source" in step
+                ? (step.source as CombatTargetRef | undefined)
+                : undefined;
+        return (
+            combatRefMatchesCurrentPlayer(source, currentUserId) ||
+            combatRefMatchesCurrentPlayer(step.target, currentUserId)
+        );
+    });
+    if (hasRelevantStep) return true;
+
+    return (
+        payload.effects?.some(
+            (effect) => {
+                return (
+                    combatRefMatchesCurrentPlayer(effect.source, currentUserId) ||
+                    combatRefMatchesCurrentPlayer(effect.target, currentUserId)
+                );
+            },
+        ) ?? false
+    );
+}
+
+function payloadMatchesCurrentPlayer(
+    payload: KnownWsPayload,
+    state: GameState,
+    currentUserId?: number,
+) {
+    if (!currentUserId) return false;
+
+    const directIds = [
+        payload.userId,
+        payload.user_id,
+        payload.playerId,
+        payload.player_id,
+        payload.actorId,
+        payload.actor_id,
+        payload.attackerId,
+        payload.attacker_id,
+        payload.defenderId,
+        payload.defender_id,
+        payload.targetId,
+        payload.target_id,
+        payload.ownerId,
+        payload.owner_id,
+        payload.ownerUserId,
+        payload.owner_user_id,
+        getPayloadUserId(payload.updatedPlayer),
+        getPayloadUserId(payload.player),
+    ]
+        .map(asNumber)
+        .filter((value): value is number => value !== null);
+
+    if (directIds.length > 0) {
+        return directIds.includes(currentUserId);
+    }
+
+    const currentPlayer = getCurrentPlayer(state, currentUserId);
+    const payloadPlayerName =
+        typeof payload.playerName === "string" ? payload.playerName.trim() : "";
+    return !!currentPlayer?.name && payloadPlayerName === currentPlayer.name;
+}
+
 function getPlayerName(
     state: GameState,
     userId: number,
@@ -229,8 +323,7 @@ export function buildResourceLogEntry(
     state: GameState,
     currentUserId?: number,
 ): ActionLogEntryInput | null {
-    const updatedPlayerId = getPayloadUserId(payload.updatedPlayer);
-    if (currentUserId && updatedPlayerId && updatedPlayerId !== currentUserId) {
+    if (!payloadMatchesCurrentPlayer(payload, state, currentUserId)) {
         return null;
     }
 
@@ -255,11 +348,12 @@ export function buildBarrelLogEntry(
     eventType: "BARREL_RESOURCE" | "BARREL_ARTIFACT",
     currentUserId?: number,
 ): ActionLogEntryInput | null {
-    const updatedPlayer = payload.updatedPlayer as PlayerState | undefined;
-    const updatedPlayerId = getPayloadUserId(updatedPlayer);
-    if (currentUserId && updatedPlayerId && updatedPlayerId !== currentUserId) {
+    if (!payloadMatchesCurrentPlayer(payload, state, currentUserId)) {
         return null;
     }
+
+    const updatedPlayer = payload.updatedPlayer as PlayerState | undefined;
+    const updatedPlayerId = getPayloadUserId(updatedPlayer);
 
     const previousPlayer = state.players.find(
         (player) => player.user_id === updatedPlayerId,
@@ -288,18 +382,15 @@ export function buildBarrelDamageLogEntry(
 ): ActionLogEntryInput | null {
     const userId = asNumber(payload.userId ?? payload.user_id);
     if (!userId) return null;
+    if (!currentUserId || userId !== currentUserId) return null;
     const amount = asNumber(payload.amount);
     const hp = asNumber(payload.hp);
-    const isCurrentPlayer = currentUserId === userId;
-    const actor = getPlayerName(state, userId, currentUserId);
     const hpText = hp !== null ? ` HP: ${hp}.` : "";
 
     return {
         category: "barrel",
-        tone: isCurrentPlayer ? "danger" : "warning",
-        message: isCurrentPlayer
-            ? `Barrel trap hit you for ${amount ?? "?"} damage.${hpText}`
-            : `${actor} triggered a barrel trap for ${amount ?? "?"} damage.${hpText}`,
+        tone: "danger",
+        message: `Barrel trap hit you for ${amount ?? "?"} damage.${hpText}`,
         dedupeKey: `barrel-damage:${payload.instanceId}:${userId}:${amount ?? "?"}:${hp ?? "?"}`,
     };
 }
@@ -411,28 +502,9 @@ export function buildCombatLogEntries(
     state: GameState,
     currentUserId?: number,
 ): ActionLogEntryInput[] {
-    const involvesCurrentPlayer =
-        !!currentUserId &&
-        (payload.attackerId === currentUserId ||
-            payload.targetId === currentUserId ||
-            payload.steps.some(
-                (step) =>
-                    ("source" in step &&
-                        step.source?.type === "player" &&
-                        step.source.id === currentUserId) ||
-                    (step.target.type === "player" &&
-                        step.target.id === currentUserId),
-            ));
-    const involvesAnyPlayer =
-        payload.attackerType === "player" ||
-        payload.targetType === "player" ||
-        payload.steps.some(
-            (step) =>
-                ("source" in step && step.source?.type === "player") ||
-                step.target.type === "player",
-        );
-
-    if (!involvesCurrentPlayer && !involvesAnyPlayer) return [];
+    if (!isCombatExchangeRelevantToCurrentPlayer(payload, currentUserId)) {
+        return [];
+    }
 
     const entries: ActionLogEntryInput[] = [];
 
@@ -490,6 +562,7 @@ export function buildPlayerDefeatedLogEntry(
 ): ActionLogEntryInput | null {
     const userId = asNumber(payload.userId ?? payload.user_id);
     if (!userId) return null;
+    if (!currentUserId || userId !== currentUserId) return null;
     const actor = getPlayerName(state, userId, currentUserId);
 
     return {
@@ -502,7 +575,13 @@ export function buildPlayerDefeatedLogEntry(
 
 export function buildQuestArtifactLogEntry(
     payload: KnownWsPayload,
-): ActionLogEntryInput {
+    state: GameState,
+    currentUserId?: number,
+): ActionLogEntryInput | null {
+    if (!payloadMatchesCurrentPlayer(payload, state, currentUserId)) {
+        return null;
+    }
+
     const playerName = payload.playerName || "A player";
     return {
         category: "artifact",
@@ -512,7 +591,15 @@ export function buildQuestArtifactLogEntry(
     };
 }
 
-export function buildPortalLogEntry(payload: KnownWsPayload): ActionLogEntryInput {
+export function buildPortalLogEntry(
+    payload: KnownWsPayload,
+    state: GameState,
+    currentUserId?: number,
+): ActionLogEntryInput | null {
+    if (!payloadMatchesCurrentPlayer(payload, state, currentUserId)) {
+        return null;
+    }
+
     const playerName = payload.playerName || "A player";
     return {
         category: "portal",

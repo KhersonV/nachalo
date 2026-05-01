@@ -317,18 +317,12 @@ func (m *MatchState) TryUseBerserkerFury(userID int, limit int) bool {
 	return true
 }
 
-func (m *MatchState) TryUseMysticDrain(attackerID int, targetID int, perTargetLimit int) bool {
+func (m *MatchState) TryUseMysticDrain(attackerID int, targetID int, _ int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.ensureCombatStateLocked()
-	if perTargetLimit <= 0 {
-		return false
-	}
 	key := fmt.Sprintf("%d:%d", attackerID, targetID)
-	if m.MysticDrains[key] >= perTargetLimit {
-		return false
-	}
 	m.MysticDrains[key]++
 	return true
 }

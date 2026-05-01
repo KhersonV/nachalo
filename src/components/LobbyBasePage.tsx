@@ -8,7 +8,8 @@ import LobbyHeader from "./LobbyHeader";
 import type { BaseState, BuildingState, HeroesState, HeroState } from "../types";
 import {
     getBaseReflexForHero,
-    getReflexEffectDescription,
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
     getReflexProcChance,
 } from "../utils/reflex";
 import styles from "../styles/ModeSelectionPage.module.css";
@@ -512,9 +513,10 @@ export default function LobbyBasePage() {
                             const actionDisabled = heroBusyId !== null;
                             const reflex = getBaseReflexForHero(hero.id);
                             const reflexChance = getReflexProcChance(reflex);
-                            const reflexEffect = getReflexEffectDescription(
-                                hero.id,
-                            );
+                            const reflexEffectName =
+                                getClassReflexEffectName(hero.id);
+                            const reflexEffectDescription =
+                                getClassReflexEffectDescription(hero.id);
 
                             return (
                                 <article
@@ -553,13 +555,12 @@ export default function LobbyBasePage() {
 
                                     <div className={styles.tavernHeroMeta}>
                                         <span>Reflex: {reflex}</span>
-                                        <span>
-                                            Reflex Chance: {reflexChance}%
-                                        </span>
+                                        <span>Proc chance: {reflexChance}%</span>
+                                        <span>Effect: {reflexEffectName}</span>
                                     </div>
 
                                     <p className={styles.tavernHeroText}>
-                                        {reflexEffect}
+                                        {reflexEffectDescription}
                                     </p>
 
                                     {!hero.owned && (

@@ -146,8 +146,8 @@ const RegisterPage = () => {
                                     in combat.
                                 </p>
                                 <p className={styles.statLegendRow}>
-                                    Mobility: base movement. Reflex: future
-                                    class-specific reaction chance.
+                                    Mobility: base movement. Reflex: class proc
+                                    chance.
                                 </p>
                                 <p className={styles.statLegendRow}>
                                     Sight: how many tiles are visible around on
@@ -189,6 +189,9 @@ const RegisterPage = () => {
                                         </div>
                                         <p className={styles.avatarDescription}>
                                             {item.description}
+                                        </p>
+                                        <p className={styles.avatarDescription}>
+                                            Effect: {item.reflexEffectName}
                                         </p>
                                         <p className={styles.avatarDescription}>
                                             {item.reflexEffectDescription}

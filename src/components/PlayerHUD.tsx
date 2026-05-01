@@ -6,7 +6,8 @@
 
 import React from "react";
 import {
-    getReflexEffectDescription,
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
     getReflexProcChance,
 } from "../utils/reflex";
 import styles from "../styles/GameController.module.css";
@@ -40,7 +41,9 @@ export default React.memo(function PlayerHUD({
     const attackRangeLabel = isRanged ? (attackRange ?? 1) : 1;
     const reflexChance =
         typeof agility === "number" ? getReflexProcChance(agility) : null;
-    const reflexDescription = getReflexEffectDescription(characterType);
+    const reflexEffectName = getClassReflexEffectName(characterType);
+    const reflexDescription = getClassReflexEffectDescription(characterType);
+    const reflexTitle = `Effect: ${reflexEffectName}. ${reflexDescription}`;
 
     return (
         <div className={styles.hud}>
@@ -77,26 +80,15 @@ export default React.memo(function PlayerHUD({
                 <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>
             {typeof agility === "number" && (
-                <>
-                    <div
-                        className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}
-                        title={reflexDescription}
-                    >
-                        <span className={styles.hudMetaLabel}>Reflex</span>
-                        <span className={styles.hudMetaValue}>{agility}</span>
-                    </div>
-                    <div
-                        className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}
-                        title={reflexDescription}
-                    >
-                        <span className={styles.hudMetaLabel}>
-                            Reflex Chance
-                        </span>
-                        <span className={styles.hudMetaValue}>
-                            {reflexChance}%
-                        </span>
-                    </div>
-                </>
+                <div
+                    className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}
+                    title={reflexTitle}
+                >
+                    <span className={styles.hudMetaLabel}>Reflex</span>
+                    <span className={styles.hudMetaValue}>
+                        {agility} · {reflexChance}%
+                    </span>
+                </div>
             )}
             {typeof groupId === "number" && (
                 <div className={styles.hudMetaRow}>

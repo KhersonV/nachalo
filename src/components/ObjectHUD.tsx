@@ -6,7 +6,8 @@
 
 import React from "react";
 import {
-    getReflexEffectDescription,
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
     getReflexProcChance,
 } from "../utils/reflex";
 import styles from "../styles/ObjectHUD.module.css";
@@ -92,9 +93,13 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
         (structureType === "scout_tower" && sightRange !== undefined);
     const reflexChance =
         typeof agility === "number" ? getReflexProcChance(agility) : null;
-    const reflexEffect =
+    const reflexEffectName =
         type === "player" && typeof agility === "number"
-            ? getReflexEffectDescription(characterType)
+            ? getClassReflexEffectName(characterType)
+            : "";
+    const reflexEffectDescription =
+        type === "player" && typeof agility === "number"
+            ? getClassReflexEffectDescription(characterType)
             : "";
 
     return (
@@ -166,26 +171,6 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                             </span>
                         </div>
                     )}
-                    {agility !== undefined && (
-                        <div className={styles.smallStat}>
-                            <span className={styles.smallStatLabel}>
-                                Reflex
-                            </span>
-                            <span className={styles.smallStatValue}>
-                                {agility}
-                            </span>
-                        </div>
-                    )}
-                    {reflexChance !== null && (
-                        <div className={styles.smallStat}>
-                            <span className={styles.smallStatLabel}>
-                                Reflex Chance
-                            </span>
-                            <span className={styles.smallStatValue}>
-                                {reflexChance}%
-                            </span>
-                        </div>
-                    )}
                     {structureType === "scout_tower" &&
                         sightRange !== undefined && (
                             <div className={styles.smallStat}>
@@ -200,7 +185,6 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                 </div>
             )}
 
-            {reflexEffect && <p className={styles.details}>{reflexEffect}</p>}
 
             {onProfileClick && (
                 <button className={styles.profileBtn} onClick={onProfileClick}>

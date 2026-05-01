@@ -299,7 +299,9 @@ export function createWsHandlers(
             router.replace("/mode");
         },
         QUEST_ARTIFACT_FOUND: (payload: any) => {
-            dispatch(addActionLogEntry(buildQuestArtifactLogEntry(payload)));
+            addLogEntryFromState((gameState) =>
+                buildQuestArtifactLogEntry(payload, gameState, currentUserId),
+            );
             dispatch(
                 setQuestFoundNotification({
                     eventType: "QUEST_ARTIFACT_FOUND",
@@ -312,7 +314,9 @@ export function createWsHandlers(
             );
         },
         PLAYER_LEFT_PORTAL: (payload: any) => {
-            dispatch(addActionLogEntry(buildPortalLogEntry(payload)));
+            addLogEntryFromState((gameState) =>
+                buildPortalLogEntry(payload, gameState, currentUserId),
+            );
             dispatch(
                 setQuestFoundNotification({
                     eventType: "PLAYER_LEFT_PORTAL",
