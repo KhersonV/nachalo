@@ -1,0 +1,426 @@
+.pageRoot {
+    min-height: 100vh;
+    padding: var(--lobby-page-padding);
+    color: #eefbff;
+    background:
+        radial-gradient(circle at 8% 0%, rgba(126, 228, 255, 0.1), transparent 36%),
+        linear-gradient(rgba(9, 28, 44, 0.96), rgba(5, 13, 22, 0.94));
+    box-sizing: border-box;
+}
+
+.container {
+    width: 100%;
+    max-width: var(--lobby-page-max-width);
+    margin: 0 auto;
+    display: grid;
+    gap: 1rem;
+}
+
+.pageHeader,
+.panel,
+.errorPanel,
+.statePanel {
+    border: 1px solid rgba(126, 228, 255, 0.24);
+    border-radius: 8px;
+    background: linear-gradient(rgba(15, 40, 59, 0.88), rgba(7, 20, 33, 0.9));
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.pageHeader {
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.pageHeader h1,
+.panelHeader h2,
+.panelHeaderCompact h2,
+.itemText h3,
+.itemTitleRow h3 {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.pageHeader h1 {
+    font-size: 1.35rem;
+}
+
+.pageHeader p {
+    margin: 0.25rem 0 0;
+    color: rgba(238, 251, 255, 0.76);
+}
+
+.topGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.8fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.panel {
+    padding: 1rem;
+    min-width: 0;
+}
+
+.panelHeader,
+.panelHeaderCompact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.8rem;
+}
+
+.panelHeader h2,
+.panelHeaderCompact h2 {
+    font-size: 1.05rem;
+}
+
+.panelHeader span {
+    color: rgba(238, 251, 255, 0.72);
+    font-size: 0.86rem;
+}
+
+.panelHeaderCompact {
+    margin-top: 1rem;
+}
+
+.slotsGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.slotCard,
+.inventoryCard,
+.setBonusCard {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: rgba(16, 36, 53, 0.72);
+    min-width: 0;
+}
+
+.slotCard {
+    min-height: 178px;
+    padding: 0.75rem;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 0.65rem;
+}
+
+.slotCardBlocked {
+    border-color: rgba(252, 211, 77, 0.42);
+    background: rgba(63, 48, 18, 0.42);
+}
+
+.slotHeader,
+.itemTitleRow,
+.setBonusTitle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.slotLabel {
+    font-weight: 800;
+    color: #eefbff;
+}
+
+.rarityBadge {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 0.12rem 0.46rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #06131d;
+    background: #b8f7c4;
+}
+
+.rarity_green {
+    background: #9ff2b5;
+}
+
+.rarity_blue {
+    background: #91d8ff;
+}
+
+.rarity_purple {
+    background: #d8b4fe;
+}
+
+.rarity_orange {
+    background: #fdba74;
+}
+
+.equippedBody {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 0.65rem;
+    align-content: start;
+}
+
+.equippedBody .secondaryButton {
+    grid-column: 1 / -1;
+    width: 100%;
+}
+
+.itemImageWrap {
+    position: relative;
+    width: 58px;
+    height: 58px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(rgba(126, 228, 255, 0.18), rgba(42, 58, 78, 0.58));
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.itemImageFallback {
+    font-size: 0.86rem;
+    font-weight: 800;
+    color: rgba(238, 251, 255, 0.72);
+}
+
+.itemImage {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.itemText {
+    min-width: 0;
+    display: grid;
+    gap: 0.42rem;
+    align-content: start;
+}
+
+.itemText h3,
+.itemTitleRow h3 {
+    min-width: 0;
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+}
+
+.itemMeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    color: rgba(238, 251, 255, 0.72);
+    font-size: 0.76rem;
+    line-height: 1.25;
+}
+
+.itemMeta span {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    padding: 0.12rem 0.42rem;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.bonusList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+}
+
+.bonusPill {
+    border-radius: 999px;
+    padding: 0.14rem 0.45rem;
+    background: rgba(92, 213, 157, 0.14);
+    border: 1px solid rgba(92, 213, 157, 0.3);
+    color: #baf7d2;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.emptyBonus,
+.emptySlot,
+.emptyState,
+.statePanel {
+    color: rgba(238, 251, 255, 0.68);
+}
+
+.emptySlot {
+    min-height: 108px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    border: 1px dashed rgba(238, 251, 255, 0.18);
+    border-radius: 8px;
+    padding: 0.75rem;
+    line-height: 1.35;
+}
+
+.primaryButton,
+.secondaryButton,
+.devButton {
+    border-radius: 8px;
+    padding: 0.55rem 0.8rem;
+    cursor: pointer;
+    font-weight: 800;
+    border: 1px solid transparent;
+    transition:
+        transform 0.15s ease,
+        opacity 0.15s ease,
+        border-color 0.15s ease;
+}
+
+.primaryButton {
+    color: #052531;
+    background: linear-gradient(rgba(126, 228, 255, 0.96), rgba(18, 162, 205, 0.92));
+}
+
+.secondaryButton {
+    color: #eefbff;
+    background: rgba(116, 148, 169, 0.16);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+.devButton {
+    color: #1f1602;
+    background: linear-gradient(rgba(252, 211, 77, 0.96), rgba(245, 158, 11, 0.92));
+}
+
+.primaryButton:hover,
+.secondaryButton:hover,
+.devButton:hover {
+    transform: translateY(-1px);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.devButton:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.statsList {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.statRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.52rem 0.65rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.statNumbers {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+}
+
+.statArrow {
+    color: rgba(238, 251, 255, 0.48);
+}
+
+.statChanged {
+    color: #9ff2b5;
+}
+
+.setBonusList {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.setBonusCard {
+    padding: 0.7rem;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.setBonusTitle {
+    font-weight: 800;
+}
+
+.setBonusTitle span:last-child,
+.setBonusMeta {
+    color: #7ee4ff;
+    font-size: 0.8rem;
+}
+
+.setBonusCard p {
+    margin: 0;
+    color: rgba(238, 251, 255, 0.78);
+    line-height: 1.35;
+}
+
+.inventoryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+}
+
+.inventoryCard {
+    padding: 0.8rem;
+    display: grid;
+    gap: 0.7rem;
+    align-content: start;
+}
+
+.inventoryItemTop {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 0.65rem;
+    align-items: start;
+}
+
+.emptyState,
+.statePanel,
+.errorPanel {
+    padding: 1rem;
+}
+
+.errorPanel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.42);
+    background: rgba(70, 22, 31, 0.72);
+}
+
+@media (max-width: 980px) {
+    .topGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .pageRoot {
+        padding: 0.75rem;
+    }
+
+    .slotsGrid,
+    .inventoryGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .pageHeader,
+    .errorPanel {
+        align-items: stretch;
+    }
+
+    .devButton,
+    .errorPanel .secondaryButton {
+        width: 100%;
+    }
+}

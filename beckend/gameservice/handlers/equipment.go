@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"strings"
 
 	"gameservice/middleware"
 	"gameservice/repository"
@@ -31,6 +33,20 @@ type equipItemRequest struct {
 type unequipItemRequest struct {
 	CharacterID int    `json:"characterId"`
 	Slot        string `json:"slot"`
+}
+
+var sageclothDevGrantTemplateCodes = []string{
+	"sagecloth_staff",
+	"sagecloth_jacket",
+	"sagecloth_pants",
+	"sagecloth_boots",
+	"sagecloth_gloves",
+	"sagecloth_hood",
+}
+
+func equipmentDevGrantEnabled() bool {
+	return strings.EqualFold(os.Getenv("EQUIPMENT_DEV_GRANT_ENABLED"), "true") ||
+		strings.EqualFold(os.Getenv("APP_ENV"), "development")
 }
 
 func buildEquipmentStateResponse(userID int) (*equipmentStateResponse, error) {
@@ -111,6 +127,36 @@ func GetEquipmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	MarkUserHTTPActive(userID)
+
+	state, err := buildEquipmentStateResponse(userID)
+	if err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
+func GrantSageclothDevHandler(w http.ResponseWriter, r *http.Request) {
+	if !equipmentDevGrantEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID == 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	MarkUserHTTPActive(userID)
+
+	for _, templateCode := range sageclothDevGrantTemplateCodes {
+		if _, err := repository.GrantItemInstanceToUser(userID, templateCode, "admin"); err != nil {
+			writeEquipmentError(w, err)
+			return
+		}
+	}
 
 	state, err := buildEquipmentStateResponse(userID)
 	if err != nil {
