@@ -30,6 +30,8 @@ function categoryLabel(category: ActionLogEntry["category"]) {
             return "Counter";
         case "artifact":
             return "Artifact";
+        case "equipment":
+            return "Equipment";
         case "resource":
             return "Loot";
         case "barrel":

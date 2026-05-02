@@ -63,6 +63,7 @@ export type {
     CombatActorSnapshot,
     CombatStep,
     CombatEffect,
+    EquipmentDrop,
     CombatExchangePayload,
     QueuedCombatExchange,
     ActiveAttackMotion,

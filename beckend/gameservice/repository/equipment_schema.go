@@ -184,12 +184,12 @@ func EnsureEquipmentSeedData() {
 		items AS (
 			SELECT *
 			FROM (VALUES
-				('sagecloth_staff', 'Sagecloth Staff', 'main_hand', 'staff', 'two_hand', 'green', 'mystic', '/equipment/mystic/sagecloth/staff.webp', 1, 0, 0, 1, 0, 4, 0, 0),
-				('sagecloth_jacket', 'Sagecloth Jacket', 'chest', 'chest', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/jacket.webp', 0, 1, 0, 0, 6, 3, 0, 0),
-				('sagecloth_pants', 'Sagecloth Pants', 'pants', 'pants', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/pants.webp', 0, 0, 0, 1, 3, 3, 0, 0),
-				('sagecloth_boots', 'Sagecloth Boots', 'boots', 'boots', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/boots.webp', 0, 0, 1, 0, 0, 2, 0, 0),
-				('sagecloth_gloves', 'Sagecloth Gloves', 'gloves', 'gloves', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/gloves.webp', 1, 0, 0, 0, 0, 3, 0, 0),
-				('sagecloth_hood', 'Sagecloth Hood', 'helmet', 'helmet', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/hood.webp', 0, 1, 0, 1, 2, 3, 0, 0)
+				('sagecloth_staff', 'Sagecloth Staff', 'main_hand', 'staff', 'two_hand', 'green', 'mystic', '/equipment/mystic/sagecloth/staff.png', 1, 0, 0, 1, 0, 4, 0, 0),
+				('sagecloth_jacket', 'Sagecloth Jacket', 'chest', 'chest', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/jacket.png', 0, 1, 0, 0, 6, 3, 0, 0),
+				('sagecloth_pants', 'Sagecloth Pants', 'pants', 'pants', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/pants.png', 0, 0, 0, 1, 3, 3, 0, 0),
+				('sagecloth_boots', 'Sagecloth Boots', 'boots', 'boots', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/boots.png', 0, 0, 1, 0, 0, 2, 0, 0),
+				('sagecloth_gloves', 'Sagecloth Gloves', 'gloves', 'gloves', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/gloves.png', 1, 0, 0, 0, 0, 3, 0, 0),
+				('sagecloth_hood', 'Sagecloth Hood', 'helmet', 'helmet', 'none', 'green', 'mystic', '/equipment/mystic/sagecloth/hood.png', 0, 1, 0, 1, 2, 3, 0, 0)
 			) AS v(code, name, slot, item_type, handedness, rarity, class_restriction, image_url, attack_bonus, defense_bonus, mobility_bonus, agility_bonus, max_health_bonus, max_energy_bonus, sight_range_bonus, attack_range_bonus)
 		)
 		INSERT INTO item_templates (

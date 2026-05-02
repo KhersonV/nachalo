@@ -91,6 +91,13 @@ export function isCombatExchangeRelevantToCurrentPlayer(
     });
     if (hasRelevantStep) return true;
 
+    if (
+        payload.drops?.some((drop) => drop.ownerUserId === currentUserId) ??
+        false
+    ) {
+        return true;
+    }
+
     return (
         payload.effects?.some(
             (effect) => {
@@ -507,6 +514,7 @@ export function buildCombatLogEntries(
     }
 
     const entries: ActionLogEntryInput[] = [];
+    const dropEntries: ActionLogEntryInput[] = [];
 
     payload.steps.forEach((step, index) => {
         const damage = fieldNumber(step, "damage", "Damage");
@@ -552,7 +560,24 @@ export function buildCombatLogEntries(
         });
     });
 
-    return entries.slice(0, 6);
+    payload.drops?.forEach((drop, index) => {
+        if (!currentUserId || drop.ownerUserId !== currentUserId) return;
+        const itemName = formatItemName(
+            drop.name || drop.templateCode,
+            "equipment",
+        );
+        dropEntries.push({
+            category: "equipment",
+            tone: "success",
+            message: `Loot found: ${itemName}.`,
+            dedupeKey: `equipment-drop:${payload.instanceId}:${drop.instanceId || index}`,
+        });
+    });
+
+    return [
+        ...entries.slice(0, Math.max(0, 6 - dropEntries.length)),
+        ...dropEntries,
+    ].slice(0, 6);
 }
 
 export function buildPlayerDefeatedLogEntry(

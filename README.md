@@ -157,10 +157,91 @@ For manual runs without Docker Compose, create the matching databases/users your
 - Game:
     - `POST /game/createMatch`
     - `GET /game/match?instance_id=...`
+    - `GET /game/equipment`
+    - `POST /game/equipment/equip`
+    - `POST /game/equipment/unequip`
+    - `POST /game/equipment/grant-sagecloth-dev` (local/dev only)
+    - `POST /game/equipment/grant-item-dev` (local/dev only)
     - `POST /game/{instance_id}/player/{id}/move`
     - `POST /game/attack`
     - `POST /game/endTurn`
     - `GET /ws` (WebSocket)
+
+## Equipment Local Testing
+
+The equipment dev grant endpoints are only available when the game service is
+started with one of these local/testing flags:
+
+```bash
+EQUIPMENT_DEV_GRANT_ENABLED=true
+# or
+APP_ENV=development
+```
+
+Show the frontend test button with:
+
+```bash
+NEXT_PUBLIC_EQUIPMENT_DEV_GRANT_ENABLED=true
+```
+
+For local drop testing, force monster equipment drops by starting the game
+service with:
+
+```bash
+EQUIPMENT_DROP_CHANCE_OVERRIDE=100
+```
+
+The override accepts `0` to `100`, uses the default `15%` when empty, and is
+honored only in local/dev mode (`APP_ENV=development` or
+`EQUIPMENT_DEV_GRANT_ENABLED=true`).
+
+`TOKEN` is the auth JWT from login/localStorage.
+
+Grant the full Mystic Sagecloth Set:
+
+```bash
+curl -i -X POST "http://localhost/game/equipment/grant-sagecloth-dev" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Grant one item by template code:
+
+```bash
+curl -i -X POST "http://localhost/game/equipment/grant-item-dev" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"templateCode":"sagecloth_staff"}'
+```
+
+Other Sagecloth template codes:
+
+```bash
+sagecloth_jacket
+sagecloth_pants
+sagecloth_boots
+sagecloth_gloves
+sagecloth_hood
+```
+
+Next equipment-drop stage:
+
+- when a monster dies, roll equipment drop chance;
+- create an `item_instances` row using the selected template code;
+- set `owner_user_id` to the killer user id;
+- use `source = 'drop'`;
+- write `item_instance_events.created`;
+- later show dropped items on the match result screen.
+
+Manual monster-drop test:
+
+1. Set `EQUIPMENT_DEV_GRANT_ENABLED=true`.
+2. Optionally set `EQUIPMENT_DROP_CHANCE_OVERRIDE=100`.
+3. Start the app and log in.
+4. Start PvE and kill monsters.
+5. If a drop happens, the action log should show `Loot found: ...`.
+6. Open `/equipment`.
+7. Confirm the dropped item appears in inventory.
+8. Equip the dropped item and confirm stats change.
 
 ## Tests
 

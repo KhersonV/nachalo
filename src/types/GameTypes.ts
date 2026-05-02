@@ -124,6 +124,7 @@ export type ActionLogCategory =
     | "resource"
     | "barrel"
     | "artifact"
+    | "equipment"
     | "portal"
     | "match"
     | "turn"

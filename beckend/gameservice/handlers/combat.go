@@ -101,15 +101,16 @@ type CombatEffect struct {
 
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
 type CombatExchangePayload struct {
-	InstanceID   string          `json:"instanceId"`
-	ExchangeID   string          `json:"exchangeId"`
-	AttackerID   int             `json:"attackerId"`
-	AttackerType CombatActorType `json:"attackerType"`
-	TargetID     int             `json:"targetId"`
-	TargetType   CombatActorType `json:"targetType"`
-	AttackStyle  AttackStyle     `json:"attackStyle"`
-	Steps        []CombatStep    `json:"steps"`
-	Effects      []CombatEffect  `json:"effects,omitempty"`
+	InstanceID   string                 `json:"instanceId"`
+	ExchangeID   string                 `json:"exchangeId"`
+	AttackerID   int                    `json:"attackerId"`
+	AttackerType CombatActorType        `json:"attackerType"`
+	TargetID     int                    `json:"targetId"`
+	TargetType   CombatActorType        `json:"targetType"`
+	AttackStyle  AttackStyle            `json:"attackStyle"`
+	Steps        []CombatStep           `json:"steps"`
+	Effects      []CombatEffect         `json:"effects,omitempty"`
+	Drops        []EquipmentDropPayload `json:"drops,omitempty"`
 }
 
 // CombatExchangeMessage — сообщение WS-события боевого обмена
@@ -1023,19 +1024,19 @@ func saveTargetHealth(
 	attackerID int,
 	attackerType string,
 	ar attackResult,
-) {
+) bool {
 	log.Printf("[saveTargetHealth] Called for %s #%d (new hp: %d), attacker: %d", targetType, targetID, ar.NewHealth, attackerID)
 
 	if targetType == "player" {
 		p, err := Combat.GetPlayer(instanceID, targetID)
 		if err != nil {
 			log.Printf("[saveTargetHealth] load player error: %v", err)
-			return
+			return false
 		}
 		log.Printf("[saveTargetHealth] player %d HP before: %d, after: %d", targetID, p.Health, ar.NewHealth)
 		if p.Health <= 0 {
 			log.Printf("[saveTargetHealth] player %d is already dead, skipping duplicate death handling.", targetID)
-			return
+			return false
 		}
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
@@ -1049,10 +1050,11 @@ func saveTargetHealth(
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] player %d death was already counted, skipping duplicate handling.", targetID)
-				return
+				return false
 			}
 			handlePlayerDeath(instanceID, p, attackerID, attackerType == "player")
 			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
+			return true
 		}
 	} else {
 		// 1. Сохраняем HP в БД
@@ -1060,19 +1062,19 @@ func saveTargetHealth(
 		err := Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
 		if err != nil {
 			log.Printf("[saveTargetHealth] UpdateMonsterHealth error: %v", err)
-			return
+			return false
 		}
 
 		// 2. Грузим монстра из БД (HP теперь актуален)
 		m, err := Combat.GetMonster(instanceID, targetID)
 		if err != nil || m == nil {
 			log.Printf("[saveTargetHealth] GetMonster error: %v", err)
-			return
+			return false
 		}
 
 		if _, ok, err := updateMonsterCellHealth(instanceID, m, ar.NewHealth); err != nil {
 			log.Printf("[saveTargetHealth] updateMonsterCellHealth error: %v", err)
-			return
+			return false
 		} else if ok {
 			log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
 			// Monster HP is now synced to clients via COMBAT_EXCHANGE.
@@ -1091,11 +1093,13 @@ func saveTargetHealth(
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] monster %d death was already counted, skipping duplicate handling.", targetID)
-				return
+				return false
 			}
 			handleMonsterDeath(instanceID, targetID)
+			return true
 		}
 	}
+	return false
 }
 
 func findMonsterCellIndex(cells []game.FullCell, monster *repository.MatchMonster) int {
@@ -1959,6 +1963,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	effects := make([]CombatEffect, 0, 4)
 	var pushedCells []game.FullCell
 	var pushedPlayerPosition *CombatPoint
+	targetDeathProcessed := false
 
 	preArmorBreak := game.ArmorBreakState{}
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
@@ -2002,7 +2007,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
 	}
 	if targetRes.Triggered {
-		saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+		targetDeathProcessed = saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
 	}
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
@@ -2109,7 +2114,9 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 				if ms, ok := game.GetMatchState(req.InstanceID); ok && bonusRes.Damage > 0 {
 					ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, bonusRes.Damage)
 				}
-				saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes)
+				if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes) {
+					targetDeathProcessed = true
+				}
 				finalTargetHP = bonusRes.NewHealth
 				steps = append(steps, CombatStep{
 					Kind:          "bonus",
@@ -2186,7 +2193,9 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok && followUpRes.Damage > 0 {
 				ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, followUpRes.Damage)
 			}
-			saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes)
+			if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes) {
+				targetDeathProcessed = true
+			}
 			finalTargetHP = followUpRes.NewHealth
 			steps = append(steps, CombatStep{
 				Kind:          "followup",
@@ -2211,6 +2220,15 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		})
 	}
 
+	var drops []EquipmentDropPayload
+	if req.AttackerType == "player" && req.TargetType == "monster" && targetDeathProcessed {
+		var err error
+		drops, err = maybeGrantMonsterEquipmentDrop(req.AttackerID)
+		if err != nil {
+			log.Printf("[equipment_drop] failed to grant drop: instance=%s killer=%d monster=%d err=%v", req.InstanceID, req.AttackerID, req.TargetID, err)
+		}
+	}
+
 	// 8) HTTP-ответ
 	resp := map[string]interface{}{
 		"damage_to_target": targetRes.Damage,
@@ -2219,23 +2237,28 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		"new_attacker_hp":  finalAttackerHP,
 		"attack_mode":      mode,
 	}
+	if len(drops) > 0 {
+		resp["drops"] = drops
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 
 	// 9) WS: COMBAT_EXCHANGE
+	payload := buildCombatExchangePayload(
+		req.InstanceID,
+		req.AttackerType,
+		req.AttackerID,
+		req.TargetType,
+		req.TargetID,
+		atkStats,
+		mode,
+		steps,
+		effects,
+	)
+	payload.Drops = drops
 	msg := CombatExchangeMessage{
-		Type: "COMBAT_EXCHANGE",
-		Payload: buildCombatExchangePayload(
-			req.InstanceID,
-			req.AttackerType,
-			req.AttackerID,
-			req.TargetType,
-			req.TargetID,
-			atkStats,
-			mode,
-			steps,
-			effects,
-		),
+		Type:    "COMBAT_EXCHANGE",
+		Payload: payload,
 	}
 
 	data, _ := json.Marshal(msg)

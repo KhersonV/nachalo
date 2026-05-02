@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -33,6 +34,10 @@ type equipItemRequest struct {
 type unequipItemRequest struct {
 	CharacterID int    `json:"characterId"`
 	Slot        string `json:"slot"`
+}
+
+type grantItemDevRequest struct {
+	TemplateCode string `json:"templateCode"`
 }
 
 var sageclothDevGrantTemplateCodes = []string{
@@ -86,14 +91,20 @@ func writeEquipmentError(w http.ResponseWriter, err error) {
 		errors.Is(err, repository.ErrEquipmentCharacterNotFound):
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "character_not_found"})
+	case errors.Is(err, repository.ErrEquipmentCharacterNotOwned):
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "character_not_owned"})
 	case errors.Is(err, repository.ErrEquipmentItemNotFound):
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_not_found"})
+	case errors.Is(err, repository.ErrEquipmentItemNotOwned):
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_not_owned"})
 	case errors.Is(err, repository.ErrEquipmentInvalidSlot):
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_slot"})
 	case errors.Is(err, repository.ErrEquipmentClassRestricted):
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "class_restricted"})
 	case errors.Is(err, repository.ErrEquipmentLevelTooLow):
 		w.WriteHeader(http.StatusBadRequest)
@@ -103,16 +114,25 @@ func writeEquipmentError(w http.ResponseWriter, err error) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_item_template"})
 	case errors.Is(err, repository.ErrEquipmentOffHandBlocked):
-		w.WriteHeader(http.StatusConflict)
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "off_hand_blocked_by_two_handed_weapon"})
 	case errors.Is(err, repository.ErrEquipmentItemLocked):
-		w.WriteHeader(http.StatusConflict)
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_locked"})
+	case errors.Is(err, repository.ErrEquipmentItemListed):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_listed"})
+	case errors.Is(err, repository.ErrEquipmentItemTradeLocked):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_trade_locked"})
+	case errors.Is(err, repository.ErrEquipmentItemDeleted):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_deleted"})
 	case errors.Is(err, repository.ErrEquipmentItemUnavailable):
-		w.WriteHeader(http.StatusConflict)
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_unavailable"})
 	case errors.Is(err, repository.ErrEquipmentItemNotInInventory):
-		w.WriteHeader(http.StatusConflict)
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_not_in_inventory"})
 	default:
 		w.WriteHeader(http.StatusInternalServerError)
@@ -168,6 +188,47 @@ func GrantSageclothDevHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(state)
 }
 
+// GrantItemDevHandler is intentionally dev-only. It exists for local equipment
+// testing before real drop/shop/crafting flows are wired into gameplay.
+func GrantItemDevHandler(w http.ResponseWriter, r *http.Request) {
+	if !equipmentDevGrantEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID == 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	MarkUserHTTPActive(userID)
+
+	var req grantItemDevRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	req.TemplateCode = strings.TrimSpace(req.TemplateCode)
+	if req.TemplateCode == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, err := repository.GrantItemInstanceToUser(userID, req.TemplateCode, "admin"); err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	state, err := buildEquipmentStateResponse(userID)
+	if err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
 func EquipItemHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok || userID == 0 {
@@ -187,12 +248,14 @@ func EquipItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := repository.EquipItemToCharacter(userID, req.CharacterID, req.ItemInstanceID); err != nil {
+		log.Printf("equipment equip failed: userID=%d characterID=%d itemInstanceID=%s err=%v", userID, req.CharacterID, req.ItemInstanceID, err)
 		writeEquipmentError(w, err)
 		return
 	}
 
 	state, err := buildEquipmentStateResponse(userID)
 	if err != nil {
+		log.Printf("equipment equip failed: userID=%d characterID=%d itemInstanceID=%s err=%v", userID, req.CharacterID, req.ItemInstanceID, err)
 		writeEquipmentError(w, err)
 		return
 	}

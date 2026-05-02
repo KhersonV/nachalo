@@ -707,6 +707,12 @@ export default function LobbyBasePage() {
             <div className={styles.buttonGroup}>
                 <button
                     className={styles.queueButton}
+                    onClick={() => router.push("/equipment")}
+                >
+                    Equipment
+                </button>
+                <button
+                    className={styles.queueButton}
                     onClick={() => router.push("/mode")}
                 >
                     Back to Modes

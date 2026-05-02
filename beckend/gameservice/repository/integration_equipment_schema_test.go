@@ -93,7 +93,7 @@ func TestEquipmentSchemaAndSageclothSeed(t *testing.T) {
 	if slot != "main_hand" || itemType != "staff" || handedness != "two_hand" || classRestriction != "mystic" {
 		t.Fatalf("unexpected sagecloth staff equipment shape: slot=%s type=%s handedness=%s class=%s", slot, itemType, handedness, classRestriction)
 	}
-	if imageURL != "/equipment/mystic/sagecloth/staff.webp" || attackBonus != 1 || agilityBonus != 1 || maxEnergyBonus != 4 {
+	if imageURL != "/equipment/mystic/sagecloth/staff.png" || attackBonus != 1 || agilityBonus != 1 || maxEnergyBonus != 4 {
 		t.Fatalf("unexpected sagecloth staff bonuses/image: image=%s attack=%d agility=%d energy=%d", imageURL, attackBonus, agilityBonus, maxEnergyBonus)
 	}
 

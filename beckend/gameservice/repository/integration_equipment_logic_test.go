@@ -89,6 +89,76 @@ func TestGrantEquipmentItemInstanceToUser(t *testing.T) {
 	}
 }
 
+func TestEquipSageclothHoodWithNullCurrentCharacterID(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "mystic")
+	characterID := selectedCharacterIDForEquipmentTest(t, userID)
+
+	hood := grantEquipmentForTest(t, userID, "sagecloth_hood")
+	var currentCharacterIDBefore sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT current_character_id
+		FROM item_instances
+		WHERE id = $1::uuid
+	`, hood.InstanceID).Scan(&currentCharacterIDBefore); err != nil {
+		t.Fatalf("select current_character_id before equip: %v", err)
+	}
+	if currentCharacterIDBefore.Valid {
+		t.Fatalf("expected current_character_id to start NULL, got %d", currentCharacterIDBefore.Int64)
+	}
+
+	if err := repository.EquipItemToCharacter(userID, characterID, hood.InstanceID); err != nil {
+		t.Fatalf("EquipItemToCharacter hood: %v", err)
+	}
+
+	var equippedRows int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM character_equipment
+		WHERE character_id = $1
+		  AND item_instance_id = $2::uuid
+		  AND slot = 'helmet'
+	`, characterID, hood.InstanceID).Scan(&equippedRows); err != nil {
+		t.Fatalf("count helmet equipment row: %v", err)
+	}
+	if equippedRows != 1 {
+		t.Fatalf("expected one helmet equipment row, got %d", equippedRows)
+	}
+
+	var status string
+	var currentCharacterIDAfter sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT status, current_character_id
+		FROM item_instances
+		WHERE id = $1::uuid
+	`, hood.InstanceID).Scan(&status, &currentCharacterIDAfter); err != nil {
+		t.Fatalf("select hood instance after equip: %v", err)
+	}
+	if status != "equipped" || !currentCharacterIDAfter.Valid || int(currentCharacterIDAfter.Int64) != characterID {
+		t.Fatalf("expected equipped hood on character %d, status=%s current_character_id=%v", characterID, status, currentCharacterIDAfter)
+	}
+
+	var equippedEvents int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instance_events
+		WHERE item_instance_id = $1::uuid
+		  AND event_type = 'equipped'
+		  AND to_user_id = $2
+		  AND to_character_id = $3
+	`, hood.InstanceID, userID, characterID).Scan(&equippedEvents); err != nil {
+		t.Fatalf("count equipped events: %v", err)
+	}
+	if equippedEvents != 1 {
+		t.Fatalf("expected one equipped event, got %d", equippedEvents)
+	}
+}
+
 func TestEquipTwoHandedStaffBlocksOffHandAndPreventsDuplicateEquip(t *testing.T) {
 	db := openCharacterProfileTestDB(t)
 	t.Cleanup(func() {

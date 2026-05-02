@@ -120,7 +120,7 @@ func selectPlayerCharacterByIDTx(tx *sql.Tx, userID int, characterID int) (*Play
 			sight_range,
 			is_ranged,
 			attack_range,
-			source
+			COALESCE(source, '')
 		FROM player_characters
 		WHERE user_id = $1
 		  AND id = $2
@@ -146,7 +146,7 @@ func selectPlayerCharacterByClassTx(tx *sql.Tx, userID int, heroClassID string) 
 			sight_range,
 			is_ranged,
 			attack_range,
-			source
+			COALESCE(source, '')
 		FROM player_characters
 		WHERE user_id = $1
 		  AND hero_class_id = $2
@@ -201,7 +201,7 @@ func CreatePlayerCharacterTx(tx *sql.Tx, userID int, heroClassID string, source 
 			sight_range,
 			is_ranged,
 			attack_range,
-			source
+			COALESCE(source, '')
 	`, userID, heroClassID, meta.Image, maxExp, stats.MaxEnergy, stats.MaxHealth, stats.Attack, stats.Defense, stats.Mobility, stats.Agility, stats.SightRange, stats.IsRanged, stats.AttackRange, source).Scan)
 	if err != nil {
 		return nil, fmt.Errorf("CreatePlayerCharacterTx insert: %w", err)

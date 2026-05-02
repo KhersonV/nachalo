@@ -10,11 +10,16 @@ import (
 
 var (
 	ErrEquipmentCharacterNotFound  = errors.New("equipment character not found")
+	ErrEquipmentCharacterNotOwned  = errors.New("equipment character not owned")
 	ErrEquipmentItemNotFound       = errors.New("equipment item not found")
+	ErrEquipmentItemNotOwned       = errors.New("equipment item not owned")
 	ErrEquipmentInvalidSlot        = errors.New("invalid equipment slot")
 	ErrEquipmentItemUnavailable    = errors.New("equipment item unavailable")
 	ErrEquipmentItemNotInInventory = errors.New("equipment item is not in inventory")
 	ErrEquipmentItemLocked         = errors.New("equipment item locked")
+	ErrEquipmentItemListed         = errors.New("equipment item listed")
+	ErrEquipmentItemTradeLocked    = errors.New("equipment item trade locked")
+	ErrEquipmentItemDeleted        = errors.New("equipment item deleted")
 	ErrEquipmentClassRestricted    = errors.New("equipment class restricted")
 	ErrEquipmentLevelTooLow        = errors.New("equipment level too low")
 	ErrEquipmentSlotMismatch       = errors.New("equipment slot mismatch")
@@ -319,7 +324,7 @@ func selectPlayerCharacterByIDAny(characterID int) (*PlayerCharacter, error) {
 			sight_range,
 			is_ranged,
 			attack_range,
-			source
+			COALESCE(source, '')
 		FROM player_characters
 		WHERE id = $1
 	`, characterID).Scan)
@@ -344,16 +349,21 @@ func selectPlayerCharacterByIDForUpdateTx(tx *sql.Tx, userID int, characterID in
 			sight_range,
 			is_ranged,
 			attack_range,
-			source
+			COALESCE(source, '')
 		FROM player_characters
-		WHERE user_id = $1
-		  AND id = $2
+		WHERE id = $1
 		FOR UPDATE
-	`, userID, characterID).Scan)
+	`, characterID).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrEquipmentCharacterNotFound
 	}
-	return character, err
+	if err != nil {
+		return nil, fmt.Errorf("lock character scan: %w", err)
+	}
+	if character.UserID != userID {
+		return nil, ErrEquipmentCharacterNotOwned
+	}
+	return character, nil
 }
 
 func lockItemInstanceTx(tx *sql.Tx, itemInstanceID string) (*equipmentItemLock, error) {
@@ -374,14 +384,14 @@ func lockItemInstanceTx(tx *sql.Tx, itemInstanceID string) (*equipmentItemLock, 
 			JOIN item_templates it ON it.id = ii.template_id
 			LEFT JOIN item_sets s ON s.id = it.set_id
 			WHERE ii.id = $1::uuid
-			FOR UPDATE
+			FOR UPDATE OF ii
 		`, itemInstanceID).Scan(allDest...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrEquipmentItemNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("lockItemInstanceTx: %w", err)
+		return nil, fmt.Errorf("lock item instance scan item/template: %w", err)
 	}
 	row.EquipmentItem = *item
 	return &row, nil
@@ -413,10 +423,15 @@ func validateTemplateShape(item EquipmentItem) error {
 
 func validateItemForEquip(character *PlayerCharacter, item *equipmentItemLock) error {
 	if item.OwnerUserID != character.UserID {
-		return ErrEquipmentItemNotFound
+		return ErrEquipmentItemNotOwned
 	}
-	if item.Status == "deleted" || item.Status == "listed" || item.Status == "trade_locked" {
-		return ErrEquipmentItemUnavailable
+	switch item.Status {
+	case "deleted":
+		return ErrEquipmentItemDeleted
+	case "listed":
+		return ErrEquipmentItemListed
+	case "trade_locked":
+		return ErrEquipmentItemTradeLocked
 	}
 	if item.IsLocked {
 		return ErrEquipmentItemLocked
@@ -496,7 +511,7 @@ func insertItemInstanceEventTx(tx *sql.Tx, itemInstanceID string, eventType stri
 		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
 	`, itemInstanceID, eventType, fromUser, toUser, fromCharacter, toCharacter, metadata)
 	if err != nil {
-		return fmt.Errorf("insertItemInstanceEventTx %s: %w", eventType, err)
+		return fmt.Errorf("insert item_instance_events %s: %w", eventType, err)
 	}
 	return nil
 }
@@ -526,7 +541,7 @@ func unequipLockedSlotsTx(tx *sql.Tx, characterID int, slots []string, existing 
 			return fmt.Errorf("unequipLockedSlotsTx update item %s: %w", equipped.ItemInstanceID, err)
 		}
 		if err := insertItemInstanceEventTx(tx, equipped.ItemInstanceID, "unequipped", &ownerID, &ownerID, &fromCharacterID, nil, equipped.Slot); err != nil {
-			return err
+			return fmt.Errorf("insert item_instance_events unequipped: %w", err)
 		}
 	}
 
@@ -559,15 +574,15 @@ func EquipItemToCharacter(userID int, characterID int, itemInstanceID string) er
 
 	character, err := selectPlayerCharacterByIDForUpdateTx(tx, userID, characterID)
 	if err != nil {
-		return err
+		return fmt.Errorf("lock character: %w", err)
 	}
 
 	item, err := lockItemInstanceTx(tx, itemInstanceID)
 	if err != nil {
-		return err
+		return fmt.Errorf("lock item instance: %w", err)
 	}
 	if err := validateItemForEquip(character, item); err != nil {
-		return err
+		return fmt.Errorf("validate item for equip: %w", err)
 	}
 
 	targetSlot := item.Slot
@@ -577,7 +592,7 @@ func EquipItemToCharacter(userID int, characterID int, itemInstanceID string) er
 	} else if targetSlot == "off_hand" {
 		mainHand, err := lockEquippedSlotsTx(tx, characterID, "main_hand", "main_hand")
 		if err != nil {
-			return err
+			return fmt.Errorf("select current main_hand: %w", err)
 		}
 		if len(mainHand) > 0 && mainHand[0].Handedness == "two_hand" {
 			return ErrEquipmentOffHandBlocked
@@ -591,17 +606,17 @@ func EquipItemToCharacter(userID int, characterID int, itemInstanceID string) er
 	}
 	existing, err := lockEquippedSlotsTx(tx, characterID, slotA, slotB)
 	if err != nil {
-		return err
+		return fmt.Errorf("select currently equipped slot: %w", err)
 	}
 	if err := unequipLockedSlotsTx(tx, characterID, slotsToUnequip, existing); err != nil {
-		return err
+		return fmt.Errorf("unequip replaced items: %w", err)
 	}
 
 	if _, err := tx.Exec(`
 		INSERT INTO character_equipment (character_id, item_instance_id, slot)
 		VALUES ($1, $2::uuid, $3)
 	`, characterID, item.InstanceID, targetSlot); err != nil {
-		return fmt.Errorf("EquipItemToCharacter insert equipment: %w", err)
+		return fmt.Errorf("insert character_equipment: %w", err)
 	}
 
 	if _, err := tx.Exec(`
@@ -612,17 +627,17 @@ func EquipItemToCharacter(userID int, characterID int, itemInstanceID string) er
 			version = version + 1
 		WHERE id = $2::uuid
 	`, characterID, item.InstanceID); err != nil {
-		return fmt.Errorf("EquipItemToCharacter update item: %w", err)
+		return fmt.Errorf("update item_instances equipped: %w", err)
 	}
 
 	toUserID := userID
 	toCharacterID := characterID
 	if err := insertItemInstanceEventTx(tx, item.InstanceID, "equipped", &toUserID, &toUserID, nil, &toCharacterID, targetSlot); err != nil {
-		return err
+		return fmt.Errorf("insert item_instance_events equipped: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("EquipItemToCharacter commit: %w", err)
+		return fmt.Errorf("commit equipment equip: %w", err)
 	}
 	return nil
 }
@@ -709,6 +724,15 @@ func GrantItemInstanceToUser(userID int, templateCode string, source string) (*E
 	}
 
 	return getEquipmentItemByID(itemInstanceID)
+}
+
+// GrantEquipmentDropToUser is the narrow future drop-system entry point.
+// TODO(equipment-drops): when a monster dies, roll a drop chance, choose a
+// template code, grant it to the killer user with source=drop, and surface the
+// created item on the match result screen. Do not wire this into combat until
+// the drop table and result presentation are defined.
+func GrantEquipmentDropToUser(userID int, templateCode string) (*EquipmentItem, error) {
+	return GrantItemInstanceToUser(userID, templateCode, "drop")
 }
 
 func getEquipmentItemByID(itemInstanceID string) (*EquipmentItem, error) {

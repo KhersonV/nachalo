@@ -121,6 +121,17 @@ export type CombatEffect =
           succeeded: boolean;
       };
 
+export type EquipmentDrop = {
+    instanceId: string;
+    ownerUserId: number;
+    templateCode: string;
+    name: string;
+    rarity: string;
+    imageUrl: string;
+    slot: string;
+    itemType: string;
+};
+
 export type CombatExchangePayload = {
     instanceId: string;
     exchangeId: string;
@@ -131,6 +142,7 @@ export type CombatExchangePayload = {
     attackStyle: AttackStyle;
     steps: CombatStep[];
     effects?: CombatEffect[];
+    drops?: EquipmentDrop[];
 };
 
 export type QueuedCombatExchange = CombatExchangePayload & {
