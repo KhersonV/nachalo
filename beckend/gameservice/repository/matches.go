@@ -323,6 +323,11 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 	if characterImage == "" {
 		characterImage = ResolveHeroClassMeta(character.HeroClassID).Image
 	}
+	effectiveStats, err := GetCharacterEffectiveStats(character.ID)
+	if err != nil {
+		return fmt.Errorf("CreateMatchPlayerCopy: effective stats for character %d: %w", character.ID, err)
+	}
+	stats := effectiveStats.EffectiveStats
 
 	query := `
 		INSERT INTO match_players (
@@ -345,19 +350,19 @@ func CreateMatchPlayerCopy(matchID string, p *models.PlayerResponse, startX, sta
 		position,
 		p.Inventory,
 		character.Level,
-		character.MaxEnergy,
-		character.MaxEnergy,
-		character.MaxHealth,
-		character.MaxHealth,
+		stats.MaxEnergy,
+		stats.MaxEnergy,
+		stats.MaxHealth,
+		stats.MaxHealth,
 		character.Exp,
 		character.MaxExp,
-		character.Attack,
-		character.Defense,
-		character.Mobility,
-		character.Agility,
-		character.SightRange,
-		character.IsRanged,
-		character.AttackRange,
+		stats.Attack,
+		stats.Defense,
+		stats.Mobility,
+		stats.Agility,
+		stats.SightRange,
+		stats.IsRanged,
+		stats.AttackRange,
 		p.Balance,
 		groupID,
 	)

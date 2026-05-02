@@ -107,6 +107,18 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SetActiveHeroHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/equipment",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetEquipmentHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/equipment/equip",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EquipItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/unequip",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UnequipItemHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
 	).Methods("GET")
