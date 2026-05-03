@@ -30,6 +30,12 @@ func TestWriteEquipmentErrorMapsExpectedValidationErrors(t *testing.T) {
 			wantCode:   "item_not_in_inventory",
 		},
 		{
+			name:       "item equipped",
+			err:        repository.ErrEquipmentItemEquipped,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "item_is_equipped",
+		},
+		{
 			name:       "item not owned",
 			err:        repository.ErrEquipmentItemNotOwned,
 			wantStatus: http.StatusForbidden,

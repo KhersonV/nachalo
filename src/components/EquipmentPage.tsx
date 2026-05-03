@@ -264,6 +264,11 @@ function normalizeEquipmentState(value: unknown): EquipmentState {
               .map(normalizeItem)
               .filter((item): item is EquipmentItem => item !== null)
         : [];
+    const inventoryItems = Array.isArray(raw.inventoryItems)
+        ? raw.inventoryItems
+              .map(normalizeItem)
+              .filter((item): item is EquipmentItem => item !== null)
+        : inventory;
     const ownedItems = Array.isArray(raw.ownedItems)
         ? raw.ownedItems
               .map(normalizeItem)
@@ -290,6 +295,7 @@ function normalizeEquipmentState(value: unknown): EquipmentState {
         activeHeroClassId: stringOrEmpty(raw.activeHeroClassId) || undefined,
         characters,
         inventory,
+        inventoryItems,
         ownedItems,
         equipped,
         equippedByCharacter: normalizeEquippedByCharacter(raw.equippedByCharacter),
@@ -446,15 +452,23 @@ function EquippedSlotCard({
 function InventoryCard({
     item,
     busy,
+    sellBusy,
+    discardBusy,
     canEquip,
     statusLabel,
     onEquip,
+    onSell,
+    onDiscard,
 }: {
     item: EquipmentItem;
     busy: boolean;
+    sellBusy: boolean;
+    discardBusy: boolean;
     canEquip: boolean;
     statusLabel?: string;
     onEquip: (item: EquipmentItem) => void;
+    onSell: (item: EquipmentItem) => void;
+    onDiscard: (item: EquipmentItem) => void;
 }) {
     return (
         <article className={styles.inventoryCard}>
@@ -472,14 +486,32 @@ function InventoryCard({
             </div>
             <BonusList bonuses={item.bonuses} />
             {statusLabel ? <div className={styles.itemStatus}>{statusLabel}</div> : null}
-            <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={() => onEquip(item)}
-                disabled={busy || !canEquip}
-            >
-                {busy ? "Equipping..." : "Equip"}
-            </button>
+            <div className={styles.inventoryActions}>
+                <button
+                    type="button"
+                    className={styles.primaryButton}
+                    onClick={() => onEquip(item)}
+                    disabled={busy || sellBusy || discardBusy || !canEquip}
+                >
+                    {busy ? "Equipping..." : "Equip"}
+                </button>
+                <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => onSell(item)}
+                    disabled={busy || sellBusy || discardBusy}
+                >
+                    {sellBusy ? "Selling..." : "Sell"}
+                </button>
+                <button
+                    type="button"
+                    className={styles.dangerButton}
+                    onClick={() => onDiscard(item)}
+                    disabled={busy || sellBusy || discardBusy}
+                >
+                    {discardBusy ? "Discarding..." : "Discard"}
+                </button>
+            </div>
         </article>
     );
 }
@@ -675,6 +707,28 @@ export default function EquipmentPage() {
         [equipment?.activeCharacterId, postEquipmentAction, selectedCharacterId],
     );
 
+    const handleSell = useCallback(
+        (item: EquipmentItem) => {
+            void postEquipmentAction(
+                "/game/equipment/sell",
+                { itemInstanceId: item.instanceId },
+                `sell-${item.instanceId}`,
+            );
+        },
+        [postEquipmentAction],
+    );
+
+    const handleDiscard = useCallback(
+        (item: EquipmentItem) => {
+            void postEquipmentAction(
+                "/game/equipment/discard",
+                { itemInstanceId: item.instanceId },
+                `discard-${item.instanceId}`,
+            );
+        },
+        [postEquipmentAction],
+    );
+
     const selectedCharacter = useMemo(() => {
         if (!equipment) return null;
         const characterId = selectedCharacterId || equipment.activeCharacterId;
@@ -697,10 +751,34 @@ export default function EquipmentPage() {
         equipment?.activeSetBonuses ||
         [];
     const ownedItems = equipment?.ownedItems?.length ? equipment.ownedItems : equipment?.inventory || [];
+    const equippedItemIds = useMemo(() => {
+        const ids = new Set<string>();
+        const allEquipped = equipment?.equippedByCharacter || {};
+        for (const slots of Object.values(allEquipped)) {
+            for (const item of Object.values(slots)) {
+                if (item?.instanceId) ids.add(item.instanceId);
+            }
+        }
+        for (const item of Object.values(equipment?.equipped || {})) {
+            if (item?.instanceId) ids.add(item.instanceId);
+        }
+        return ids;
+    }, [equipment]);
+    const inventoryItems = useMemo(() => {
+        const source = equipment?.inventoryItems?.length
+            ? equipment.inventoryItems
+            : ownedItems;
+        return source.filter(
+            (item) =>
+                item.status !== "equipped" &&
+                !item.equippedCharacterId &&
+                !equippedItemIds.has(item.instanceId),
+        );
+    }, [equipment?.inventoryItems, equippedItemIds, ownedItems]);
 
     const groupedOwnedItems = useMemo(() => {
         const groups = new Map<string, { title: string; items: EquipmentItem[] }>();
-        for (const item of ownedItems) {
+        for (const item of inventoryItems) {
             const className = item.classRestriction
                 ? CLASS_LABELS[item.classRestriction] || formatEnum(item.classRestriction)
                 : "Any Class";
@@ -712,7 +790,7 @@ export default function EquipmentPage() {
             groups.get(key)?.items.push(item);
         }
         return Array.from(groups.values());
-    }, [ownedItems]);
+    }, [inventoryItems]);
 
     const handleGrantClassSet = useCallback(() => {
         const heroClassId =
@@ -838,10 +916,10 @@ export default function EquipmentPage() {
                         <section className={styles.panel}>
                             <div className={styles.panelHeader}>
                                 <h2>Owned Equipment</h2>
-                                <span>{ownedItems.length} items</span>
+                                <span>{inventoryItems.length} unequipped items</span>
                             </div>
 
-                            {ownedItems.length === 0 ? (
+                            {inventoryItems.length === 0 ? (
                                 <div className={styles.emptyState}>
                                     No equipment items yet.
                                 </div>
@@ -856,27 +934,23 @@ export default function EquipmentPage() {
                                                         !selectedCharacter ||
                                                         !item.classRestriction ||
                                                         item.classRestriction === selectedCharacter.heroClassId;
-                                                    const isEquippedToSelected =
-                                                        item.equippedCharacterId === effectiveSelectedCharacterId;
-                                                    const isEquippedElsewhere =
-                                                        item.status === "equipped" && !isEquippedToSelected;
                                                     const canEquip =
                                                         item.status === "inventory" && classMatches;
-                                                    const statusLabel = isEquippedToSelected
-                                                        ? "Equipped on this character"
-                                                        : isEquippedElsewhere
-                                                          ? `Equipped on character #${item.equippedCharacterId}`
-                                                          : !classMatches
-                                                            ? "Different hero class"
-                                                            : undefined;
+                                                    const statusLabel = !classMatches
+                                                        ? "Different hero class"
+                                                        : undefined;
                                                     return (
                                                         <InventoryCard
                                                             key={item.instanceId}
                                                             item={item}
                                                             busy={busyAction === `equip-${item.instanceId}`}
+                                                            sellBusy={busyAction === `sell-${item.instanceId}`}
+                                                            discardBusy={busyAction === `discard-${item.instanceId}`}
                                                             canEquip={canEquip}
                                                             statusLabel={statusLabel}
                                                             onEquip={handleEquip}
+                                                            onSell={handleSell}
+                                                            onDiscard={handleDiscard}
                                                         />
                                                     );
                                                 })}

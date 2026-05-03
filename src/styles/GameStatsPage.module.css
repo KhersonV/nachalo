@@ -289,6 +289,93 @@
     margin-bottom: 6px;
 }
 
+.lootSection {
+    margin-top: 26px;
+}
+
+.lootGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.lootCard {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 8px;
+    padding: 10px;
+    background: rgba(20, 83, 45, 0.16);
+}
+
+.lootImageFrame {
+    width: 72px;
+    height: 72px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.8);
+}
+
+.lootImage {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.lootImageFallback {
+    color: #bbf7d0;
+    font-weight: 900;
+    font-size: 24px;
+}
+
+.lootBody {
+    min-width: 0;
+}
+
+.lootTitleRow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.lootTitleRow h4 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 15px;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.lootRarity {
+    flex: 0 0 auto;
+    border: 1px solid rgba(74, 222, 128, 0.42);
+    border-radius: 999px;
+    padding: 3px 7px;
+    color: #bbf7d0;
+    background: rgba(22, 101, 52, 0.3);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.lootMeta,
+.lootBonuses {
+    margin: 7px 0 0;
+    color: #cbd5e1;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.lootBonuses {
+    color: #fde68a;
+}
+
 .actions {
     margin-top: 26px;
     display: flex;
@@ -362,6 +449,10 @@
         grid-template-columns: 1fr;
     }
 
+    .lootGrid {
+        grid-template-columns: 1fr;
+    }
+
     .actions {
         justify-content: stretch;
     }
@@ -397,6 +488,15 @@
     .statItem {
         gap: 12px;
         align-items: flex-start;
+    }
+
+    .lootCard {
+        grid-template-columns: 56px minmax(0, 1fr);
+    }
+
+    .lootImageFrame {
+        width: 56px;
+        height: 56px;
     }
 
     .value {

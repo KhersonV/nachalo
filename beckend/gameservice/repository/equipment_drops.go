@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 )
 
 type DroppedEquipment struct {
@@ -20,6 +21,18 @@ type DroppedEquipment struct {
 	ClassID      string
 	SetCode      string
 	SetName      string
+}
+
+type MatchEquipmentLootItem struct {
+	ItemInstanceID string           `json:"itemInstanceId"`
+	Name           string           `json:"name"`
+	ClassID        string           `json:"classId"`
+	SetCode        string           `json:"setCode,omitempty"`
+	SetName        string           `json:"setName"`
+	Slot           string           `json:"slot"`
+	Rarity         string           `json:"rarity"`
+	Image          string           `json:"image"`
+	Bonuses        EquipmentBonuses `json:"bonuses"`
 }
 
 var pickRandomEquipmentDropIndex = func(count int) int {
@@ -50,7 +63,11 @@ type equipmentDropTemplateCandidate struct {
 // TODO(equipment-drops): move this catalog choice to monster-specific drop
 // tables keyed by monster_ref_id/type/rarity when more equipment exists.
 func GrantRandomEquipmentDrop(userID int) (*DroppedEquipment, error) {
-	return grantRandomEquipmentDrop(userID, "")
+	return grantRandomEquipmentDrop(userID, "", "")
+}
+
+func GrantRandomEquipmentDropForMatch(userID int, matchInstanceID string) (*DroppedEquipment, error) {
+	return grantRandomEquipmentDrop(userID, "", matchInstanceID)
 }
 
 // GrantRandomEquipmentDropForClass is kept for focused dev/test tooling. Monster
@@ -61,10 +78,11 @@ func GrantRandomEquipmentDropForClass(userID int, classID string) (*DroppedEquip
 	if !IsKnownHeroClassID(classID) {
 		return nil, ErrEquipmentClassRestricted
 	}
-	return grantRandomEquipmentDrop(userID, classID)
+	return grantRandomEquipmentDrop(userID, classID, "")
 }
 
-func grantRandomEquipmentDrop(userID int, classID string) (*DroppedEquipment, error) {
+func grantRandomEquipmentDrop(userID int, classID string, matchInstanceID string) (*DroppedEquipment, error) {
+	matchInstanceID = strings.TrimSpace(matchInstanceID)
 	tx, err := DB.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("GrantRandomEquipmentDrop begin tx: %w", err)
@@ -148,11 +166,12 @@ func grantRandomEquipmentDrop(userID int, classID string) (*DroppedEquipment, er
 	selected := candidates[index]
 
 	var itemInstanceID string
+	matchID := sql.NullString{String: matchInstanceID, Valid: matchInstanceID != ""}
 	if err := tx.QueryRow(`
-		INSERT INTO item_instances (template_id, owner_user_id, source)
-		VALUES ($1, $2, 'drop')
+		INSERT INTO item_instances (template_id, owner_user_id, source, match_instance_id)
+		VALUES ($1, $2, 'drop', $3)
 		RETURNING id::text
-	`, selected.TemplateID, userID).Scan(&itemInstanceID); err != nil {
+	`, selected.TemplateID, userID, matchID).Scan(&itemInstanceID); err != nil {
 		return nil, fmt.Errorf("GrantRandomEquipmentDrop insert item: %w", err)
 	}
 
@@ -179,4 +198,73 @@ func grantRandomEquipmentDrop(userID int, classID string) (*DroppedEquipment, er
 		SetCode:      selected.SetCode,
 		SetName:      selected.SetName,
 	}, nil
+}
+
+func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchEquipmentLootItem, error) {
+	matchInstanceID = strings.TrimSpace(matchInstanceID)
+	if matchInstanceID == "" {
+		return nil, fmt.Errorf("ListMatchEquipmentLootForUser: match instance id required")
+	}
+
+	rows, err := DB.Query(`
+		SELECT
+			ii.id::text,
+			it.name,
+			COALESCE(it.class_restriction, ''),
+			COALESCE(s.code, ''),
+			COALESCE(s.name, ''),
+			it.slot,
+			it.rarity,
+			it.image_url,
+			it.attack_bonus,
+			it.defense_bonus,
+			it.mobility_bonus,
+			it.agility_bonus,
+			it.max_health_bonus,
+			it.max_energy_bonus,
+			it.sight_range_bonus,
+			it.attack_range_bonus
+		FROM item_instances ii
+		JOIN item_templates it ON it.id = ii.template_id
+		LEFT JOIN item_sets s ON s.id = it.set_id
+		WHERE ii.owner_user_id = $1
+		  AND ii.match_instance_id = $2
+		  AND ii.source = 'drop'
+		  AND ii.status <> 'deleted'
+		ORDER BY ii.acquired_at, ii.id
+	`, userID, matchInstanceID)
+	if err != nil {
+		return nil, fmt.Errorf("ListMatchEquipmentLootForUser query: %w", err)
+	}
+	defer rows.Close()
+
+	items := []MatchEquipmentLootItem{}
+	for rows.Next() {
+		var item MatchEquipmentLootItem
+		if err := rows.Scan(
+			&item.ItemInstanceID,
+			&item.Name,
+			&item.ClassID,
+			&item.SetCode,
+			&item.SetName,
+			&item.Slot,
+			&item.Rarity,
+			&item.Image,
+			&item.Bonuses.Attack,
+			&item.Bonuses.Defense,
+			&item.Bonuses.Mobility,
+			&item.Bonuses.Agility,
+			&item.Bonuses.MaxHealth,
+			&item.Bonuses.MaxEnergy,
+			&item.Bonuses.SightRange,
+			&item.Bonuses.AttackRange,
+		); err != nil {
+			return nil, fmt.Errorf("ListMatchEquipmentLootForUser scan: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListMatchEquipmentLootForUser rows: %w", err)
+	}
+	return items, nil
 }

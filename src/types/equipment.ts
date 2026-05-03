@@ -82,6 +82,7 @@ export type EquipmentState = {
     activeHeroClassId?: string;
     characters: EquipmentCharacter[];
     inventory: EquipmentItem[];
+    inventoryItems?: EquipmentItem[];
     ownedItems: EquipmentItem[];
     equipped: Partial<Record<EquipmentSlot, EquipmentItem>>;
     equippedByCharacter: Record<string, Partial<Record<EquipmentSlot, EquipmentItem>>>;

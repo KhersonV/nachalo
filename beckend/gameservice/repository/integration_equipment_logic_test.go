@@ -435,6 +435,179 @@ func TestWrongClassCannotEquipRestrictedEquipment(t *testing.T) {
 	}
 }
 
+func TestSellDiscardRejectEquippedEquipmentAndAllowAfterUnequip(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+	characterID := selectedCharacterIDForEquipmentTest(t, userID)
+
+	sword := grantEquipmentForTest(t, userID, "aegiswarden_sword")
+	if err := repository.EquipItemToCharacter(userID, characterID, sword.InstanceID); err != nil {
+		t.Fatalf("equip sword: %v", err)
+	}
+
+	if _, err := repository.SellEquipmentItem(userID, sword.InstanceID); !errors.Is(err, repository.ErrEquipmentItemEquipped) {
+		t.Fatalf("expected sell equipped item to be rejected, got %v", err)
+	}
+	if err := repository.DiscardEquipmentItem(userID, sword.InstanceID); !errors.Is(err, repository.ErrEquipmentItemEquipped) {
+		t.Fatalf("expected discard equipped item to be rejected, got %v", err)
+	}
+
+	inventory, err := repository.GetEquipmentInventoryForUser(userID)
+	if err != nil {
+		t.Fatalf("GetEquipmentInventoryForUser while equipped: %v", err)
+	}
+	for _, item := range inventory {
+		if item.InstanceID == sword.InstanceID {
+			t.Fatalf("equipped item should not appear in inventory list: %+v", item)
+		}
+	}
+
+	if err := repository.UnequipItemFromCharacter(userID, characterID, "main_hand"); err != nil {
+		t.Fatalf("unequip sword: %v", err)
+	}
+	inventory, err = repository.GetEquipmentInventoryForUser(userID)
+	if err != nil {
+		t.Fatalf("GetEquipmentInventoryForUser after unequip: %v", err)
+	}
+	foundSword := false
+	for _, item := range inventory {
+		if item.InstanceID == sword.InstanceID {
+			foundSword = true
+			break
+		}
+	}
+	if !foundSword {
+		t.Fatal("unequipped sword should appear in inventory list")
+	}
+	if _, err := repository.SellEquipmentItem(userID, sword.InstanceID); err != nil {
+		t.Fatalf("sell unequipped sword: %v", err)
+	}
+
+	var swordStatus string
+	if err := db.QueryRow(`SELECT status FROM item_instances WHERE id = $1::uuid`, sword.InstanceID).Scan(&swordStatus); err != nil {
+		t.Fatalf("select sold sword status: %v", err)
+	}
+	if swordStatus != "deleted" {
+		t.Fatalf("sold sword should be deleted, got status=%s", swordStatus)
+	}
+	var soldEvents int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instance_events
+		WHERE item_instance_id = $1::uuid
+		  AND event_type = 'sold'
+	`, sword.InstanceID).Scan(&soldEvents); err != nil {
+		t.Fatalf("count sold event: %v", err)
+	}
+	if soldEvents != 1 {
+		t.Fatalf("expected one sold event, got %d", soldEvents)
+	}
+
+	shield := grantEquipmentForTest(t, userID, "aegiswarden_shield")
+	if err := repository.EquipItemToCharacter(userID, characterID, shield.InstanceID); err != nil {
+		t.Fatalf("equip shield: %v", err)
+	}
+	if err := repository.DiscardEquipmentItem(userID, shield.InstanceID); !errors.Is(err, repository.ErrEquipmentItemEquipped) {
+		t.Fatalf("expected discard equipped shield to be rejected, got %v", err)
+	}
+	if err := repository.UnequipItemFromCharacter(userID, characterID, "off_hand"); err != nil {
+		t.Fatalf("unequip shield: %v", err)
+	}
+	if err := repository.DiscardEquipmentItem(userID, shield.InstanceID); err != nil {
+		t.Fatalf("discard unequipped shield: %v", err)
+	}
+
+	var shieldStatus string
+	if err := db.QueryRow(`SELECT status FROM item_instances WHERE id = $1::uuid`, shield.InstanceID).Scan(&shieldStatus); err != nil {
+		t.Fatalf("select discarded shield status: %v", err)
+	}
+	if shieldStatus != "deleted" {
+		t.Fatalf("discarded shield should be deleted, got status=%s", shieldStatus)
+	}
+}
+
+func TestSellingDuplicateInventoryItemDoesNotAffectEquippedCopy(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+	characterID := selectedCharacterIDForEquipmentTest(t, userID)
+
+	equippedCopy := grantEquipmentForTest(t, userID, "aegiswarden_sword")
+	inventoryCopy := grantEquipmentForTest(t, userID, "aegiswarden_sword")
+	if err := repository.EquipItemToCharacter(userID, characterID, equippedCopy.InstanceID); err != nil {
+		t.Fatalf("equip first sword copy: %v", err)
+	}
+
+	inventory, err := repository.GetEquipmentInventoryForUser(userID)
+	if err != nil {
+		t.Fatalf("GetEquipmentInventoryForUser duplicate setup: %v", err)
+	}
+	seenEquippedCopy := false
+	seenInventoryCopy := false
+	for _, item := range inventory {
+		if item.InstanceID == equippedCopy.InstanceID {
+			seenEquippedCopy = true
+		}
+		if item.InstanceID == inventoryCopy.InstanceID {
+			seenInventoryCopy = true
+		}
+	}
+	if seenEquippedCopy {
+		t.Fatal("equipped duplicate copy should not appear in inventory")
+	}
+	if !seenInventoryCopy {
+		t.Fatal("unequipped duplicate copy should appear in inventory")
+	}
+
+	if _, err := repository.SellEquipmentItem(userID, inventoryCopy.InstanceID); err != nil {
+		t.Fatalf("sell unequipped duplicate copy: %v", err)
+	}
+
+	var equippedStatus string
+	var currentCharacterID sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT status, current_character_id
+		FROM item_instances
+		WHERE id = $1::uuid
+	`, equippedCopy.InstanceID).Scan(&equippedStatus, &currentCharacterID); err != nil {
+		t.Fatalf("select equipped duplicate status: %v", err)
+	}
+	if equippedStatus != "equipped" || !currentCharacterID.Valid || int(currentCharacterID.Int64) != characterID {
+		t.Fatalf("selling inventory duplicate affected equipped copy: status=%s character=%v", equippedStatus, currentCharacterID)
+	}
+
+	var equippedRows int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM character_equipment
+		WHERE character_id = $1
+		  AND item_instance_id = $2::uuid
+		  AND slot = 'main_hand'
+	`, characterID, equippedCopy.InstanceID).Scan(&equippedRows); err != nil {
+		t.Fatalf("count equipped duplicate row: %v", err)
+	}
+	if equippedRows != 1 {
+		t.Fatalf("equipped duplicate row should remain, got %d", equippedRows)
+	}
+
+	var soldStatus string
+	if err := db.QueryRow(`SELECT status FROM item_instances WHERE id = $1::uuid`, inventoryCopy.InstanceID).Scan(&soldStatus); err != nil {
+		t.Fatalf("select sold duplicate status: %v", err)
+	}
+	if soldStatus != "deleted" {
+		t.Fatalf("sold duplicate should be deleted, got %s", soldStatus)
+	}
+}
+
 func TestCharacterWithoutEquipmentUsesBaseStats(t *testing.T) {
 	db := openCharacterProfileTestDB(t)
 	t.Cleanup(func() {

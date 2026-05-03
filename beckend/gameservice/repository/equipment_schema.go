@@ -109,6 +109,7 @@ func CreateEquipmentTables() {
 		is_soulbound BOOLEAN NOT NULL DEFAULT false,
 		is_locked BOOLEAN NOT NULL DEFAULT false,
 		source TEXT NOT NULL DEFAULT 'unknown',
+		match_instance_id TEXT,
 		acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		version INTEGER NOT NULL DEFAULT 1,
@@ -119,6 +120,8 @@ func CreateEquipmentTables() {
 		CONSTRAINT item_instances_durability_bounds_check CHECK (durability IS NULL OR max_durability IS NULL OR durability <= max_durability),
 		CONSTRAINT item_instances_version_check CHECK (version > 0)
 	);
+
+	ALTER TABLE item_instances ADD COLUMN IF NOT EXISTS match_instance_id TEXT;
 
 	CREATE TABLE IF NOT EXISTS character_equipment (
 		id BIGSERIAL PRIMARY KEY,
@@ -151,6 +154,7 @@ func CreateEquipmentTables() {
 	CREATE INDEX IF NOT EXISTS idx_item_instances_template_id ON item_instances(template_id);
 	CREATE INDEX IF NOT EXISTS idx_item_instances_current_character_id ON item_instances(current_character_id);
 	CREATE INDEX IF NOT EXISTS idx_item_instances_status ON item_instances(status);
+	CREATE INDEX IF NOT EXISTS idx_item_instances_owner_match ON item_instances(owner_user_id, match_instance_id);
 	CREATE INDEX IF NOT EXISTS idx_character_equipment_character_id ON character_equipment(character_id);
 	CREATE INDEX IF NOT EXISTS idx_character_equipment_item_instance_id ON character_equipment(item_instance_id);
 	CREATE INDEX IF NOT EXISTS idx_item_instance_events_item_instance_id ON item_instance_events(item_instance_id);

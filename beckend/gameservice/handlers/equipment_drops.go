@@ -15,7 +15,7 @@ var (
 	rollEquipmentDrop = func(chancePercent int) bool {
 		return chancePercent > 0 && rand.Intn(100) < chancePercent
 	}
-	grantEquipmentDropItem            = repository.GrantRandomEquipmentDrop
+	grantEquipmentDropItem            = repository.GrantRandomEquipmentDropForMatch
 	equipmentDropPersistenceAvailable = func() bool {
 		return repository.DB != nil
 	}
@@ -98,7 +98,7 @@ func equipmentDropPayloadFromItem(ownerUserID int, item *repository.DroppedEquip
 	}
 }
 
-func maybeGrantMonsterEquipmentDrop(killerUserID int) ([]EquipmentDropPayload, error) {
+func maybeGrantMonsterEquipmentDrop(killerUserID int, matchInstanceID string) ([]EquipmentDropPayload, error) {
 	if killerUserID <= 0 {
 		return nil, nil
 	}
@@ -110,7 +110,7 @@ func maybeGrantMonsterEquipmentDrop(killerUserID int) ([]EquipmentDropPayload, e
 		return nil, nil
 	}
 
-	item, err := grantEquipmentDropItem(killerUserID)
+	item, err := grantEquipmentDropItem(killerUserID, matchInstanceID)
 	if err != nil {
 		return nil, err
 	}

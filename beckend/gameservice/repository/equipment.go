@@ -20,6 +20,7 @@ var (
 	ErrEquipmentItemListed         = errors.New("equipment item listed")
 	ErrEquipmentItemTradeLocked    = errors.New("equipment item trade locked")
 	ErrEquipmentItemDeleted        = errors.New("equipment item deleted")
+	ErrEquipmentItemEquipped       = errors.New("equipment item is equipped")
 	ErrEquipmentSetNotFound        = errors.New("equipment set not found")
 	ErrEquipmentClassRestricted    = errors.New("equipment class restricted")
 	ErrEquipmentLevelTooLow        = errors.New("equipment level too low")
@@ -130,6 +131,16 @@ type equippedSlotLock struct {
 	ItemInstanceID string
 	OwnerUserID    int
 	Handedness     string
+}
+
+type equipmentDispositionItemLock struct {
+	InstanceID         string
+	OwnerUserID        int
+	Status             string
+	CurrentCharacterID sql.NullInt64
+	IsLocked           bool
+	HasEquipmentRow    bool
+	SellPrice          int
 }
 
 func normalizeEquipmentSlot(slot string) string {
@@ -753,6 +764,159 @@ func UnequipItemFromCharacter(userID int, characterID int, slot string) error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("UnequipItemFromCharacter commit: %w", err)
+	}
+	return nil
+}
+
+func lockDispositionItemTx(tx *sql.Tx, itemInstanceID string) (*equipmentDispositionItemLock, error) {
+	itemInstanceID = strings.TrimSpace(itemInstanceID)
+	if itemInstanceID == "" {
+		return nil, ErrEquipmentItemNotFound
+	}
+
+	var item equipmentDispositionItemLock
+	err := tx.QueryRow(`
+		SELECT
+			ii.id::text,
+			ii.owner_user_id,
+			ii.status,
+			ii.current_character_id,
+			ii.is_locked,
+			EXISTS (
+				SELECT 1
+				FROM character_equipment ce
+				WHERE ce.item_instance_id = ii.id
+			),
+			it.sell_price
+		FROM item_instances ii
+		JOIN item_templates it ON it.id = ii.template_id
+		WHERE ii.id = $1::uuid
+		FOR UPDATE OF ii
+	`, itemInstanceID).Scan(
+		&item.InstanceID,
+		&item.OwnerUserID,
+		&item.Status,
+		&item.CurrentCharacterID,
+		&item.IsLocked,
+		&item.HasEquipmentRow,
+		&item.SellPrice,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrEquipmentItemNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lockDispositionItemTx scan item: %w", err)
+	}
+	return &item, nil
+}
+
+func validateItemForDisposition(userID int, item *equipmentDispositionItemLock) error {
+	if item.OwnerUserID != userID {
+		return ErrEquipmentItemNotOwned
+	}
+	if item.IsLocked {
+		return ErrEquipmentItemLocked
+	}
+	switch item.Status {
+	case "inventory":
+		if item.CurrentCharacterID.Valid || item.HasEquipmentRow {
+			return ErrEquipmentItemEquipped
+		}
+		return nil
+	case "equipped":
+		return ErrEquipmentItemEquipped
+	case "deleted":
+		return ErrEquipmentItemDeleted
+	case "listed":
+		return ErrEquipmentItemListed
+	case "trade_locked":
+		return ErrEquipmentItemTradeLocked
+	default:
+		return ErrEquipmentItemUnavailable
+	}
+}
+
+func SellEquipmentItem(userID int, itemInstanceID string) (int, error) {
+	tx, err := DB.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("SellEquipmentItem begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	item, err := lockDispositionItemTx(tx, itemInstanceID)
+	if err != nil {
+		return 0, err
+	}
+	if err := validateItemForDisposition(userID, item); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE item_instances
+		SET status = 'deleted',
+			current_character_id = NULL,
+			updated_at = now(),
+			version = version + 1
+		WHERE id = $1::uuid
+	`, item.InstanceID); err != nil {
+		return 0, fmt.Errorf("SellEquipmentItem update item: %w", err)
+	}
+
+	fromUserID := userID
+	if err := insertItemInstanceEventTx(tx, item.InstanceID, "sold", &fromUserID, nil, nil, nil, ""); err != nil {
+		return 0, fmt.Errorf("SellEquipmentItem insert sold event: %w", err)
+	}
+
+	var balance int
+	if err := tx.QueryRow(`
+		UPDATE player_profiles
+		SET balance = balance + $1,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = $2
+		RETURNING balance
+	`, item.SellPrice, userID).Scan(&balance); err != nil {
+		return 0, fmt.Errorf("SellEquipmentItem update balance: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("SellEquipmentItem commit: %w", err)
+	}
+	return balance, nil
+}
+
+func DiscardEquipmentItem(userID int, itemInstanceID string) error {
+	tx, err := DB.Begin()
+	if err != nil {
+		return fmt.Errorf("DiscardEquipmentItem begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	item, err := lockDispositionItemTx(tx, itemInstanceID)
+	if err != nil {
+		return err
+	}
+	if err := validateItemForDisposition(userID, item); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE item_instances
+		SET status = 'deleted',
+			current_character_id = NULL,
+			updated_at = now(),
+			version = version + 1
+		WHERE id = $1::uuid
+	`, item.InstanceID); err != nil {
+		return fmt.Errorf("DiscardEquipmentItem update item: %w", err)
+	}
+
+	fromUserID := userID
+	if err := insertItemInstanceEventTx(tx, item.InstanceID, "deleted", &fromUserID, nil, nil, nil, ""); err != nil {
+		return fmt.Errorf("DiscardEquipmentItem insert deleted event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("DiscardEquipmentItem commit: %w", err)
 	}
 	return nil
 }

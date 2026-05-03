@@ -52,9 +52,12 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 		gotChance = chancePercent
 		return true
 	}
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		if userID != 77 {
 			t.Fatalf("unexpected grant user: %d", userID)
+		}
+		if matchInstanceID != "test-match" {
+			t.Fatalf("unexpected match instance id: %s", matchInstanceID)
 		}
 		return &repository.DroppedEquipment{
 			InstanceID:   "drop-instance-id",
@@ -72,7 +75,7 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 		}, nil
 	}
 
-	drops, err := maybeGrantMonsterEquipmentDrop(77)
+	drops, err := maybeGrantMonsterEquipmentDrop(77, "test-match")
 	if err != nil {
 		t.Fatalf("maybeGrantMonsterEquipmentDrop: %v", err)
 	}
@@ -104,12 +107,12 @@ func TestMaybeGrantMonsterEquipmentDropDisabledChanceDoesNotGrant(t *testing.T) 
 		}
 		return false
 	}
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		t.Fatal("drop grant should not be called when chance is disabled")
 		return nil, nil
 	}
 
-	drops, err := maybeGrantMonsterEquipmentDrop(77)
+	drops, err := maybeGrantMonsterEquipmentDrop(77, "test-match")
 	if err != nil {
 		t.Fatalf("maybeGrantMonsterEquipmentDrop: %v", err)
 	}
@@ -128,7 +131,10 @@ func TestMaybeGrantMonsterEquipmentDropOverrideAlwaysGrants(t *testing.T) {
 		}
 		return true
 	}
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
+		if matchInstanceID != "test-match" {
+			t.Fatalf("unexpected match instance id: %s", matchInstanceID)
+		}
 		return &repository.DroppedEquipment{
 			InstanceID:   "forced-drop",
 			OwnerUserID:  userID,
@@ -145,7 +151,7 @@ func TestMaybeGrantMonsterEquipmentDropOverrideAlwaysGrants(t *testing.T) {
 		}, nil
 	}
 
-	drops, err := maybeGrantMonsterEquipmentDrop(78)
+	drops, err := maybeGrantMonsterEquipmentDrop(78, "test-match")
 	if err != nil {
 		t.Fatalf("maybeGrantMonsterEquipmentDrop: %v", err)
 	}
@@ -164,10 +170,13 @@ func TestUniversalAttackMonsterKillUsesGlobalEquipmentDropPool(t *testing.T) {
 
 	rollEquipmentDrop = func(chancePercent int) bool { return true }
 	grantCalls := 0
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		grantCalls++
 		if userID != killerID {
 			t.Fatalf("unexpected grant user: %d", userID)
+		}
+		if matchInstanceID != instanceID {
+			t.Fatalf("unexpected match instance id: %s", matchInstanceID)
 		}
 		return &repository.DroppedEquipment{
 			InstanceID:   "uuid-drop-1",
@@ -217,10 +226,13 @@ func TestUniversalAttackMonsterKillAwardsDropWithUnknownCharacterType(t *testing
 
 	rollEquipmentDrop = func(chancePercent int) bool { return true }
 	grantCalls := 0
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		grantCalls++
 		if userID != killerID {
 			t.Fatalf("unexpected grant user: %d", userID)
+		}
+		if matchInstanceID != "drop-unknown-class" {
+			t.Fatalf("unexpected match instance id: %s", matchInstanceID)
 		}
 		return &repository.DroppedEquipment{
 			InstanceID:   "uuid-drop-unknown-class",
@@ -263,7 +275,7 @@ func TestUniversalAttackMonsterSurvivesDoesNotRollDrop(t *testing.T) {
 		rollCalls++
 		return true
 	}
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		t.Fatal("drop grant should not be called for surviving monster")
 		return nil, nil
 	}
@@ -291,7 +303,7 @@ func TestUniversalAttackMonsterKillNoDropWhenRollFails(t *testing.T) {
 	withEquipmentDropStubs(t)
 
 	rollEquipmentDrop = func(chancePercent int) bool { return false }
-	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+	grantEquipmentDropItem = func(userID int, matchInstanceID string) (*repository.DroppedEquipment, error) {
 		t.Fatal("drop grant should not be called when roll fails")
 		return nil, nil
 	}

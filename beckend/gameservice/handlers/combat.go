@@ -2223,7 +2223,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	var drops []EquipmentDropPayload
 	if req.AttackerType == "player" && req.TargetType == "monster" && targetDeathProcessed {
 		var err error
-		drops, err = maybeGrantMonsterEquipmentDrop(req.AttackerID)
+		drops, err = maybeGrantMonsterEquipmentDrop(req.AttackerID, req.InstanceID)
 		if err != nil {
 			log.Printf("[equipment_drop] failed to grant drop: instance=%s killer=%d monster=%d err=%v", req.InstanceID, req.AttackerID, req.TargetID, err)
 		}

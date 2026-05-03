@@ -18,6 +18,7 @@ type equipmentStateDataResponse struct {
 	ActiveHeroClassID           string                                          `json:"activeHeroClassId"`
 	Characters                  []repository.EquipmentCharacterSummary          `json:"characters"`
 	Inventory                   []repository.EquipmentItem                      `json:"inventory"`
+	InventoryItems              []repository.EquipmentItem                      `json:"inventoryItems"`
 	OwnedItems                  []repository.EquipmentItem                      `json:"ownedItems"`
 	Equipped                    map[string]*repository.EquipmentItem            `json:"equipped"`
 	EquippedByCharacter         map[string]map[string]*repository.EquipmentItem `json:"equippedByCharacter"`
@@ -56,6 +57,10 @@ type grantItemDevRequest struct {
 type grantClassSetDevRequest struct {
 	HeroClassID string `json:"heroClassId"`
 	SetSlug     string `json:"setSlug"`
+}
+
+type equipmentItemActionRequest struct {
+	ItemInstanceID string `json:"itemInstanceId"`
 }
 
 func equipmentDevGrantEnabled() bool {
@@ -127,6 +132,7 @@ func buildEquipmentStateResponse(userID int) (*equipmentStateResponse, error) {
 			ActiveHeroClassID:           activeHeroClassID,
 			Characters:                  characters,
 			Inventory:                   inventory,
+			InventoryItems:              inventory,
 			OwnedItems:                  ownedItems,
 			Equipped:                    stats.Equipped,
 			EquippedByCharacter:         equippedByCharacter,
@@ -187,6 +193,9 @@ func writeEquipmentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrEquipmentItemDeleted):
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_deleted"})
+	case errors.Is(err, repository.ErrEquipmentItemEquipped):
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_is_equipped"})
 	case errors.Is(err, repository.ErrEquipmentItemUnavailable):
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_unavailable"})
@@ -376,6 +385,74 @@ func UnequipItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := repository.UnequipItemFromCharacter(userID, req.CharacterID, req.Slot); err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	state, err := buildEquipmentStateResponse(userID)
+	if err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
+func SellEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID == 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	MarkUserHTTPActive(userID)
+
+	var req equipmentItemActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	req.ItemInstanceID = strings.TrimSpace(req.ItemInstanceID)
+	if req.ItemInstanceID == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if _, err := repository.SellEquipmentItem(userID, req.ItemInstanceID); err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	state, err := buildEquipmentStateResponse(userID)
+	if err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
+func DiscardEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID == 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	MarkUserHTTPActive(userID)
+
+	var req equipmentItemActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	req.ItemInstanceID = strings.TrimSpace(req.ItemInstanceID)
+	if req.ItemInstanceID == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := repository.DiscardEquipmentItem(userID, req.ItemInstanceID); err != nil {
 		writeEquipmentError(w, err)
 		return
 	}

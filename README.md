@@ -160,8 +160,11 @@ For manual runs without Docker Compose, create the matching databases/users your
     - `GET /game/equipment`
     - `POST /game/equipment/equip`
     - `POST /game/equipment/unequip`
+    - `POST /game/equipment/sell`
+    - `POST /game/equipment/discard`
     - `POST /game/equipment/grant-sagecloth-dev` (local/dev only)
     - `POST /game/equipment/grant-item-dev` (local/dev only)
+    - `GET /game/match/{instance_id}/my-loot`
     - `POST /game/{instance_id}/player/{id}/move`
     - `POST /game/attack`
     - `POST /game/endTurn`

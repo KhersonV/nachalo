@@ -11,6 +11,28 @@ type Reward = {
     amount?: number;
 };
 
+type LootBonuses = {
+    attack?: number;
+    defense?: number;
+    mobility?: number;
+    agility?: number;
+    maxHealth?: number;
+    maxEnergy?: number;
+    sightRange?: number;
+    attackRange?: number;
+};
+
+type MatchLootItem = {
+    itemInstanceId: string;
+    name: string;
+    classId?: string;
+    setName?: string;
+    slot?: string;
+    rarity?: string;
+    image?: string;
+    bonuses?: LootBonuses;
+};
+
 type PlayerStatsPayload = {
     instanceId: string;
     winnerType: "user" | "group";
@@ -158,6 +180,79 @@ function formatStatNumber(value: number): string {
 function formatReward(reward: Reward): string {
     const label = rewardLabel(reward.type ?? "");
     return `${label}: ${formatStatNumber(reward.amount ?? 0)}`;
+}
+
+function formatEnum(value?: string): string {
+    if (!value) return "";
+    return value
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
+function normalizeLootBonuses(value: unknown): LootBonuses {
+    const raw =
+        value && typeof value === "object"
+            ? (value as Record<string, unknown>)
+            : {};
+    const toNumber = (field: unknown) =>
+        typeof field === "number" && Number.isFinite(field) ? field : 0;
+    return {
+        attack: toNumber(raw.attack),
+        defense: toNumber(raw.defense),
+        mobility: toNumber(raw.mobility),
+        agility: toNumber(raw.agility),
+        maxHealth: toNumber(raw.maxHealth),
+        maxEnergy: toNumber(raw.maxEnergy),
+        sightRange: toNumber(raw.sightRange),
+        attackRange: toNumber(raw.attackRange),
+    };
+}
+
+function normalizeLootItems(value: unknown): MatchLootItem[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map((entry): MatchLootItem | null => {
+            if (!entry || typeof entry !== "object") return null;
+            const raw = entry as Record<string, unknown>;
+            const itemInstanceId =
+                typeof raw.itemInstanceId === "string"
+                    ? raw.itemInstanceId
+                    : "";
+            if (!itemInstanceId) return null;
+            return {
+                itemInstanceId,
+                name: typeof raw.name === "string" ? raw.name : "Equipment",
+                classId: typeof raw.classId === "string" ? raw.classId : undefined,
+                setName: typeof raw.setName === "string" ? raw.setName : undefined,
+                slot: typeof raw.slot === "string" ? raw.slot : undefined,
+                rarity: typeof raw.rarity === "string" ? raw.rarity : undefined,
+                image: typeof raw.image === "string" ? raw.image : undefined,
+                bonuses: normalizeLootBonuses(raw.bonuses),
+            };
+        })
+        .filter((item): item is MatchLootItem => item !== null);
+}
+
+function formatLootBonuses(bonuses?: LootBonuses): string {
+    const rows: Array<[keyof LootBonuses, string]> = [
+        ["attack", "Attack"],
+        ["defense", "Defense"],
+        ["mobility", "Mobility"],
+        ["agility", "Reflex"],
+        ["maxHealth", "Max Health"],
+        ["maxEnergy", "Max Energy"],
+        ["sightRange", "Sight"],
+        ["attackRange", "Range"],
+    ];
+    const parts = rows
+        .map(([key, label]) => {
+            const value = bonuses?.[key] ?? 0;
+            return value > 0 ? `+${value} ${label}` : "";
+        })
+        .filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : "No stat bonuses";
 }
 
 function formatRewardsSummary(rewards: Reward[]): string {
@@ -541,6 +636,9 @@ function buildResultSummary(
 export default function GameStatsPage() {
     const router = useRouter();
     const [stats, setStats] = useState<PlayerStatsPayload | null>(null);
+    const [lootItems, setLootItems] = useState<MatchLootItem[]>([]);
+    const [lootLoading, setLootLoading] = useState(false);
+    const [lootError, setLootError] = useState<string | null>(null);
     const [isPendingAfterDefeat, setIsPendingAfterDefeat] = useState(false);
     const [matchEndedWithoutStats, setMatchEndedWithoutStats] = useState(false);
     const [resultFlags, setResultFlags] = useState<ResultFlags>({
@@ -721,6 +819,56 @@ export default function GameStatsPage() {
             ws.close(1000);
         };
     }, [isPendingAfterDefeat, stats]);
+
+    useEffect(() => {
+        if (typeof window === "undefined" || !stats?.instanceId) return;
+
+        const storedUser = localStorage.getItem("user");
+        const parsedUser = storedUser ? JSON.parse(storedUser) : null;
+        const token: string | undefined = parsedUser?.token;
+        if (!token) return;
+
+        let cancelled = false;
+        setLootLoading(true);
+        setLootError(null);
+
+        const loadLoot = async () => {
+            try {
+                const res = await fetch(
+                    `${API_BASE}/game/match/${stats.instanceId}/my-loot`,
+                    {
+                        method: "GET",
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                        cache: "no-store",
+                    },
+                );
+                if (!res.ok) {
+                    throw new Error("Failed to load match loot");
+                }
+                const data = await res.json();
+                if (!cancelled) {
+                    setLootItems(normalizeLootItems(data?.items));
+                }
+            } catch {
+                if (!cancelled) {
+                    setLootItems([]);
+                    setLootError("Loot summary is unavailable.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setLootLoading(false);
+                }
+            }
+        };
+
+        void loadLoot();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [stats?.instanceId]);
 
     const rewards = useMemo(() => parseRewards(stats?.player.rewards), [stats]);
     const outcome = useMemo(
@@ -987,6 +1135,71 @@ export default function GameStatsPage() {
                                 </li>
                             ))}
                         </ul>
+                    )}
+                </section>
+
+                <section className={styles.lootSection}>
+                    <div className={styles.sectionHeader}>
+                        <h3 className={styles.sectionTitle}>Loot found</h3>
+                        <button
+                            type="button"
+                            className={`${styles.button} ${styles.buttonSecondary}`}
+                            onClick={() => router.replace("/equipment")}
+                        >
+                            Open Equipment
+                        </button>
+                    </div>
+
+                    {lootLoading ? (
+                        <p className={styles.rewardsEmpty}>Loading loot...</p>
+                    ) : lootError ? (
+                        <p className={styles.rewardsEmpty}>{lootError}</p>
+                    ) : lootItems.length === 0 ? (
+                        <p className={styles.rewardsEmpty}>
+                            No equipment found this match.
+                        </p>
+                    ) : (
+                        <div className={styles.lootGrid}>
+                            {lootItems.map((item) => (
+                                <article
+                                    className={styles.lootCard}
+                                    key={item.itemInstanceId}
+                                >
+                                    <div className={styles.lootImageFrame}>
+                                        {item.image ? (
+                                            <img
+                                                src={item.image}
+                                                alt={item.name}
+                                                className={styles.lootImage}
+                                            />
+                                        ) : (
+                                            <span className={styles.lootImageFallback}>
+                                                {item.name.charAt(0)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className={styles.lootBody}>
+                                        <div className={styles.lootTitleRow}>
+                                            <h4>{item.name}</h4>
+                                            {item.rarity ? (
+                                                <span className={styles.lootRarity}>
+                                                    {formatEnum(item.rarity)}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        <p className={styles.lootMeta}>
+                                            {[item.classId, item.setName, item.slot]
+                                                .map(formatEnum)
+                                                .filter(Boolean)
+                                                .join(" / ")}
+                                        </p>
+                                        <p className={styles.lootBonuses}>
+                                            {formatLootBonuses(item.bonuses)}
+                                        </p>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
                     )}
                 </section>
 

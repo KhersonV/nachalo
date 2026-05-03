@@ -119,6 +119,14 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UnequipItemHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/equipment/sell",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SellEquipmentItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/discard",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.DiscardEquipmentItemHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/equipment/grant-sagecloth-dev",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantSageclothDevHandler)),
 	).Methods("POST")
@@ -199,6 +207,10 @@ func main() {
 	router.Handle(
 		"/game/match/{instance_id}/my-stats",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/match/{instance_id}/my-loot",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchLootHandler)),
 	).Methods("GET")
 	router.Handle(
 		"/game/matches/history",

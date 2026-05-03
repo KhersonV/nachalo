@@ -178,3 +178,71 @@ func TestGrantRandomEquipmentDropUsesGlobalPoolAndAllowsDuplicates(t *testing.T)
 		t.Fatalf("random drop should use existing templates, before=%d after=%d", templateCountBefore, templateCountAfter)
 	}
 }
+
+func TestMatchEquipmentLootStoresMatchAndFiltersByOwner(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	matchID := "equipment-loot-match"
+	otherMatchID := "equipment-loot-other-match"
+	userID := uniqueUserID()
+	otherUserID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+	createTestProfile(t, otherUserID, "mystic")
+
+	item, err := repository.GrantRandomEquipmentDropForMatch(userID, matchID)
+	if err != nil {
+		t.Fatalf("GrantRandomEquipmentDropForMatch user: %v", err)
+	}
+	if item == nil {
+		t.Fatal("expected dropped item for user")
+	}
+	otherItem, err := repository.GrantRandomEquipmentDropForMatch(otherUserID, matchID)
+	if err != nil {
+		t.Fatalf("GrantRandomEquipmentDropForMatch other user: %v", err)
+	}
+	if otherItem == nil {
+		t.Fatal("expected dropped item for other user")
+	}
+	_, err = repository.GrantRandomEquipmentDropForMatch(userID, otherMatchID)
+	if err != nil {
+		t.Fatalf("GrantRandomEquipmentDropForMatch other match: %v", err)
+	}
+
+	var storedMatchID string
+	var source string
+	if err := db.QueryRow(`
+		SELECT match_instance_id, source
+		FROM item_instances
+		WHERE id = $1::uuid
+	`, item.InstanceID).Scan(&storedMatchID, &source); err != nil {
+		t.Fatalf("select dropped item match context: %v", err)
+	}
+	if storedMatchID != matchID || source != "drop" {
+		t.Fatalf("unexpected drop match context: match=%s source=%s", storedMatchID, source)
+	}
+
+	items, err := repository.ListMatchEquipmentLootForUser(userID, matchID)
+	if err != nil {
+		t.Fatalf("ListMatchEquipmentLootForUser: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected only current user's one match loot item, got %+v", items)
+	}
+	if items[0].ItemInstanceID != item.InstanceID || items[0].Name == "" || items[0].Image == "" {
+		t.Fatalf("unexpected loot item response: %+v", items[0])
+	}
+	if items[0].ItemInstanceID == otherItem.InstanceID {
+		t.Fatalf("other user's loot leaked into response: %+v", items)
+	}
+
+	emptyItems, err := repository.ListMatchEquipmentLootForUser(userID, "empty-match")
+	if err != nil {
+		t.Fatalf("ListMatchEquipmentLootForUser empty match: %v", err)
+	}
+	if len(emptyItems) != 0 {
+		t.Fatalf("expected empty match loot, got %+v", emptyItems)
+	}
+}
