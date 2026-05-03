@@ -418,10 +418,19 @@ func SellEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := repository.SellEquipmentItem(userID, req.ItemInstanceID); err != nil {
+	// fetch previous balance to compute gold delta for response
+	var previousBalance int
+	if p, err := repository.GetPlayerByUserID(userID); err == nil && p != nil {
+		previousBalance = p.Balance
+	}
+
+	newBalance, err := repository.SellEquipmentItem(userID, req.ItemInstanceID)
+	if err != nil {
 		writeEquipmentError(w, err)
 		return
 	}
+
+	goldDelta := newBalance - previousBalance
 
 	state, err := buildEquipmentStateResponse(userID)
 	if err != nil {
@@ -430,7 +439,13 @@ func SellEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(state)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":    "ok",
+		"message":   "Item sold",
+		"goldDelta": goldDelta,
+		"balance":   newBalance,
+		"data":      state.Data,
+	})
 }
 
 func DiscardEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {

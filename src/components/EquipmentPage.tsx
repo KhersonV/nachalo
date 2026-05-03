@@ -173,6 +173,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         levelRequirement: numberOrUndefined(value.levelRequirement),
         imageUrl: stringOrEmpty(value.imageUrl),
         bonuses: normalizeBonuses(value.bonuses),
+        sellPrice: numberOrUndefined(value.sellPrice),
         status: stringOrEmpty(value.status) || undefined,
         version: numberOrUndefined(value.version),
         equippedCharacterId: numberOrUndefined(value.equippedCharacterId),
@@ -452,23 +453,15 @@ function EquippedSlotCard({
 function InventoryCard({
     item,
     busy,
-    sellBusy,
-    discardBusy,
     canEquip,
     statusLabel,
     onEquip,
-    onSell,
-    onDiscard,
 }: {
     item: EquipmentItem;
     busy: boolean;
-    sellBusy: boolean;
-    discardBusy: boolean;
     canEquip: boolean;
     statusLabel?: string;
     onEquip: (item: EquipmentItem) => void;
-    onSell: (item: EquipmentItem) => void;
-    onDiscard: (item: EquipmentItem) => void;
 }) {
     return (
         <article className={styles.inventoryCard}>
@@ -491,25 +484,9 @@ function InventoryCard({
                     type="button"
                     className={styles.primaryButton}
                     onClick={() => onEquip(item)}
-                    disabled={busy || sellBusy || discardBusy || !canEquip}
+                    disabled={busy || !canEquip}
                 >
                     {busy ? "Equipping..." : "Equip"}
-                </button>
-                <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => onSell(item)}
-                    disabled={busy || sellBusy || discardBusy}
-                >
-                    {sellBusy ? "Selling..." : "Sell"}
-                </button>
-                <button
-                    type="button"
-                    className={styles.dangerButton}
-                    onClick={() => onDiscard(item)}
-                    disabled={busy || sellBusy || discardBusy}
-                >
-                    {discardBusy ? "Discarding..." : "Discard"}
                 </button>
             </div>
         </article>
@@ -706,29 +683,6 @@ export default function EquipmentPage() {
         },
         [equipment?.activeCharacterId, postEquipmentAction, selectedCharacterId],
     );
-
-    const handleSell = useCallback(
-        (item: EquipmentItem) => {
-            void postEquipmentAction(
-                "/game/equipment/sell",
-                { itemInstanceId: item.instanceId },
-                `sell-${item.instanceId}`,
-            );
-        },
-        [postEquipmentAction],
-    );
-
-    const handleDiscard = useCallback(
-        (item: EquipmentItem) => {
-            void postEquipmentAction(
-                "/game/equipment/discard",
-                { itemInstanceId: item.instanceId },
-                `discard-${item.instanceId}`,
-            );
-        },
-        [postEquipmentAction],
-    );
-
     const selectedCharacter = useMemo(() => {
         if (!equipment) return null;
         const characterId = selectedCharacterId || equipment.activeCharacterId;
@@ -944,13 +898,9 @@ export default function EquipmentPage() {
                                                             key={item.instanceId}
                                                             item={item}
                                                             busy={busyAction === `equip-${item.instanceId}`}
-                                                            sellBusy={busyAction === `sell-${item.instanceId}`}
-                                                            discardBusy={busyAction === `discard-${item.instanceId}`}
                                                             canEquip={canEquip}
                                                             statusLabel={statusLabel}
                                                             onEquip={handleEquip}
-                                                            onSell={handleSell}
-                                                            onDiscard={handleDiscard}
                                                         />
                                                     );
                                                 })}

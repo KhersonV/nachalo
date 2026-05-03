@@ -39,6 +39,8 @@ export type EquipmentItem = {
     levelRequirement?: number;
     imageUrl: string;
     bonuses: EquipmentBonuses;
+    sellPrice?: number;
+    isTwoHanded?: boolean;
     status?: string;
     version?: number;
     equippedCharacterId?: number;

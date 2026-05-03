@@ -6,6 +6,7 @@ import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
 import type { PlayerShopState, ShopItem } from "../types";
+import type { EquipmentItem } from "../types/equipment";
 import styles from "../styles/ModeSelectionPage.module.css";
 
 const EFFECT_LABELS: Record<string, string> = {
@@ -17,6 +18,22 @@ const EFFECT_LABELS: Record<string, string> = {
     turret_damage: "Turret Damage",
     structure_blocking: "Blocks Passage",
 };
+function formatBonuses(bonuses?: Record<string, number>) {
+    if (!bonuses) return "";
+    return Object.entries(bonuses)
+        .filter(([, v]) => typeof v === "number" && v !== 0)
+        .map(([k, v]) => `${k}: ${v > 0 ? "+" + v : v}`)
+        .join("; ");
+}
+
+function formatEnum(value: string | undefined) {
+    if (!value) return "";
+    return value
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
 
 // images are provided by server; no client-side blueprint suffixing required
 
@@ -49,8 +66,12 @@ export default function LobbyShopPage() {
     const [shopBusyType, setShopBusyType] = React.useState<string | null>(null);
     const [shopError, setShopError] = React.useState("");
     const [shopInfo, setShopInfo] = React.useState("");
+    const [sellItems, setSellItems] = React.useState<EquipmentItem[]>([]);
+    const [sellBusyId, setSellBusyId] = React.useState<string | null>(null);
+    const [sellInfo, setSellInfo] = React.useState("");
     const [forgeBuilt, setForgeBuilt] = React.useState(false);
     const [libraryBuilt, setLibraryBuilt] = React.useState(false);
+    const [activeTab, setActiveTab] = React.useState<"buy" | "sell">("buy");
 
     const loadShopData = React.useCallback(async () => {
         if (!user) return;
@@ -102,6 +123,30 @@ export default function LobbyShopPage() {
                     balance: Number(playerData.balance ?? 0),
                     inventory: playerData.inventory ?? "{}",
                 });
+            }
+
+            // load equipment sellable items (unequipped owned items)
+            try {
+                if (user?.token) {
+                    const eqRes = await fetch(`${API_GAME}/game/equipment`, {
+                        headers: { Authorization: `Bearer ${user.token}` },
+                    });
+                    if (eqRes.ok) {
+                        const eqData = await eqRes.json();
+                        const raw = eqData?.data || {};
+                        const source = Array.isArray(raw.inventoryItems)
+                            ? raw.inventoryItems
+                            : Array.isArray(raw.ownedItems)
+                            ? raw.ownedItems
+                            : raw.inventory || [];
+                        const items: EquipmentItem[] = (source as any[])
+                            .filter((it) => it && it.status !== "equipped" && !it.equippedCharacterId)
+                            .map((it) => it as EquipmentItem);
+                        setSellItems(items);
+                    }
+                }
+            } catch (e) {
+                console.error("failed to load equipment for sell list", e);
             }
         } catch (e) {
             console.error("failed to load shop data", e);
@@ -187,6 +232,64 @@ export default function LobbyShopPage() {
         [user, shopPlayer],
     );
 
+    const handleSellEquipment = React.useCallback(
+        async (item: EquipmentItem) => {
+            if (!user?.token) return;
+            if (!confirm(`Sell ${item.name} for gold?`)) return;
+
+            setSellBusyId(item.instanceId);
+            setShopError("");
+            setSellInfo("");
+
+            try {
+                const res = await fetch(`${API_GAME}/game/equipment/sell`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${user.token}`,
+                    },
+                    body: JSON.stringify({ itemInstanceId: item.instanceId }),
+                });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    if (text.includes("item_is_equipped")) {
+                        throw new Error("Unequip this item before selling it.");
+                    }
+                    throw new Error(text || "Failed to sell item");
+                }
+
+                const data = await res.json();
+
+                if (data?.balance !== undefined) {
+                    setShopPlayer((prev) => (prev ? { ...prev, balance: Number(data.balance) } : prev));
+                } else if (data?.player && data.player.balance !== undefined) {
+                    setShopPlayer({
+                        user_id: data.player.user_id,
+                        balance: Number(data.player.balance ?? 0),
+                        inventory: data.player.inventory ?? "{}",
+                    });
+                } else {
+                    // fallback: refresh player
+                    const pr = await fetch(`${API_GAME}/game/player/${user.id}`);
+                    if (pr.ok) {
+                        const pd = await pr.json();
+                        setShopPlayer({ user_id: pd.user_id, balance: Number(pd.balance ?? 0), inventory: pd.inventory ?? "{}" });
+                    }
+                }
+
+                setSellItems((prev) => prev.filter((i) => i.instanceId !== item.instanceId));
+                setSellInfo(`Sold: ${item.name} for ${data?.goldDelta ?? item.sellPrice ?? 0} gold`);
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                setShopError(message);
+            } finally {
+                setSellBusyId(null);
+            }
+        },
+        [user],
+    );
+
     const setShopCount = React.useCallback(
         (itemType: string, count: number) => {
             const safe = Number.isFinite(count)
@@ -228,7 +331,25 @@ export default function LobbyShopPage() {
             <LobbyHeader />
             <h2 className={styles.pageTitle}>Shop</h2>
 
-            <section className={styles.shopPanel}>
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+                <button
+                    className={styles.partyActionButton}
+                    onClick={() => setActiveTab("buy")}
+                    disabled={activeTab === "buy"}
+                >
+                    Buy
+                </button>
+                <button
+                    className={styles.partyActionButton}
+                    onClick={() => setActiveTab("sell")}
+                    disabled={activeTab === "sell"}
+                >
+                    Sell
+                </button>
+            </div>
+
+            {activeTab === "buy" && (
+                <section className={styles.shopPanel}>
                 <div className={styles.shopHeader}>
                     <h3 className={styles.shopTitle}>Preparation Shop</h3>
                     <p className={styles.shopSubtitle}>
@@ -406,7 +527,62 @@ export default function LobbyShopPage() {
                         );
                     })}
                 </div>
+                </section>
+            )}
+
+            {activeTab === "sell" && (
+                <section className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                    <h2>Sell Equipment</h2>
+                    <span>{sellItems.length} sellable</span>
+                </div>
+
+                {shopError ? (
+                    <div className={styles.shopError}>{shopError}</div>
+                ) : null}
+                {sellInfo ? <div className={styles.shopInfo}>{sellInfo}</div> : null}
+
+                {sellItems.length === 0 ? (
+                    <div className={styles.emptyState}>No items to sell. Unequip equipment first or find items from monsters.</div>
+                ) : (
+                    <div className={styles.shopGrid}>
+                        {sellItems.map((item) => {
+                            const busy = sellBusyId === item.instanceId;
+                            return (
+                                <article
+                                    className={styles.shopCard}
+                                    key={item.instanceId}
+                                >
+                                    <img
+                                        src={item.imageUrl || (item as any).image || ""}
+                                        alt={item.name}
+                                        className={styles.shopImage}
+                                    />
+                                    <div className={styles.shopMeta}>
+                                        <strong>{item.name}</strong>
+                                        <span>
+                                            {item.rarity} · {item.classRestriction || "Any Class"} · {item.setName || item.setCode || ""}
+                                        </span>
+                                        <span>Slot: {formatEnum(item.slot)}</span>
+                                        <span>{formatBonuses(item.bonuses as any)}</span>
+                                        <span>Sell for {item.sellPrice ?? 0} gold</span>
+                                        <button
+                                            type="button"
+                                            className={styles.shopBuyButton}
+                                            onClick={() => handleSellEquipment(item)}
+                                            disabled={busy}
+                                        >
+                                            {busy ? "Selling..." : `Sell for ${item.sellPrice ?? 0} gold`}
+                                        </button>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                )}
             </section>
+
+            )}
 
             <div className={styles.buttonGroup}>
                 <button

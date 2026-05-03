@@ -90,6 +90,8 @@ type EquipmentItem struct {
 	LevelRequirement    int              `json:"levelRequirement"`
 	ImageURL            string           `json:"imageUrl"`
 	Bonuses             EquipmentBonuses `json:"bonuses"`
+	SellPrice           int              `json:"sellPrice,omitempty"`
+	IsTwoHanded         bool             `json:"isTwoHanded,omitempty"`
 	Status              string           `json:"status"`
 	Version             int              `json:"version"`
 	EquippedCharacterID *int             `json:"equippedCharacterId,omitempty"`
@@ -141,6 +143,10 @@ type equipmentDispositionItemLock struct {
 	IsLocked           bool
 	HasEquipmentRow    bool
 	SellPrice          int
+	Handedness         string
+	Rarity             string
+	Slot               string
+	ItemType           string
 }
 
 func normalizeEquipmentSlot(slot string) string {
@@ -222,6 +228,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 		&item.Bonuses.MaxEnergy,
 		&item.Bonuses.SightRange,
 		&item.Bonuses.AttackRange,
+		&item.SellPrice,
 		&item.Status,
 		&item.Version,
 		&equippedCharacterID,
@@ -245,6 +252,17 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 	if equippedCharacterID.Valid {
 		v := int(equippedCharacterID.Int64)
 		item.EquippedCharacterID = &v
+	}
+
+	// Compute canonical sell price and two-handed flag based on template metadata
+	item.IsTwoHanded = item.Handedness == "two_hand"
+	// apply green-item sell price rules
+	if item.Rarity == "green" {
+		if item.IsTwoHanded {
+			item.SellPrice = 1200
+		} else {
+			item.SellPrice = 600
+		}
 	}
 	return &item, nil
 }
@@ -273,6 +291,7 @@ func equipmentItemSelectClause() string {
 		it.max_energy_bonus,
 		it.sight_range_bonus,
 		it.attack_range_bonus,
+		it.sell_price,
 		ii.status,
 		ii.version,
 		ii.current_character_id
@@ -787,12 +806,16 @@ func lockDispositionItemTx(tx *sql.Tx, itemInstanceID string) (*equipmentDisposi
 				FROM character_equipment ce
 				WHERE ce.item_instance_id = ii.id
 			),
-			it.sell_price
+			it.sell_price,
+			it.handedness,
+			it.rarity,
+			it.slot,
+			it.item_type
 		FROM item_instances ii
 		JOIN item_templates it ON it.id = ii.template_id
 		WHERE ii.id = $1::uuid
 		FOR UPDATE OF ii
-	`, itemInstanceID).Scan(
+		`, itemInstanceID).Scan(
 		&item.InstanceID,
 		&item.OwnerUserID,
 		&item.Status,
@@ -800,12 +823,26 @@ func lockDispositionItemTx(tx *sql.Tx, itemInstanceID string) (*equipmentDisposi
 		&item.IsLocked,
 		&item.HasEquipmentRow,
 		&item.SellPrice,
+		&item.Handedness,
+		&item.Rarity,
+		&item.Slot,
+		&item.ItemType,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrEquipmentItemNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lockDispositionItemTx scan item: %w", err)
+	}
+
+	// Recompute canonical sell price for green starter items if applicable
+	isTwoHand := strings.EqualFold(item.Handedness, "two_hand")
+	if strings.EqualFold(item.Rarity, "green") {
+		if isTwoHand {
+			item.SellPrice = 1200
+		} else {
+			item.SellPrice = 600
+		}
 	}
 	return &item, nil
 }

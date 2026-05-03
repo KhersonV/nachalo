@@ -682,3 +682,49 @@ func TestMatchSnapshotUsesEquipmentEffectiveStats(t *testing.T) {
 		t.Fatalf("match snapshot did not use equipment effective stats: attack=%d agility=%d maxEnergy=%d maxHealth=%d", attack, agility, maxEnergy, maxHealth)
 	}
 }
+
+func TestSellGreenNormalAdds600(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+
+	item := grantEquipmentForTest(t, userID, "aegiswarden_sword")
+	player, err := repository.GetPlayerByUserID(userID)
+	if err != nil {
+		t.Fatalf("GetPlayerByUserID: %v", err)
+	}
+	prev := player.Balance
+
+	newBal, err := repository.SellEquipmentItem(userID, item.InstanceID)
+	if err != nil {
+		t.Fatalf("SellEquipmentItem: %v", err)
+	}
+	if newBal-prev != 600 {
+		t.Fatalf("expected sell to add 600, got %d", newBal-prev)
+	}
+}
+
+func TestSellGreenTwoHandedAdds1200(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "mystic")
+
+	item := grantEquipmentForTest(t, userID, "sagecloth_staff")
+	player, err := repository.GetPlayerByUserID(userID)
+	if err != nil {
+		t.Fatalf("GetPlayerByUserID: %v", err)
+	}
+	prev := player.Balance
+
+	newBal, err := repository.SellEquipmentItem(userID, item.InstanceID)
+	if err != nil {
+		t.Fatalf("SellEquipmentItem: %v", err)
+	}
+	if newBal-prev != 1200 {
+		t.Fatalf("expected sell to add 1200, got %d", newBal-prev)
+	}
+}
