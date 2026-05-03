@@ -2263,6 +2263,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)
+	broadcastEquipmentDropped(req.InstanceID, drops)
 
 	if pushedPlayerPosition != nil {
 		broadcastMovePlayer(req.InstanceID, req.TargetID, *pushedPlayerPosition)
@@ -2279,4 +2280,47 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		sendUpdatePlayerWS(req.InstanceID, req.TargetID)
 	}
 
+}
+
+func broadcastEquipmentDropped(instanceID string, drops []EquipmentDropPayload) {
+	for _, drop := range drops {
+		payload := struct {
+			InstanceID     string                      `json:"instanceId"`
+			ItemInstanceID string                      `json:"itemInstanceId"`
+			UserID         int                         `json:"userId"`
+			OwnerUserID    int                         `json:"ownerUserId"`
+			TemplateCode   string                      `json:"templateCode"`
+			Name           string                      `json:"name"`
+			Rarity         string                      `json:"rarity"`
+			ImageURL       string                      `json:"imageUrl"`
+			Slot           string                      `json:"slot"`
+			ItemType       string                      `json:"itemType"`
+			Item           EquipmentDroppedItemPayload `json:"item"`
+		}{
+			InstanceID:     instanceID,
+			ItemInstanceID: drop.InstanceID,
+			UserID:         drop.UserID,
+			OwnerUserID:    drop.OwnerUserID,
+			TemplateCode:   drop.TemplateCode,
+			Name:           drop.Name,
+			Rarity:         drop.Rarity,
+			ImageURL:       drop.ImageURL,
+			Slot:           drop.Slot,
+			ItemType:       drop.ItemType,
+			Item:           drop.Item,
+		}
+		message := struct {
+			Type    string      `json:"type"`
+			Payload interface{} `json:"payload"`
+		}{
+			Type:    "EQUIPMENT_DROPPED",
+			Payload: payload,
+		}
+		data, err := json.Marshal(message)
+		if err != nil {
+			log.Printf("[equipment_drop] failed to marshal websocket event: instance=%s drop=%+v err=%v", instanceID, drop, err)
+			continue
+		}
+		Broadcast(data)
+	}
 }

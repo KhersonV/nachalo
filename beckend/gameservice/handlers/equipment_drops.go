@@ -9,49 +9,49 @@ import (
 	"gameservice/repository"
 )
 
-const defaultEquipmentDropChancePercent = 15
-
-// TODO(equipment-drops): replace this MVP pool with monster-specific drop
-// tables keyed by monster_ref_id/type/rarity when more equipment exists.
-var equipmentDropTemplatePool = []string{
-	"sagecloth_staff",
-	"sagecloth_jacket",
-	"sagecloth_pants",
-	"sagecloth_boots",
-	"sagecloth_gloves",
-	"sagecloth_hood",
-}
+const defaultEquipmentDropChancePercent = 10
 
 var (
 	rollEquipmentDrop = func(chancePercent int) bool {
 		return chancePercent > 0 && rand.Intn(100) < chancePercent
 	}
-	pickEquipmentDropTemplate = func(pool []string) string {
-		if len(pool) == 0 {
-			return ""
-		}
-		return pool[rand.Intn(len(pool))]
-	}
-	grantEquipmentDropItem            = repository.GrantEquipmentDropToUser
+	grantEquipmentDropItem            = repository.GrantRandomEquipmentDrop
 	equipmentDropPersistenceAvailable = func() bool {
 		return repository.DB != nil
 	}
 )
 
+type EquipmentDroppedItemPayload struct {
+	ItemInstanceID string `json:"itemInstanceId"`
+	TemplateID     int64  `json:"templateId"`
+	TemplateCode   string `json:"templateCode"`
+	Name           string `json:"name"`
+	Slot           string `json:"slot"`
+	Rarity         string `json:"rarity"`
+	Image          string `json:"image"`
+	ImageURL       string `json:"imageUrl"`
+	ItemType       string `json:"itemType"`
+	ClassID        string `json:"classId"`
+	SetCode        string `json:"setCode,omitempty"`
+	SetName        string `json:"setName,omitempty"`
+}
+
 type EquipmentDropPayload struct {
-	InstanceID   string `json:"instanceId"`
-	OwnerUserID  int    `json:"ownerUserId"`
-	TemplateCode string `json:"templateCode"`
-	Name         string `json:"name"`
-	Rarity       string `json:"rarity"`
-	ImageURL     string `json:"imageUrl"`
-	Slot         string `json:"slot"`
-	ItemType     string `json:"itemType"`
+	InstanceID   string                      `json:"instanceId"`
+	UserID       int                         `json:"userId"`
+	OwnerUserID  int                         `json:"ownerUserId"`
+	TemplateCode string                      `json:"templateCode"`
+	Name         string                      `json:"name"`
+	Rarity       string                      `json:"rarity"`
+	ImageURL     string                      `json:"imageUrl"`
+	Slot         string                      `json:"slot"`
+	ItemType     string                      `json:"itemType"`
+	Item         EquipmentDroppedItemPayload `json:"item"`
 }
 
 func resolveEquipmentDropChancePercent() int {
 	raw := strings.TrimSpace(os.Getenv("EQUIPMENT_DROP_CHANCE_OVERRIDE"))
-	if raw == "" || !equipmentDevGrantEnabled() {
+	if raw == "" {
 		return defaultEquipmentDropChancePercent
 	}
 
@@ -62,19 +62,39 @@ func resolveEquipmentDropChancePercent() int {
 	return value
 }
 
-func equipmentDropPayloadFromItem(ownerUserID int, item *repository.EquipmentItem) EquipmentDropPayload {
+func RollEquipmentDropChance() bool {
+	return rollEquipmentDrop(resolveEquipmentDropChancePercent())
+}
+
+func equipmentDropPayloadFromItem(ownerUserID int, item *repository.DroppedEquipment) EquipmentDropPayload {
 	if item == nil {
-		return EquipmentDropPayload{OwnerUserID: ownerUserID}
+		return EquipmentDropPayload{UserID: ownerUserID, OwnerUserID: ownerUserID}
+	}
+	droppedItem := EquipmentDroppedItemPayload{
+		ItemInstanceID: item.InstanceID,
+		TemplateID:     item.TemplateID,
+		TemplateCode:   item.TemplateCode,
+		Name:           item.Name,
+		Slot:           item.Slot,
+		Rarity:         item.Rarity,
+		Image:          item.ImageURL,
+		ImageURL:       item.ImageURL,
+		ItemType:       item.ItemType,
+		ClassID:        item.ClassID,
+		SetCode:        item.SetCode,
+		SetName:        item.SetName,
 	}
 	return EquipmentDropPayload{
 		InstanceID:   item.InstanceID,
+		UserID:       ownerUserID,
 		OwnerUserID:  ownerUserID,
-		TemplateCode: item.Code,
+		TemplateCode: item.TemplateCode,
 		Name:         item.Name,
 		Rarity:       item.Rarity,
 		ImageURL:     item.ImageURL,
 		Slot:         item.Slot,
 		ItemType:     item.ItemType,
+		Item:         droppedItem,
 	}
 }
 
@@ -86,18 +106,16 @@ func maybeGrantMonsterEquipmentDrop(killerUserID int) ([]EquipmentDropPayload, e
 		return nil, nil
 	}
 
-	if !rollEquipmentDrop(resolveEquipmentDropChancePercent()) {
+	if !RollEquipmentDropChance() {
 		return nil, nil
 	}
 
-	templateCode := pickEquipmentDropTemplate(equipmentDropTemplatePool)
-	if strings.TrimSpace(templateCode) == "" {
-		return nil, nil
-	}
-
-	item, err := grantEquipmentDropItem(killerUserID, templateCode)
+	item, err := grantEquipmentDropItem(killerUserID)
 	if err != nil {
 		return nil, err
+	}
+	if item == nil {
+		return nil, nil
 	}
 
 	return []EquipmentDropPayload{equipmentDropPayloadFromItem(killerUserID, item)}, nil

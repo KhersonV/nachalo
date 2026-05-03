@@ -15,13 +15,11 @@ func withEquipmentDropStubs(t *testing.T) {
 	t.Helper()
 
 	origRoll := rollEquipmentDrop
-	origPick := pickEquipmentDropTemplate
 	origGrant := grantEquipmentDropItem
 	origAvailable := equipmentDropPersistenceAvailable
 
 	t.Cleanup(func() {
 		rollEquipmentDrop = origRoll
-		pickEquipmentDropTemplate = origPick
 		grantEquipmentDropItem = origGrant
 		equipmentDropPersistenceAvailable = origAvailable
 	})
@@ -29,17 +27,12 @@ func withEquipmentDropStubs(t *testing.T) {
 	equipmentDropPersistenceAvailable = func() bool { return true }
 }
 
-func TestResolveEquipmentDropChanceOverrideIsDevOnly(t *testing.T) {
+func TestResolveEquipmentDropChanceOverride(t *testing.T) {
 	t.Setenv("EQUIPMENT_DROP_CHANCE_OVERRIDE", "100")
 	t.Setenv("EQUIPMENT_DEV_GRANT_ENABLED", "")
 	t.Setenv("APP_ENV", "")
-	if got := resolveEquipmentDropChancePercent(); got != defaultEquipmentDropChancePercent {
-		t.Fatalf("override should be ignored outside dev, got %d", got)
-	}
-
-	t.Setenv("EQUIPMENT_DEV_GRANT_ENABLED", "true")
 	if got := resolveEquipmentDropChancePercent(); got != 100 {
-		t.Fatalf("expected dev override 100, got %d", got)
+		t.Fatalf("expected override 100, got %d", got)
 	}
 
 	t.Setenv("EQUIPMENT_DROP_CHANCE_OVERRIDE", "101")
@@ -59,24 +52,23 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 		gotChance = chancePercent
 		return true
 	}
-	pickEquipmentDropTemplate = func(pool []string) string {
-		if len(pool) == 0 {
-			t.Fatal("expected non-empty drop pool")
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+		if userID != 77 {
+			t.Fatalf("unexpected grant user: %d", userID)
 		}
-		return "sagecloth_staff"
-	}
-	grantEquipmentDropItem = func(userID int, templateCode string) (*repository.EquipmentItem, error) {
-		if userID != 77 || templateCode != "sagecloth_staff" {
-			t.Fatalf("unexpected grant args: user=%d template=%s", userID, templateCode)
-		}
-		return &repository.EquipmentItem{
-			InstanceID: "drop-instance-id",
-			Code:       "sagecloth_staff",
-			Name:       "Sagecloth Staff",
-			Rarity:     "green",
-			ImageURL:   "/equipment/mystic/sagecloth/staff.png",
-			Slot:       "main_hand",
-			ItemType:   "staff",
+		return &repository.DroppedEquipment{
+			InstanceID:   "drop-instance-id",
+			OwnerUserID:  77,
+			TemplateID:   4,
+			TemplateCode: "sagecloth_staff",
+			Name:         "Sagecloth Staff",
+			Rarity:       "green",
+			ImageURL:     "/equipment/mystic/sagecloth/staff.png",
+			Slot:         "main_hand",
+			ItemType:     "staff",
+			ClassID:      "mystic",
+			SetCode:      "sagecloth_set",
+			SetName:      "Sagecloth Set",
 		}, nil
 	}
 
@@ -97,9 +89,72 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 	if drop.Name != "Sagecloth Staff" || drop.Rarity != "green" || drop.ImageURL != "/equipment/mystic/sagecloth/staff.png" {
 		t.Fatalf("unexpected drop display payload: %+v", drop)
 	}
+	if drop.Item.ItemInstanceID != "drop-instance-id" || drop.Item.ClassID != "mystic" || drop.Item.SetCode != "sagecloth_set" {
+		t.Fatalf("unexpected nested drop item: %+v", drop.Item)
+	}
 }
 
-func TestUniversalAttackMonsterKillAwardsEquipmentDrop(t *testing.T) {
+func TestMaybeGrantMonsterEquipmentDropDisabledChanceDoesNotGrant(t *testing.T) {
+	withEquipmentDropStubs(t)
+	t.Setenv("EQUIPMENT_DROP_CHANCE_OVERRIDE", "0")
+
+	rollEquipmentDrop = func(chancePercent int) bool {
+		if chancePercent != 0 {
+			t.Fatalf("expected disabled drop chance 0, got %d", chancePercent)
+		}
+		return false
+	}
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+		t.Fatal("drop grant should not be called when chance is disabled")
+		return nil, nil
+	}
+
+	drops, err := maybeGrantMonsterEquipmentDrop(77)
+	if err != nil {
+		t.Fatalf("maybeGrantMonsterEquipmentDrop: %v", err)
+	}
+	if len(drops) != 0 {
+		t.Fatalf("expected no drops with disabled chance, got %+v", drops)
+	}
+}
+
+func TestMaybeGrantMonsterEquipmentDropOverrideAlwaysGrants(t *testing.T) {
+	withEquipmentDropStubs(t)
+	t.Setenv("EQUIPMENT_DROP_CHANCE_OVERRIDE", "100")
+
+	rollEquipmentDrop = func(chancePercent int) bool {
+		if chancePercent != 100 {
+			t.Fatalf("expected forced drop chance 100, got %d", chancePercent)
+		}
+		return true
+	}
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+		return &repository.DroppedEquipment{
+			InstanceID:   "forced-drop",
+			OwnerUserID:  userID,
+			TemplateID:   1,
+			TemplateCode: "aegiswarden_sword",
+			Name:         "Aegiswarden Sword",
+			Rarity:       "green",
+			ImageURL:     "/equipment/guardian/aegiswarden/Aegiswarden Sword.png",
+			Slot:         "main_hand",
+			ItemType:     "sword",
+			ClassID:      "guardian",
+			SetCode:      "aegiswarden_set",
+			SetName:      "Aegiswarden Set",
+		}, nil
+	}
+
+	drops, err := maybeGrantMonsterEquipmentDrop(78)
+	if err != nil {
+		t.Fatalf("maybeGrantMonsterEquipmentDrop: %v", err)
+	}
+	if len(drops) != 1 || drops[0].TemplateCode != "aegiswarden_sword" {
+		t.Fatalf("expected forced guardian drop, got %+v", drops)
+	}
+}
+
+func TestUniversalAttackMonsterKillUsesGlobalEquipmentDropPool(t *testing.T) {
 	withEquipmentDropStubs(t)
 	const (
 		instanceID = "drop-combat"
@@ -108,21 +163,25 @@ func TestUniversalAttackMonsterKillAwardsEquipmentDrop(t *testing.T) {
 	)
 
 	rollEquipmentDrop = func(chancePercent int) bool { return true }
-	pickEquipmentDropTemplate = func(_ []string) string { return "sagecloth_staff" }
 	grantCalls := 0
-	grantEquipmentDropItem = func(userID int, templateCode string) (*repository.EquipmentItem, error) {
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
 		grantCalls++
-		if userID != killerID || templateCode != "sagecloth_staff" {
-			t.Fatalf("unexpected grant args: user=%d template=%s", userID, templateCode)
+		if userID != killerID {
+			t.Fatalf("unexpected grant user: %d", userID)
 		}
-		return &repository.EquipmentItem{
-			InstanceID: "uuid-drop-1",
-			Code:       "sagecloth_staff",
-			Name:       "Sagecloth Staff",
-			Rarity:     "green",
-			ImageURL:   "/equipment/mystic/sagecloth/staff.png",
-			Slot:       "main_hand",
-			ItemType:   "staff",
+		return &repository.DroppedEquipment{
+			InstanceID:   "uuid-drop-1",
+			OwnerUserID:  killerID,
+			TemplateID:   9,
+			TemplateCode: "greenwisp_bow",
+			Name:         "Greenwisp Bow",
+			Rarity:       "green",
+			ImageURL:     "/equipment/ranger/greenwisp/Greenwisp Bow.png",
+			Slot:         "main_hand",
+			ItemType:     "bow",
+			ClassID:      "ranger",
+			SetCode:      "greenwisp_set",
+			SetName:      "Greenwisp Set",
 		}, nil
 	}
 
@@ -132,6 +191,7 @@ func TestUniversalAttackMonsterKillAwardsEquipmentDrop(t *testing.T) {
 		monsterID:  monsterID,
 		attack:     12,
 		monsterHP:  5,
+		classID:    "guardian",
 	})
 
 	if grantCalls != 1 {
@@ -140,11 +200,58 @@ func TestUniversalAttackMonsterKillAwardsEquipmentDrop(t *testing.T) {
 	if len(exchange.Drops) != 1 {
 		t.Fatalf("expected combat exchange drop payload, got %+v", exchange.Drops)
 	}
-	if exchange.Drops[0].OwnerUserID != killerID || exchange.Drops[0].TemplateCode != "sagecloth_staff" {
+	if exchange.Drops[0].OwnerUserID != killerID || exchange.Drops[0].TemplateCode != "greenwisp_bow" {
 		t.Fatalf("unexpected exchange drop payload: %+v", exchange.Drops[0])
 	}
 	if rawDrops, ok := response["drops"].([]interface{}); !ok || len(rawDrops) != 1 {
 		t.Fatalf("expected HTTP response drops, got %+v", response["drops"])
+	}
+}
+
+func TestUniversalAttackMonsterKillAwardsDropWithUnknownCharacterType(t *testing.T) {
+	withEquipmentDropStubs(t)
+	const (
+		killerID  = 13
+		monsterID = 58
+	)
+
+	rollEquipmentDrop = func(chancePercent int) bool { return true }
+	grantCalls := 0
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
+		grantCalls++
+		if userID != killerID {
+			t.Fatalf("unexpected grant user: %d", userID)
+		}
+		return &repository.DroppedEquipment{
+			InstanceID:   "uuid-drop-unknown-class",
+			OwnerUserID:  killerID,
+			TemplateID:   12,
+			TemplateCode: "sagecloth_staff",
+			Name:         "Sagecloth Staff",
+			Rarity:       "green",
+			ImageURL:     "/equipment/mystic/sagecloth/staff.png",
+			Slot:         "main_hand",
+			ItemType:     "staff",
+			ClassID:      "mystic",
+			SetCode:      "sagecloth_set",
+			SetName:      "Sagecloth Set",
+		}, nil
+	}
+
+	exchange, _ := runMonsterDropAttack(t, monsterDropAttackOptions{
+		instanceID: "drop-unknown-class",
+		killerID:   killerID,
+		monsterID:  monsterID,
+		attack:     12,
+		monsterHP:  5,
+		classID:    "unknown",
+	})
+
+	if grantCalls != 1 {
+		t.Fatalf("expected drop grant with unknown character type, got %d", grantCalls)
+	}
+	if len(exchange.Drops) != 1 || exchange.Drops[0].TemplateCode != "sagecloth_staff" {
+		t.Fatalf("expected mystic drop despite unknown killer class, got %+v", exchange.Drops)
 	}
 }
 
@@ -156,7 +263,7 @@ func TestUniversalAttackMonsterSurvivesDoesNotRollDrop(t *testing.T) {
 		rollCalls++
 		return true
 	}
-	grantEquipmentDropItem = func(userID int, templateCode string) (*repository.EquipmentItem, error) {
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
 		t.Fatal("drop grant should not be called for surviving monster")
 		return nil, nil
 	}
@@ -184,7 +291,7 @@ func TestUniversalAttackMonsterKillNoDropWhenRollFails(t *testing.T) {
 	withEquipmentDropStubs(t)
 
 	rollEquipmentDrop = func(chancePercent int) bool { return false }
-	grantEquipmentDropItem = func(userID int, templateCode string) (*repository.EquipmentItem, error) {
+	grantEquipmentDropItem = func(userID int) (*repository.DroppedEquipment, error) {
 		t.Fatal("drop grant should not be called when roll fails")
 		return nil, nil
 	}
@@ -267,10 +374,15 @@ type monsterDropAttackOptions struct {
 	monsterID  int
 	attack     int
 	monsterHP  int
+	classID    string
 }
 
 func runMonsterDropAttack(t *testing.T, opts monsterDropAttackOptions) (CombatExchangePayload, map[string]interface{}) {
 	t.Helper()
+	classID := opts.classID
+	if classID == "" {
+		classID = "mystic"
+	}
 
 	monster := repository.MatchMonster{
 		MonsterInstanceID: opts.monsterID,
@@ -310,12 +422,13 @@ func runMonsterDropAttack(t *testing.T, opts monsterDropAttackOptions) (CombatEx
 		UpdatePlayer: func(_ string, _ *models.PlayerResponse) error { return nil },
 		GetPlayer: func(_ string, userID int) (*models.PlayerResponse, error) {
 			return &models.PlayerResponse{
-				UserID:    userID,
-				Attack:    opts.attack,
-				Defense:   0,
-				Health:    20,
-				MaxHealth: 20,
-				Energy:    20,
+				UserID:        userID,
+				Attack:        opts.attack,
+				Defense:       0,
+				Health:        20,
+				MaxHealth:     20,
+				Energy:        20,
+				CharacterType: classID,
 				Position: struct {
 					X int `json:"x"`
 					Y int `json:"y"`

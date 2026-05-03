@@ -151,6 +151,64 @@ func TestEquipmentSchemaAndSageclothSeed(t *testing.T) {
 	}
 }
 
+func TestEquipmentSeedCreatesAllClassSets(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	expectedSets := map[string]struct {
+		classID     string
+		itemCount   int
+		sampleItem  string
+		sampleImage string
+	}{
+		"aegiswarden_set": {classID: "guardian", itemCount: 7, sampleItem: "aegiswarden_sword", sampleImage: "/equipment/guardian/aegiswarden/Aegiswarden Sword.png"},
+		"bloodroot_set":   {classID: "berserker", itemCount: 6, sampleItem: "bloodroot_axe", sampleImage: "/equipment/berserker/bloodroot/Bloodroot Axe.png"},
+		"greenwisp_set":   {classID: "ranger", itemCount: 6, sampleItem: "greenwisp_bow", sampleImage: "/equipment/ranger/greenwisp/Greenwisp Bow.png"},
+		"sagecloth_set":   {classID: "mystic", itemCount: 6, sampleItem: "sagecloth_staff", sampleImage: "/equipment/mystic/sagecloth/staff.png"},
+	}
+
+	for setCode, expected := range expectedSets {
+		var setID int64
+		var classID string
+		if err := db.QueryRow(`
+			SELECT id, class_restriction
+			FROM item_sets
+			WHERE code = $1
+		`, setCode).Scan(&setID, &classID); err != nil {
+			t.Fatalf("select set %s: %v", setCode, err)
+		}
+		if classID != expected.classID {
+			t.Fatalf("set %s expected class %s, got %s", setCode, expected.classID, classID)
+		}
+
+		var itemCount int
+		if err := db.QueryRow(`
+			SELECT count(*)
+			FROM item_templates
+			WHERE set_id = $1
+		`, setID).Scan(&itemCount); err != nil {
+			t.Fatalf("count templates for %s: %v", setCode, err)
+		}
+		if itemCount != expected.itemCount {
+			t.Fatalf("set %s expected %d templates, got %d", setCode, expected.itemCount, itemCount)
+		}
+
+		var imageURL string
+		if err := db.QueryRow(`
+			SELECT image_url
+			FROM item_templates
+			WHERE code = $1
+		`, expected.sampleItem).Scan(&imageURL); err != nil {
+			t.Fatalf("select sample item %s: %v", expected.sampleItem, err)
+		}
+		if imageURL != expected.sampleImage {
+			t.Fatalf("sample item %s expected image %s, got %s", expected.sampleItem, expected.sampleImage, imageURL)
+		}
+	}
+}
+
 func TestEquipmentInstanceUniquenessGuards(t *testing.T) {
 	db := openCharacterProfileTestDB(t)
 	t.Cleanup(func() {

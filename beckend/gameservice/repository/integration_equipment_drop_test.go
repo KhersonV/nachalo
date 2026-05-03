@@ -77,3 +77,104 @@ func TestGrantEquipmentDropToUserPersistsSourceEventAndUsesExistingTemplate(t *t
 		t.Fatalf("drop should use existing template, before=%d after=%d", templateCountBefore, templateCountAfter)
 	}
 }
+
+func TestGrantRandomEquipmentDropUsesGlobalPoolAndAllowsDuplicates(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+
+	var templateCountBefore int
+	if err := db.QueryRow(`SELECT count(*) FROM item_templates`).Scan(&templateCountBefore); err != nil {
+		t.Fatalf("count templates before random drop: %v", err)
+	}
+
+	var globalPoolSize int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_templates it
+		JOIN item_sets s ON s.id = it.set_id
+		WHERE it.rarity = 'green'
+		  AND s.rarity = 'green'
+		  AND s.code IN ('aegiswarden_set', 'bloodroot_set', 'greenwisp_set', 'sagecloth_set')
+		  AND it.class_restriction = s.class_restriction
+	`).Scan(&globalPoolSize); err != nil {
+		t.Fatalf("count global drop pool: %v", err)
+	}
+	if globalPoolSize == 0 {
+		t.Fatal("expected non-empty global equipment drop pool")
+	}
+
+	seen := map[string]int{}
+	for i := 0; i < globalPoolSize+1; i++ {
+		item, err := repository.GrantRandomEquipmentDrop(userID)
+		if err != nil {
+			t.Fatalf("GrantRandomEquipmentDrop #%d: %v", i+1, err)
+		}
+		if item == nil {
+			t.Fatalf("expected global drop #%d, got nil", i+1)
+		}
+		if item.InstanceID == "" || item.OwnerUserID != userID {
+			t.Fatalf("unexpected dropped item identity: %+v", item)
+		}
+		if item.Rarity != "green" {
+			t.Fatalf("drop should be green, got %+v", item)
+		}
+		switch item.SetCode {
+		case "aegiswarden_set", "bloodroot_set", "greenwisp_set", "sagecloth_set":
+		default:
+			t.Fatalf("drop should come from global starter sets, got %+v", item)
+		}
+		seen[item.TemplateCode]++
+	}
+
+	var droppedInstances int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instances ii
+		WHERE ii.owner_user_id = $1
+		  AND ii.source = 'drop'
+		  AND ii.status <> 'deleted'
+	`, userID).Scan(&droppedInstances); err != nil {
+		t.Fatalf("count dropped instances: %v", err)
+	}
+	if droppedInstances != globalPoolSize+1 {
+		t.Fatalf("expected %d dropped instances, got %d", globalPoolSize+1, droppedInstances)
+	}
+
+	duplicateSeen := false
+	for _, count := range seen {
+		if count > 1 {
+			duplicateSeen = true
+			break
+		}
+	}
+	if !duplicateSeen {
+		t.Fatalf("expected at least one duplicate template after %d drops from %d templates, got %+v", globalPoolSize+1, globalPoolSize, seen)
+	}
+
+	var createdEvents int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instance_events e
+		JOIN item_instances ii ON ii.id = e.item_instance_id
+		WHERE ii.owner_user_id = $1
+		  AND e.event_type = 'created'
+	`, userID).Scan(&createdEvents); err != nil {
+		t.Fatalf("count created drop events: %v", err)
+	}
+	if createdEvents != globalPoolSize+1 {
+		t.Fatalf("expected one created event per drop, got %d", createdEvents)
+	}
+
+	var templateCountAfter int
+	if err := db.QueryRow(`SELECT count(*) FROM item_templates`).Scan(&templateCountAfter); err != nil {
+		t.Fatalf("count templates after random drop: %v", err)
+	}
+	if templateCountAfter != templateCountBefore {
+		t.Fatalf("random drop should use existing templates, before=%d after=%d", templateCountBefore, templateCountAfter)
+	}
+}

@@ -32,6 +32,7 @@ import {
     buildBarrelDamageLogEntry,
     buildBarrelLogEntry,
     buildCombatLogEntries,
+    buildEquipmentDroppedLogEntry,
     buildMatchEndedLogEntry,
     buildMoveLogEntry,
     buildPlayerDefeatedLogEntry,
@@ -234,6 +235,15 @@ export function createWsHandlers(
                 buildCombatLogEntries(payload, gameState, currentUserId),
             );
             dispatch(enqueueCombatExchangeFromWs(payload));
+        },
+        EQUIPMENT_DROPPED: (payload: any) => {
+            addLogEntryFromState((gameState) =>
+                buildEquipmentDroppedLogEntry(
+                    payload,
+                    gameState,
+                    currentUserId,
+                ),
+            );
         },
         // --- TURN/USER ---
         SET_ACTIVE_USER: (payload: any) => {

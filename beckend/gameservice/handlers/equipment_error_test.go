@@ -68,3 +68,17 @@ func TestWriteEquipmentErrorMapsExpectedValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestGrantClassSetDevHandlerDisabledReturnsNotFound(t *testing.T) {
+	t.Setenv("EQUIPMENT_DEV_GRANT_ENABLED", "")
+	t.Setenv("APP_ENV", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/game/equipment/dev/grant-class-set", nil)
+	rec := httptest.NewRecorder()
+
+	GrantClassSetDevHandler(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled dev grant endpoint to return 404, got %d", rec.Code)
+	}
+}

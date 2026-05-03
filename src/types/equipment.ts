@@ -41,6 +41,7 @@ export type EquipmentItem = {
     bonuses: EquipmentBonuses;
     status?: string;
     version?: number;
+    equippedCharacterId?: number;
 };
 
 export type EquipmentStats = {
@@ -63,13 +64,32 @@ export type ActiveSetBonus = {
     bonuses?: EquipmentBonuses;
 };
 
+export type EquipmentCharacter = {
+    characterId: number;
+    heroClassId: string;
+    name: string;
+    level: number;
+};
+
+export type CharacterEquipmentStats = {
+    baseStats: EquipmentStats;
+    bonusStats: EquipmentBonuses;
+    effectiveStats: EquipmentStats;
+};
+
 export type EquipmentState = {
     activeCharacterId: number;
+    activeHeroClassId?: string;
+    characters: EquipmentCharacter[];
     inventory: EquipmentItem[];
+    ownedItems: EquipmentItem[];
     equipped: Partial<Record<EquipmentSlot, EquipmentItem>>;
+    equippedByCharacter: Record<string, Partial<Record<EquipmentSlot, EquipmentItem>>>;
     baseStats: EquipmentStats;
     effectiveStats: EquipmentStats;
     activeSetBonuses: ActiveSetBonus[];
+    statsByCharacter: Record<string, CharacterEquipmentStats>;
+    activeSetBonusesByCharacter: Record<string, ActiveSetBonus[]>;
 };
 
 export type EquipmentApiResponse = {

@@ -60,6 +60,38 @@
     align-items: start;
 }
 
+.characterTabs {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.characterTab {
+    border: 1px solid rgba(126, 228, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(16, 36, 53, 0.72);
+    color: #eefbff;
+    padding: 0.55rem 0.75rem;
+    display: grid;
+    gap: 0.12rem;
+    cursor: pointer;
+    min-width: 118px;
+    text-align: left;
+}
+
+.characterTab span {
+    font-weight: 800;
+}
+
+.characterTab small {
+    color: rgba(238, 251, 255, 0.68);
+}
+
+.characterTabActive {
+    border-color: rgba(126, 228, 255, 0.7);
+    background: rgba(31, 91, 117, 0.74);
+}
+
 .panel {
     padding: 1rem;
     min-width: 0;
@@ -244,7 +276,8 @@
 .emptyBonus,
 .emptySlot,
 .emptyState,
-.statePanel {
+.statePanel,
+.itemStatus {
     color: rgba(238, 251, 255, 0.68);
 }
 
@@ -368,6 +401,22 @@
     gap: 0.75rem;
 }
 
+.inventoryGroups {
+    display: grid;
+    gap: 1rem;
+}
+
+.inventoryGroup {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.inventoryGroup h3 {
+    margin: 0;
+    color: rgba(238, 251, 255, 0.82);
+    font-size: 0.95rem;
+}
+
 .inventoryCard {
     padding: 0.8rem;
     display: grid;
@@ -380,6 +429,11 @@
     grid-template-columns: 58px minmax(0, 1fr);
     gap: 0.65rem;
     align-items: start;
+}
+
+.itemStatus {
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .emptyState,

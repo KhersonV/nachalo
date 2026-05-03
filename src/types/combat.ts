@@ -123,6 +123,8 @@ export type CombatEffect =
 
 export type EquipmentDrop = {
     instanceId: string;
+    itemInstanceId?: string;
+    userId?: number;
     ownerUserId: number;
     templateCode: string;
     name: string;
@@ -130,6 +132,20 @@ export type EquipmentDrop = {
     imageUrl: string;
     slot: string;
     itemType: string;
+    item?: {
+        itemInstanceId?: string;
+        templateId?: number | string;
+        templateCode?: string;
+        name?: string;
+        slot?: string;
+        rarity?: string;
+        image?: string;
+        imageUrl?: string;
+        itemType?: string;
+        classId?: string;
+        setCode?: string;
+        setName?: string;
+    };
 };
 
 export type CombatExchangePayload = {

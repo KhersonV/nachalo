@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"gameservice/middleware"
@@ -13,12 +14,24 @@ import (
 )
 
 type equipmentStateDataResponse struct {
-	ActiveCharacterID int                                  `json:"activeCharacterId"`
-	Inventory         []repository.EquipmentItem           `json:"inventory"`
-	Equipped          map[string]*repository.EquipmentItem `json:"equipped"`
-	BaseStats         repository.EquipmentStats            `json:"baseStats"`
-	EffectiveStats    repository.EquipmentStats            `json:"effectiveStats"`
-	ActiveSetBonuses  []repository.ActiveEquipmentSetBonus `json:"activeSetBonuses"`
+	ActiveCharacterID           int                                             `json:"activeCharacterId"`
+	ActiveHeroClassID           string                                          `json:"activeHeroClassId"`
+	Characters                  []repository.EquipmentCharacterSummary          `json:"characters"`
+	Inventory                   []repository.EquipmentItem                      `json:"inventory"`
+	OwnedItems                  []repository.EquipmentItem                      `json:"ownedItems"`
+	Equipped                    map[string]*repository.EquipmentItem            `json:"equipped"`
+	EquippedByCharacter         map[string]map[string]*repository.EquipmentItem `json:"equippedByCharacter"`
+	BaseStats                   repository.EquipmentStats                       `json:"baseStats"`
+	EffectiveStats              repository.EquipmentStats                       `json:"effectiveStats"`
+	ActiveSetBonuses            []repository.ActiveEquipmentSetBonus            `json:"activeSetBonuses"`
+	StatsByCharacter            map[string]characterEquipmentStatsResponse      `json:"statsByCharacter"`
+	ActiveSetBonusesByCharacter map[string][]repository.ActiveEquipmentSetBonus `json:"activeSetBonusesByCharacter"`
+}
+
+type characterEquipmentStatsResponse struct {
+	BaseStats      repository.EquipmentStats   `json:"baseStats"`
+	BonusStats     repository.EquipmentBonuses `json:"bonusStats"`
+	EffectiveStats repository.EquipmentStats   `json:"effectiveStats"`
 }
 
 type equipmentStateResponse struct {
@@ -40,13 +53,9 @@ type grantItemDevRequest struct {
 	TemplateCode string `json:"templateCode"`
 }
 
-var sageclothDevGrantTemplateCodes = []string{
-	"sagecloth_staff",
-	"sagecloth_jacket",
-	"sagecloth_pants",
-	"sagecloth_boots",
-	"sagecloth_gloves",
-	"sagecloth_hood",
+type grantClassSetDevRequest struct {
+	HeroClassID string `json:"heroClassId"`
+	SetSlug     string `json:"setSlug"`
 }
 
 func equipmentDevGrantEnabled() bool {
@@ -54,13 +63,36 @@ func equipmentDevGrantEnabled() bool {
 		strings.EqualFold(os.Getenv("APP_ENV"), "development")
 }
 
+func equipmentBonusFromStats(base repository.EquipmentStats, effective repository.EquipmentStats) repository.EquipmentBonuses {
+	return repository.EquipmentBonuses{
+		Attack:      effective.Attack - base.Attack,
+		Defense:     effective.Defense - base.Defense,
+		Mobility:    effective.Mobility - base.Mobility,
+		Agility:     effective.Agility - base.Agility,
+		MaxHealth:   effective.MaxHealth - base.MaxHealth,
+		MaxEnergy:   effective.MaxEnergy - base.MaxEnergy,
+		SightRange:  effective.SightRange - base.SightRange,
+		AttackRange: effective.AttackRange - base.AttackRange,
+	}
+}
+
 func buildEquipmentStateResponse(userID int) (*equipmentStateResponse, error) {
 	character, err := repository.GetSelectedCharacterForUser(userID)
 	if err != nil {
 		return nil, err
 	}
+	activeHeroClassID := repository.NormalizeHeroClassID(character.HeroClassID)
+
+	characters, err := repository.ListPlayerEquipmentCharacters(userID)
+	if err != nil {
+		return nil, err
+	}
 
 	inventory, err := repository.GetEquipmentInventoryForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	ownedItems, err := repository.GetAllEquipmentForUser(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,15 +102,39 @@ func buildEquipmentStateResponse(userID int) (*equipmentStateResponse, error) {
 		return nil, err
 	}
 
+	equippedByCharacter := map[string]map[string]*repository.EquipmentItem{}
+	statsByCharacter := map[string]characterEquipmentStatsResponse{}
+	activeSetBonusesByCharacter := map[string][]repository.ActiveEquipmentSetBonus{}
+	for _, ownedCharacter := range characters {
+		characterStats, err := repository.GetCharacterEffectiveStats(ownedCharacter.CharacterID)
+		if err != nil {
+			return nil, err
+		}
+		key := strconv.Itoa(ownedCharacter.CharacterID)
+		equippedByCharacter[key] = characterStats.Equipped
+		statsByCharacter[key] = characterEquipmentStatsResponse{
+			BaseStats:      characterStats.BaseStats,
+			BonusStats:     equipmentBonusFromStats(characterStats.BaseStats, characterStats.EffectiveStats),
+			EffectiveStats: characterStats.EffectiveStats,
+		}
+		activeSetBonusesByCharacter[key] = characterStats.ActiveSetBonuses
+	}
+
 	return &equipmentStateResponse{
 		Status: "ok",
 		Data: equipmentStateDataResponse{
-			ActiveCharacterID: character.ID,
-			Inventory:         inventory,
-			Equipped:          stats.Equipped,
-			BaseStats:         stats.BaseStats,
-			EffectiveStats:    stats.EffectiveStats,
-			ActiveSetBonuses:  stats.ActiveSetBonuses,
+			ActiveCharacterID:           character.ID,
+			ActiveHeroClassID:           activeHeroClassID,
+			Characters:                  characters,
+			Inventory:                   inventory,
+			OwnedItems:                  ownedItems,
+			Equipped:                    stats.Equipped,
+			EquippedByCharacter:         equippedByCharacter,
+			BaseStats:                   stats.BaseStats,
+			EffectiveStats:              stats.EffectiveStats,
+			ActiveSetBonuses:            stats.ActiveSetBonuses,
+			StatsByCharacter:            statsByCharacter,
+			ActiveSetBonusesByCharacter: activeSetBonusesByCharacter,
 		},
 	}, nil
 }
@@ -100,6 +156,9 @@ func writeEquipmentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrEquipmentItemNotOwned):
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "item_not_owned"})
+	case errors.Is(err, repository.ErrEquipmentSetNotFound):
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "equipment_set_not_found"})
 	case errors.Is(err, repository.ErrEquipmentInvalidSlot):
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_slot"})
@@ -171,11 +230,45 @@ func GrantSageclothDevHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	MarkUserHTTPActive(userID)
 
-	for _, templateCode := range sageclothDevGrantTemplateCodes {
-		if _, err := repository.GrantItemInstanceToUser(userID, templateCode, "admin"); err != nil {
-			writeEquipmentError(w, err)
-			return
-		}
+	if err := repository.GrantEquipmentSetToUser(userID, "mystic", "sagecloth_set", "admin"); err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	state, err := buildEquipmentStateResponse(userID)
+	if err != nil {
+		writeEquipmentError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
+// GrantClassSetDevHandler is intentionally dev-only. It grants one copy of
+// every item template from a class set for local equipment testing.
+func GrantClassSetDevHandler(w http.ResponseWriter, r *http.Request) {
+	if !equipmentDevGrantEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID == 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	MarkUserHTTPActive(userID)
+
+	var req grantClassSetDevRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := repository.GrantEquipmentSetToUser(userID, req.HeroClassID, req.SetSlug, "admin"); err != nil {
+		writeEquipmentError(w, err)
+		return
 	}
 
 	state, err := buildEquipmentStateResponse(userID)

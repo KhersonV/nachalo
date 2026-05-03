@@ -148,6 +148,7 @@ export default function GameWrapper({
     | "UPDATE_CELL"
     | "UPDATE_PLAYER"
     | "COMBAT_EXCHANGE"
+    | "EQUIPMENT_DROPPED"
     | "SET_ACTIVE_USER"
     | "PLAYER_DEFEATED"
     | "TURN_PASSED"

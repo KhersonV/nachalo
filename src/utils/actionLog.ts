@@ -92,8 +92,11 @@ export function isCombatExchangeRelevantToCurrentPlayer(
     if (hasRelevantStep) return true;
 
     if (
-        payload.drops?.some((drop) => drop.ownerUserId === currentUserId) ??
-        false
+        payload.drops?.some(
+            (drop) =>
+                drop.ownerUserId === currentUserId ||
+                drop.userId === currentUserId,
+        ) ?? false
     ) {
         return true;
     }
@@ -561,16 +564,21 @@ export function buildCombatLogEntries(
     });
 
     payload.drops?.forEach((drop, index) => {
-        if (!currentUserId || drop.ownerUserId !== currentUserId) return;
+        if (
+            !currentUserId ||
+            (drop.ownerUserId !== currentUserId && drop.userId !== currentUserId)
+        ) {
+            return;
+        }
         const itemName = formatItemName(
-            drop.name || drop.templateCode,
+            drop.item?.name || drop.name || drop.item?.templateCode || drop.templateCode,
             "equipment",
         );
         dropEntries.push({
             category: "equipment",
             tone: "success",
             message: `Loot found: ${itemName}.`,
-            dedupeKey: `equipment-drop:${payload.instanceId}:${drop.instanceId || index}`,
+            dedupeKey: `equipment-drop:${payload.instanceId}:${drop.itemInstanceId || drop.instanceId || index}`,
         });
     });
 
@@ -578,6 +586,38 @@ export function buildCombatLogEntries(
         ...entries.slice(0, Math.max(0, 6 - dropEntries.length)),
         ...dropEntries,
     ].slice(0, 6);
+}
+
+export function buildEquipmentDroppedLogEntry(
+    payload: KnownWsPayload,
+    _state: GameState,
+    currentUserId?: number,
+): ActionLogEntryInput | null {
+    const ownerUserId = asNumber(
+        payload.ownerUserId ?? payload.userId ?? payload.owner_user_id,
+    );
+    if (!currentUserId || ownerUserId !== currentUserId) return null;
+
+    const item =
+        payload.item && typeof payload.item === "object"
+            ? (payload.item as Record<string, unknown>)
+            : {};
+    const itemName = formatItemName(
+        item.name ?? payload.name ?? item.templateCode ?? payload.templateCode,
+        "equipment",
+    );
+    const itemInstanceId =
+        item.itemInstanceId ??
+        payload.itemInstanceId ??
+        payload.instanceItemId ??
+        payload.dropInstanceId;
+
+    return {
+        category: "equipment",
+        tone: "success",
+        message: `You found ${itemName}.`,
+        dedupeKey: `equipment-drop:${payload.instanceId ?? "match"}:${String(itemInstanceId ?? itemName)}`,
+    };
 }
 
 export function buildPlayerDefeatedLogEntry(

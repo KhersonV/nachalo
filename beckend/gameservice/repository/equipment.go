@@ -20,6 +20,7 @@ var (
 	ErrEquipmentItemListed         = errors.New("equipment item listed")
 	ErrEquipmentItemTradeLocked    = errors.New("equipment item trade locked")
 	ErrEquipmentItemDeleted        = errors.New("equipment item deleted")
+	ErrEquipmentSetNotFound        = errors.New("equipment set not found")
 	ErrEquipmentClassRestricted    = errors.New("equipment class restricted")
 	ErrEquipmentLevelTooLow        = errors.New("equipment level too low")
 	ErrEquipmentSlotMismatch       = errors.New("equipment slot mismatch")
@@ -73,23 +74,24 @@ type EquipmentStats struct {
 }
 
 type EquipmentItem struct {
-	InstanceID       string           `json:"instanceId"`
-	TemplateID       int64            `json:"templateId"`
-	Code             string           `json:"code"`
-	Name             string           `json:"name"`
-	SetID            *int64           `json:"-"`
-	SetCode          string           `json:"setCode,omitempty"`
-	SetName          string           `json:"setName,omitempty"`
-	Slot             string           `json:"slot"`
-	ItemType         string           `json:"itemType"`
-	Handedness       string           `json:"handedness"`
-	Rarity           string           `json:"rarity"`
-	ClassRestriction string           `json:"classRestriction,omitempty"`
-	LevelRequirement int              `json:"levelRequirement"`
-	ImageURL         string           `json:"imageUrl"`
-	Bonuses          EquipmentBonuses `json:"bonuses"`
-	Status           string           `json:"status"`
-	Version          int              `json:"version"`
+	InstanceID          string           `json:"instanceId"`
+	TemplateID          int64            `json:"templateId"`
+	Code                string           `json:"code"`
+	Name                string           `json:"name"`
+	SetID               *int64           `json:"-"`
+	SetCode             string           `json:"setCode,omitempty"`
+	SetName             string           `json:"setName,omitempty"`
+	Slot                string           `json:"slot"`
+	ItemType            string           `json:"itemType"`
+	Handedness          string           `json:"handedness"`
+	Rarity              string           `json:"rarity"`
+	ClassRestriction    string           `json:"classRestriction,omitempty"`
+	LevelRequirement    int              `json:"levelRequirement"`
+	ImageURL            string           `json:"imageUrl"`
+	Bonuses             EquipmentBonuses `json:"bonuses"`
+	Status              string           `json:"status"`
+	Version             int              `json:"version"`
+	EquippedCharacterID *int             `json:"equippedCharacterId,omitempty"`
 }
 
 type ActiveEquipmentSetBonus struct {
@@ -110,11 +112,17 @@ type CharacterEffectiveStats struct {
 	ActiveSetBonuses []ActiveEquipmentSetBonus `json:"activeSetBonuses"`
 }
 
+type EquipmentCharacterSummary struct {
+	CharacterID int    `json:"characterId"`
+	HeroClassID string `json:"heroClassId"`
+	Name        string `json:"name"`
+	Level       int    `json:"level"`
+}
+
 type equipmentItemLock struct {
 	EquipmentItem
-	OwnerUserID        int
-	CurrentCharacterID sql.NullInt64
-	IsLocked           bool
+	OwnerUserID int
+	IsLocked    bool
 }
 
 type equippedSlotLock struct {
@@ -139,6 +147,13 @@ func normalizeEquipmentSource(source string) string {
 		return source
 	}
 	return "unknown"
+}
+
+func normalizeEquipmentCode(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	code = strings.ReplaceAll(code, " ", "_")
+	code = strings.ReplaceAll(code, "-", "_")
+	return code
 }
 
 func equipmentStatsFromCharacter(character *PlayerCharacter) EquipmentStats {
@@ -172,6 +187,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 	var setCode sql.NullString
 	var setName sql.NullString
 	var classRestriction sql.NullString
+	var equippedCharacterID sql.NullInt64
 	err := scan(
 		&item.InstanceID,
 		&item.TemplateID,
@@ -197,6 +213,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 		&item.Bonuses.AttackRange,
 		&item.Status,
 		&item.Version,
+		&equippedCharacterID,
 	)
 	if err != nil {
 		return nil, err
@@ -213,6 +230,10 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 	}
 	if classRestriction.Valid {
 		item.ClassRestriction = classRestriction.String
+	}
+	if equippedCharacterID.Valid {
+		v := int(equippedCharacterID.Int64)
+		item.EquippedCharacterID = &v
 	}
 	return &item, nil
 }
@@ -242,7 +263,8 @@ func equipmentItemSelectClause() string {
 		it.sight_range_bonus,
 		it.attack_range_bonus,
 		ii.status,
-		ii.version
+		ii.version,
+		ii.current_character_id
 	`
 }
 
@@ -275,6 +297,35 @@ func GetEquipmentInventoryForUser(userID int) ([]EquipmentItem, error) {
 	return items, nil
 }
 
+func GetAllEquipmentForUser(userID int) ([]EquipmentItem, error) {
+	rows, err := DB.Query(`
+		SELECT `+equipmentItemSelectClause()+`
+		FROM item_instances ii
+		JOIN item_templates it ON it.id = ii.template_id
+		LEFT JOIN item_sets s ON s.id = it.set_id
+		WHERE ii.owner_user_id = $1
+		  AND ii.status <> 'deleted'
+		ORDER BY it.class_restriction, s.name, it.slot, it.name, ii.acquired_at, ii.id
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("GetAllEquipmentForUser query: %w", err)
+	}
+	defer rows.Close()
+
+	items := []EquipmentItem{}
+	for rows.Next() {
+		item, err := scanEquipmentItem(rows.Scan)
+		if err != nil {
+			return nil, fmt.Errorf("GetAllEquipmentForUser scan: %w", err)
+		}
+		items = append(items, *item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetAllEquipmentForUser rows: %w", err)
+	}
+	return items, nil
+}
+
 func GetCharacterEquipment(characterID int) (map[string]*EquipmentItem, error) {
 	rows, err := DB.Query(`
 		SELECT `+equipmentItemSelectClause()+`
@@ -303,6 +354,34 @@ func GetCharacterEquipment(characterID int) (map[string]*EquipmentItem, error) {
 		return nil, fmt.Errorf("GetCharacterEquipment rows: %w", err)
 	}
 	return equipped, nil
+}
+
+func ListPlayerEquipmentCharacters(userID int) ([]EquipmentCharacterSummary, error) {
+	rows, err := DB.Query(`
+		SELECT id, hero_class_id, level
+		FROM player_characters
+		WHERE user_id = $1
+		ORDER BY id
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("ListPlayerEquipmentCharacters query: %w", err)
+	}
+	defer rows.Close()
+
+	characters := []EquipmentCharacterSummary{}
+	for rows.Next() {
+		var character EquipmentCharacterSummary
+		if err := rows.Scan(&character.CharacterID, &character.HeroClassID, &character.Level); err != nil {
+			return nil, fmt.Errorf("ListPlayerEquipmentCharacters scan: %w", err)
+		}
+		character.HeroClassID = NormalizeHeroClassID(character.HeroClassID)
+		character.Name = ResolveHeroClassMeta(character.HeroClassID).DisplayName
+		characters = append(characters, character)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("ListPlayerEquipmentCharacters rows: %w", err)
+	}
+	return characters, nil
 }
 
 func selectPlayerCharacterByIDAny(characterID int) (*PlayerCharacter, error) {
@@ -374,11 +453,10 @@ func lockItemInstanceTx(tx *sql.Tx, itemInstanceID string) (*equipmentItemLock, 
 
 	var row equipmentItemLock
 	item, err := scanEquipmentItem(func(dest ...interface{}) error {
-		allDest := append(dest, &row.OwnerUserID, &row.CurrentCharacterID, &row.IsLocked)
+		allDest := append(dest, &row.OwnerUserID, &row.IsLocked)
 		return tx.QueryRow(`
 			SELECT `+equipmentItemSelectClause()+`,
 				ii.owner_user_id,
-				ii.current_character_id,
 				ii.is_locked
 			FROM item_instances ii
 			JOIN item_templates it ON it.id = ii.template_id
@@ -726,6 +804,115 @@ func GrantItemInstanceToUser(userID int, templateCode string, source string) (*E
 	return getEquipmentItemByID(itemInstanceID)
 }
 
+func GrantEquipmentSetToUser(userID int, heroClassID string, setCode string, source string) error {
+	heroClassID = NormalizeHeroClassID(heroClassID)
+	if !IsKnownHeroClassID(heroClassID) {
+		return ErrEquipmentClassRestricted
+	}
+	setCode = normalizeEquipmentCode(setCode)
+	if setCode == "" {
+		var ok bool
+		setCode, ok = defaultEquipmentSetCodeForClass(heroClassID)
+		if !ok {
+			return ErrEquipmentSetNotFound
+		}
+	}
+	source = normalizeEquipmentSource(source)
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return fmt.Errorf("GrantEquipmentSetToUser begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var profileExists bool
+	if err := tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM player_profiles WHERE user_id = $1)`, userID).Scan(&profileExists); err != nil {
+		return fmt.Errorf("GrantEquipmentSetToUser check profile: %w", err)
+	}
+	if !profileExists {
+		return ErrPlayerNotFound
+	}
+
+	var setID int64
+	if err := tx.QueryRow(`
+		SELECT id
+		FROM item_sets
+		WHERE class_restriction = $1
+		  AND (code = $2 OR code = $2 || '_set')
+		LIMIT 1
+	`, heroClassID, setCode).Scan(&setID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrEquipmentSetNotFound
+		}
+		return fmt.Errorf("GrantEquipmentSetToUser select set: %w", err)
+	}
+
+	rows, err := tx.Query(`
+		SELECT id
+		FROM item_templates
+		WHERE set_id = $1
+		  AND class_restriction = $2
+		ORDER BY slot, name
+	`, setID, heroClassID)
+	if err != nil {
+		return fmt.Errorf("GrantEquipmentSetToUser select templates: %w", err)
+	}
+	defer rows.Close()
+
+	var templateIDs []int64
+	for rows.Next() {
+		var templateID int64
+		if err := rows.Scan(&templateID); err != nil {
+			return fmt.Errorf("GrantEquipmentSetToUser scan template: %w", err)
+		}
+		templateIDs = append(templateIDs, templateID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("GrantEquipmentSetToUser template rows: %w", err)
+	}
+	rows.Close()
+	if len(templateIDs) == 0 {
+		return ErrEquipmentSetNotFound
+	}
+
+	toUserID := userID
+	for _, templateID := range templateIDs {
+		var existingID string
+		err := tx.QueryRow(`
+			SELECT id::text
+			FROM item_instances
+			WHERE owner_user_id = $1
+			  AND template_id = $2
+			  AND status <> 'deleted'
+			ORDER BY acquired_at, id
+			LIMIT 1
+		`, userID, templateID).Scan(&existingID)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("GrantEquipmentSetToUser check existing item: %w", err)
+		}
+
+		var itemInstanceID string
+		if err := tx.QueryRow(`
+			INSERT INTO item_instances (template_id, owner_user_id, source)
+			VALUES ($1, $2, $3)
+			RETURNING id::text
+		`, templateID, userID, source).Scan(&itemInstanceID); err != nil {
+			return fmt.Errorf("GrantEquipmentSetToUser insert item: %w", err)
+		}
+		if err := insertItemInstanceEventTx(tx, itemInstanceID, "created", nil, &toUserID, nil, nil, ""); err != nil {
+			return fmt.Errorf("GrantEquipmentSetToUser insert created event: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("GrantEquipmentSetToUser commit: %w", err)
+	}
+	return nil
+}
+
 // GrantEquipmentDropToUser is the narrow future drop-system entry point.
 // TODO(equipment-drops): when a monster dies, roll a drop chance, choose a
 // template code, grant it to the killer user with source=drop, and surface the
@@ -790,6 +977,23 @@ func GetCharacterEffectiveStats(characterID int) (*CharacterEffectiveStats, erro
 		EffectiveStats:   effectiveStats,
 		Equipped:         equipped,
 		ActiveSetBonuses: activeSetBonuses,
+	}, nil
+}
+
+func GetCharacterEquipmentBonuses(characterID int) (EquipmentBonuses, error) {
+	stats, err := GetCharacterEffectiveStats(characterID)
+	if err != nil {
+		return EquipmentBonuses{}, err
+	}
+	return EquipmentBonuses{
+		Attack:      stats.EffectiveStats.Attack - stats.BaseStats.Attack,
+		Defense:     stats.EffectiveStats.Defense - stats.BaseStats.Defense,
+		Mobility:    stats.EffectiveStats.Mobility - stats.BaseStats.Mobility,
+		Agility:     stats.EffectiveStats.Agility - stats.BaseStats.Agility,
+		MaxHealth:   stats.EffectiveStats.MaxHealth - stats.BaseStats.MaxHealth,
+		MaxEnergy:   stats.EffectiveStats.MaxEnergy - stats.BaseStats.MaxEnergy,
+		SightRange:  stats.EffectiveStats.SightRange - stats.BaseStats.SightRange,
+		AttackRange: stats.EffectiveStats.AttackRange - stats.BaseStats.AttackRange,
 	}, nil
 }
 

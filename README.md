@@ -191,9 +191,7 @@ service with:
 EQUIPMENT_DROP_CHANCE_OVERRIDE=100
 ```
 
-The override accepts `0` to `100`, uses the default `15%` when empty, and is
-honored only in local/dev mode (`APP_ENV=development` or
-`EQUIPMENT_DEV_GRANT_ENABLED=true`).
+The override accepts `0` to `100` and uses the default `10%` when empty.
 
 `TOKEN` is the auth JWT from login/localStorage.
 
@@ -223,25 +221,27 @@ sagecloth_gloves
 sagecloth_hood
 ```
 
-Next equipment-drop stage:
+Monster equipment drops:
 
 - when a monster dies, roll equipment drop chance;
-- create an `item_instances` row using the selected template code;
+- choose a random green starter-set item from the global pool:
+  `aegiswarden_set`, `bloodroot_set`, `greenwisp_set`, or `sagecloth_set`;
+- do not limit the drop by the killer's current class;
+- allow duplicate templates by creating a fresh UUID `item_instances` row;
 - set `owner_user_id` to the killer user id;
 - use `source = 'drop'`;
 - write `item_instance_events.created`;
-- later show dropped items on the match result screen.
+- broadcast `EQUIPMENT_DROPPED` and show a live action-log message.
 
 Manual monster-drop test:
 
-1. Set `EQUIPMENT_DEV_GRANT_ENABLED=true`.
-2. Optionally set `EQUIPMENT_DROP_CHANCE_OVERRIDE=100`.
-3. Start the app and log in.
-4. Start PvE and kill monsters.
-5. If a drop happens, the action log should show `Loot found: ...`.
-6. Open `/equipment`.
-7. Confirm the dropped item appears in inventory.
-8. Equip the dropped item and confirm stats change.
+1. Optionally set `EQUIPMENT_DROP_CHANCE_OVERRIDE=100`.
+2. Start the app and log in.
+3. Start PvE and kill monsters.
+4. If a drop happens, the action log should show `Loot found: ...`.
+5. Open `/equipment`.
+6. Confirm dropped items appear as separate item instances, including duplicates.
+7. Equip compatible items and confirm stats change.
 
 ## Tests
 

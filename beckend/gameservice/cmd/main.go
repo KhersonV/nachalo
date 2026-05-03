@@ -127,6 +127,10 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantItemDevHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/equipment/dev/grant-class-set",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantClassSetDevHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
 	).Methods("GET")

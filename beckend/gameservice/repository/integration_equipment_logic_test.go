@@ -159,6 +159,127 @@ func TestEquipSageclothHoodWithNullCurrentCharacterID(t *testing.T) {
 	}
 }
 
+func TestGrantEquipmentSetToUserIsIdempotent(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+
+	if err := repository.GrantEquipmentSetToUser(userID, "guardian", "aegiswarden_set", "admin"); err != nil {
+		t.Fatalf("GrantEquipmentSetToUser first: %v", err)
+	}
+	if err := repository.GrantEquipmentSetToUser(userID, "guardian", "aegiswarden_set", "admin"); err != nil {
+		t.Fatalf("GrantEquipmentSetToUser second: %v", err)
+	}
+
+	var itemCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instances ii
+		JOIN item_templates it ON it.id = ii.template_id
+		JOIN item_sets s ON s.id = it.set_id
+		WHERE ii.owner_user_id = $1
+		  AND s.code = 'aegiswarden_set'
+		  AND ii.status <> 'deleted'
+	`, userID).Scan(&itemCount); err != nil {
+		t.Fatalf("count granted aegiswarden items: %v", err)
+	}
+	if itemCount != 7 {
+		t.Fatalf("expected idempotent grant to leave 7 items, got %d", itemCount)
+	}
+
+	var createdEvents int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM item_instance_events e
+		JOIN item_instances ii ON ii.id = e.item_instance_id
+		JOIN item_templates it ON it.id = ii.template_id
+		JOIN item_sets s ON s.id = it.set_id
+		WHERE ii.owner_user_id = $1
+		  AND s.code = 'aegiswarden_set'
+		  AND e.event_type = 'created'
+	`, userID).Scan(&createdEvents); err != nil {
+		t.Fatalf("count created events for aegiswarden grant: %v", err)
+	}
+	if createdEvents != 7 {
+		t.Fatalf("expected one created event per granted item, got %d", createdEvents)
+	}
+}
+
+func TestAnotherUsersEquipmentCannotBeEquipped(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	ownerUserID := uniqueUserID()
+	otherUserID := uniqueUserID()
+	createTestProfile(t, ownerUserID, "guardian")
+	createTestProfile(t, otherUserID, "guardian")
+	otherCharacterID := selectedCharacterIDForEquipmentTest(t, otherUserID)
+
+	if err := repository.GrantEquipmentSetToUser(ownerUserID, "guardian", "aegiswarden_set", "admin"); err != nil {
+		t.Fatalf("grant owner equipment: %v", err)
+	}
+	var swordInstanceID string
+	if err := db.QueryRow(`
+		SELECT ii.id::text
+		FROM item_instances ii
+		JOIN item_templates it ON it.id = ii.template_id
+		WHERE ii.owner_user_id = $1
+		  AND it.code = 'aegiswarden_sword'
+	`, ownerUserID).Scan(&swordInstanceID); err != nil {
+		t.Fatalf("select owner sword instance: %v", err)
+	}
+
+	if err := repository.EquipItemToCharacter(otherUserID, otherCharacterID, swordInstanceID); !errors.Is(err, repository.ErrEquipmentItemNotOwned) {
+		t.Fatalf("expected item ownership validation error, got %v", err)
+	}
+}
+
+func TestGuardianEquipmentBonusesAreSummed(t *testing.T) {
+	db := openCharacterProfileTestDB(t)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+
+	userID := uniqueUserID()
+	createTestProfile(t, userID, "guardian")
+	characterID := selectedCharacterIDForEquipmentTest(t, userID)
+
+	if err := repository.GrantEquipmentSetToUser(userID, "guardian", "aegiswarden_set", "admin"); err != nil {
+		t.Fatalf("grant guardian set: %v", err)
+	}
+	items, err := repository.GetAllEquipmentForUser(userID)
+	if err != nil {
+		t.Fatalf("GetAllEquipmentForUser: %v", err)
+	}
+	for _, item := range items {
+		if item.ClassRestriction != "guardian" {
+			continue
+		}
+		if err := repository.EquipItemToCharacter(userID, characterID, item.InstanceID); err != nil {
+			t.Fatalf("equip %s: %v", item.Code, err)
+		}
+	}
+
+	stats, err := repository.GetCharacterEffectiveStats(characterID)
+	if err != nil {
+		t.Fatalf("GetCharacterEffectiveStats: %v", err)
+	}
+	base := repository.ResolveHeroClassStats("guardian")
+	if stats.EffectiveStats.Attack != base.Attack+2 ||
+		stats.EffectiveStats.Defense != base.Defense+5 ||
+		stats.EffectiveStats.Mobility != base.Mobility+2 ||
+		stats.EffectiveStats.Agility != base.Agility+1 ||
+		stats.EffectiveStats.MaxHealth != base.MaxHealth+4 {
+		t.Fatalf("unexpected guardian effective stats: base=%+v effective=%+v", base, stats.EffectiveStats)
+	}
+}
+
 func TestEquipTwoHandedStaffBlocksOffHandAndPreventsDuplicateEquip(t *testing.T) {
 	db := openCharacterProfileTestDB(t)
 	t.Cleanup(func() {
