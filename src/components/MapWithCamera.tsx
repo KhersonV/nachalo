@@ -990,6 +990,33 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
                     );
                 }
 
+                if (effect.kind === "textFloater") {
+                    let toneClass = styles.combatFloaterBlock;
+                    if (effect.tone === "lifesteal") {
+                        toneClass = styles.combatFloaterLifesteal;
+                    } else if (effect.tone === "crit") {
+                        toneClass = styles.combatFloaterCrit;
+                    } else if (effect.tone === "overburn") {
+                        toneClass = styles.combatFloaterOverburn;
+                    } else if (effect.tone === "pureDamage") {
+                        toneClass = styles.combatFloaterPureDamage;
+                    }
+                    return (
+                        <div
+                            key={effect.id}
+                            className={`${styles.combatFloater} ${toneClass}`}
+                            style={{
+                                left:
+                                    effect.cell.x * (tileSize + gap) +
+                                    tileSize / 2,
+                                top: effect.cell.y * (tileSize + gap) - 2,
+                            }}
+                        >
+                            {effect.text}
+                        </div>
+                    );
+                }
+
                 if (effect.kind === "projectile") {
                     const progress = Math.max(
                         0,

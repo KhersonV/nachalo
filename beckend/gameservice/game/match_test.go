@@ -148,7 +148,27 @@ func TestAdvanceTurnCombatState_ResetsTurnScopedEffectsAndExpiresArmorBreak(t *t
 	}
 }
 
-func TestTryUseTurnScopedClassLimits(t *testing.T) {
+func TestResetArmorBreakClearsTargetStacks(t *testing.T) {
+	ms := &MatchState{}
+
+	ms.ApplyArmorBreak("monster", 9, 2, 2)
+	ms.ApplyArmorBreak("monster", 9, 2, 2)
+	if state := ms.GetArmorBreakState("monster", 9); state.Stacks != 2 {
+		t.Fatalf("expected setup stacks 2, got %+v", state)
+	}
+
+	ms.ResetArmorBreak("monster", 9)
+	if state := ms.GetArmorBreakState("monster", 9); state.Stacks != 0 || state.RemainingTurns != 0 {
+		t.Fatalf("expected armor break reset, got %+v", state)
+	}
+
+	state := ms.ApplyArmorBreak("monster", 9, 2, 2)
+	if state.Stacks != 1 {
+		t.Fatalf("expected next armor break to restart at stack 1, got %+v", state)
+	}
+}
+
+func TestTryUseTurnScopedClassCounters(t *testing.T) {
 	ms := &MatchState{}
 
 	for i := 0; i < 5; i++ {
@@ -165,8 +185,11 @@ func TestTryUseTurnScopedClassLimits(t *testing.T) {
 			t.Fatalf("expected mystic drain proc %d to succeed", i+1)
 		}
 	}
-	if ms.TryUseMysticDrain(10, 20, 3) {
-		t.Fatal("expected fourth mystic drain proc on same target to fail")
+	if !ms.TryUseMysticDrain(10, 20, 3) {
+		t.Fatal("expected fourth mystic drain proc on same target to succeed")
+	}
+	if ms.MysticDrains["10:20"] != 4 {
+		t.Fatalf("expected mystic drain counter to track unlimited procs, got %d", ms.MysticDrains["10:20"])
 	}
 }
 

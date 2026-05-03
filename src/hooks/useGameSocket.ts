@@ -367,6 +367,7 @@ export function useGameSocket(
                     case "UPDATE_PLAYER":
                     case "MATCH_UPDATE":
                     case "COMBAT_EXCHANGE":
+                    case "EQUIPMENT_DROPPED":
                     case "SET_ACTIVE_USER":
                     case "UPDATE_INVENTORY":
                     case "RESOURCE_COLLECTED":

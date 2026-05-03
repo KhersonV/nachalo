@@ -82,11 +82,71 @@ export type CombatEffect =
           source?: CombatTargetRef;
           target?: CombatTargetRef;
           succeeded: boolean;
+          amount?: number;
           energyGranted?: number;
           energyDrained?: number;
           sourceEnergyAfter?: number;
           targetEnergyAfter?: number;
+      }
+    | {
+          kind: "block";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+      }
+    | {
+          kind: "lifesteal";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          amount?: number;
+          succeeded: boolean;
+      }
+    | {
+          kind: "crit";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+      }
+    | {
+          kind: "arcaneOverburn";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          succeeded: boolean;
+      }
+    | {
+          kind: "pureDamage";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          amount?: number;
+          succeeded: boolean;
       };
+
+export type EquipmentDrop = {
+    instanceId: string;
+    itemInstanceId?: string;
+    userId?: number;
+    ownerUserId: number;
+    templateCode: string;
+    name: string;
+    rarity: string;
+    imageUrl: string;
+    slot: string;
+    itemType: string;
+    item?: {
+        itemInstanceId?: string;
+        templateId?: number | string;
+        templateCode?: string;
+        name?: string;
+        slot?: string;
+        rarity?: string;
+        image?: string;
+        imageUrl?: string;
+        itemType?: string;
+        classId?: string;
+        setCode?: string;
+        setName?: string;
+    };
+};
 
 export type CombatExchangePayload = {
     instanceId: string;
@@ -98,6 +158,7 @@ export type CombatExchangePayload = {
     attackStyle: AttackStyle;
     steps: CombatStep[];
     effects?: CombatEffect[];
+    drops?: EquipmentDrop[];
 };
 
 export type QueuedCombatExchange = CombatExchangePayload & {
@@ -166,6 +227,16 @@ export type ActiveEffect =
           durationMs: number;
           value: number;
           isHeal: boolean;
+      }
+    | {
+          id: string;
+          exchangeId: string;
+          kind: "textFloater";
+          cell: CombatPoint;
+          startMs: number;
+          durationMs: number;
+          text: string;
+          tone: "block" | "lifesteal" | "crit" | "overburn" | "pureDamage";
       }
     | {
           id: string;

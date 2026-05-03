@@ -107,6 +107,38 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SetActiveHeroHandler)),
 	).Methods("POST")
 	router.Handle(
+		"/game/equipment",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetEquipmentHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/equipment/equip",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EquipItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/unequip",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UnequipItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/sell",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.SellEquipmentItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/discard",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.DiscardEquipmentItemHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/grant-sagecloth-dev",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantSageclothDevHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/grant-item-dev",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantItemDevHandler)),
+	).Methods("POST")
+	router.Handle(
+		"/game/equipment/dev/grant-class-set",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GrantClassSetDevHandler)),
+	).Methods("POST")
+	router.Handle(
 		"/game/profile",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfileHandler)),
 	).Methods("GET")
@@ -175,6 +207,10 @@ func main() {
 	router.Handle(
 		"/game/match/{instance_id}/my-stats",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
+	).Methods("GET")
+	router.Handle(
+		"/game/match/{instance_id}/my-loot",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchLootHandler)),
 	).Methods("GET")
 	router.Handle(
 		"/game/matches/history",

@@ -5,6 +5,11 @@
 "use client";
 
 import React from "react";
+import {
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
+    getReflexProcChance,
+} from "../utils/reflex";
 import styles from "../styles/ObjectHUD.module.css";
 
 export interface ObjectHUDProps {
@@ -18,6 +23,8 @@ export interface ObjectHUDProps {
     maxEnergy?: number;
     attack?: number;
     defense?: number;
+    agility?: number;
+    characterType?: string;
     sightRange?: number;
     structureType?: "scout_tower" | "turret" | "wall";
     onProfileClick?: () => void;
@@ -71,6 +78,8 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
     maxEnergy,
     attack,
     defense,
+    agility,
+    characterType,
     sightRange,
     structureType,
     groupId,
@@ -80,7 +89,18 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
     const hasStats =
         attack !== undefined ||
         defense !== undefined ||
+        agility !== undefined ||
         (structureType === "scout_tower" && sightRange !== undefined);
+    const reflexChance =
+        typeof agility === "number" ? getReflexProcChance(agility) : null;
+    const reflexEffectName =
+        type === "player" && typeof agility === "number"
+            ? getClassReflexEffectName(characterType)
+            : "";
+    const reflexEffectDescription =
+        type === "player" && typeof agility === "number"
+            ? getClassReflexEffectDescription(characterType)
+            : "";
 
     return (
         <>
@@ -164,6 +184,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                         )}
                 </div>
             )}
+
 
             {onProfileClick && (
                 <button className={styles.profileBtn} onClick={onProfileClick}>

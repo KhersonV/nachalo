@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
 
 	"gameservice/game"
+	"gameservice/internal/game/balance"
 	"gameservice/middleware"
 	"gameservice/models"
 	"gameservice/repository"
@@ -31,10 +33,20 @@ const (
 	armorBreakDefensePenaltyPerStack = 2
 	armorBreakDurationTurns          = 2
 	armorBreakMaxStacks              = 2
+	rangerCriticalDamagePercent      = 142
 	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
 	energyDrainPerHit                = 3
 	energyDrainGainPerHit            = 1
-	energyDrainPerTargetLimit        = 10
+	arcaneOverburnEnergyBurn         = 4
+	arcaneOverburnEnergyGain         = 3
+)
+
+var (
+	loadCombatMapCell           = repository.LoadMapCell
+	persistCombatPushCells      = persistCombatPushCellsWithDB
+	updateCombatMonsterPosition = repository.UpdateMatchMonsterPosition
+	rollReflexProc              = defaultRollReflexProc
+	transferCombatQuestArtifact = transferQuestArtifact
 )
 
 type CombatActorType string
@@ -82,21 +94,23 @@ type CombatEffect struct {
 	BonusDamage       int              `json:"bonusDamage,omitempty"`
 	EnergyGranted     int              `json:"energyGranted,omitempty"`
 	EnergyDrained     int              `json:"energyDrained,omitempty"`
+	Amount            int              `json:"amount,omitempty"`
 	SourceEnergyAfter int              `json:"sourceEnergyAfter,omitempty"`
 	TargetEnergyAfter int              `json:"targetEnergyAfter,omitempty"`
 }
 
 // CombatExchangePayload — полезная нагрузка для WS-события боевого обмена
 type CombatExchangePayload struct {
-	InstanceID   string          `json:"instanceId"`
-	ExchangeID   string          `json:"exchangeId"`
-	AttackerID   int             `json:"attackerId"`
-	AttackerType CombatActorType `json:"attackerType"`
-	TargetID     int             `json:"targetId"`
-	TargetType   CombatActorType `json:"targetType"`
-	AttackStyle  AttackStyle     `json:"attackStyle"`
-	Steps        []CombatStep    `json:"steps"`
-	Effects      []CombatEffect  `json:"effects,omitempty"`
+	InstanceID   string                 `json:"instanceId"`
+	ExchangeID   string                 `json:"exchangeId"`
+	AttackerID   int                    `json:"attackerId"`
+	AttackerType CombatActorType        `json:"attackerType"`
+	TargetID     int                    `json:"targetId"`
+	TargetType   CombatActorType        `json:"targetType"`
+	AttackStyle  AttackStyle            `json:"attackStyle"`
+	Steps        []CombatStep           `json:"steps"`
+	Effects      []CombatEffect         `json:"effects,omitempty"`
+	Drops        []EquipmentDropPayload `json:"drops,omitempty"`
 }
 
 // CombatExchangeMessage — сообщение WS-события боевого обмена
@@ -438,6 +452,7 @@ const (
 type stats struct {
 	Attack        int
 	Defense       int
+	Agility       int
 	Health        int
 	MaxHealth     int
 	IsRanged      bool
@@ -471,6 +486,7 @@ func loadStats(instanceID, entityType string, entityID int) (stats, error) {
 		return stats{
 			Attack:        p.Attack,
 			Defense:       p.Defense,
+			Agility:       p.Agility,
 			Health:        p.Health,
 			MaxHealth:     p.MaxHealth,
 			IsRanged:      p.IsRanged,
@@ -782,6 +798,90 @@ func applyDamage(att stats, def stats) attackResult {
 	return attackResult{Damage: dmg, NewHealth: newHP, Triggered: true}
 }
 
+func defaultRollReflexProc(chance int) bool {
+	return chance > 0 && rand.Intn(100) < chance
+}
+
+func resolveGuardianShieldBlock(targetType string, defender stats) bool {
+	if targetType != "player" || defender.CharacterType != "guardian" {
+		return false
+	}
+	return rollReflexProc(balance.CalculateReflexProcChance(defender.Agility))
+}
+
+func actualDamageDealt(healthBefore int, healthAfter int) int {
+	damage := healthBefore - healthAfter
+	if damage < 0 {
+		return 0
+	}
+	return damage
+}
+
+func tryApplyBerserkerBloodFeast(
+	instanceID string,
+	attackerID int,
+	attackerRef CombatTargetRef,
+	attackerStats *stats,
+	actualDamage int,
+) (*CombatEffect, error) {
+	if attackerStats == nil || attackerStats.CharacterType != "berserker" || actualDamage <= 0 {
+		return nil, nil
+	}
+	if !rollReflexProc(balance.CalculateReflexProcChance(attackerStats.Agility)) {
+		return nil, nil
+	}
+
+	heal := actualDamage / 2
+	if heal <= 0 {
+		return nil, nil
+	}
+
+	attacker, err := Combat.GetPlayer(instanceID, attackerID)
+	if err != nil {
+		return nil, err
+	}
+	missingHP := attacker.MaxHealth - attacker.Health
+	if missingHP <= 0 {
+		return nil, nil
+	}
+	if heal > missingHP {
+		heal = missingHP
+	}
+	if heal <= 0 {
+		return nil, nil
+	}
+
+	attacker.Health += heal
+	if err := Combat.UpdatePlayer(instanceID, attacker); err != nil {
+		return nil, err
+	}
+	attackerStats.Health = attacker.Health
+
+	return &CombatEffect{
+		Kind:      "lifesteal",
+		Source:    &attackerRef,
+		Target:    &attackerRef,
+		Amount:    heal,
+		Succeeded: true,
+	}, nil
+}
+
+func tryApplyRangerCriticalShot(attacker stats, targetHealth int, result attackResult) (attackResult, bool) {
+	if attacker.CharacterType != "ranger" || !result.Triggered || result.Damage <= 0 {
+		return result, false
+	}
+	if !rollReflexProc(balance.CalculateReflexProcChance(attacker.Agility)) {
+		return result, false
+	}
+
+	result.Damage = (result.Damage * rangerCriticalDamagePercent) / 100
+	result.NewHealth = targetHealth - result.Damage
+	if result.NewHealth < 0 {
+		result.NewHealth = 0
+	}
+	return result, true
+}
+
 func applyFlatDamage(targetHealth int, damage int) attackResult {
 	if damage < 0 {
 		damage = 0
@@ -924,19 +1024,19 @@ func saveTargetHealth(
 	attackerID int,
 	attackerType string,
 	ar attackResult,
-) {
+) bool {
 	log.Printf("[saveTargetHealth] Called for %s #%d (new hp: %d), attacker: %d", targetType, targetID, ar.NewHealth, attackerID)
 
 	if targetType == "player" {
 		p, err := Combat.GetPlayer(instanceID, targetID)
 		if err != nil {
 			log.Printf("[saveTargetHealth] load player error: %v", err)
-			return
+			return false
 		}
 		log.Printf("[saveTargetHealth] player %d HP before: %d, after: %d", targetID, p.Health, ar.NewHealth)
 		if p.Health <= 0 {
 			log.Printf("[saveTargetHealth] player %d is already dead, skipping duplicate death handling.", targetID)
-			return
+			return false
 		}
 		p.Health = ar.NewHealth
 		if ar.NewHealth > 0 {
@@ -950,10 +1050,11 @@ func saveTargetHealth(
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] player %d death was already counted, skipping duplicate handling.", targetID)
-				return
+				return false
 			}
 			handlePlayerDeath(instanceID, p, attackerID, attackerType == "player")
 			log.Printf("[saveTargetHealth] handlePlayerDeath called for %d", targetID)
+			return true
 		}
 	} else {
 		// 1. Сохраняем HP в БД
@@ -961,19 +1062,19 @@ func saveTargetHealth(
 		err := Combat.UpdateMonsterHealth(instanceID, targetID, ar.NewHealth)
 		if err != nil {
 			log.Printf("[saveTargetHealth] UpdateMonsterHealth error: %v", err)
-			return
+			return false
 		}
 
 		// 2. Грузим монстра из БД (HP теперь актуален)
 		m, err := Combat.GetMonster(instanceID, targetID)
 		if err != nil || m == nil {
 			log.Printf("[saveTargetHealth] GetMonster error: %v", err)
-			return
+			return false
 		}
 
 		if _, ok, err := updateMonsterCellHealth(instanceID, m, ar.NewHealth); err != nil {
 			log.Printf("[saveTargetHealth] updateMonsterCellHealth error: %v", err)
-			return
+			return false
 		} else if ok {
 			log.Printf("[saveTargetHealth] Update monster HP on cell %d,%d", m.X, m.Y)
 			// Monster HP is now synced to clients via COMBAT_EXCHANGE.
@@ -992,11 +1093,13 @@ func saveTargetHealth(
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] monster %d death was already counted, skipping duplicate handling.", targetID)
-				return
+				return false
 			}
 			handleMonsterDeath(instanceID, targetID)
+			return true
 		}
 	}
+	return false
 }
 
 func findMonsterCellIndex(cells []game.FullCell, monster *repository.MatchMonster) int {
@@ -1148,7 +1251,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 	}
 
 	// Transfer quest artifact before removing player from match
-	transferQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
+	transferCombatQuestArtifact(instanceID, userID, oldPos.X, oldPos.Y, killerID, killerIsPlayer)
 
 	if err := Combat.MarkPlayerDead(instanceID, p.UserID); err != nil {
 		log.Printf("[handlePlayerDeath] MarkPlayerDead error: %v", err)
@@ -1467,11 +1570,11 @@ func tryPushCombatTarget(
 	current stats,
 	destination CombatPoint,
 ) (bool, []game.FullCell, error) {
-	oldCell, err := repository.LoadMapCell(instanceID, current.X, current.Y)
+	oldCell, err := loadCombatMapCell(instanceID, current.X, current.Y)
 	if err != nil {
 		return false, nil, err
 	}
-	newCell, err := repository.LoadMapCell(instanceID, destination.X, destination.Y)
+	newCell, err := loadCombatMapCell(instanceID, destination.X, destination.Y)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1527,7 +1630,7 @@ func tryPushCombatTarget(
 				Image:           monster.Image,
 			}
 		}
-		if err := repository.UpdateMatchMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
+		if err := updateCombatMonsterPosition(instanceID, targetID, destination.X, destination.Y); err != nil {
 			return false, nil, err
 		}
 
@@ -1540,23 +1643,31 @@ func tryPushCombatTarget(
 		return false, nil, nil
 	}
 
-	tx, err := repository.DB.Begin()
-	if err != nil {
-		return false, nil, err
-	}
-	defer tx.Rollback()
-
-	if err := repository.SaveMapCellTx(tx, instanceID, *oldCell); err != nil {
-		return false, nil, err
-	}
-	if err := repository.SaveMapCellTx(tx, instanceID, *newCell); err != nil {
-		return false, nil, err
-	}
-	if err := tx.Commit(); err != nil {
+	if err := persistCombatPushCells(instanceID, *oldCell, *newCell); err != nil {
 		return false, nil, err
 	}
 
 	return true, []game.FullCell{*oldCell, *newCell}, nil
+}
+
+func persistCombatPushCellsWithDB(instanceID string, oldCell game.FullCell, newCell game.FullCell) error {
+	tx, err := repository.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := repository.SaveMapCellTx(tx, instanceID, oldCell); err != nil {
+		return err
+	}
+	if err := repository.SaveMapCellTx(tx, instanceID, newCell); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func resolveRangerPushFallbackDamage(
@@ -1573,10 +1684,9 @@ func resolveRangerPushFallbackDamage(
 	return applyDamage(attacker, bonusTargetStats)
 }
 
-// tryApplyMysticEnergyDrain пытается вытянуть энергию у цели.
-// Если у цели нет энергии — наносит небольшой бонусный плоский урон.
-// Возвращает эффект (energyDrain) и опционально шаг (bonus hit), если был нанесён доп. урон.
-func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) (*CombatEffect, *CombatStep, error) {
+// tryApplyMysticEnergyDrain applies Mystic's on-hit energy drain and optional Arcane Overburn.
+// It returns combat effects and an optional pure-damage step when missing energy becomes HP damage.
+func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType string, targetID int) ([]CombatEffect, *CombatStep, error) {
 	if targetType != "player" {
 		return nil, nil, nil
 	}
@@ -1590,59 +1700,36 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 		return nil, nil, err
 	}
 
-	// Если у цели нет энергии — наносим бонусный плоский урон.
-	if target.Energy <= 0 {
-		bonusDamage := energyDrainPerHit // используем константу дрейна как величину бонусного урона
-		if bonusDamage <= 0 {
-			return nil, nil, nil
-		}
-		ar := applyFlatDamage(target.Health, bonusDamage)
-		// Сохраняем новый HP цели и обрабатываем возможную смерть
-		saveTargetHealth(instanceID, "player", targetID, attackerID, "player", ar)
-
-		sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
-		targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
-		step := CombatStep{
-			Kind:          "bonus",
-			Source:        &sourceRef,
-			Target:        targetRef,
-			Damage:        ar.Damage,
-			TargetHPAfter: ar.NewHealth,
-		}
-		eff := CombatEffect{
-			Kind:              "energyDrain",
-			Source:            &sourceRef,
-			Target:            &targetRef,
-			Succeeded:         true,
-			BonusDamage:       ar.Damage,
-			EnergyGranted:     0,
-			EnergyDrained:     0,
-			SourceEnergyAfter: attacker.Energy,
-			TargetEnergyAfter: target.Energy,
-		}
-		return &eff, &step, nil
+	overburn := rollReflexProc(balance.CalculateReflexProcChance(attacker.Agility))
+	burnAmount := energyDrainPerHit
+	restoreAmount := energyDrainGainPerHit
+	if overburn {
+		burnAmount = arcaneOverburnEnergyBurn
+		restoreAmount = arcaneOverburnEnergyGain
 	}
 
-	// Обычный дренаж энергии
-	drainAmount := energyDrainPerHit
-	if target.Energy < drainAmount {
-		drainAmount = target.Energy
+	actualBurn := burnAmount
+	if target.Energy < actualBurn {
+		actualBurn = target.Energy
 	}
-	gainAmount := energyDrainGainPerHit
-	if available := attacker.MaxEnergy - attacker.Energy; gainAmount > available {
-		gainAmount = available
+	if actualBurn < 0 {
+		actualBurn = 0
 	}
-	if drainAmount <= 0 && gainAmount <= 0 {
-		return nil, nil, nil
-	}
-
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		if !ms.TryUseMysticDrain(attackerID, targetID, energyDrainPerTargetLimit) {
-			return nil, nil, nil
-		}
+	missingBurn := burnAmount - actualBurn
+	if missingBurn < 0 {
+		missingBurn = 0
 	}
 
-	target.Energy -= drainAmount
+	gainAmount := restoreAmount
+	availableEnergy := attacker.MaxEnergy - attacker.Energy
+	if availableEnergy < 0 {
+		availableEnergy = 0
+	}
+	if gainAmount > availableEnergy {
+		gainAmount = availableEnergy
+	}
+
+	target.Energy -= actualBurn
 	attacker.Energy += gainAmount
 
 	if err := Combat.UpdatePlayer(instanceID, target); err != nil {
@@ -1654,16 +1741,55 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 
 	sourceRef := CombatTargetRef{ID: attackerID, Type: CombatActorPlayer}
 	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorPlayer}
-	return &CombatEffect{
+	effects := []CombatEffect{{
 		Kind:              "energyDrain",
 		Source:            &sourceRef,
 		Target:            &targetRef,
 		Succeeded:         true,
+		Amount:            actualBurn,
 		EnergyGranted:     gainAmount,
-		EnergyDrained:     drainAmount,
+		EnergyDrained:     actualBurn,
 		SourceEnergyAfter: attacker.Energy,
 		TargetEnergyAfter: target.Energy,
-	}, nil, nil
+	}}
+
+	if overburn {
+		effects = append(effects, CombatEffect{
+			Kind:      "arcaneOverburn",
+			Source:    &sourceRef,
+			Target:    &targetRef,
+			Succeeded: true,
+		})
+	}
+
+	var pureStep *CombatStep
+	if missingBurn > 0 {
+		pureRes := applyFlatDamage(target.Health, missingBurn)
+		actualPureDamage := actualDamageDealt(target.Health, pureRes.NewHealth)
+		pureRes.Damage = actualPureDamage
+		if actualPureDamage > 0 {
+			if ms, ok := game.GetMatchState(instanceID); ok {
+				ms.RecordDamageEvent(attackerID, "player", targetID, actualPureDamage)
+			}
+			saveTargetHealth(instanceID, "player", targetID, attackerID, "player", pureRes)
+			pureStep = &CombatStep{
+				Kind:          "bonus",
+				Source:        &sourceRef,
+				Target:        targetRef,
+				Damage:        actualPureDamage,
+				TargetHPAfter: pureRes.NewHealth,
+			}
+			effects = append(effects, CombatEffect{
+				Kind:      "pureDamage",
+				Source:    &sourceRef,
+				Target:    &targetRef,
+				Amount:    actualPureDamage,
+				Succeeded: true,
+			})
+		}
+	}
+
+	return effects, pureStep, nil
 }
 
 // --- Контратака + логика TURN_PASSED для игрока ----------------------------
@@ -1793,13 +1919,13 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	// Prevent friendly fire: if both are players and belong to same non-zero group
 	if req.AttackerType == "player" && req.TargetType == "player" {
-		atkP, aerr := repository.GetMatchPlayerByID(req.InstanceID, req.AttackerID)
+		atkP, aerr := Combat.GetPlayer(req.InstanceID, req.AttackerID)
 		if aerr != nil {
 			log.Printf("[DEBUG] UniversalAttackHandler: load attacker player error: %v", aerr)
 			http.Error(w, "failed to load attacker player", http.StatusInternalServerError)
 			return
 		}
-		tgtP, terr := repository.GetMatchPlayerByID(req.InstanceID, req.TargetID)
+		tgtP, terr := Combat.GetPlayer(req.InstanceID, req.TargetID)
 		if terr != nil {
 			log.Printf("[DEBUG] UniversalAttackHandler: load target player error: %v", terr)
 			http.Error(w, "failed to load target player", http.StatusInternalServerError)
@@ -1837,6 +1963,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	effects := make([]CombatEffect, 0, 4)
 	var pushedCells []game.FullCell
 	var pushedPlayerPosition *CombatPoint
+	targetDeathProcessed := false
 
 	preArmorBreak := game.ArmorBreakState{}
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
@@ -1847,6 +1974,27 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	effectiveTargetStats.Defense = effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
 
 	targetRes := applyDamage(atkStats, effectiveTargetStats)
+	guardianShieldBlocked := resolveGuardianShieldBlock(req.TargetType, defStats)
+	if guardianShieldBlocked {
+		targetRes = attackResult{Damage: 0, NewHealth: defStats.Health, Triggered: false}
+		effects = append(effects, CombatEffect{
+			Kind:      "block",
+			Target:    &targetRef,
+			Succeeded: true,
+		})
+	}
+	if req.AttackerType == "player" {
+		var criticalShot bool
+		targetRes, criticalShot = tryApplyRangerCriticalShot(atkStats, defStats.Health, targetRes)
+		if criticalShot {
+			effects = append(effects, CombatEffect{
+				Kind:      "crit",
+				Source:    &attackerRef,
+				Target:    &targetRef,
+				Succeeded: true,
+			})
+		}
+	}
 	steps = append(steps, CombatStep{
 		Kind:          "hit",
 		Source:        &attackerRef,
@@ -1855,21 +2003,42 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		TargetHPAfter: targetRes.NewHealth,
 	})
 
-	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Damage > 0 {
+	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Triggered && targetRes.Damage > 0 {
 		ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
 	}
-	saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+	if targetRes.Triggered {
+		targetDeathProcessed = saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
+	}
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
 
-	if atkStats.CharacterType == "mystic" && finalTargetHP > 0 {
-		drainEffect, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
+	if req.AttackerType == "player" && targetRes.Triggered && atkStats.CharacterType == "berserker" {
+		actualDamage := actualDamageDealt(defStats.Health, targetRes.NewHealth)
+		lifestealEffect, err := tryApplyBerserkerBloodFeast(
+			req.InstanceID,
+			req.AttackerID,
+			attackerRef,
+			&atkStats,
+			actualDamage,
+		)
+		if err != nil {
+			http.Error(w, "Ошибка применения Blood Feast", http.StatusInternalServerError)
+			return
+		}
+		if lifestealEffect != nil {
+			effects = append(effects, *lifestealEffect)
+			finalAttackerHP = atkStats.Health
+		}
+	}
+
+	if atkStats.CharacterType == "mystic" && targetRes.Triggered && finalTargetHP > 0 {
+		drainEffects, drainStep, err := tryApplyMysticEnergyDrain(req.InstanceID, req.AttackerID, req.TargetType, req.TargetID)
 		if err != nil {
 			http.Error(w, "Ошибка применения Energy Drain", http.StatusInternalServerError)
 			return
 		}
-		if drainEffect != nil {
-			effects = append(effects, *drainEffect)
+		if len(drainEffects) > 0 {
+			effects = append(effects, drainEffects...)
 		}
 		if drainStep != nil {
 			steps = append(steps, *drainStep)
@@ -1882,7 +2051,9 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	}
 
 	if atkStats.CharacterType == "ranger" && mode == attackModeRanged && finalTargetHP > 0 {
-		if preArmorBreak.Stacks >= armorBreakMaxStacks && targetRes.Damage > 0 {
+		armorBreakTriggeredThirdEffect := false
+		rangerHitConnected := targetRes.Triggered
+		if preArmorBreak.Stacks >= armorBreakMaxStacks && rangerHitConnected {
 			dx := defStats.X - atkStats.X
 			if dx != 0 {
 				dx /= abs(dx)
@@ -1927,6 +2098,10 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					PositionAfter: &pushTo,
 					EnergyGranted: energyGranted,
 				})
+				if ms, ok := game.GetMatchState(req.InstanceID); ok {
+					ms.ResetArmorBreak(req.TargetType, req.TargetID)
+				}
+				armorBreakTriggeredThirdEffect = true
 			} else {
 				bonusRes := resolveRangerPushFallbackDamage(
 					req.InstanceID,
@@ -1939,7 +2114,9 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 				if ms, ok := game.GetMatchState(req.InstanceID); ok && bonusRes.Damage > 0 {
 					ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, bonusRes.Damage)
 				}
-				saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes)
+				if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes) {
+					targetDeathProcessed = true
+				}
 				finalTargetHP = bonusRes.NewHealth
 				steps = append(steps, CombatStep{
 					Kind:          "bonus",
@@ -1955,10 +2132,14 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					Succeeded:   false,
 					BonusDamage: bonusRes.Damage,
 				})
+				if ms, ok := game.GetMatchState(req.InstanceID); ok {
+					ms.ResetArmorBreak(req.TargetType, req.TargetID)
+				}
+				armorBreakTriggeredThirdEffect = true
 			}
 		}
 
-		if finalTargetHP > 0 {
+		if finalTargetHP > 0 && rangerHitConnected && !armorBreakTriggeredThirdEffect {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok {
 				armorBreak := ms.ApplyArmorBreak(req.TargetType, req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
 				effects = append(effects, CombatEffect{
@@ -1980,7 +2161,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		req.TargetType, req.TargetID,
 		atkStats, defStats,
 		finalTargetHP > 0,
-		mode == attackModeMelee,
+		mode == attackModeMelee || (guardianShieldBlocked && mode == attackModeRanged && manhattanDistance(atkStats, defStats) <= 1),
 	)
 	if counterRes.Triggered {
 		finalAttackerHP = counterRes.NewHealth
@@ -1997,6 +2178,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		atkStats.CharacterType == "berserker" &&
 		mode == attackModeMelee &&
 		counterRes.Triggered &&
+		targetRes.Triggered &&
 		finalTargetHP > 0 &&
 		finalAttackerHP > 0 {
 		followUpDamage := targetRes.Damage / 2
@@ -2011,7 +2193,9 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok && followUpRes.Damage > 0 {
 				ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, followUpRes.Damage)
 			}
-			saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes)
+			if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes) {
+				targetDeathProcessed = true
+			}
 			finalTargetHP = followUpRes.NewHealth
 			steps = append(steps, CombatStep{
 				Kind:          "followup",
@@ -2036,6 +2220,15 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		})
 	}
 
+	var drops []EquipmentDropPayload
+	if req.AttackerType == "player" && req.TargetType == "monster" && targetDeathProcessed {
+		var err error
+		drops, err = maybeGrantMonsterEquipmentDrop(req.AttackerID, req.InstanceID)
+		if err != nil {
+			log.Printf("[equipment_drop] failed to grant drop: instance=%s killer=%d monster=%d err=%v", req.InstanceID, req.AttackerID, req.TargetID, err)
+		}
+	}
+
 	// 8) HTTP-ответ
 	resp := map[string]interface{}{
 		"damage_to_target": targetRes.Damage,
@@ -2044,27 +2237,33 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		"new_attacker_hp":  finalAttackerHP,
 		"attack_mode":      mode,
 	}
+	if len(drops) > 0 {
+		resp["drops"] = drops
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 
 	// 9) WS: COMBAT_EXCHANGE
+	payload := buildCombatExchangePayload(
+		req.InstanceID,
+		req.AttackerType,
+		req.AttackerID,
+		req.TargetType,
+		req.TargetID,
+		atkStats,
+		mode,
+		steps,
+		effects,
+	)
+	payload.Drops = drops
 	msg := CombatExchangeMessage{
-		Type: "COMBAT_EXCHANGE",
-		Payload: buildCombatExchangePayload(
-			req.InstanceID,
-			req.AttackerType,
-			req.AttackerID,
-			req.TargetType,
-			req.TargetID,
-			atkStats,
-			mode,
-			steps,
-			effects,
-		),
+		Type:    "COMBAT_EXCHANGE",
+		Payload: payload,
 	}
 
 	data, _ := json.Marshal(msg)
 	Broadcast(data)
+	broadcastEquipmentDropped(req.InstanceID, drops)
 
 	if pushedPlayerPosition != nil {
 		broadcastMovePlayer(req.InstanceID, req.TargetID, *pushedPlayerPosition)
@@ -2081,4 +2280,47 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		sendUpdatePlayerWS(req.InstanceID, req.TargetID)
 	}
 
+}
+
+func broadcastEquipmentDropped(instanceID string, drops []EquipmentDropPayload) {
+	for _, drop := range drops {
+		payload := struct {
+			InstanceID     string                      `json:"instanceId"`
+			ItemInstanceID string                      `json:"itemInstanceId"`
+			UserID         int                         `json:"userId"`
+			OwnerUserID    int                         `json:"ownerUserId"`
+			TemplateCode   string                      `json:"templateCode"`
+			Name           string                      `json:"name"`
+			Rarity         string                      `json:"rarity"`
+			ImageURL       string                      `json:"imageUrl"`
+			Slot           string                      `json:"slot"`
+			ItemType       string                      `json:"itemType"`
+			Item           EquipmentDroppedItemPayload `json:"item"`
+		}{
+			InstanceID:     instanceID,
+			ItemInstanceID: drop.InstanceID,
+			UserID:         drop.UserID,
+			OwnerUserID:    drop.OwnerUserID,
+			TemplateCode:   drop.TemplateCode,
+			Name:           drop.Name,
+			Rarity:         drop.Rarity,
+			ImageURL:       drop.ImageURL,
+			Slot:           drop.Slot,
+			ItemType:       drop.ItemType,
+			Item:           drop.Item,
+		}
+		message := struct {
+			Type    string      `json:"type"`
+			Payload interface{} `json:"payload"`
+		}{
+			Type:    "EQUIPMENT_DROPPED",
+			Payload: payload,
+		}
+		data, err := json.Marshal(message)
+		if err != nil {
+			log.Printf("[equipment_drop] failed to marshal websocket event: instance=%s drop=%+v err=%v", instanceID, drop, err)
+			continue
+		}
+		Broadcast(data)
+	}
 }

@@ -103,6 +103,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
     maxEnergy?: number;
     attack?: number;
     defense?: number;
+    agility?: number;
+    characterType?: string;
     sightRange?: number;
     structureType?: "scout_tower" | "turret" | "wall";
     userId?: number;
@@ -592,6 +594,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         maxEnergy?: number;
         attack?: number;
         defense?: number;
+        agility?: number;
+        characterType?: string;
         sightRange?: number;
         structureType?: "scout_tower" | "turret" | "wall";
         userId?: number;
@@ -667,6 +671,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
           maxEnergy: myPlayer.maxEnergy,
           attack: myPlayer.attack,
           defense: myPlayer.defense,
+          agility: myPlayer.agility,
+          characterType: myPlayer.characterType,
           userId: myPlayer.user_id,
           groupId: myPlayer.group_id,
         });
@@ -692,6 +698,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         maxEnergy: targetPlayer.maxEnergy,
         attack: targetPlayer.attack,
         defense: targetPlayer.defense,
+        agility: targetPlayer.agility,
+        characterType: targetPlayer.characterType,
         userId: targetPlayer.user_id,
         groupId: targetPlayer.group_id,
       });
@@ -1223,6 +1231,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
             base.maxEnergy = pl.maxEnergy;
             base.attack = pl.attack;
             base.defense = pl.defense;
+            base.agility = pl.agility;
+            base.characterType = pl.characterType;
             base.groupId = (pl as any).group_id;
           }
         }
@@ -1498,6 +1508,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
               maxHealth={myPlayer.maxHealth}
               energy={myPlayer.energy}
               maxEnergy={myPlayer.maxEnergy}
+              agility={myPlayer.agility}
+              characterType={myPlayer.characterType}
               isRanged={myPlayer.isRanged}
               attackRange={myPlayer.attackRange}
               groupId={myPlayer.group_id}

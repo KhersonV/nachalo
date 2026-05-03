@@ -94,6 +94,107 @@ function addDamageEffects(
     });
 }
 
+function addBlockEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:block:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "BLOCK",
+        tone: "block",
+    });
+}
+
+function addLifestealEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    actorSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+    amount: number,
+) {
+    if (amount <= 0) return;
+
+    effects.push({
+        id: `${exchangeId}:lifesteal:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: actorSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: `LIFESTEAL +${amount}`,
+        tone: "lifesteal",
+    });
+}
+
+function addCritEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:crit:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "CRIT",
+        tone: "crit",
+    });
+}
+
+function addOverburnEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+) {
+    effects.push({
+        id: `${exchangeId}:overburn:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: "OVERBURN",
+        tone: "overburn",
+    });
+}
+
+function addPureDamageEffect(
+    effects: ActiveEffect[],
+    exchangeId: string,
+    targetSnapshot: CombatActorSnapshot,
+    index: number,
+    startMs: number,
+    amount: number,
+) {
+    if (amount <= 0) return;
+
+    effects.push({
+        id: `${exchangeId}:pure-damage:${index}`,
+        exchangeId,
+        kind: "textFloater",
+        cell: targetSnapshot.position,
+        startMs,
+        durationMs: FLOATER_MS,
+        text: `PURE +${amount}`,
+        tone: "pureDamage",
+    });
+}
+
 function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
@@ -185,6 +286,95 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
             );
         }
     }
+
+    exchange.effects?.forEach((effect, index) => {
+        if (!effect.succeeded) {
+            return;
+        }
+
+        if (effect.kind === "block" && effect.target) {
+            const blockTarget = getSnapshotForRef(exchange, effect.target);
+            if (blockTarget) {
+                addBlockEffect(
+                    effects,
+                    exchange.exchangeId,
+                    blockTarget,
+                    index,
+                    lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "lifesteal" && typeof effect.amount === "number") {
+            const actorRef = effect.source ?? effect.target;
+            if (!actorRef) return;
+
+            const actor = getSnapshotForRef(exchange, actorRef);
+            if (actor) {
+                addLifestealEffect(
+                    effects,
+                    exchange.exchangeId,
+                    actor,
+                    index,
+                    lastImpactMs,
+                    effect.amount,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "crit") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addCritEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "arcaneOverburn") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addOverburnEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
+                );
+            }
+            return;
+        }
+
+        if (effect.kind === "pureDamage" && typeof effect.amount === "number") {
+            const targetRef = effect.target ?? effect.source;
+            if (!targetRef) return;
+
+            const target = getSnapshotForRef(exchange, targetRef);
+            if (target) {
+                addPureDamageEffect(
+                    effects,
+                    exchange.exchangeId,
+                    target,
+                    index,
+                    lastImpactMs,
+                    effect.amount,
+                );
+            }
+        }
+    });
 
     for (const [index, step] of exchange.steps.entries()) {
         if (step.kind === "auraExit") {

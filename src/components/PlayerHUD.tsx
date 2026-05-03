@@ -5,6 +5,11 @@
 "use client";
 
 import React from "react";
+import {
+    getClassReflexEffectDescription,
+    getClassReflexEffectName,
+    getReflexProcChance,
+} from "../utils/reflex";
 import styles from "../styles/GameController.module.css";
 
 interface PlayerHUDProps {
@@ -12,6 +17,8 @@ interface PlayerHUDProps {
     maxHealth: number;
     energy: number;
     maxEnergy: number;
+    agility?: number;
+    characterType?: string;
     isRanged?: boolean;
     attackRange?: number;
     groupId?: number;
@@ -22,6 +29,8 @@ export default React.memo(function PlayerHUD({
     maxHealth,
     energy,
     maxEnergy,
+    agility,
+    characterType,
     isRanged,
     attackRange,
     groupId,
@@ -30,6 +39,11 @@ export default React.memo(function PlayerHUD({
     const energyPercent = Math.round((energy / maxEnergy) * 100);
     const attackTypeLabel = isRanged ? "Ranged" : "Melee";
     const attackRangeLabel = isRanged ? (attackRange ?? 1) : 1;
+    const reflexChance =
+        typeof agility === "number" ? getReflexProcChance(agility) : null;
+    const reflexEffectName = getClassReflexEffectName(characterType);
+    const reflexDescription = getClassReflexEffectDescription(characterType);
+    const reflexTitle = `Effect: ${reflexEffectName}. ${reflexDescription}`;
 
     return (
         <div className={styles.hud}>
@@ -65,6 +79,17 @@ export default React.memo(function PlayerHUD({
                 <span className={styles.hudMetaLabel}>Range</span>
                 <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>
+            {typeof agility === "number" && (
+                <div
+                    className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}
+                    title={reflexTitle}
+                >
+                    <span className={styles.hudMetaLabel}>Reflex</span>
+                    <span className={styles.hudMetaValue}>
+                        {agility} · {reflexChance}%
+                    </span>
+                </div>
+            )}
             {typeof groupId === "number" && (
                 <div className={styles.hudMetaRow}>
                     <span className={styles.hudMetaLabel}>Group</span>
