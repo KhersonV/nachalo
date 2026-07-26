@@ -31,14 +31,18 @@ const (
 	guardianZoneControlMovePenalty   = 1
 	guardianAuraExitDamageCap        = 5
 	armorBreakDefensePenaltyPerStack = 2
+	monsterArmorBreakPenaltyPerStack = 5
 	armorBreakDurationTurns          = 2
 	armorBreakMaxStacks              = 2
+	rangerThirdShotEnergyRefund      = 4
 	rangerCriticalDamagePercent      = 142
 	berserkerFollowUpLimitPerTurn    = 0 // 0 = безлимитные дополнительные удары
+	berserkerMonsterCounterPercent   = 55
 	energyDrainPerHit                = 3
 	energyDrainGainPerHit            = 1
 	arcaneOverburnEnergyBurn         = 4
 	arcaneOverburnEnergyGain         = 3
+	mysticMonsterDefensePercent      = 60
 )
 
 var (
@@ -760,7 +764,11 @@ func effectiveDefense(instanceID string, targetType string, targetID int, baseDe
 	defense := baseDefense
 	if ms, ok := game.GetMatchState(instanceID); ok {
 		state := ms.GetArmorBreakState(targetType, targetID)
-		defense -= state.Stacks * armorBreakDefensePenaltyPerStack
+		penaltyPerStack := armorBreakDefensePenaltyPerStack
+		if targetType == "monster" {
+			penaltyPerStack = monsterArmorBreakPenaltyPerStack
+		}
+		defense -= state.Stacks * penaltyPerStack
 	}
 	if defense < 0 {
 		return 0
@@ -1681,7 +1689,38 @@ func resolveRangerPushFallbackDamage(
 	bonusTargetStats := target
 	bonusTargetStats.Health = currentHealth
 	bonusTargetStats.Defense = effectiveDefense(instanceID, targetType, targetID, target.Defense)
-	return applyDamage(attacker, bonusTargetStats)
+	result := applyDamage(attacker, bonusTargetStats)
+	if targetType == "monster" && result.Damage > 0 {
+		result.Damage /= 2
+		if result.Damage < 1 {
+			result.Damage = 1
+		}
+		result.NewHealth = currentHealth - result.Damage
+		if result.NewHealth < 0 {
+			result.NewHealth = 0
+		}
+	}
+	return result
+}
+
+func grantRangerThirdShotEnergy(instanceID string, attackerID int) (int, error) {
+	player, err := Combat.GetPlayer(instanceID, attackerID)
+	if err != nil {
+		return 0, err
+	}
+	available := player.MaxEnergy - player.Energy
+	if available <= 0 {
+		return 0, nil
+	}
+	granted := rangerThirdShotEnergyRefund
+	if granted > available {
+		granted = available
+	}
+	player.Energy += granted
+	if err := Combat.UpdatePlayer(instanceID, player); err != nil {
+		return 0, err
+	}
+	return granted, nil
 }
 
 // tryApplyMysticEnergyDrain applies Mystic's on-hit energy drain and optional Arcane Overburn.
@@ -1830,6 +1869,19 @@ func doCounterattackWithEnergy(
 	effectiveAttackerStats := attackerStats
 	effectiveAttackerStats.Defense = effectiveDefense(instanceID, attackerType, attackerID, attackerStats.Defense)
 	ar := applyDamage(defenderStats, effectiveAttackerStats) // defender контратакует attacker
+	if attackerType == "player" &&
+		defenderType == "monster" &&
+		attackerStats.CharacterType == "berserker" &&
+		ar.Damage > 0 {
+		ar.Damage = ar.Damage * berserkerMonsterCounterPercent / 100
+		if ar.Damage < 1 {
+			ar.Damage = 1
+		}
+		ar.NewHealth = attackerStats.Health - ar.Damage
+		if ar.NewHealth < 0 {
+			ar.NewHealth = 0
+		}
+	}
 	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
 		ms.RecordDamageEvent(defenderID, attackerType, attackerID, ar.Damage)
 		if ar.NewHealth <= 0 {
@@ -1972,6 +2024,11 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	effectiveTargetStats := defStats
 	effectiveTargetStats.Defense = effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
+	if req.AttackerType == "player" &&
+		atkStats.CharacterType == "mystic" &&
+		req.TargetType == "monster" {
+		effectiveTargetStats.Defense = effectiveTargetStats.Defense * mysticMonsterDefensePercent / 100
+	}
 
 	targetRes := applyDamage(atkStats, effectiveTargetStats)
 	guardianShieldBlocked := resolveGuardianShieldBlock(req.TargetType, defStats)
@@ -2054,6 +2111,14 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		armorBreakTriggeredThirdEffect := false
 		rangerHitConnected := targetRes.Triggered
 		if preArmorBreak.Stacks >= armorBreakMaxStacks && rangerHitConnected {
+			energyGranted := 0
+			if req.AttackerType == "player" {
+				energyGranted, err = grantRangerThirdShotEnergy(req.InstanceID, req.AttackerID)
+				if err != nil {
+					http.Error(w, "Ошибка обновления энергии ranger", http.StatusInternalServerError)
+					return
+				}
+			}
 			dx := defStats.X - atkStats.X
 			if dx != 0 {
 				dx /= abs(dx)
@@ -2072,23 +2137,6 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 				pushedCells = updatedCells
 				if req.TargetType == "player" {
 					pushedPlayerPosition = &CombatPoint{X: pushTo.X, Y: pushTo.Y}
-				}
-				energyGranted := 0
-				if req.AttackerType == "player" {
-					attackerPlayer, err := Combat.GetPlayer(req.InstanceID, req.AttackerID)
-					if err != nil {
-						http.Error(w, "Ошибка обновления энергии ranger", http.StatusInternalServerError)
-						return
-					}
-					energyGranted = baseMoveEnergyCost(attackerPlayer.Mobility)
-					if available := attackerPlayer.MaxEnergy - attackerPlayer.Energy; energyGranted > available {
-						energyGranted = available
-					}
-					attackerPlayer.Energy += energyGranted
-					if err := Combat.UpdatePlayer(req.InstanceID, attackerPlayer); err != nil {
-						http.Error(w, "Ошибка обновления энергии ranger", http.StatusInternalServerError)
-						return
-					}
 				}
 				effects = append(effects, CombatEffect{
 					Kind:          "push",
@@ -2126,11 +2174,12 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					TargetHPAfter: bonusRes.NewHealth,
 				})
 				effects = append(effects, CombatEffect{
-					Kind:        "push",
-					Source:      &attackerRef,
-					Target:      &targetRef,
-					Succeeded:   false,
-					BonusDamage: bonusRes.Damage,
+					Kind:          "push",
+					Source:        &attackerRef,
+					Target:        &targetRef,
+					Succeeded:     false,
+					BonusDamage:   bonusRes.Damage,
+					EnergyGranted: energyGranted,
 				})
 				if ms, ok := game.GetMatchState(req.InstanceID); ok {
 					ms.ResetArmorBreak(req.TargetType, req.TargetID)
@@ -2142,11 +2191,15 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		if finalTargetHP > 0 && rangerHitConnected && !armorBreakTriggeredThirdEffect {
 			if ms, ok := game.GetMatchState(req.InstanceID); ok {
 				armorBreak := ms.ApplyArmorBreak(req.TargetType, req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
+				penaltyPerStack := armorBreakDefensePenaltyPerStack
+				if req.TargetType == "monster" {
+					penaltyPerStack = monsterArmorBreakPenaltyPerStack
+				}
 				effects = append(effects, CombatEffect{
 					Kind:          "armorBreak",
 					Source:        &attackerRef,
 					Target:        &targetRef,
-					Value:         -armorBreakDefensePenaltyPerStack,
+					Value:         -penaltyPerStack,
 					Stacks:        armorBreak.Stacks,
 					DurationTurns: armorBreakDurationTurns,
 					Succeeded:     true,
@@ -2171,6 +2224,34 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			Target:        attackerRef,
 			Damage:        counterRes.Damage,
 			TargetHPAfter: counterRes.NewHealth,
+		})
+	}
+
+	if req.AttackerType == "player" &&
+		req.TargetType == "monster" &&
+		atkStats.CharacterType == "guardian" &&
+		counterRes.Triggered &&
+		finalAttackerHP > 0 &&
+		finalTargetHP > 0 {
+		monsterDefense := effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
+		responseDamage := atkStats.Defense - monsterDefense/2
+		if responseDamage < 1 {
+			responseDamage = 1
+		}
+		responseResult := applyFlatDamage(finalTargetHP, responseDamage)
+		if ms, ok := game.GetMatchState(req.InstanceID); ok && responseResult.Damage > 0 {
+			ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, responseResult.Damage)
+		}
+		if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, responseResult) {
+			targetDeathProcessed = true
+		}
+		finalTargetHP = responseResult.NewHealth
+		steps = append(steps, CombatStep{
+			Kind:          "guardianResponse",
+			Source:        &attackerRef,
+			Target:        targetRef,
+			Damage:        responseResult.Damage,
+			TargetHPAfter: responseResult.NewHealth,
 		})
 	}
 

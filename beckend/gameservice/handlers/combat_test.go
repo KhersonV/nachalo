@@ -1293,8 +1293,8 @@ func TestRangerArmorBreakPushResetsStacksAndNextHitRestarts(t *testing.T) {
 	if h.monster.X != 3 || h.monster.Y != 1 {
 		t.Fatalf("expected monster pushed to 3,1, got %d,%d", h.monster.X, h.monster.Y)
 	}
-	if h.attacker.Energy != 79 {
-		t.Fatalf("expected ranger energy refund before reset to leave energy 79, got %d", h.attacker.Energy)
+	if h.attacker.Energy != 80 {
+		t.Fatalf("expected fixed ranger energy refund before reset to leave energy 80, got %d", h.attacker.Energy)
 	}
 
 	next := h.attackMonster()
@@ -1358,15 +1358,15 @@ func TestRangerArmorBreakZeroDamageHitAppliesAndAdvancesStacks(t *testing.T) {
 	}
 }
 
-func TestRangerArmorBreakZeroDamageThirdHitPushResetsAndRestarts(t *testing.T) {
+func TestRangerArmorBreakThirdHitUsesMonsterPenaltyPushResetsAndRestarts(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage-push-reset", 30, false)
 	h.monster.Defense = 20
 
 	h.attackMonster()
 	h.attackMonster()
 	third := h.attackMonster()
-	if third.Steps[0].Damage != 0 {
-		t.Fatalf("expected third hit to deal 0 damage, got %+v", third.Steps[0])
+	if third.Steps[0].Damage != 1 {
+		t.Fatalf("expected third hit to deal 1 damage after two monster armor-break stacks, got %+v", third.Steps[0])
 	}
 	push, ok := findCombatEffect(third, "push")
 	if !ok || !push.Succeeded {
@@ -1383,19 +1383,19 @@ func TestRangerArmorBreakZeroDamageThirdHitPushResetsAndRestarts(t *testing.T) {
 	}
 }
 
-func TestRangerArmorBreakZeroDamageBlockedPushFallbackResetsAndRestarts(t *testing.T) {
+func TestRangerArmorBreakBlockedThirdHitUsesHalfFallbackAndResets(t *testing.T) {
 	h := newRangerArmorBreakCombatHarness(t, "ranger-zero-damage-fallback-reset", 30, true)
 	h.monster.Defense = 20
 
 	h.attackMonster()
 	h.attackMonster()
 	third := h.attackMonster()
-	if third.Steps[0].Damage != 0 {
-		t.Fatalf("expected third hit to deal 0 damage, got %+v", third.Steps[0])
+	if third.Steps[0].Damage != 1 {
+		t.Fatalf("expected third hit to deal 1 damage after two monster armor-break stacks, got %+v", third.Steps[0])
 	}
 	push, ok := findCombatEffect(third, "push")
-	if !ok || push.Succeeded || push.BonusDamage != 0 {
-		t.Fatalf("expected blocked zero-damage third hit to run fallback with 0 damage, got effect=%+v ok=%v", push, ok)
+	if !ok || push.Succeeded || push.BonusDamage != 1 {
+		t.Fatalf("expected blocked third hit to run minimum half-damage fallback 1, got effect=%+v ok=%v", push, ok)
 	}
 	if !hasCombatStep(third, "bonus") {
 		t.Fatalf("expected blocked zero-damage third hit to include fallback bonus step, got steps %+v", third.Steps)
@@ -1412,7 +1412,7 @@ func TestRangerArmorBreakZeroDamageBlockedPushFallbackResetsAndRestarts(t *testi
 }
 
 func TestRangerArmorBreakFallbackDeathStillResetsStacks(t *testing.T) {
-	h := newRangerArmorBreakCombatHarness(t, "ranger-fallback-death-reset", 8, true)
+	h := newRangerArmorBreakCombatHarness(t, "ranger-fallback-death-reset", 15, true)
 	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
 	h.matchState.ApplyArmorBreak("monster", h.monster.MonsterInstanceID, armorBreakMaxStacks, armorBreakDurationTurns)
 
