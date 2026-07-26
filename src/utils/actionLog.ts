@@ -433,6 +433,8 @@ function buildCombatStepMessage(
             return `${actorVerb(source, "counterattacked")} ${targetLabel(target)}${damageText}.${hpText}`;
         case "followup":
             return `${actorVerb(source, "followed up")} on ${targetLabel(target)}${damageText}.${hpText}`;
+        case "guardianResponse":
+            return `${actorVerb(source, "answered the counterattack")} against ${targetLabel(target)}${damageText}.${hpText}`;
         case "bonus":
             return `${actorVerb(source, "landed a bonus hit")} on ${targetLabel(target)}${damageText}.${hpText}`;
         case "auraExit":

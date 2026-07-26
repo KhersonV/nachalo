@@ -29,7 +29,12 @@ export default function GameWrapper({
   const dispatch = useDispatch<AppDispatch>();
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const state = useSelector((state: RootState) => state.game);
+  const loadedInstanceId = useSelector(
+    (state: RootState) => state.game.instanceId,
+  );
+  const isMapLoaded = useSelector(
+    (state: RootState) => state.game.isMapLoaded,
+  );
 
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
@@ -87,7 +92,7 @@ export default function GameWrapper({
         active_user = players[0].user_id;
       }
 
-      if (state.instanceId === data.instance_id && state.isMapLoaded) {
+      if (loadedInstanceId === data.instance_id && isMapLoaded) {
         // ничего не делаем, всё уже актуально
         return;
       }
@@ -129,12 +134,12 @@ export default function GameWrapper({
     }
     prevInstanceIdRef.current = instanceId;
 
-    if (!state.isMapLoaded && user && user.token) {
+    if (!isMapLoaded && user && user.token) {
       fetchAll();
     } else {
       debugLog(
         "[GameWrapper/useEffect] НЕ запускаем fetchAll (isMapLoaded:",
-        state.isMapLoaded,
+        isMapLoaded,
         ")",
       );
     }

@@ -168,6 +168,16 @@ type CombatEffectsLayerProps = {
     gap: number;
 };
 
+type AnimatedCombatLayersProps = {
+    visiblePlayers: PlayerState[];
+    trackedGrid: Cell[];
+    tileSize: number;
+    gap: number;
+    activeUser: number | null | undefined;
+    onPlayerClick?: (player: PlayerState) => void;
+    spriteMetaBySrc: Record<string, SpriteImageMeta>;
+};
+
 const EXPLORED_BUFFER = 3;
 
 const CHARACTER_SPRITES: CharacterSpriteConfig[] = [
@@ -1131,6 +1141,52 @@ const CombatEffectsLayer = React.memo(function CombatEffectsLayer({
     );
 });
 
+const AnimatedCombatLayers = React.memo(function AnimatedCombatLayers({
+    visiblePlayers,
+    trackedGrid,
+    tileSize,
+    gap,
+    activeUser,
+    onPlayerClick,
+    spriteMetaBySrc,
+}: AnimatedCombatLayersProps) {
+    const { nowMs, activeEffects, activeMotions, suppression } =
+        useCombatPresentationPlayback();
+
+    const { floaters, flashes } = useCombatFloaters(
+        visiblePlayers,
+        trackedGrid,
+        {
+            suppressedPlayerIds: suppression.playerIds,
+            suppressedMonsterIds: suppression.monsterIds,
+        },
+    );
+
+    return (
+        <>
+            <PlayerLayer
+                visiblePlayers={visiblePlayers}
+                tileSize={tileSize}
+                gap={gap}
+                active_user={activeUser}
+                onPlayerClick={onPlayerClick}
+                spriteMetaBySrc={spriteMetaBySrc}
+                attackMotions={activeMotions}
+                playbackNowMs={nowMs}
+            />
+
+            <CombatEffectsLayer
+                nowMs={nowMs}
+                effects={activeEffects}
+                flashes={flashes}
+                floaters={floaters}
+                tileSize={tileSize}
+                gap={gap}
+            />
+        </>
+    );
+});
+
 function MapWithCamera({
     instanceId,
     tileSize: inputTileSize,
@@ -1237,9 +1293,6 @@ function MapWithCamera({
         ],
     );
 
-    const { nowMs, activeEffects, activeMotions, suppression } =
-        useCombatPresentationPlayback();
-
     // Capture initial start owners (player start positions) once per match load.
     const initialStartOwnersRef = React.useRef<Record<string, number>>({});
     React.useEffect(() => {
@@ -1311,15 +1364,6 @@ function MapWithCamera({
             height: viewportHeight,
         }),
         [viewportWidth, viewportHeight],
-    );
-
-    const { floaters, flashes } = useCombatFloaters(
-        visiblePlayers,
-        trackedGrid,
-        {
-            suppressedPlayerIds: suppression.playerIds,
-            suppressedMonsterIds: suppression.monsterIds,
-        },
     );
 
     const [spriteMetaBySrc, setSpriteMetaBySrc] = React.useState<
@@ -1409,24 +1453,14 @@ function MapWithCamera({
                     renderCenterPosition={cameraCenterPoint}
                 />
 
-                <PlayerLayer
+                <AnimatedCombatLayers
                     visiblePlayers={visiblePlayers}
+                    trackedGrid={trackedGrid}
                     tileSize={tileSize}
                     gap={gap}
-                    active_user={active_user}
+                    activeUser={active_user}
                     onPlayerClick={onPlayerClick}
                     spriteMetaBySrc={spriteMetaBySrc}
-                    attackMotions={activeMotions}
-                    playbackNowMs={nowMs}
-                />
-
-                <CombatEffectsLayer
-                    nowMs={nowMs}
-                    effects={activeEffects}
-                    flashes={flashes}
-                    floaters={floaters}
-                    tileSize={tileSize}
-                    gap={gap}
                 />
                 {pingPoint ? (
                     <div

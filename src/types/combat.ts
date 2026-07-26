@@ -40,6 +40,13 @@ export type CombatStep =
           targetHpAfter: number;
       }
     | {
+          kind: "guardianResponse";
+          source: CombatTargetRef;
+          target: CombatTargetRef;
+          damage: number;
+          targetHpAfter: number;
+      }
+    | {
           kind: "bonus";
           source: CombatTargetRef;
           target: CombatTargetRef;

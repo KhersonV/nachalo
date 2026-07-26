@@ -509,6 +509,62 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
             continue;
         }
 
+        if (step.kind === "guardianResponse") {
+            const responseSource = getSnapshotForRef(exchange, step.source);
+            const responseTarget = getSnapshotForRef(exchange, step.target);
+            const responseStartMs = lastImpactMs + FOLLOWUP_DELAY_MS;
+
+            if (
+                responseSource &&
+                responseTarget &&
+                responseSource.type === "player"
+            ) {
+                motions.push({
+                    id: `${exchange.exchangeId}:motion:guardian-response`,
+                    exchangeId: exchange.exchangeId,
+                    actorId: responseSource.id,
+                    actorType: responseSource.type,
+                    kind: "lunge",
+                    startMs: responseStartMs,
+                    durationMs: FOLLOWUP_MOTION_MS,
+                    direction: {
+                        x: Math.sign(
+                            responseTarget.position.x -
+                                responseSource.position.x,
+                        ),
+                        y: Math.sign(
+                            responseTarget.position.y -
+                                responseSource.position.y,
+                        ),
+                    },
+                    distanceTiles: 0.14,
+                });
+                latestBlockingEndMs = Math.max(
+                    latestBlockingEndMs,
+                    responseStartMs + FOLLOWUP_MOTION_MS,
+                );
+            }
+
+            const responseImpactMs =
+                responseStartMs + FOLLOWUP_IMPACT_OFFSET_MS;
+            if (responseTarget && step.damage > 0) {
+                addDamageEffects(
+                    effects,
+                    exchange.exchangeId,
+                    responseTarget,
+                    index,
+                    responseImpactMs,
+                    step.damage,
+                );
+            }
+            lastImpactMs = responseImpactMs;
+            latestBlockingEndMs = Math.max(
+                latestBlockingEndMs,
+                responseImpactMs,
+            );
+            continue;
+        }
+
         if (step.kind === "bonus") {
             const bonusTarget = getSnapshotForRef(exchange, step.target);
             const bonusImpactMs = lastImpactMs + BONUS_IMPACT_DELAY_MS;
