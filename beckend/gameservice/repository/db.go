@@ -723,55 +723,55 @@ func EnsureStaticGameData() {
 		DELETE FROM artifacts WHERE name = 'ancient_amulet';
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'berserker_axe', 'Heavy axe that increases raw damage', '{"attack":8,"defense":-1}'::jsonb, '/artifacts/berserker-axe.webp'
+		SELECT 'berserker_axe', '+2 Attack. -4 Defense while carrying the quest artifact.', '{"attack":2,"defense":-4}'::jsonb, '/artifacts/berserker-axe.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'berserker_axe');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'boots_of_stealth', 'Silent boots improving mobility and scouting', '{"speed":2,"maneuverability":3}'::jsonb, '/artifacts/boots_of_stealth.webp'
+		SELECT 'boots_of_stealth', 'First move each turn costs 1 less Energy. Energy regeneration -3.', '{"first_move_cost":-1,"energy_regen":-3}'::jsonb, '/artifacts/boots_of_stealth.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'boots_of_stealth');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'crown_of_enlightenment', 'Crown that sharpens battlefield awareness', '{"vision":3}'::jsonb, '/artifacts/crown-of-enlightenment.webp'
+		SELECT 'crown_of_enlightenment', '+5 Max Energy. -15 Max HP. Attacks cost 1 more Energy.', '{"max_energy":5,"max_health":-15,"attack_cost":1}'::jsonb, '/artifacts/crown-of-enlightenment.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'crown_of_enlightenment');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'dragon_eye', 'Rare relic balancing offense and awareness', '{"attack":3,"vision":2}'::jsonb, '/artifacts/dragon-eye.webp'
+		SELECT 'dragon_eye', 'Attacks ignore 1 Defense. Lose 3 HP at the end of each turn (cannot reduce HP below 1).', '{"defense_ignore":1,"health_per_turn":-3}'::jsonb, '/artifacts/dragon-eye.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'dragon_eye');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'fire_amulet', 'Amulet that empowers aggressive style', '{"attack":5}'::jsonb, '/artifacts/fire-amulet.webp'
+		SELECT 'fire_amulet', 'Successful attacks deal +2 damage, but the carrier takes 3 damage (cannot reduce HP below 1).', '{"bonus_damage":2,"self_damage":3}'::jsonb, '/artifacts/fire-amulet.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'fire_amulet');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'gloves_of_precision', 'Precision gloves for cleaner strikes', '{"attack":2,"maneuverability":2}'::jsonb, '/artifacts/gloves-of-precision.webp'
+		SELECT 'gloves_of_precision', '+1 Attack. -3 Defense. -10 Max HP.', '{"attack":1,"defense":-3,"max_health":-10}'::jsonb, '/artifacts/gloves-of-precision.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'gloves_of_precision');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'guardian_shield', 'Sturdy shield focused on survival', '{"defense":6,"speed":-1}'::jsonb, '/artifacts/guardian-shield.webp'
+		SELECT 'guardian_shield', '+2 Defense. Energy regeneration -3. Attacks cost 1 more Energy.', '{"defense":2,"energy_regen":-3,"attack_cost":1}'::jsonb, '/artifacts/guardian-shield.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'guardian_shield');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'knight_sword', 'Reliable sword for balanced combat', '{"attack":4,"defense":1}'::jsonb, '/artifacts/knight-sword.webp'
+		SELECT 'knight_sword', '+1 Attack and +1 Defense. -20 Max HP.', '{"attack":1,"defense":1,"max_health":-20}'::jsonb, '/artifacts/knight-sword.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'knight_sword');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'ring_of_wisdom', 'Ring improving tactical vision and control', '{"vision":2,"maneuverability":1}'::jsonb, '/artifacts/ring-of-wisdom.webp'
+		SELECT 'ring_of_wisdom', 'Energy regeneration +1. -25 Max Energy.', '{"energy_regen":1,"max_energy":-25}'::jsonb, '/artifacts/ring-of-wisdom.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'ring_of_wisdom');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'titan_breastplate', 'Massive armor with top-tier protection', '{"defense":9,"speed":-2}'::jsonb, '/artifacts/titan-breastplate.webp'
+		SELECT 'titan_breastplate', '+2 Defense. -3 Attack. Movement costs 2 more Energy.', '{"defense":2,"attack":-3,"move_cost":2}'::jsonb, '/artifacts/titan-breastplate.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'titan_breastplate');
 
-		UPDATE artifacts SET description = 'Heavy axe that increases raw damage', bonus = '{"attack":8,"defense":-1}'::jsonb, image = '/artifacts/berserker-axe.webp' WHERE name = 'berserker_axe';
-		UPDATE artifacts SET description = 'Silent boots improving mobility and scouting', bonus = '{"speed":2,"maneuverability":3}'::jsonb, image = '/artifacts/boots_of_stealth.webp' WHERE name = 'boots_of_stealth';
-		UPDATE artifacts SET description = 'Crown that sharpens battlefield awareness', bonus = '{"vision":3}'::jsonb, image = '/artifacts/crown-of-enlightenment.webp' WHERE name = 'crown_of_enlightenment';
-		UPDATE artifacts SET description = 'Rare relic balancing offense and awareness', bonus = '{"attack":3,"vision":2}'::jsonb, image = '/artifacts/dragon-eye.webp' WHERE name = 'dragon_eye';
-		UPDATE artifacts SET description = 'Amulet that empowers aggressive style', bonus = '{"attack":5}'::jsonb, image = '/artifacts/fire-amulet.webp' WHERE name = 'fire_amulet';
-		UPDATE artifacts SET description = 'Precision gloves for cleaner strikes', bonus = '{"attack":2,"maneuverability":2}'::jsonb, image = '/artifacts/gloves-of-precision.webp' WHERE name = 'gloves_of_precision';
-		UPDATE artifacts SET description = 'Sturdy shield focused on survival', bonus = '{"defense":6,"speed":-1}'::jsonb, image = '/artifacts/guardian-shield.webp' WHERE name = 'guardian_shield';
-		UPDATE artifacts SET description = 'Reliable sword for balanced combat', bonus = '{"attack":4,"defense":1}'::jsonb, image = '/artifacts/knight-sword.webp' WHERE name = 'knight_sword';
-		UPDATE artifacts SET description = 'Ring improving tactical vision and control', bonus = '{"vision":2,"maneuverability":1}'::jsonb, image = '/artifacts/ring-of-wisdom.webp' WHERE name = 'ring_of_wisdom';
-		UPDATE artifacts SET description = 'Massive armor with top-tier protection', bonus = '{"defense":9,"speed":-2}'::jsonb, image = '/artifacts/titan-breastplate.webp' WHERE name = 'titan_breastplate';
+		UPDATE artifacts SET description = '+2 Attack. -4 Defense while carrying the quest artifact.', bonus = '{"attack":2,"defense":-4}'::jsonb, image = '/artifacts/berserker-axe.webp' WHERE name = 'berserker_axe';
+		UPDATE artifacts SET description = 'First move each turn costs 1 less Energy. Energy regeneration -3.', bonus = '{"first_move_cost":-1,"energy_regen":-3}'::jsonb, image = '/artifacts/boots_of_stealth.webp' WHERE name = 'boots_of_stealth';
+		UPDATE artifacts SET description = '+5 Max Energy. -15 Max HP. Attacks cost 1 more Energy.', bonus = '{"max_energy":5,"max_health":-15,"attack_cost":1}'::jsonb, image = '/artifacts/crown-of-enlightenment.webp' WHERE name = 'crown_of_enlightenment';
+		UPDATE artifacts SET description = 'Attacks ignore 1 Defense. Lose 3 HP at the end of each turn (cannot reduce HP below 1).', bonus = '{"defense_ignore":1,"health_per_turn":-3}'::jsonb, image = '/artifacts/dragon-eye.webp' WHERE name = 'dragon_eye';
+		UPDATE artifacts SET description = 'Successful attacks deal +2 damage, but the carrier takes 3 damage (cannot reduce HP below 1).', bonus = '{"bonus_damage":2,"self_damage":3}'::jsonb, image = '/artifacts/fire-amulet.webp' WHERE name = 'fire_amulet';
+		UPDATE artifacts SET description = '+1 Attack. -3 Defense. -10 Max HP.', bonus = '{"attack":1,"defense":-3,"max_health":-10}'::jsonb, image = '/artifacts/gloves-of-precision.webp' WHERE name = 'gloves_of_precision';
+		UPDATE artifacts SET description = '+2 Defense. Energy regeneration -3. Attacks cost 1 more Energy.', bonus = '{"defense":2,"energy_regen":-3,"attack_cost":1}'::jsonb, image = '/artifacts/guardian-shield.webp' WHERE name = 'guardian_shield';
+		UPDATE artifacts SET description = '+1 Attack and +1 Defense. -20 Max HP.', bonus = '{"attack":1,"defense":1,"max_health":-20}'::jsonb, image = '/artifacts/knight-sword.webp' WHERE name = 'knight_sword';
+		UPDATE artifacts SET description = 'Energy regeneration +1. -25 Max Energy.', bonus = '{"energy_regen":1,"max_energy":-25}'::jsonb, image = '/artifacts/ring-of-wisdom.webp' WHERE name = 'ring_of_wisdom';
+		UPDATE artifacts SET description = '+2 Defense. -3 Attack. Movement costs 2 more Energy.', bonus = '{"defense":2,"attack":-3,"move_cost":2}'::jsonb, image = '/artifacts/titan-breastplate.webp' WHERE name = 'titan_breastplate';
 	`); err != nil {
 		log.Fatalf("Ошибка сидирования artifacts: %v", err)
 	}

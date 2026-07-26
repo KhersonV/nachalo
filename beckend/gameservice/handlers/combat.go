@@ -361,6 +361,19 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	moveCost, extraMoveCost := resolveMoveEnergyCostFromPlayers(player, players)
+	artifact, err := playerQuestArtifact(instanceID, userID)
+	if err != nil {
+		http.Error(w, "Ошибка загрузки эффекта артефакта", http.StatusInternalServerError)
+		return
+	}
+	turnNumber := 0
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		turnNumber = ms.TurnNumber
+	}
+	moveCost += artifactMoveCostBonus(instanceID, userID, turnNumber, artifact)
+	if moveCost < 1 {
+		moveCost = 1
+	}
 	if player.Energy < moveCost {
 		http.Error(w, "Недостаточно энергии", http.StatusBadRequest)
 		return
@@ -375,6 +388,7 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка обновления игрока", http.StatusInternalServerError)
 		return
 	}
+	markArtifactMoveUsed(instanceID, userID, turnNumber)
 	if err := repository.UpdateCellPlayerFlags(instanceID, oldPos, player.Position); err != nil {
 		http.Error(w, "Ошибка обновления карты", http.StatusInternalServerError)
 		return
@@ -1997,6 +2011,12 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			return
 		}
 		attackCost := resolveAttackEnergyCost(mode)
+		artifact, artifactErr := playerQuestArtifact(req.InstanceID, req.AttackerID)
+		if artifactErr != nil {
+			http.Error(w, "Ошибка загрузки эффекта артефакта", http.StatusInternalServerError)
+			return
+		}
+		attackCost += artifactAttackCostBonus(artifact)
 		if player.Energy < attackCost {
 			http.Error(w, "Недостаточно энергии для атаки", http.StatusBadRequest)
 			return
@@ -2024,6 +2044,17 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 
 	effectiveTargetStats := defStats
 	effectiveTargetStats.Defense = effectiveDefense(req.InstanceID, req.TargetType, req.TargetID, defStats.Defense)
+	attackerArtifact := repository.QuestArtifactEffect{}
+	if req.AttackerType == "player" {
+		attackerArtifact, err = playerQuestArtifact(req.InstanceID, req.AttackerID)
+		if err != nil {
+			http.Error(w, "Ошибка загрузки эффекта артефакта", http.StatusInternalServerError)
+			return
+		}
+		if attackerArtifact.Name == repository.ArtifactDragonEye && effectiveTargetStats.Defense > 0 {
+			effectiveTargetStats.Defense--
+		}
+	}
 	if req.AttackerType == "player" &&
 		atkStats.CharacterType == "mystic" &&
 		req.TargetType == "monster" {
@@ -2052,6 +2083,23 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 			})
 		}
 	}
+	fireArtifactTriggered := attackerArtifact.Name == repository.ArtifactFireAmulet &&
+		targetRes.Triggered &&
+		targetRes.Damage > 0
+	if fireArtifactTriggered {
+		targetRes.Damage += artifactFireBonusDamage
+		targetRes.NewHealth = defStats.Health - targetRes.Damage
+		if targetRes.NewHealth < 0 {
+			targetRes.NewHealth = 0
+		}
+		effects = append(effects, CombatEffect{
+			Kind:      "artifactFire",
+			Source:    &attackerRef,
+			Target:    &targetRef,
+			Value:     artifactFireBonusDamage,
+			Succeeded: true,
+		})
+	}
 	steps = append(steps, CombatStep{
 		Kind:          "hit",
 		Source:        &attackerRef,
@@ -2068,6 +2116,30 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	}
 	finalTargetHP := targetRes.NewHealth
 	finalAttackerHP := atkStats.Health
+	if fireArtifactTriggered {
+		newHealth, backlashDamage := nonLethalArtifactDamage(finalAttackerHP, artifactFireBacklashDamage)
+		if backlashDamage > 0 {
+			finalAttackerHP = newHealth
+			attackerPlayer, loadErr := Combat.GetPlayer(req.InstanceID, req.AttackerID)
+			if loadErr != nil {
+				http.Error(w, "Ошибка загрузки носителя артефакта", http.StatusInternalServerError)
+				return
+			}
+			attackerPlayer.Health = newHealth
+			if updateErr := Combat.UpdatePlayer(req.InstanceID, attackerPlayer); updateErr != nil {
+				http.Error(w, "Ошибка применения отдачи артефакта", http.StatusInternalServerError)
+				return
+			}
+			atkStats.Health = newHealth
+			steps = append(steps, CombatStep{
+				Kind:          "artifactBacklash",
+				Source:        &attackerRef,
+				Target:        attackerRef,
+				Damage:        backlashDamage,
+				TargetHPAfter: newHealth,
+			})
+		}
+	}
 
 	if req.AttackerType == "player" && targetRes.Triggered && atkStats.CharacterType == "berserker" {
 		actualDamage := actualDamageDealt(defStats.Health, targetRes.NewHealth)

@@ -439,6 +439,10 @@ function buildCombatStepMessage(
             return `${actorVerb(source, "landed a bonus hit")} on ${targetLabel(target)}${damageText}.${hpText}`;
         case "auraExit":
             return `${target} took ${tookDamageText} from aura pressure.${hpText}`;
+        case "artifactCurse":
+            return `${target} took ${tookDamageText} from the Dragon Eye curse.${hpText}`;
+        case "artifactBacklash":
+            return `${target} took ${tookDamageText} from the Fire Amulet backlash.${hpText}`;
         default:
             return `${actorVerb(source, "hit")} ${targetLabel(target)}${damageText}.${hpText}`;
     }

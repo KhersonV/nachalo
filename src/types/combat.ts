@@ -61,6 +61,13 @@ export type CombatStep =
           targetHpAfter: number;
       }
     | {
+          kind: "artifactCurse" | "artifactBacklash";
+          source?: CombatTargetRef;
+          target: CombatTargetRef;
+          damage: number;
+          targetHpAfter: number;
+      }
+    | {
           kind: "death";
           target: CombatTargetRef;
       };
@@ -125,6 +132,13 @@ export type CombatEffect =
           source?: CombatTargetRef;
           target?: CombatTargetRef;
           amount?: number;
+          succeeded: boolean;
+      }
+    | {
+          kind: "artifactFire";
+          source?: CombatTargetRef;
+          target?: CombatTargetRef;
+          value?: number;
           succeeded: boolean;
       };
 

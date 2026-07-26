@@ -368,6 +368,11 @@ func regenEnergyForNextPlayer(instanceID string, userID int) error {
 	}
 
 	regenEnergy := resolveCharacterRegen(nextPlayer.CharacterType)
+	artifact, err := playerQuestArtifact(instanceID, userID)
+	if err != nil {
+		return err
+	}
+	regenEnergy = clampEnergyRegen(regenEnergy + artifactEnergyRegenBonus(artifact))
 	newEnergy := nextPlayer.Energy + regenEnergy
 	if newEnergy > nextPlayer.MaxEnergy {
 		newEnergy = nextPlayer.MaxEnergy
@@ -436,6 +441,9 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
 	// Эффекты построек
 	if err := progressStructuresEffectsByTurn(instanceID); err != nil {
 		log.Printf("[doEndTurn] progressStructuresEffectsByTurn error: %v", err)
+	}
+	if err := applyEndTurnArtifactEffect(instanceID, userID); err != nil {
+		log.Printf("[doEndTurn] artifact effect error: %v", err)
 	}
 
 	prevTurn := ms.TurnNumber
@@ -526,6 +534,11 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := progressStructuresEffectsByTurn(req.InstanceID); err != nil {
 		log.Printf("Ошибка эффектов построек: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := applyEndTurnArtifactEffect(req.InstanceID, req.UserID); err != nil {
+		log.Printf("Ошибка эффекта артефакта: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}

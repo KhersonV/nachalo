@@ -450,6 +450,9 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		v := int(characterID.Int64)
 		pr.SelectedCharacterID = &v
 	}
+	if err := ApplyQuestArtifactStats(matchID, &pr); err != nil {
+		return nil, err
+	}
 
 	return &pr, nil
 }
@@ -556,6 +559,9 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 		if characterID.Valid {
 			v := int(characterID.Int64)
 			pr.SelectedCharacterID = &v
+		}
+		if err := ApplyQuestArtifactStats(matchID, &pr); err != nil {
+			return nil, err
 		}
 		players = append(players, pr)
 	}

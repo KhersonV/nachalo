@@ -202,7 +202,8 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
     const attacker = exchange.attackerSnapshot;
     const target = exchange.targetSnapshot;
     const effectOnlyExchange = exchange.steps.some(
-        (step) => step.kind === "auraExit",
+        (step) =>
+            step.kind === "auraExit" || step.kind === "artifactCurse",
     );
     let lastImpactMs = baseMs;
     let latestBlockingEndMs = baseMs;
@@ -377,7 +378,11 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
     });
 
     for (const [index, step] of exchange.steps.entries()) {
-        if (step.kind === "auraExit") {
+        if (
+            step.kind === "auraExit" ||
+            step.kind === "artifactCurse" ||
+            step.kind === "artifactBacklash"
+        ) {
             const snapshot = getSnapshotForRef(exchange, step.target);
             if (snapshot && step.damage > 0) {
                 addDamageEffects(
