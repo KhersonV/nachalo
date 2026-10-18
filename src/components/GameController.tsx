@@ -8,6 +8,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import MapWithCamera from "./MapWithCamera";
+import LiveMatchScene3D from "./LiveMatchScene3D";
 import MiniMap from "./MiniMap";
 import Controls from "./Controls";
 import EndTurnButton from "./EndTurnButton";
@@ -74,6 +75,18 @@ interface GameControllerProps {
   instanceId: string;
 }
 
+class Scene3DErrorBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() { return { failed: true }; }
+
+  render() {
+    return this.state.failed
+      ? <p role="alert">3D rendering is unavailable. Select Classic to continue the match.</p>
+      : this.props.children;
+  }
+}
+
 export default function GameController({ instanceId }: GameControllerProps) {
   const dispatch = useDispatch();
   const router = useRouter();
@@ -88,6 +101,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
   }, [instanceId, dispatch, state.instanceId]);
 
   const [showInventory, setShowInventory] = useState(false);
+  const [mapRenderer, setMapRenderer] = useState<"classic" | "3d">("classic");
   const [placementMode, setPlacementMode] = useState<PlacementModeState | null>(
     null,
   );
@@ -308,6 +322,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
   useEffect(() => {
     // Новый матч: сбрасываем флаг и возможный кэш прошлой статистики.
+    setMapRenderer("classic");
     setCanOpenStats(false);
     setHasEscaped(false);
     if (typeof window !== "undefined") {
@@ -1670,6 +1685,12 @@ export default function GameController({ instanceId }: GameControllerProps) {
           >
             {isMyTurn ? "YOUR TURN" : "WAITING FOR TURN"}
           </div>
+          <div className={styles.rendererToggle} role="group" aria-label="Map renderer test mode">
+            <button type="button" aria-pressed={mapRenderer === "classic"}
+              onClick={() => setMapRenderer("classic")}>Classic</button>
+            <button type="button" aria-pressed={mapRenderer === "3d"}
+              onClick={() => setMapRenderer("3d")}>3D</button>
+          </div>
           {placementMode && (
             <div className={styles.turnStatusFloating}>
               Build mode: select an adjacent cell to
@@ -1683,7 +1704,14 @@ export default function GameController({ instanceId }: GameControllerProps) {
           {/* Battle/mode button moved to LobbyHeader (game menu) */}
           {/* Scrolls moved into Inventory — separate panel removed */}
           <div className={styles.mapContainer}>
-            {myPlayer ? (
+            {myPlayer && state.isMapLoaded && state.instanceId === instanceId && mapRenderer === "3d" ? (
+              <Scene3DErrorBoundary key={`${instanceId}:${state.mapWidth}x${state.mapHeight}`}>
+                <LiveMatchScene3D instanceId={instanceId} grid={state.grid} mapWidth={state.mapWidth}
+                  mapHeight={state.mapHeight} players={state.players} myPlayer={myPlayer}
+                  focusPoint={minimapFocusPoint}
+                  onCellClick={handleMapCellClick} onPlayerClick={handleMapPlayerClick} />
+              </Scene3DErrorBoundary>
+            ) : myPlayer && state.isMapLoaded && state.instanceId === instanceId ? (
               <MapWithCamera
                 instanceId={instanceId}
                 tileSize={mapViewport.tileSize}

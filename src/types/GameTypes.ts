@@ -92,6 +92,7 @@ export interface Cell {
     isPortal: boolean;
     isPlayer: boolean;
     structure_type?: string;
+    structure_image?: string;
     structure_owner_user_id?: number;
     structure_health?: number;
     structure_defense?: number;

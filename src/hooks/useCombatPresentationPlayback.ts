@@ -640,6 +640,8 @@ export function useCombatPresentationPlayback(): CombatPlaybackState {
 
     const rafRef = React.useRef<number | null>(null);
     const timerIdsRef = React.useRef(new Set<number>());
+    const activeExchangeRef = React.useRef(activeExchangeId);
+    activeExchangeRef.current = activeExchangeId;
 
     const stopTicker = React.useCallback(() => {
         if (rafRef.current !== null) {
@@ -706,8 +708,13 @@ export function useCombatPresentationPlayback(): CombatPlaybackState {
             });
             timerIdsRef.current.clear();
             stopTicker();
+            // A renderer switch cancels this hook's completion timer. Release
+            // the active exchange so the next renderer can play later events.
+            if (activeExchangeRef.current) {
+                dispatch(finishCombatExchange(activeExchangeRef.current));
+            }
         };
-    }, [stopTicker]);
+    }, [dispatch, stopTicker]);
 
     const suppression = React.useMemo<PlaybackSuppression>(() => {
         const exchange =
