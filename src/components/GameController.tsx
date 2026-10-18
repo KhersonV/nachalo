@@ -102,6 +102,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
 
   const [showInventory, setShowInventory] = useState(false);
   const [mapRenderer, setMapRenderer] = useState<"classic" | "3d">("classic");
+  const lastRangerRef = React.useRef<{ instanceId: string; player: PlayerState } | null>(null);
   const [placementMode, setPlacementMode] = useState<PlacementModeState | null>(
     null,
   );
@@ -978,6 +979,13 @@ export default function GameController({ instanceId }: GameControllerProps) {
   const isCurrentPlayerDefeated =
     isDeathNotification ||
     (!!user?.id && state.isMapLoaded && state.players.length > 0 && !myPlayer);
+  if (myPlayer && (myPlayer.characterType?.toLowerCase() === "ranger" || myPlayer.image?.startsWith("/ranger/"))) {
+    lastRangerRef.current = { instanceId, player: myPlayer };
+  }
+  // Keep only the defeated Ranger's visual snapshot while existing defeat UI
+  // completes. It never enters Redux, action handlers or visibility sources.
+  const scenePlayer = myPlayer ?? (isCurrentPlayerDefeated && lastRangerRef.current?.instanceId === instanceId
+    ? { ...lastRangerRef.current.player, health: 0 } : undefined);
   const isObjectiveMatchFinished = canOpenStats && !hasEscaped;
   const questFoundConfirmLabel =
     isDeathNotification || (isPortalExitNotification && canOpenStats)
@@ -1704,10 +1712,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
           {/* Battle/mode button moved to LobbyHeader (game menu) */}
           {/* Scrolls moved into Inventory — separate panel removed */}
           <div className={styles.mapContainer}>
-            {myPlayer && state.isMapLoaded && state.instanceId === instanceId && mapRenderer === "3d" ? (
+            {scenePlayer && state.isMapLoaded && state.instanceId === instanceId && mapRenderer === "3d" ? (
               <Scene3DErrorBoundary key={`${instanceId}:${state.mapWidth}x${state.mapHeight}`}>
                 <LiveMatchScene3D instanceId={instanceId} grid={state.grid} mapWidth={state.mapWidth}
-                  mapHeight={state.mapHeight} players={state.players} myPlayer={myPlayer}
+                  mapHeight={state.mapHeight} players={state.players} myPlayer={scenePlayer}
                   focusPoint={minimapFocusPoint}
                   onCellClick={handleMapCellClick} onPlayerClick={handleMapPlayerClick} />
               </Scene3DErrorBoundary>

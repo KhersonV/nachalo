@@ -1,0 +1,13 @@
+{
+  "fps": 24,
+  "attackReleaseSeconds": 1.4166666666666667,
+  "attackArrowVisibleSeconds": 0.375,
+  "durations": {
+    "Idle": 3,
+    "Walk": 1.3333333333333333,
+    "Attack_Bow": 2,
+    "Hit": 0.5,
+    "Death": 2
+  },
+  "deathHoldFromSeconds": 1.75
+}

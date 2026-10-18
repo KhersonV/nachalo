@@ -195,7 +195,9 @@ function addPureDamageEffect(
     });
 }
 
-function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number) {
+type PlaybackTiming = { rangedActorId?: number; rangedReleaseMs?: number };
+
+export function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number, timing?: PlaybackTiming) {
     const effects: ActiveEffect[] = [];
     const motions: ActiveAttackMotion[] = [];
 
@@ -230,6 +232,8 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
                 baseMs + MELEE_MOTION_MS,
             );
         } else if (exchange.attackStyle === "ranged") {
+            const releaseDelay = timing?.rangedActorId === attacker.id
+                ? timing.rangedReleaseMs ?? RANGED_PROJECTILE_DELAY_MS : RANGED_PROJECTILE_DELAY_MS;
             motions.push({
                 id: `${exchange.exchangeId}:motion:attack`,
                 exchangeId: exchange.exchangeId,
@@ -247,16 +251,16 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
                 kind: "projectile",
                 source: attacker.position,
                 target: target.position,
-                startMs: baseMs + RANGED_PROJECTILE_DELAY_MS,
+                startMs: baseMs + releaseDelay,
                 durationMs: RANGED_PROJECTILE_MS,
                 attackStyle: "ranged",
             });
             lastImpactMs =
-                baseMs + RANGED_PROJECTILE_DELAY_MS + RANGED_PROJECTILE_MS;
+                baseMs + releaseDelay + RANGED_PROJECTILE_MS;
             latestBlockingEndMs = Math.max(
                 latestBlockingEndMs,
                 baseMs + RANGED_RECOIL_MS,
-                baseMs + RANGED_PROJECTILE_DELAY_MS + RANGED_PROJECTILE_MS,
+                baseMs + releaseDelay + RANGED_PROJECTILE_MS,
             );
         } else {
             motions.push({
@@ -625,7 +629,7 @@ function buildCombatPlaybackPlan(exchange: QueuedCombatExchange, baseMs: number)
     };
 }
 
-export function useCombatPresentationPlayback(): CombatPlaybackState {
+export function useCombatPresentationPlayback(timing?: PlaybackTiming): CombatPlaybackState {
     const dispatch = useDispatch<AppDispatch>();
     const queue = useSelector((state: RootState) => state.combatPresentation.queue);
     const activeExchangeId = useSelector(
@@ -641,6 +645,8 @@ export function useCombatPresentationPlayback(): CombatPlaybackState {
     const rafRef = React.useRef<number | null>(null);
     const timerIdsRef = React.useRef(new Set<number>());
     const activeExchangeRef = React.useRef(activeExchangeId);
+    const timingRef = React.useRef(timing);
+    timingRef.current = timing;
     activeExchangeRef.current = activeExchangeId;
 
     const stopTicker = React.useCallback(() => {
@@ -666,7 +672,7 @@ export function useCombatPresentationPlayback(): CombatPlaybackState {
 
         const exchange = queue[0];
         const baseMs = performance.now();
-        const plan = buildCombatPlaybackPlan(exchange, baseMs);
+        const plan = buildCombatPlaybackPlan(exchange, baseMs, timingRef.current);
 
         dispatch(startCombatExchange(exchange.exchangeId));
         setActiveEffects((prev) => [...prev, ...plan.effects]);

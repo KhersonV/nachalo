@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import NachaloScene3D from "@/components/NachaloScene3D";
-import type { RangerCue } from "@/components/AnimatedRanger";
+import type { RangerCue, RangerModel, RangerStatus } from "@/components/AnimatedRanger";
 import { collectVisibleCellIndices, getCellIndex } from "@/utils/fogOfWar";
 import { adaptRealMap, isWalkableTile, type RealMapSource } from "@/utils/realMapAdapter";
 import fixture15 from "./fixtures/game-15.json";
@@ -14,12 +14,16 @@ const MAPS = [
   { title: "GameService 15×15 B", data: fixture15b as unknown as RealMapSource },
   { title: "GameService 24×24", data: fixture24 as unknown as RealMapSource },
 ];
+const buttonStyle = { padding: "7px 12px", border: "1px solid #526277", borderRadius: 6,
+  background: "#202e3e", color: "white", cursor: "pointer" } as const;
 
 export default function GraphicsLabPage() {
   const [layout, setLayout] = useState(0);
   const [showTacticalGrid, setShowTacticalGrid] = useState(false);
   const [rangerCue, setRangerCue] = useState<RangerCue | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [rangerModel, setRangerModel] = useState<RangerModel>("animated");
+  const [rangerStatus, setRangerStatus] = useState<RangerStatus | null>(null);
   const cueSequence = useRef(0);
   const [hero, setHero] = useState(() => {
     const [x, y] = MAPS[0].data.start_positions?.[0] ?? [1, 1];
@@ -71,14 +75,34 @@ export default function GraphicsLabPage() {
         </button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <button onClick={() => preview("Attack_Bow")}>Ranger: выстрел</button>
-        <button onClick={() => preview("Hit")}>Ranger: урон</button>
-        <button onClick={() => preview("Death")}>Ranger: смерть</button>
-        <button onClick={() => { setRangerCue(null); setPreviewGeneration(value => value + 1); }}>Ranger: сброс / Idle</button>
+        {(["animated", "legacy"] as const).map(model => <button key={model}
+          aria-pressed={rangerModel === model}
+          style={{ ...buttonStyle, background: rangerModel === model ? "#23545e" : buttonStyle.background,
+            borderColor: rangerModel === model ? "#68ebff" : "#526277" }} onClick={() => {
+            setRangerModel(model); setRangerCue(null); setRangerStatus(null);
+          }}>{model === "animated" ? "Ranger Animated · 5 клипов" : "Ranger Legacy · 5 клипов"}</button>)}
       </div>
-      <NachaloScene3D key={`${layout}:${previewGeneration}`} grid={view.grid} mapWidth={view.width} mapHeight={view.height}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        {([['Attack_Bow', 'выстрел'], ['Hit', 'урон'], ['Death', 'смерть']] as const).map(([clip, label]) =>
+          <button key={clip}
+            style={buttonStyle}
+            onClick={() => preview(clip)}>Ranger: {label}</button>)}
+        <button style={buttonStyle} onClick={() => { setRangerCue(null); setPreviewGeneration(value => value + 1); }}>Ranger: сброс / Idle</button>
+      </div>
+      {rangerModel === "animated" && <p style={{ color: "#a8b8ca" }}>
+        Animated: Idle, Walk, Attack_Bow, Hit и Death. Выстрел выпускает стрелу через 1,417 с.
+      </p>}
+      <output aria-label="Состояние Ranger" data-clip={rangerStatus?.clip} data-clip-time={rangerStatus?.clipTime}
+        data-arrow-visible={rangerStatus?.arrowVisible} style={{ display: "block", marginBottom: 12 }}>
+        {!rangerStatus ? "Загрузка Ranger…" : rangerStatus.failed ? "Модель не загрузилась: показан резервный персонаж." :
+          !rangerStatus.ready ? "Загрузка Ranger…" :
+          `${rangerStatus.model === "animated" ? "Animated" : "Legacy"} · ${rangerStatus.clip} · ` +
+          `${rangerStatus.speed.toFixed(2)} кл/с · Walk ×${rangerStatus.walkTimeScale.toFixed(2)} · ${rangerStatus.bones} костей`}
+      </output>
+      <NachaloScene3D key={layout} grid={source.map} preloadTerrain mapWidth={view.width} mapHeight={view.height}
         objects={view.objects} heroPosition={hero} visibleCells={visible} exploredCells={allExplored}
-        ranger={{ position: hero, cues: rangerCue ? [rangerCue] : [] }}
+        ranger={{ position: hero, model: rangerModel, resetKey: previewGeneration,
+          cues: rangerCue ? [rangerCue] : [] }} onRangerStatus={setRangerStatus}
         showTacticalGrid={showTacticalGrid} onMove={move}
         onCellClick={cell => {
           if (Math.abs(hero.x - cell.x) + Math.abs(hero.y - cell.y) === 1 &&

@@ -8,7 +8,9 @@ import { TILE, type RenderObject } from "@/utils/realMapAdapter";
 import { animateFire, disposeAtmosphere, makeAtmosphereContext, makeColumn, makeRubble, makeWallTorch } from "./catacombsAtmosphere";
 import { cellHash, selectColumnCells } from "./columnPlacement";
 import { createWallOcclusionSampler, type OcclusionTarget } from "./wallOcclusion";
-import { AnimatedRanger, type RangerSpec } from "./AnimatedRanger";
+import { AnimatedRanger, type RangerSpec, type RangerStatus } from "./AnimatedRanger";
+import { CombatOverlay3D } from "./CombatOverlay3D";
+import type { ActiveEffect } from "@/types/combat";
 
 type Position = { x: number; y: number };
 type Props = {
@@ -26,7 +28,10 @@ type Props = {
   onPlayerClick?: (userId: number) => void;
   objects?: RenderObject[];
   renderAllTerrain?: boolean;
+  preloadTerrain?: boolean;
   ranger?: RangerSpec;
+  onRangerStatus?: (status: RangerStatus) => void;
+  combatEffects?: readonly ActiveEffect[];
 };
 
 type CellMeshes = {
@@ -150,11 +155,11 @@ function makeTrimMaterial(texture: THREE.Texture) {
 /** Rendering only: the caller owns movement rules and visibility. */
 export default function NachaloScene3D({
   grid, mapWidth, mapHeight, heroPosition, cameraFocus, visibleCells, exploredCells, materialSeed = 271828,
-  showTacticalGrid = false, onCellClick, onMove, onPlayerClick, objects, renderAllTerrain = false,
-  ranger,
+  showTacticalGrid = false, onCellClick, onMove, onPlayerClick, objects, renderAllTerrain = false, preloadTerrain = false,
+  ranger, onRangerStatus, combatEffects,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const callbacksRef = useRef({ onCellClick, onMove, onPlayerClick });
+  const callbacksRef = useRef({ onCellClick, onMove, onPlayerClick, onRangerStatus });
   const syncObjectsRef = useRef<((next: RenderObject[] | undefined) => void) | null>(null);
   const fogRef = useRef({ visibleCells, exploredCells });
   const heroTargetRef = useRef(heroPosition);
@@ -162,8 +167,10 @@ export default function NachaloScene3D({
   const tacticalGridRef = useRef(showTacticalGrid);
   const rangerSpecRef = useRef(ranger);
   const objectsRef = useRef(objects);
+  const combatEffectsRef = useRef(combatEffects);
+  combatEffectsRef.current = combatEffects;
   const updateFogRef = useRef<(() => void) | null>(null);
-  callbacksRef.current = { onCellClick, onMove, onPlayerClick };
+  callbacksRef.current = { onCellClick, onMove, onPlayerClick, onRangerStatus };
   fogRef.current = { visibleCells, exploredCells };
   heroTargetRef.current = heroPosition;
   cameraFocusRef.current = cameraFocus;
@@ -201,6 +208,7 @@ export default function NachaloScene3D({
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
     host.appendChild(renderer.domElement);
+    const combatOverlay = new CombatOverlay3D(host);
 
     camera.layers.enable(1);
     const ambient = new THREE.HemisphereLight(0x9eb7d4, 0x303b43, 1.55);
@@ -343,7 +351,7 @@ export default function NachaloScene3D({
     const cells = new Map<number, Cell>();
     const meshes = new Map<number, CellMeshes>();
     const visibleAtMount = new Set([...fogRef.current.visibleCells, ...fogRef.current.exploredCells]);
-    const initiallyKnown = renderAllTerrain
+    const initiallyKnown = (renderAllTerrain || preloadTerrain)
       ? new Set(grid.map(cell => getCellIndex(cell.x, cell.y, mapWidth))) : visibleAtMount;
     const wallCells = new Set(grid.filter(cell => initiallyKnown.has(getCellIndex(cell.x, cell.y, mapWidth)) &&
       (cell.tileCode === TILE.obstacle || cell.tileCode === TILE.border))
@@ -578,14 +586,30 @@ export default function NachaloScene3D({
     positionRing.position.y = 0.035;
     hero.add(positionRing);
     scene.add(hero);
-    if (rangerSpecRef.current) {
-      animatedRanger = new AnimatedRanger(rangerSpecRef.current);
-      scene.add(animatedRanger.root);
-      animatedRanger.onReady = () => {
-        for (const part of hero.children) if (part !== positionRing) part.visible = false;
-        syncObjects(objectsRef.current);
-      };
-    }
+    const syncRanger = () => {
+      const spec = rangerSpecRef.current;
+      if (spec && animatedRanger?.model === (spec.model ?? "legacy") &&
+          animatedRanger.resetKey === (spec.resetKey ?? 0)) return;
+      if (!spec && !animatedRanger) return;
+      const previous = animatedRanger;
+      // Acquire the new asset before releasing the previous instance, so a
+      // reset can reuse its template. No renderer, Canvas or RAF is recreated.
+      animatedRanger = spec ? new AnimatedRanger({ ...spec, position: previous ? {
+        x: previous.root.position.x, y: previous.root.position.z,
+      } : spec.position }) : null;
+      if (animatedRanger) {
+        if (previous) animatedRanger.root.rotation.copy(previous.root.rotation);
+        scene.add(animatedRanger.root);
+        animatedRanger.onReady = () => {
+          for (const part of hero.children) if (part !== positionRing) part.visible = false;
+          syncObjects(objectsRef.current);
+        };
+      }
+      previous?.dispose();
+      for (const part of hero.children) if (part !== positionRing) part.visible = true;
+      syncObjects(objectsRef.current);
+    };
+    syncRanger();
 
     const selectionRing = new THREE.Mesh(geometries.marker, materials.selection);
     selectionRing.rotation.x = -Math.PI / 2;
@@ -827,6 +851,7 @@ export default function NachaloScene3D({
     renderer.domElement.addEventListener("click", onClick);
 
     let lastFrame = performance.now();
+    let lastRangerStatus = -Infinity;
     let frame = 0;
     const animate = (now: number) => {
       frame = requestAnimationFrame(animate);
@@ -849,7 +874,7 @@ export default function NachaloScene3D({
         const targets = [...occlusionTargets];
         if (fogRef.current.visibleCells.has(heroIndex)) targets.push({
           x: hero.position.x, z: hero.position.z, cellIndex: heroIndex,
-          top: renderAllTerrain ? 0.25 : 1.4, halfWidth: 0.43,
+          top: animatedRanger?.isReady ? 1.55 : renderAllTerrain ? 0.25 : 1.4, halfWidth: 0.43,
         });
         blockingWalls = sampleWallOcclusion(camera, visibleWalls, targets, fogRef.current.visibleCells);
         lastOcclusionCheck = now;
@@ -866,15 +891,31 @@ export default function NachaloScene3D({
       }
       for (const portal of portals) portal.rotation.z += delta * 0.65;
       const seconds = now * 0.001;
+      syncRanger();
       if (animatedRanger && rangerSpecRef.current) {
         animatedRanger.setSpec(rangerSpecRef.current, seconds);
         animatedRanger.update(delta, seconds);
+        if (animatedRanger.model === "animated" && animatedRanger.isReady) {
+          hero.position.copy(animatedRanger.root.position);
+        }
+        if (now - lastRangerStatus >= 100) {
+          callbacksRef.current.onRangerStatus?.(animatedRanger.status);
+          lastRangerStatus = now;
+        }
       }
       for (const fire of fires) {
         const wall = wallModules.get(fire.cellIndex);
         fire.group.visible = fogRef.current.visibleCells.has(fire.cellIndex) && (!wall || wall.opacity > 0.55);
         if (fire.group.visible) animateFire(fire, seconds);
       }
+      camera.updateMatrixWorld();
+      combatOverlay.update(combatEffectsRef.current ?? [], now, camera, host.clientWidth, host.clientHeight,
+        point => fogRef.current.visibleCells.has(getCellIndex(point.x, point.y, mapWidth)) ||
+          (rangerSpecRef.current?.defeated === true && point.x === rangerSpecRef.current.position.x &&
+            point.y === rangerSpecRef.current.position.y),
+        animatedRanger?.projectileOrigin && rangerSpecRef.current ? {
+          cell: rangerSpecRef.current.position, point: animatedRanger.projectileOrigin!,
+        } : undefined);
       renderer.render(scene, camera);
     };
     scene.updateMatrixWorld(true);
@@ -883,6 +924,7 @@ export default function NachaloScene3D({
     return () => {
       cancelAnimationFrame(frame);
       animatedRanger?.dispose();
+      combatOverlay.dispose();
       updateFogRef.current = null;
       syncObjectsRef.current = null;
       renderer.domElement.removeEventListener("click", onClick);
@@ -911,8 +953,8 @@ export default function NachaloScene3D({
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [grid, mapWidth, mapHeight, materialSeed, renderAllTerrain]);
+  }, [grid, mapWidth, mapHeight, materialSeed, renderAllTerrain, preloadTerrain]);
 
   return <div ref={mountRef} tabIndex={0} role="application" aria-label="3D карта: стрелки для движения, колесо для масштаба"
-    style={{ width: "100%", height: "min(74vh, 720px)", minHeight: 420, overflow: "hidden", borderRadius: 12, outlineColor: "#68ebff" }} />;
+    style={{ position: "relative", width: "100%", height: "min(74vh, 720px)", minHeight: 420, overflow: "hidden", borderRadius: 12, outlineColor: "#68ebff" }} />;
 }
