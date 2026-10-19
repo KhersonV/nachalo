@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"gameservice/models"
 	"gameservice/repository"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -225,6 +227,14 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				} else {
 					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
+					if errors.Is(err, models.ErrUnsupportedGeometry) {
+						b, _ := json.Marshal(map[string]interface{}{
+							"type":    "MATCH_ERROR",
+							"payload": map[string]string{"instanceId": client.instanceID, "error": err.Error()},
+						})
+						_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+						continue
+					}
 					if allStats, winnerType, winnerID, serr := buildAllPlayersGameStatsFromStored(client.instanceID); serr == nil {
 						endedMsg := matchEndedBroadcastResponse{
 							Type: "MATCH_ENDED",

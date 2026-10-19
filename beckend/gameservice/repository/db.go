@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"gameservice/game"
+	"gameservice/models"
 	"log"
 	"os"
 	"sort"
@@ -978,7 +979,9 @@ func EnsureMatchStatsRetentionSchema() {
 }
 
 func RestoreMatchStates() error {
-	rows, err := DB.Query("SELECT instance_id, active_user_id, turn_order, turn_number FROM matches")
+	rows, err := DB.Query(`SELECT instance_id, active_user_id, turn_order, turn_number,
+		COALESCE((to_jsonb(matches)->>'schema_version')::integer, 1),
+		to_jsonb(matches)->'geometry' FROM matches`)
 	if err != nil {
 		return err
 	}
@@ -989,8 +992,18 @@ func RestoreMatchStates() error {
 		var activeUserID int
 		var turnOrderJSON []byte
 		var turnNumber int
-		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber); err != nil {
+		var schemaVersion int
+		var geometryRaw []byte
+		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber, &schemaVersion, &geometryRaw); err != nil {
 			return err
+		}
+		geometry, err := models.ParseGeometry(schemaVersion, geometryRaw)
+		if err != nil {
+			return fmt.Errorf("restore match %s: %w", instanceID, err)
+		}
+		if geometry != models.SquareV1 {
+			log.Printf("Skipping unsupported runtime geometry for match %s: %s-v%d", instanceID, geometry.Kind, geometry.Version)
+			continue
 		}
 
 		var turnOrder []int

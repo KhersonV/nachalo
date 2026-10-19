@@ -1,3 +1,5 @@
+import type { SquarePosition, HexPosition } from "./geometry";
+
 export type AttackStyle = "melee" | "ranged" | "magic";
 
 export type CombatActorType = "player" | "monster";
@@ -7,10 +9,8 @@ export type CombatTargetRef = {
     type: CombatActorType;
 };
 
-export type CombatPoint = {
-    x: number;
-    y: number;
-};
+export type CombatPoint = SquarePosition;
+export type HexCombatPoint = HexPosition;
 
 export type CombatActorSnapshot = CombatTargetRef & {
     position: CombatPoint;

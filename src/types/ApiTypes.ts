@@ -1,4 +1,7 @@
 import type { GameMode } from "./MatchmakingTypes";
+import type { VersionedSnapshot } from "./geometry";
+
+export type VersionedMatchResponse = VersionedSnapshot;
 
 export type PlayerInfo = {
     playerId: number;

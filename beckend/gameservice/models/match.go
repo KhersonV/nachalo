@@ -20,6 +20,10 @@ type MatchParticipantSnapshot struct {
 }
 
 type MatchInfo struct {
+	SchemaVersion   int                        `json:"schemaVersion"`
+	Geometry        Geometry                   `json:"geometry"`
+	MapRevision     int64                      `json:"mapRevision"`
+	StateRevision   int64                      `json:"stateRevision"`
 	InstanceID      string                     `json:"instance_id"`
 	Mode            string                     `json:"mode"`
 	TeamsCount      int                        `json:"teams_count"`

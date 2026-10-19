@@ -16,6 +16,7 @@ import { debugLog } from "@/utils/log";
 import { API_BASE } from "@/utils/serviceUrls";
 import type { ResourceType, MonsterType } from "@/types/GameTypes";
 import { createWsHandlers } from "./createWsHandlers";
+import { assertSquareSnapshot, assertSquarePatch } from "@/types/geometry";
 
 interface GameWrapperProps {
   instanceId: string;
@@ -80,6 +81,7 @@ export default function GameWrapper({
         throw new Error(`match ${res.status}: ${text}`);
       }
       const data = await res.json();
+      assertSquareSnapshot(data);
 
       const players = data.players.map((p: any) => ({
         ...p,
@@ -100,6 +102,10 @@ export default function GameWrapper({
       dispatch({
         type: "game/setMatchData",
         payload: {
+          schemaVersion: 1,
+          geometry: { kind: "square", coordinates: "cartesian", version: 1 },
+          mapRevision: data.mapRevision ?? 0,
+          stateRevision: data.stateRevision ?? 0,
           instanceId: data.instance_id,
           mode: data.mode,
           grid: data.map,
@@ -180,6 +186,10 @@ export default function GameWrapper({
 
   const socket = useGameSocket(
     (data) => {
+      if (data.type === "MATCH_ERROR") {
+        console.error("Match could not be loaded:", data.payload?.error);
+        return;
+      }
       const payload = data.payload ?? {};
       const payloadInstanceId = payload.instanceId ?? payload.instance_id;
       if (payloadInstanceId && payloadInstanceId !== instanceId) return;
@@ -194,6 +204,18 @@ export default function GameWrapper({
         mapWidth: payload.mapWidth ?? payload.map_width,
         mapHeight: payload.mapHeight ?? payload.map_height,
       };
+
+      try {
+        if (data.type === "MATCH_UPDATE") {
+          const snapshot = { ...payload, map: normalizedPayload.grid, players: normalizedPayload.players };
+          assertSquareSnapshot(snapshot);
+        } else {
+          assertSquarePatch(normalizedPayload);
+        }
+      } catch (error) {
+        console.error("Rejected incompatible match event", error);
+        return;
+      }
 
       const handler = wsHandlers[data.type as WsEventType];
       if (handler) {

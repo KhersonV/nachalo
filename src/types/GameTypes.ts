@@ -2,6 +2,8 @@
 // src/types/GameTypes.ts
 // ==============================
 
+import type { SquareGeometry, SquarePosition } from "./geometry";
+
 export type BonusAttributes = {
     energy?: number;
     maxEnergy?: number;
@@ -43,7 +45,7 @@ export type PlayerState = {
     vision: number;
     image: string;
     lastTurnAttacked?: number;
-    position: { x: number; y: number };
+    position: SquarePosition;
     energy: number;
     maxEnergy: number;
     level: number;
@@ -146,6 +148,10 @@ export type ActionLogEntryInput = Omit<ActionLogEntry, "id" | "timestamp"> &
     Partial<Pick<ActionLogEntry, "id" | "timestamp">>;
 
 export type GameState = {
+    schemaVersion: 1;
+    geometry: SquareGeometry;
+    mapRevision: number;
+    stateRevision: number;
     instanceId: string;
     mode: string;
     grid: Cell[];

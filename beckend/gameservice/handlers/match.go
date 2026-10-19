@@ -19,6 +19,10 @@ import (
 
 // DTO для ответа на создание и получение матча
 type MatchResponse struct {
+	SchemaVersion            int                     `json:"schemaVersion"`
+	Geometry                 models.Geometry         `json:"geometry"`
+	MapRevision              int64                   `json:"mapRevision"`
+	StateRevision            int64                   `json:"stateRevision"`
 	InstanceID               string                  `json:"instance_id"`
 	Mode                     string                  `json:"mode"`
 	TeamsCount               int                     `json:"teams_count"`
@@ -69,6 +73,23 @@ func handleError(w http.ResponseWriter, context string, err error) {
 func toJSON(v interface{}) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+func decodeSquarePair(raw json.RawMessage) ([2]int, error) {
+	var pair [2]int
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil || len(values) != 2 {
+		return pair, fmt.Errorf("incomplete square position")
+	}
+	for i, value := range values {
+		if string(value) == "null" {
+			return pair, fmt.Errorf("incomplete square position")
+		}
+		if err := json.Unmarshal(value, &pair[i]); err != nil {
+			return pair, fmt.Errorf("invalid square position: %w", err)
+		}
+	}
+	return pair, nil
 }
 
 func copyInts(ids []int) []int {
@@ -389,6 +410,9 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	if match.Geometry != models.SquareV1 {
+		return nil, fmt.Errorf("%w: %s-v%d cannot be loaded by the square runtime", models.ErrUnsupportedGeometry, match.Geometry.Kind, match.Geometry.Version)
+	}
 
 	// Safety-net: старые/конфликтные матчи могли сохраниться без quest_artifact_id.
 	if match.QuestArtifactID <= 0 {
@@ -444,12 +468,20 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	var startPositions [][2]int
-	if err := json.Unmarshal(match.StartPositions, &startPositions); err != nil {
-		return nil, err
+	var encodedStarts []json.RawMessage
+	if err := json.Unmarshal(match.StartPositions, &encodedStarts); err != nil || encodedStarts == nil {
+		return nil, fmt.Errorf("invalid square start positions")
 	}
-	var portalPos [2]int
-	if err := json.Unmarshal(match.PortalPosition, &portalPos); err != nil {
+	startPositions := make([][2]int, 0, len(encodedStarts))
+	for _, encoded := range encodedStarts {
+		pair, err := decodeSquarePair(encoded)
+		if err != nil {
+			return nil, err
+		}
+		startPositions = append(startPositions, pair)
+	}
+	portalPos, err := decodeSquarePair(match.PortalPosition)
+	if err != nil {
 		return nil, err
 	}
 	activeUser := match.ActiveUserID
@@ -457,6 +489,10 @@ func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
 		activeUser = players[0].UserID
 	}
 	resp := &MatchResponse{
+		SchemaVersion:  match.SchemaVersion,
+		Geometry:       match.Geometry,
+		MapRevision:    match.MapRevision,
+		StateRevision:  match.StateRevision,
 		InstanceID:     match.InstanceID,
 		Mode:           match.Mode,
 		TeamsCount:     match.TeamsCount,
@@ -537,6 +573,11 @@ func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "match_not_found"})
+			return
+		}
+		if errors.Is(err, models.ErrUnsupportedGeometry) {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)

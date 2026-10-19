@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import type { Cell, PlayerState } from "../types";
+import { assertSquareSnapshot } from "@/types/geometry";
 
 // Module-level global lock: shared across ALL instances of this hook in the same
 // browser tab. Prevents multiple simultaneous WebSocket opens for the same session
@@ -67,11 +68,16 @@ async function fetchFullMatch(
         );
         if (!res.ok) return;
         const d = await res.json();
+        assertSquareSnapshot(d);
         onMessage({
             type: "MATCH_UPDATE",
             payload: {
                 instanceId: d.instance_id,
                 mode: d.mode,
+                schemaVersion: d.schemaVersion ?? 1,
+                geometry: d.geometry,
+                mapRevision: d.mapRevision ?? 0,
+                stateRevision: d.stateRevision ?? 0,
                 grid: d.map,
                 mapWidth: d.map_width,
                 mapHeight: d.map_height,
@@ -323,6 +329,8 @@ export function useGameSocket(
                         onMessageRef.current({
                             type: "UPDATE_PLAYER_POSITION",
                             payload: {
+                                schemaVersion: msg.payload.schemaVersion,
+                                geometry: msg.payload.geometry,
                                 instanceId:
                                     msg.payload.instanceId ??
                                     msg.payload.instance_id,
@@ -366,6 +374,7 @@ export function useGameSocket(
                     case "UPDATE_CELL":
                     case "UPDATE_PLAYER":
                     case "MATCH_UPDATE":
+                    case "MATCH_ERROR":
                     case "COMBAT_EXCHANGE":
                     case "EQUIPMENT_DROPPED":
                     case "SET_ACTIVE_USER":

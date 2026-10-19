@@ -146,17 +146,12 @@ func LoadMatchPlayers(instanceID string) ([]models.PlayerResponse, error) {
 			return nil, err
 		}
 
-		// position JSONB -> struct { X, Y }
-		if len(positionRaw) > 0 {
-			var pos struct {
-				X int `json:"x"`
-				Y int `json:"y"`
-			}
-			if err := json.Unmarshal(positionRaw, &pos); err == nil {
-				p.Position.X = pos.X
-				p.Position.Y = pos.Y
-			}
+		position, err := models.DecodePosition(positionRaw, models.SquareV1)
+		if err != nil {
+			return nil, fmt.Errorf("match %s player %d: %w", instanceID, p.UserID, err)
 		}
+		pos := position.(models.SquarePosition)
+		p.Position.X, p.Position.Y = pos.X, pos.Y
 
 		// inventory JSONB -> string
 		if len(inventoryRaw) > 0 && json.Valid(inventoryRaw) {
@@ -279,11 +274,18 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 			turn_order,
 			start_positions,
 			portal_position,
-			COALESCE(quest_artifact_id, 0)
+			COALESCE(quest_artifact_id, 0),
+			COALESCE((to_jsonb(matches)->>'schema_version')::integer, 1),
+			to_jsonb(matches)->'geometry',
+			COALESCE((to_jsonb(matches)->>'map_revision')::bigint, 0),
+			COALESCE((to_jsonb(matches)->>'state_revision')::bigint, 0)
 		FROM matches
 		WHERE instance_id = $1
 	`
 	match := &models.MatchInfo{}
+	var geometryRaw []byte
+	var startPositionsRaw []byte
+	var portalPositionRaw []byte
 	err := DB.QueryRow(query, instanceID).Scan(
 		&match.InstanceID,
 		&match.Mode,
@@ -294,12 +296,22 @@ func GetMatchByID(instanceID string) (*models.MatchInfo, error) {
 		&match.ActiveUserID,
 		&match.TurnNumber,
 		&match.TurnOrder,
-		&match.StartPositions,
-		&match.PortalPosition,
+		&startPositionsRaw,
+		&portalPositionRaw,
 		&match.QuestArtifactID,
+		&match.SchemaVersion,
+		&geometryRaw,
+		&match.MapRevision,
+		&match.StateRevision,
 	)
 	if err != nil {
 		return nil, err
+	}
+	match.StartPositions = startPositionsRaw
+	match.PortalPosition = portalPositionRaw
+	match.Geometry, err = models.ParseGeometry(match.SchemaVersion, geometryRaw)
+	if err != nil {
+		return nil, fmt.Errorf("match %s: %w", instanceID, err)
 	}
 	match.Map = json.RawMessage("[]")
 	return match, nil
@@ -442,6 +454,9 @@ func GetMatchPlayerByID(matchID string, userID int) (*models.PlayerResponse, err
 		return nil, err
 	}
 
+	if _, err := models.DecodePosition(positionJSON, models.SquareV1); err != nil {
+		return nil, err
+	}
 	if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {
 		return nil, err
 	}
@@ -551,6 +566,9 @@ func GetPlayersInMatch(matchID string) ([]models.PlayerResponse, error) {
 			&pr.Balance,
 		)
 		if err != nil {
+			return nil, err
+		}
+		if _, err := models.DecodePosition(positionJSON, models.SquareV1); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(positionJSON, &pr.Position); err != nil {

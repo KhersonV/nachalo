@@ -8,6 +8,7 @@ import type {
     Cell,
 } from "../../types";
 import type { CombatExchangePayload, CombatTargetRef } from "@/types/combat";
+import { SQUARE_V1 } from "@/types/geometry";
 
 // Fast lookup index for cells by "x:y" → index in state.grid.
 // Kept at module level for minimal changes (O(1) updates).
@@ -157,6 +158,7 @@ function normalizeGridCells(
 function normalizePlayerState(
     player: PlayerState,
     existing?: PlayerState,
+    preservePosition = false,
 ): PlayerState {
     const incoming = (player ?? {}) as any;
     const merged = { ...existing, ...incoming } as any;
@@ -173,18 +175,10 @@ function normalizePlayerState(
         Number.isFinite(existing.position.x) &&
         Number.isFinite(existing.position.y);
 
-    // Some non-match handlers can return a persistent player snapshot with the
-    // zero-value position (0,0). Keep the match position in that case.
-    const looksLikeUninitializedMatchPosition =
-        nextPosX === 0 &&
-        nextPosY === 0 &&
-        hasExistingPosition &&
-        (existing.position.x !== 0 || existing.position.y !== 0);
-
     if (
         nextPosX !== undefined &&
         nextPosY !== undefined &&
-        !looksLikeUninitializedMatchPosition
+        !preservePosition
     ) {
         merged.position = { x: nextPosX, y: nextPosY };
     } else if (hasExistingPosition) {
@@ -212,7 +206,7 @@ function normalizePlayerState(
     if (nextGroupID !== undefined) {
         const looksLikePersistentSnapshot =
             nextGroupID === 0 &&
-            looksLikeUninitializedMatchPosition &&
+            preservePosition &&
             (existing?.group_id ?? 0) > 0;
 
         if (!looksLikePersistentSnapshot) {
@@ -241,6 +235,10 @@ function rebuildGridIndex(cells: Cell[]) {
 }
 
 const initialState: GameState = {
+    schemaVersion: 1,
+    geometry: SQUARE_V1,
+    mapRevision: 0,
+    stateRevision: 0,
     instanceId: "",
     mode: "",
     grid: [],
@@ -263,6 +261,12 @@ const gameSlice = createSlice({
     initialState,
     reducers: {
         setMatchData(state, action: PayloadAction<Partial<GameState>>) {
+            if (action.payload.schemaVersion !== undefined && action.payload.schemaVersion !== 1) return;
+            if (action.payload.geometry !== undefined && action.payload.geometry.kind !== "square") return;
+            state.schemaVersion = 1;
+            state.geometry = SQUARE_V1;
+            if (action.payload.mapRevision !== undefined) state.mapRevision = action.payload.mapRevision;
+            if (action.payload.stateRevision !== undefined) state.stateRevision = action.payload.stateRevision;
             // Обновлять только те поля, которые реально пришли в payload,
             // и не трогать grid/mapWidth/mapHeight если они undefined.
 
@@ -367,7 +371,8 @@ const gameSlice = createSlice({
                 (p) => p.user_id === updated.user_id,
             );
             if (i >= 0) {
-                state.players[i] = normalizePlayerState(updated, state.players[i]);
+                // UPDATE_PLAYER carries stats; MOVE_PLAYER carries position.
+                state.players[i] = normalizePlayerState(updated, state.players[i], true);
             }
         },
 

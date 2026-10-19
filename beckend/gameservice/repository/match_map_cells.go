@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"gameservice/game"
+	"gameservice/models"
 )
 
 var errDBNotInitialized = errors.New("repository DB is not initialized")
@@ -58,9 +59,16 @@ func EnsureMatchMapCellsBackfilled(instanceID string) error {
 	if rowsCount > 0 {
 		return nil
 	}
+	match, err := GetMatchByID(instanceID)
+	if err != nil {
+		return err
+	}
+	if match.Geometry != models.SquareV1 {
+		return fmt.Errorf("legacy map backfill is unavailable for %s-v%d", match.Geometry.Kind, match.Geometry.Version)
+	}
 
 	var raw []byte
-	err := DB.QueryRow(
+	err = DB.QueryRow(
 		`SELECT map FROM matches WHERE instance_id = $1`,
 		instanceID,
 	).Scan(&raw)
@@ -69,6 +77,21 @@ func EnsureMatchMapCellsBackfilled(instanceID string) error {
 	}
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
+	}
+	var encodedCells []json.RawMessage
+	if err := json.Unmarshal(raw, &encodedCells); err != nil {
+		return fmt.Errorf("invalid legacy map: %w", err)
+	}
+	for _, encoded := range encodedCells {
+		var coordinates struct {
+			X *int `json:"x"`
+			Y *int `json:"y"`
+			Q *int `json:"q"`
+			R *int `json:"r"`
+		}
+		if err := json.Unmarshal(encoded, &coordinates); err != nil || coordinates.X == nil || coordinates.Y == nil || coordinates.Q != nil || coordinates.R != nil {
+			return fmt.Errorf("legacy map has incomplete or mixed coordinates")
+		}
 	}
 
 	var cells []game.FullCell
