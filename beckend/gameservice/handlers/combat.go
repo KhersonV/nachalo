@@ -190,6 +190,13 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Запрещено действовать от лица другого игрока", http.StatusForbidden)
 		return
 	}
+	if hexMode, err := repository.IsHexTestMatch(r.Context(), instanceID); err != nil {
+		http.Error(w, "match mode unavailable", http.StatusServiceUnavailable)
+		return
+	} else if hexMode {
+		http.Error(w, "use the HEX command API", http.StatusBadRequest)
+		return
+	}
 
 	// 2) Парсим тело — только новые координаты
 	var req struct {
@@ -708,16 +715,7 @@ func buildCombatExchangePayload(
 // --- Расчёт урона и оставшегося HP ----------------------------------------
 
 func baseMoveEnergyCost(mobility int) int {
-	switch {
-	case mobility <= 2:
-		return 4
-	case mobility <= 5:
-		return 3
-	case mobility <= 8:
-		return 2
-	default:
-		return 1
-	}
+	return balance.MoveEnergyCost(mobility)
 }
 
 func enemyGuardianAuraSourcesAtPosition(player *models.PlayerResponse, x int, y int, players []models.PlayerResponse) []int {
@@ -2037,6 +2035,13 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AttackerType != "player" {
 		http.Error(w, "only player attacks are accepted over HTTP", http.StatusForbidden)
+		return
+	}
+	if hexMode, err := repository.IsHexTestMatch(r.Context(), req.InstanceID); err != nil {
+		http.Error(w, "match mode unavailable", http.StatusServiceUnavailable)
+		return
+	} else if hexMode {
+		http.Error(w, "use the HEX command API", http.StatusBadRequest)
 		return
 	}
 	if req.AttackerType == "player" {

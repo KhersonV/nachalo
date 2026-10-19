@@ -58,6 +58,13 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if hexMode, err := repository.IsHexTestMatch(r.Context(), req.InstanceID); err != nil {
+		http.Error(w, "match mode unavailable", http.StatusServiceUnavailable)
+		return
+	} else if hexMode {
+		http.Error(w, "use the HEX command API", http.StatusBadRequest)
+		return
+	}
 	releaseMatch, lockErr := acquireMatchSerialization(r.Context(), req.InstanceID)
 	if lockErr != nil {
 		http.Error(w, "match lock unavailable", http.StatusServiceUnavailable)

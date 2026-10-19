@@ -48,7 +48,8 @@ type Client struct {
 
 type broadcastEnvelope struct {
 	Payload struct {
-		InstanceID string `json:"instanceId"`
+		InstanceID    string `json:"instanceId"`
+		SchemaVersion int    `json:"schemaVersion"`
 	} `json:"payload"`
 }
 
@@ -307,6 +308,12 @@ var broadcastFn = func(message []byte) {
 	clientsMu.Lock()
 	var targets []*Client
 	for _, client := range clients {
+		if env.Payload.SchemaVersion == 2 {
+			var member bool
+			if repository.DB == nil || repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players WHERE instance_id=$1 AND user_id=$2)`, env.Payload.InstanceID, client.userID).Scan(&member) != nil || !member {
+				continue
+			}
+		}
 		// If client already has instanceID set — match normally.
 		if client.instanceID != "" {
 			if env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID {

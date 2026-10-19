@@ -56,6 +56,7 @@ func (c *MatchCommand) RemoveCombatPlayerFromTurnOrderTx(ctx context.Context, us
 	if err := json.Unmarshal(raw, &oldOrder); err != nil {
 		return out, err
 	}
+	out.TurnOrder = make([]int, 0, len(oldOrder))
 	removedIndex := -1
 	for _, id := range oldOrder {
 		if id == userID {

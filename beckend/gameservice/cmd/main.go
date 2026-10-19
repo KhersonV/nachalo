@@ -62,6 +62,19 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	}).Methods("GET")
+	if os.Getenv("HEX_PREVIEW_ENABLED") == "true" {
+		router.HandleFunc("/game/hex-preview", handlers.HexPreviewHandler).Methods("GET")
+	}
+	if os.Getenv("HEX_TEST_MATCH_ENABLED") == "true" {
+		router.Handle("/game/hex-test", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CreateHexTestMatchHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetHexTestMatchHandler))).Methods("GET")
+		router.Handle("/game/hex-test/{instance_id}/route", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexRouteHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/move", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHexTestMatchHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/collect", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectHexResourceHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
+	}
 	// === websocket ===
 	router.HandleFunc("/ws", handlers.WsHandler)
 
