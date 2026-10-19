@@ -152,10 +152,11 @@ func (m *MatchState) NextCombatExchangeMeta() (turn int, seq uint64) {
 }
 
 // RecordDamageEvent добавляет в память факт нанесённого урона.
-func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, targetID int, amount int) {
+func (m *MatchState) RecordDamageEvent(sourceType string, dealerID int, targetType string, targetID int, amount int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DamageEvents = append(m.DamageEvents, DamageEvent{
+		SourceType: sourceType,
 		DealerID:   dealerID,
 		TargetType: targetType,
 		TargetID:   targetID,
@@ -165,7 +166,7 @@ func (m *MatchState) RecordDamageEvent(dealerID int, targetType string, targetID
 
 // RecordKillEvent добавляет в память факт убийства (смерти).
 // Возвращает false, если эта жертва уже была учтена раньше.
-func (m *MatchState) RecordKillEvent(killerID int, victimType string, victimID int, damage int) bool {
+func (m *MatchState) RecordKillEvent(sourceType string, killerID int, victimType string, victimID int, damage int) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -186,6 +187,7 @@ func (m *MatchState) RecordKillEvent(killerID int, victimType string, victimID i
 	}
 
 	m.KillEvents = append(m.KillEvents, KillEvent{
+		SourceType: sourceType,
 		KillerID:   killerID,
 		VictimType: victimType,
 		VictimID:   victimID,

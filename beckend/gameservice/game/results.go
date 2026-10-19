@@ -53,7 +53,9 @@ func CalculateResultsFromEvents(events ResultEvents, userID int, survived bool) 
 				countedKills[key] = struct{}{}
 			}
 		}
-		if isDuplicateKill || ke.KillerID != userID {
+		// Untyped legacy events are ambiguous when a monster ID equals a user ID.
+		// Never credit them to a player based on the numeric ID alone.
+		if isDuplicateKill || ke.SourceType != ResultSourcePlayer || ke.KillerID != userID {
 			continue
 		}
 		switch ke.VictimType {
@@ -67,7 +69,7 @@ func CalculateResultsFromEvents(events ResultEvents, userID int, survived bool) 
 	// 3) Считаем урон только по DamageEvents.
 	// KillEvents уже отражают факт убийства и могут дублировать последний удар.
 	for _, de := range events.DamageEvents {
-		if de.DealerID == userID {
+		if de.SourceType == ResultSourcePlayer && de.DealerID == userID {
 			switch de.TargetType {
 			case "player":
 				dmgPlayers += de.Amount

@@ -10,8 +10,8 @@ import (
 	"gameservice/repository"
 )
 
-// This transactional branch covers nonlethal PvP without
-// quest artifacts. Remaining class effects still use legacy combat.
+// This transactional branch covers supported PvP hits and lethal counters
+// without quest artifacts. Unsupported death chains use legacy combat.
 func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackRequest) bool {
 	if req.AttackerType != "player" || req.TargetType != "player" || req.AttackerID == req.TargetID {
 		return false
@@ -83,11 +83,10 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 	}
 	d.Defense = effectiveDefense(req.InstanceID, "player", req.TargetID, d.Defense)
 	hit := applyDamage(a, d)
-	minSurvivalHP := 0
-	if attacker.CharacterType == "mystic" {
-		minSurvivalHP = arcaneOverburnEnergyBurn
-	}
-	if hit.NewHealth <= minSurvivalHP {
+	// A Mystic hit that leaves a few HP can be followed by lethal pure damage.
+	// That separate death path still belongs to legacy combat; a direct lethal
+	// primary hit has no Energy Drain and can stay in this command.
+	if attacker.CharacterType == "mystic" && hit.NewHealth > 0 && hit.NewHealth <= arcaneOverburnEnergyBurn {
 		return false
 	}
 	preArmorBreak := game.ArmorBreakState{}
@@ -113,13 +112,9 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 	if attacker.CharacterType == "berserker" && mode == attackModeMelee && targetEnergy >= counterCost && berserkerFollowUpLimitPerTurn == 0 && hit.NewHealth <= hit.Damage/2 {
 		return false
 	}
-	// Check the largest possible counter before rolling shield or overburn.
-	if mode == attackModeMelee && targetEnergy >= counterCost {
-		a.Defense = effectiveDefense(req.InstanceID, "player", req.AttackerID, a.Defense)
-		if applyDamage(d, a).NewHealth <= 0 {
-			return false
-		}
-	}
+	// Resolve the counter inside this command as well: a lethal response must
+	// persist the original hit, counter, death and turn change together.
+	a.Defense = effectiveDefense(req.InstanceID, "player", req.AttackerID, a.Defense)
 	shieldBlocked := resolveGuardianShieldBlock("player", d)
 	if shieldBlocked {
 		hit = attackResult{Damage: 0, NewHealth: target.Health, Triggered: false}
@@ -192,7 +187,7 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 		}
 	}
 	counter.NewHealth = a.Health
-	if mode == attackModeMelee && targetEnergy >= counterCost {
+	if (mode == attackModeMelee || (shieldBlocked && mode == attackModeRanged && manhattanDistance(a, d) <= 1)) && finalTargetHP > 0 && targetEnergy >= counterCost {
 		targetEnergy -= counterCost
 		counter = applyDamage(d, a)
 		steps = append(steps, CombatStep{Kind: "counter", Source: &targetRef, Target: attackerRef, Damage: counter.Damage, TargetHPAfter: counter.NewHealth})
@@ -214,21 +209,93 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 			steps = append(steps, CombatStep{Kind: "followup", Source: &attackerRef, Target: targetRef, Damage: followup.Damage, TargetHPAfter: finalTargetHP})
 		}
 	}
-	if err = c.SetCombatPlayerVitalsTx(r.Context(), req.AttackerID, counter.NewHealth, attackerEnergy); err != nil {
+	playerKilled := finalTargetHP <= 0
+	attackerKilled := counter.Triggered && counter.NewHealth <= 0
+	mapChanged := false
+	var nextActive int
+	if playerKilled {
+		// handlePlayerDeath regenerates the new active player even when the
+		// attacker remains active. Both participants have no quest artifact here.
+		attackerEnergy += resolveCharacterRegen(attacker.CharacterType)
+		if attackerEnergy > attacker.MaxEnergy {
+			attackerEnergy = attacker.MaxEnergy
+		}
+		steps = append(steps, CombatStep{Kind: "death", Target: targetRef})
+	}
+	attackerHPToPersist := counter.NewHealth
+	if attackerKilled {
+		attackerHPToPersist = a.Health
+	}
+	if err = c.SetCombatPlayerVitalsTx(r.Context(), req.AttackerID, attackerHPToPersist, attackerEnergy); err != nil {
 		writeCombatCommandError(w, err)
 		return true
 	}
-	if err = c.SetCombatPlayerVitalsTx(r.Context(), req.TargetID, finalTargetHP, targetEnergy); err != nil {
-		writeCombatCommandError(w, err)
-		return true
+	if !playerKilled {
+		if err = c.SetCombatPlayerVitalsTx(r.Context(), req.TargetID, finalTargetHP, targetEnergy); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
 	}
 	for _, event := range []game.DamageEvent{
-		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: hit.Damage},
-		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: bonusDamage},
-		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: followupDamage},
-		{DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: hit.Damage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: bonusDamage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: followupDamage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
 	} {
 		if err = c.RecordDamageEventTx(r.Context(), event); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+	}
+	if attackerKilled {
+		steps = append(steps, CombatStep{Kind: "death", Target: attackerRef})
+		turn, _, changed, deathErr := finishCombatPlayerDeathTx(r.Context(), c, req.AttackerID, game.ResultSourcePlayer, req.TargetID, counter.Damage, repository.Position{X: attacker.Position.X, Y: attacker.Position.Y})
+		if deathErr != nil {
+			writeCombatCommandError(w, deathErr)
+			return true
+		}
+		nextActive, mapChanged = turn.ActiveUserID, changed
+	}
+	if playerKilled {
+		killDamage := hit.Damage
+		if bonusDamage > 0 {
+			killDamage = bonusDamage
+		}
+		if followupDamage > 0 {
+			killDamage = followupDamage
+		}
+		if _, err = c.RecordKillEventTx(r.Context(), game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: req.AttackerID, VictimType: "player", VictimID: req.TargetID, Damage: killDamage}); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		if err = c.MarkCombatPlayerDeadTx(r.Context(), req.TargetID); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		turn, turnErr := c.RemoveCombatPlayerFromTurnOrderTx(r.Context(), req.TargetID)
+		if turnErr != nil || turn.ActiveUserID != req.AttackerID {
+			writeCombatCommandError(w, repository.ErrCommandRejected)
+			return true
+		}
+		mapChanged, err = c.ClearCombatPlayerCellTx(r.Context(), repository.Position{X: target.Position.X, Y: target.Position.Y})
+		if err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		deathCell, cellErr := c.CombatMapCellTx(r.Context(), repository.Position{X: target.Position.X, Y: target.Position.Y})
+		if cellErr != nil {
+			writeCombatCommandError(w, cellErr)
+			return true
+		}
+		if err = c.QueueEvent(map[string]interface{}{"type": "PLAYER_DEFEATED", "payload": map[string]interface{}{"instanceId": req.InstanceID, "userId": req.TargetID, "updatedCell": serialiseUpdatedCell(*deathCell)}}); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		if err = c.QueueEvent(map[string]interface{}{"type": "SET_ACTIVE_USER", "payload": map[string]interface{}{"instanceId": req.InstanceID, "instance_id": req.InstanceID, "active_user": turn.ActiveUserID, "energy": attackerEnergy, "turnNumber": turn.TurnNumber}}); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		if err = c.QueueEvent(map[string]interface{}{"type": "TURN_PASSED", "payload": map[string]interface{}{"instanceId": req.InstanceID, "instance_id": req.InstanceID, "userId": turn.ActiveUserID, "active_user": turn.ActiveUserID, "turnNumber": turn.TurnNumber}}); err != nil {
 			writeCombatCommandError(w, err)
 			return true
 		}
@@ -239,7 +306,7 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 		return true
 	}
 	response := &atomicAttackResponse{DamageToTarget: hit.Damage, NewTargetHP: finalTargetHP, CounterDamage: counter.Damage, NewAttackerHP: counter.NewHealth, AttackMode: mode}
-	state, mapRevision, err := c.Commit(r.Context(), response, false)
+	state, mapRevision, err := c.Commit(r.Context(), response, mapChanged)
 	if err != nil {
 		writeCombatCommandError(w, err)
 		return true
@@ -247,21 +314,48 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 	// Memory statistics and WebSocket messages are applied only after commit.
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
 		if hit.Damage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "player", req.TargetID, hit.Damage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "player", req.TargetID, hit.Damage)
 		}
 		if bonusDamage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "player", req.TargetID, bonusDamage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "player", req.TargetID, bonusDamage)
 		}
 		if followupDamage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "player", req.TargetID, followupDamage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "player", req.TargetID, followupDamage)
 			ms.TryUseBerserkerFury(req.AttackerID, berserkerFollowUpLimitPerTurn)
 		}
 		if applyArmorBreak {
 			ms.ApplyArmorBreak("player", req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
 		}
 		if counter.Triggered && counter.Damage > 0 {
-			ms.RecordDamageEvent(req.TargetID, "player", req.AttackerID, counter.Damage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.TargetID, "player", req.AttackerID, counter.Damage)
 		}
+		if playerKilled {
+			killDamage := hit.Damage
+			if bonusDamage > 0 {
+				killDamage = bonusDamage
+			}
+			if followupDamage > 0 {
+				killDamage = followupDamage
+			}
+			ms.RecordKillEvent(game.ResultSourcePlayer, req.AttackerID, "player", req.TargetID, killDamage)
+			ms.RecordPlayerDefeat(req.TargetID)
+			ms.RemovePlayerFromTurnOrder(req.TargetID)
+			ms.AdvanceTurnCombatState(req.AttackerID, false)
+		}
+		if attackerKilled {
+			ms.RecordKillEvent(game.ResultSourcePlayer, req.TargetID, "player", req.AttackerID, counter.Damage)
+			ms.RecordPlayerDefeat(req.AttackerID)
+			ms.RemovePlayerFromTurnOrder(req.AttackerID)
+			ms.AdvanceTurnCombatState(nextActive, false)
+		}
+	}
+	if playerKilled {
+		unbindPlayer(req.TargetID)
+		startTurnTimer(req.InstanceID, req.AttackerID)
+	}
+	if attackerKilled {
+		unbindPlayer(req.AttackerID)
+		startTurnTimer(req.InstanceID, nextActive)
 	}
 	changes := make([]json.RawMessage, 0, len(c.Events))
 	for _, event := range c.Events {

@@ -317,7 +317,7 @@ func TestProfileReadMatchSnapshotAndFinalizeUseCharacterData(t *testing.T) {
 	game.MatchStatesMu.Lock()
 	game.MatchStates[matchID] = &game.MatchState{
 		InstanceID:   matchID,
-		DamageEvents: []game.DamageEvent{{DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 50}},
+		DamageEvents: []game.DamageEvent{{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 50}},
 	}
 	game.MatchStatesMu.Unlock()
 

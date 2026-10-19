@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+
+	"gameservice/game"
 )
 
 // PlayerDeathTurnResult is the persisted turn state after removing a defeated
@@ -96,4 +98,14 @@ func (c *MatchCommand) ClearCombatPlayerCellTx(ctx context.Context, pos Position
 	}
 	_, err = c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND x=$2 AND y=$3`, c.InstanceID, pos.X, pos.Y)
 	return err == nil, err
+}
+
+// CombatMapCellTx reads the death cell through the command transaction. The
+// general map loader may backfill through DB, which would escape this lock.
+func (c *MatchCommand) CombatMapCellTx(ctx context.Context, pos Position) (*game.FullCell, error) {
+	if c == nil || c.Tx == nil {
+		return nil, ErrCommandRejected
+	}
+	row := c.Tx.QueryRowContext(ctx, `SELECT cell_id,x,y,tile_code,resource,barbel,monster,is_portal,is_player,structure_type,structure_owner_user_id,structure_health,structure_defense,structure_attack,structure_energy,is_under_construction,construction_turns_left FROM match_map_cells WHERE instance_id=$1 AND x=$2 AND y=$3`, c.InstanceID, pos.X, pos.Y)
+	return scanMatchMapCell(row)
 }

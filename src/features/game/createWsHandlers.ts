@@ -28,6 +28,7 @@ import type {
     CombatTargetRef,
 } from "@/types/combat";
 import type { ActionLogEntryInput, GameState } from "@/types";
+import { readActiveUserFromTurnPassed } from "@/utils/turnPassed.mjs";
 import {
     buildBarrelDamageLogEntry,
     buildBarrelLogEntry,
@@ -257,13 +258,16 @@ export function createWsHandlers(
                 }),
             );
         },
-        TURN_PASSED: (payload: any) =>
+        TURN_PASSED: (payload: any) => {
+            const activeUser = readActiveUserFromTurnPassed(payload);
+            if (activeUser === null) return;
             dispatch(
                 turnPassed({
                     instanceId,
-                    active_user: payload.active_user,
+                    active_user: activeUser,
                 }),
-            ),
+            );
+        },
         PLAYER_DEFEATED: (payload: any) => {
             addLogEntryFromState((gameState) =>
                 buildPlayerDefeatedLogEntry(

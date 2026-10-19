@@ -40,10 +40,16 @@ func (c *MatchCommand) RecordDamageEventTx(ctx context.Context, event game.Damag
 	if event.Amount <= 0 {
 		return nil
 	}
+	if !game.ValidResultSourceType(event.SourceType) {
+		return ErrCommandRejected
+	}
 	return c.appendCombatResultEventTx(ctx, "damageEvents", event)
 }
 
 func (c *MatchCommand) RecordKillEventTx(ctx context.Context, event game.KillEvent) (bool, error) {
+	if !game.ValidResultSourceType(event.SourceType) {
+		return false, ErrCommandRejected
+	}
 	events, err := c.LoadCombatResultEventsTx(ctx)
 	if err != nil {
 		return false, err

@@ -10,7 +10,7 @@ import {
     updateCell,
 } from "../store/slices/gameSlice";
 import type { PlayerState, Cell } from "../types";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { RootState } from "../store";
 import type { User } from "../contexts/AuthContext";
 import { humanizeActionError } from "@/utils/actionLog";
@@ -51,6 +51,8 @@ export function usePlayerActions(
     collectResource: (cellX: number, cellY: number) => Promise<void>;
 } {
     const dispatch = useDispatch();
+    // Keep an ambiguous pickup attempt's ID across re-renders and retries.
+    const pendingResourceCommands = useRef(new Map<string, string>());
 
     const logActionError = useCallback(
         (
@@ -294,6 +296,12 @@ export function usePlayerActions(
                 logActionError("Session missing. Log in again.");
                 return;
             }
+            const attemptKey = `${instanceId}:${myPlayerId}:${cellX}:${cellY}`;
+            let commandId = pendingResourceCommands.current.get(attemptKey);
+            if (!commandId) {
+                commandId = crypto.randomUUID();
+                pendingResourceCommands.current.set(attemptKey, commandId);
+            }
             try {
                 const response = await fetch(`${API_BASE}/game/collectResource`, {
                     method: "POST",
@@ -306,8 +314,12 @@ export function usePlayerActions(
                         user_id: myPlayerId,
                         cell_x: cellX,
                         cell_y: cellY,
+                        commandId,
                     }),
                 });
+                if (response.ok || (response.status >= 400 && response.status < 500)) {
+                    pendingResourceCommands.current.delete(attemptKey);
+                }
                 if (!response.ok) {
                     logActionError(
                         await readFailureMessage(

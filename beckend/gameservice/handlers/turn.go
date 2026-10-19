@@ -106,7 +106,7 @@ func applyTurretDamage(instanceID string, ownerUserID int, targetType string, ta
 
 	// Засчитываем урон владельцу турели
 	if ms, ok := game.GetMatchState(instanceID); ok {
-		ms.RecordDamageEvent(ownerUserID, targetType, targetID, targetRes.Damage)
+		ms.RecordDamageEvent(game.ResultSourcePlayer, ownerUserID, targetType, targetID, targetRes.Damage)
 	}
 
 	saveTargetHealth(
@@ -502,6 +502,7 @@ func doEndTurn(instanceID string, userID int, ms *game.MatchState, expectedTurn 
 			"instanceId":  instanceID,
 			"instance_id": instanceID,
 			"userId":      nextUserID,
+			"active_user": nextUserID,
 			"turnNumber":  ms.TurnNumber,
 		},
 	}

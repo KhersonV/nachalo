@@ -60,6 +60,7 @@ type Reward struct {
 
 // одно убийство или добивание монстра/игрока
 type KillEvent struct {
+	SourceType string `json:"sourceType,omitempty"` // player, monster, environment; absent in legacy data means unknown
 	KillerID   int
 	VictimType string // "player" или "monster"
 	VictimID   int
@@ -68,10 +69,21 @@ type KillEvent struct {
 
 // одно нанесение урона (не обязательно смертельное)
 type DamageEvent struct {
+	SourceType string `json:"sourceType,omitempty"` // player, monster, environment; absent in legacy data means unknown
 	DealerID   int
 	TargetType string // "player" или "monster"
 	TargetID   int
 	Amount     int
+}
+
+const (
+	ResultSourcePlayer      = "player"
+	ResultSourceMonster     = "monster"
+	ResultSourceEnvironment = "environment"
+)
+
+func ValidResultSourceType(sourceType string) bool {
+	return sourceType == ResultSourcePlayer || sourceType == ResultSourceMonster || sourceType == ResultSourceEnvironment
 }
 
 // ResultEvents are the MatchState fields needed by CalculateResults and

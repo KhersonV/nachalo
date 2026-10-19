@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -89,10 +90,10 @@ func TestPlayerDeathPrimitivesPostgres(t *testing.T) {
 		if command.Replay != nil {
 			return nil
 		}
-		if err := command.RecordDamageEventTx(ctx, game.DamageEvent{DealerID: 2, TargetType: "player", TargetID: 1, Amount: 8}); err != nil {
+		if err := command.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: 2, TargetType: "player", TargetID: 1, Amount: 8}); err != nil {
 			return err
 		}
-		if _, err := command.RecordKillEventTx(ctx, game.KillEvent{KillerID: 2, VictimType: "player", VictimID: 1, Damage: 8}); err != nil {
+		if _, err := command.RecordKillEventTx(ctx, game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: 2, VictimType: "player", VictimID: 1, Damage: 8}); err != nil {
 			return err
 		}
 		if err := command.MarkCombatPlayerDeadTx(ctx, 1); err != nil {
@@ -168,5 +169,19 @@ func TestPlayerDeathPrimitivesPostgres(t *testing.T) {
 	}
 	if len(events.DamageEvents) != 0 || len(events.KillEvents) != 0 || len(events.DefeatedUsers) != 0 {
 		t.Fatalf("rollback kept defeat history: %+v", events)
+	}
+	unknown, err := BeginMatchCommand(context.Background(), "rollback", 2, "unknown-source", "unknown-source-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unknown.SetCombatPlayerVitalsTx(context.Background(), 1, 3, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := unknown.RecordDamageEventTx(context.Background(), game.DamageEvent{DealerID: 2, TargetType: "player", TargetID: 1, Amount: 5}); !errors.Is(err, ErrCommandRejected) {
+		t.Fatalf("untyped new event accepted: %v", err)
+	}
+	unknown.Rollback()
+	if err := fresh.QueryRow(`SELECT health FROM match_players WHERE instance_id='rollback' AND user_id=1`).Scan(&hp); err != nil || hp != 8 {
+		t.Fatalf("untyped event rollback health=%d err=%v", hp, err)
 	}
 }

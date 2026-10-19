@@ -114,10 +114,10 @@ func TestMatchFinalizationPostgres(t *testing.T) {
 	// A complete match must have its result inputs in the same persisted row.
 	seed := func(id string, killer, victim int) {
 		t.Helper()
-		events := game.ResultEvents{DamageEvents: []game.DamageEvent{{DealerID: killer, TargetType: "monster", TargetID: 9, Amount: 15}}, KillEvents: []game.KillEvent{{KillerID: killer, VictimType: "monster", VictimID: 9, Damage: 5}}}
+		events := game.ResultEvents{DamageEvents: []game.DamageEvent{{SourceType: game.ResultSourcePlayer, DealerID: killer, TargetType: "monster", TargetID: 9, Amount: 15}}, KillEvents: []game.KillEvent{{SourceType: game.ResultSourcePlayer, KillerID: killer, VictimType: "monster", VictimID: 9, Damage: 5}}}
 		if victim > 0 {
-			events.DamageEvents = append(events.DamageEvents, game.DamageEvent{DealerID: killer, TargetType: "player", TargetID: victim, Amount: 10})
-			events.KillEvents = append(events.KillEvents, game.KillEvent{KillerID: killer, VictimType: "player", VictimID: victim, Damage: 10})
+			events.DamageEvents = append(events.DamageEvents, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: killer, TargetType: "player", TargetID: victim, Amount: 10})
+			events.KillEvents = append(events.KillEvents, game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: killer, VictimType: "player", VictimID: victim, Damage: 10})
 			events.DefeatedUsers = []int{victim}
 		}
 		encoded, _ := json.Marshal(events)
@@ -273,10 +273,10 @@ func TestMatchFinalizationPostgres(t *testing.T) {
 	// Compare the legacy in-memory result with the result after a fresh
 	// MatchState is rebuilt exclusively from PostgreSQL event history.
 	beforeState := game.CreateMatchState("incomplete", []int{5, 6})
-	beforeState.RecordDamageEvent(5, "monster", 9, 15)
-	beforeState.RecordDamageEvent(5, "player", 6, 10)
-	beforeState.RecordKillEvent(5, "monster", 9, 5)
-	beforeState.RecordKillEvent(5, "player", 6, 10)
+	beforeState.RecordDamageEvent(game.ResultSourcePlayer, 5, "monster", 9, 15)
+	beforeState.RecordDamageEvent(game.ResultSourcePlayer, 5, "player", 6, 10)
+	beforeState.RecordKillEvent(game.ResultSourcePlayer, 5, "monster", 9, 5)
+	beforeState.RecordKillEvent(game.ResultSourcePlayer, 5, "player", 6, 10)
 	beforeState.RecordPlayerDefeat(6)
 	beforeRestart, err := GetMatchResults("incomplete")
 	if err != nil {

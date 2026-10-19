@@ -1,6 +1,23 @@
 package game
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestCalculateResults_LegacyUntypedEventsDoNotGuessActorFromID(t *testing.T) {
+	const userID = 7
+	// This is the JSON shape already stored before sourceType existed. It could
+	// have been produced by either user 7 or monster 7, so it earns no credit.
+	var events ResultEvents
+	if err := json.Unmarshal([]byte(`{"damageEvents":[{"DealerID":7,"TargetType":"player","TargetID":7,"Amount":10}],"killEvents":[{"KillerID":7,"VictimType":"monster","VictimID":3,"Damage":10}],"defeatedUsers":[]}`), &events); err != nil {
+		t.Fatal(err)
+	}
+	exp, rewards, playerKills, monsterKills, total, _, _, taken, err := CalculateResultsFromEvents(events, userID, false)
+	if err != nil || exp != 0 || len(rewards) != 0 || playerKills != 0 || monsterKills != 0 || total != 0 || taken != 10 {
+		t.Fatalf("legacy attribution exp=%d rewards=%+v kills=%d/%d total=%d taken=%d err=%v", exp, rewards, playerKills, monsterKills, total, taken, err)
+	}
+}
 
 func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 	const instanceID = "test-instance-results"
@@ -10,14 +27,14 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 	MatchStates[instanceID] = &MatchState{
 		InstanceID: instanceID,
 		KillEvents: []KillEvent{
-			{KillerID: userID, VictimType: "monster", Damage: 99},
-			{KillerID: userID, VictimType: "player", Damage: 77},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", Damage: 99},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", Damage: 77},
 		},
 		DamageEvents: []DamageEvent{
-			{DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 24},
-			{DealerID: userID, TargetType: "player", TargetID: 11, Amount: 11},
-			{DealerID: 99, TargetType: "player", TargetID: userID, Amount: 9},
-			{DealerID: 99, TargetType: "monster", TargetID: 2, Amount: 1000},
+			{SourceType: ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 24},
+			{SourceType: ResultSourcePlayer, DealerID: userID, TargetType: "player", TargetID: 11, Amount: 11},
+			{SourceType: ResultSourceMonster, DealerID: 99, TargetType: "player", TargetID: userID, Amount: 9},
+			{SourceType: ResultSourceMonster, DealerID: 99, TargetType: "monster", TargetID: 2, Amount: 1000},
 		},
 	}
 	MatchStatesMu.Unlock()
@@ -78,12 +95,12 @@ func TestCalculateResults_DeduplicatesRepeatedKillEvents(t *testing.T) {
 	MatchStates[instanceID] = &MatchState{
 		InstanceID: instanceID,
 		KillEvents: []KillEvent{
-			{KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
-			{KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
-			{KillerID: userID, VictimType: "player", VictimID: 12, Damage: 8},
-			{KillerID: 99, VictimType: "player", VictimID: 12, Damage: 8},
-			{KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
-			{KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", VictimID: 12, Damage: 8},
+			{SourceType: ResultSourcePlayer, KillerID: 99, VictimType: "player", VictimID: 12, Damage: 8},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
 		},
 	}
 	MatchStatesMu.Unlock()
@@ -115,10 +132,10 @@ func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
 	MatchStates[instanceID] = &MatchState{
 		InstanceID: instanceID,
 		KillEvents: []KillEvent{
-			{KillerID: userID, VictimType: "monster", Damage: 10},
+			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", Damage: 10},
 		},
 		DamageEvents: []DamageEvent{
-			{DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 10},
+			{SourceType: ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 10},
 		},
 	}
 	MatchStatesMu.Unlock()

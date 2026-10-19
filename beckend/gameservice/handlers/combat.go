@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -526,9 +527,9 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 		if exitDamage.SourceGuardianID > 0 {
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				ms.RecordDamageEvent(exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
+				ms.RecordDamageEvent(game.ResultSourcePlayer, exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
 				if exitDamage.NewHealth <= 0 {
-					ms.RecordKillEvent(exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
+					ms.RecordKillEvent(game.ResultSourcePlayer, exitDamage.SourceGuardianID, "player", userID, exitDamage.Damage)
 				}
 			}
 		}
@@ -1169,7 +1170,7 @@ func saveTargetHealth(
 			log.Printf("[saveTargetHealth] player %d died, calling handlePlayerDeath.", targetID)
 			recordedKill := true
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				recordedKill = ms.RecordKillEvent(attackerID, "player", targetID, ar.Damage)
+				recordedKill = ms.RecordKillEvent(attackerType, attackerID, "player", targetID, ar.Damage)
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] player %d death was already counted, skipping duplicate handling.", targetID)
@@ -1212,7 +1213,7 @@ func saveTargetHealth(
 			log.Printf("[saveTargetHealth] monster %d died, calling handleMonsterDeath.", targetID)
 			recordedKill := true
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				recordedKill = ms.RecordKillEvent(attackerID, "monster", targetID, ar.Damage)
+				recordedKill = ms.RecordKillEvent(attackerType, attackerID, "monster", targetID, ar.Damage)
 			}
 			if !recordedKill {
 				log.Printf("[saveTargetHealth] monster %d death was already counted, skipping duplicate handling.", targetID)
@@ -1492,6 +1493,7 @@ func handlePlayerDeath(instanceID string, p *models.PlayerResponse, killerID int
 					"instanceId":  instanceID,
 					"instance_id": instanceID,
 					"userId":      nextID,
+					"active_user": nextID,
 					"turnNumber":  ms.TurnNumber,
 				},
 			}
@@ -1923,7 +1925,7 @@ func tryApplyMysticEnergyDrain(instanceID string, attackerID int, targetType str
 		pureRes.Damage = actualPureDamage
 		if actualPureDamage > 0 {
 			if ms, ok := game.GetMatchState(instanceID); ok {
-				ms.RecordDamageEvent(attackerID, "player", targetID, actualPureDamage)
+				ms.RecordDamageEvent(game.ResultSourcePlayer, attackerID, "player", targetID, actualPureDamage)
 			}
 			saveTargetHealth(instanceID, "player", targetID, attackerID, "player", pureRes)
 			pureStep = &CombatStep{
@@ -1998,9 +2000,9 @@ func doCounterattackWithEnergy(
 		}
 	}
 	if ms, ok := game.GetMatchState(instanceID); ok && ar.Damage > 0 {
-		ms.RecordDamageEvent(defenderID, attackerType, attackerID, ar.Damage)
+		ms.RecordDamageEvent(defenderType, defenderID, attackerType, attackerID, ar.Damage)
 		if ar.NewHealth <= 0 {
-			ms.RecordKillEvent(defenderID, attackerType, attackerID, ar.Damage)
+			ms.RecordKillEvent(defenderType, defenderID, attackerType, attackerID, ar.Damage)
 		}
 	}
 
@@ -2078,6 +2080,16 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
+	if req.AttackerType == "monster" {
+		response, err := internalMonsterAttackCommand(context.Background(), req)
+		if err != nil {
+			writeCombatCommandError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
 	atkStats, err := loadStats(req.InstanceID, req.AttackerType, req.AttackerID)
 	if err != nil {
 		log.Printf("[DEBUG] UniversalAttackHandler: loadStats attacker error: %v", err)
@@ -2230,7 +2242,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 	})
 
 	if ms, ok := game.GetMatchState(req.InstanceID); ok && targetRes.Triggered && targetRes.Damage > 0 {
-		ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
+		ms.RecordDamageEvent(req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, targetRes.Damage)
 	}
 	if targetRes.Triggered {
 		targetDeathProcessed = saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, targetRes)
@@ -2353,7 +2365,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 					finalTargetHP,
 				)
 				if ms, ok := game.GetMatchState(req.InstanceID); ok && bonusRes.Damage > 0 {
-					ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, bonusRes.Damage)
+					ms.RecordDamageEvent(req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, bonusRes.Damage)
 				}
 				if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, bonusRes) {
 					targetDeathProcessed = true
@@ -2433,7 +2445,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		}
 		responseResult := applyFlatDamage(finalTargetHP, responseDamage)
 		if ms, ok := game.GetMatchState(req.InstanceID); ok && responseResult.Damage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, responseResult.Damage)
+			ms.RecordDamageEvent(req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, responseResult.Damage)
 		}
 		if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, responseResult) {
 			targetDeathProcessed = true
@@ -2465,7 +2477,7 @@ func universalAttackLocked(w http.ResponseWriter, req AttackRequest) {
 		if allowFollowUp {
 			followUpRes := applyFlatDamage(finalTargetHP, followUpDamage)
 			if ms, ok := game.GetMatchState(req.InstanceID); ok && followUpRes.Damage > 0 {
-				ms.RecordDamageEvent(req.AttackerID, req.TargetType, req.TargetID, followUpRes.Damage)
+				ms.RecordDamageEvent(req.AttackerType, req.AttackerID, req.TargetType, req.TargetID, followUpRes.Damage)
 			}
 			if saveTargetHealth(req.InstanceID, req.TargetType, req.TargetID, req.AttackerID, req.AttackerType, followUpRes) {
 				targetDeathProcessed = true

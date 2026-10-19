@@ -30,6 +30,13 @@ const schemaReadyTimeout = 90 * time.Second
 func InitDB() {
 	ConnectDB()
 	RunMigrations()
+	ready, err := SchemaReady()
+	if err != nil {
+		log.Fatalf("PostgreSQL schema is not ready for match commands: %v", err)
+	}
+	if !ready {
+		log.Fatal("PostgreSQL base schema is not ready for match commands")
+	}
 
 	// Восстанавливаем state матчей
 	if err := RestoreRuntimeState(); err != nil {
@@ -282,6 +289,54 @@ func SchemaReady() (bool, error) {
 			}
 		}
 	}
+	for _, stage := range []struct {
+		name    string
+		file    string
+		tables  []string
+		columns map[string][]string
+	}{
+		{
+			name: "Stage 1", file: "docs/hex-migration/stage1_geometry.sql",
+			tables: []string{"hex_stage1_migration_marker", "match_hex_edges"},
+			columns: map[string][]string{
+				"hex_stage1_migration_marker": {"version"},
+				"matches":                     {"schema_version", "geometry", "map_revision", "state_revision", "start_positions_v2", "portal_position_v2"},
+				"match_map_cells":             {"q", "r"},
+				"match_monsters":              {"pos_q", "pos_r"},
+				"match_players":               {"position_q", "position_r"},
+				"match_hex_edges":             {"instance_id", "q", "r", "direction", "neighbor_q", "neighbor_r", "wall_kind"},
+			},
+		},
+		{
+			name: "Stage 2", file: "docs/hex-migration/stage2_commands.sql",
+			tables: []string{"match_commands"},
+			columns: map[string][]string{
+				"matches":        {"combat_result_events", "combat_results_complete", "finished_at"},
+				"match_commands": {"instance_id", "command_id", "user_id", "payload_hash", "response", "state_revision", "map_revision", "created_at"},
+			},
+		},
+	} {
+		for _, tableName := range stage.tables {
+			ok, err := tableExists(tableName)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				return false, fmt.Errorf("%s schema incomplete: missing table %s; apply %s manually", stage.name, tableName, stage.file)
+			}
+		}
+		for tableName, columns := range stage.columns {
+			for _, columnName := range columns {
+				ok, err := columnExists(tableName, columnName)
+				if err != nil {
+					return false, err
+				}
+				if !ok {
+					return false, fmt.Errorf("%s schema incomplete: missing column %s.%s; apply %s manually", stage.name, tableName, columnName, stage.file)
+				}
+			}
+		}
+	}
 
 	return true, nil
 }
@@ -296,7 +351,7 @@ func tableExists(tableName string) (bool, error) {
 		`SELECT EXISTS (
 			SELECT 1
 			FROM information_schema.tables
-			WHERE table_schema = 'public' AND table_name = $1
+			WHERE table_schema = current_schema() AND table_name = $1
 		)`,
 		tableName,
 	).Scan(&exists)
@@ -313,7 +368,7 @@ func columnExists(tableName, columnName string) (bool, error) {
 		`SELECT EXISTS (
 			SELECT 1
 			FROM information_schema.columns
-			WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+			WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2
 		)`,
 		tableName,
 		columnName,

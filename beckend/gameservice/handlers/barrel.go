@@ -259,10 +259,11 @@ func HandleOpenBarrel(
 				passMsg := map[string]interface{}{
 					"type": "TURN_PASSED",
 					"payload": map[string]interface{}{
-						"instanceId": instanceID,
-						"userId":     nextUser,
-						"turnNumber": ms.TurnNumber,
-						"energy":     nextPlayer.Energy,
+						"instanceId":  instanceID,
+						"userId":      nextUser,
+						"active_user": nextUser,
+						"turnNumber":  ms.TurnNumber,
+						"energy":      nextPlayer.Energy,
 					},
 				}
 				pm, _ := json.Marshal(passMsg)

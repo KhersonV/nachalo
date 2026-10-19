@@ -457,7 +457,7 @@ func OpenBarbel(
 	if r < 0.3 {
 		// Рассчитываем случайный урон в диапазоне [minDamage, maxDamage]
 		dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
-		return DamageEvent{Amount: dmg}, nil
+		return DamageEvent{SourceType: ResultSourceEnvironment, Amount: dmg}, nil
 	}
 	// 40% шанс выпадения ресурса
 	if r < 0.3+0.4 && len(resources) > 0 {

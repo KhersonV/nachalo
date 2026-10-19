@@ -9,8 +9,8 @@ import (
 	"gameservice/repository"
 )
 
-// tryAtomicNonlethalPvE also handles monster death when the attacker survives.
-// Ranger third shots and quest-artifact effects still use the legacy path.
+// tryAtomicNonlethalPvE handles supported monster deaths and counterattacks
+// under one MatchCommand. Ranger third shots and quest artifacts remain legacy.
 func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackRequest) bool {
 	if req.AttackerType != "player" || req.TargetType != "monster" {
 		return false
@@ -97,7 +97,16 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 			}
 		}
 		if a.Health-counterDamage <= 0 {
-			return false
+			// A last-player death needs match finalization. That path cannot
+			// yet use FinalizeMatchTx for an incomplete combat history.
+			var survivors int
+			if err = c.Tx.QueryRowContext(r.Context(), `SELECT jsonb_array_length(turn_order) FROM matches WHERE instance_id=$1`, req.InstanceID).Scan(&survivors); err != nil {
+				writeCombatCommandError(w, err)
+				return true
+			}
+			if survivors <= 1 {
+				return false
+			}
 		}
 	}
 	attackerRef := CombatTargetRef{ID: req.AttackerID, Type: CombatActorPlayer}
@@ -129,7 +138,7 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		steps = append(steps, CombatStep{Kind: "counter", Source: &targetRef, Target: attackerRef, Damage: counter.Damage, TargetHPAfter: counter.NewHealth})
 	}
 	var guardianResponse attackResult
-	if counter.Triggered && attacker.CharacterType == "guardian" {
+	if counter.Triggered && counter.NewHealth > 0 && attacker.CharacterType == "guardian" {
 		responseDamage := a.Defense - effectiveMonster.Defense/2
 		if responseDamage < 1 {
 			responseDamage = 1
@@ -155,11 +164,17 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 			applyArmorBreak = false
 		}
 	}
-	if err = c.SetCombatPlayerVitalsTx(r.Context(), req.AttackerID, counter.NewHealth, attacker.Energy-resolveAttackEnergyCost(mode)); err != nil {
+	attackerKilled := counter.Triggered && counter.NewHealth <= 0
+	attackerHPToPersist := counter.NewHealth
+	if attackerKilled {
+		attackerHPToPersist = a.Health
+	}
+	if err = c.SetCombatPlayerVitalsTx(r.Context(), req.AttackerID, attackerHPToPersist, attacker.Energy-resolveAttackEnergyCost(mode)); err != nil {
 		writeCombatCommandError(w, err)
 		return true
 	}
 	var mapChanged bool
+	var nextActive int
 	var deathCell *game.FullCell
 	if finalMonsterHP <= 0 {
 		deathCell, mapChanged, err = c.KillMonsterAndClearCellTx(r.Context(), req.TargetID)
@@ -194,11 +209,20 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 			}
 		}
 	}
+	if attackerKilled {
+		steps = append(steps, CombatStep{Kind: "death", Target: attackerRef})
+		turn, _, changed, deathErr := finishCombatPlayerDeathTx(r.Context(), c, req.AttackerID, game.ResultSourceMonster, req.TargetID, counter.Damage, repository.Position{X: attacker.Position.X, Y: attacker.Position.Y})
+		if deathErr != nil {
+			writeCombatCommandError(w, deathErr)
+			return true
+		}
+		nextActive, mapChanged = turn.ActiveUserID, mapChanged || changed
+	}
 	for _, event := range []game.DamageEvent{
-		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: hit.Damage},
-		{DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
-		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: guardianResponse.Damage},
-		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: followupDamage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: hit.Damage},
+		{SourceType: game.ResultSourceMonster, DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: guardianResponse.Damage},
+		{SourceType: game.ResultSourcePlayer, DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: followupDamage},
 	} {
 		if err = c.RecordDamageEventTx(r.Context(), event); err != nil {
 			writeCombatCommandError(w, err)
@@ -212,7 +236,7 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		} else if guardianResponse.Damage > 0 {
 			killDamage = guardianResponse.Damage
 		}
-		if _, err = c.RecordKillEventTx(r.Context(), game.KillEvent{KillerID: req.AttackerID, VictimType: "monster", VictimID: req.TargetID, Damage: killDamage}); err != nil {
+		if _, err = c.RecordKillEventTx(r.Context(), game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: req.AttackerID, VictimType: "monster", VictimID: req.TargetID, Damage: killDamage}); err != nil {
 			writeCombatCommandError(w, err)
 			return true
 		}
@@ -230,16 +254,16 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 	}
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
 		if hit.Damage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "monster", req.TargetID, hit.Damage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "monster", req.TargetID, hit.Damage)
 		}
 		if counter.Triggered && counter.Damage > 0 {
-			ms.RecordDamageEvent(req.TargetID, "player", req.AttackerID, counter.Damage)
+			ms.RecordDamageEvent(game.ResultSourceMonster, req.TargetID, "player", req.AttackerID, counter.Damage)
 		}
 		if guardianResponse.Damage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "monster", req.TargetID, guardianResponse.Damage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "monster", req.TargetID, guardianResponse.Damage)
 		}
 		if followupDamage > 0 {
-			ms.RecordDamageEvent(req.AttackerID, "monster", req.TargetID, followupDamage)
+			ms.RecordDamageEvent(game.ResultSourcePlayer, req.AttackerID, "monster", req.TargetID, followupDamage)
 			ms.TryUseBerserkerFury(req.AttackerID, berserkerFollowUpLimitPerTurn)
 		}
 		if applyArmorBreak {
@@ -252,8 +276,18 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 			} else if guardianResponse.Damage > 0 {
 				killDamage = guardianResponse.Damage
 			}
-			ms.RecordKillEvent(req.AttackerID, "monster", req.TargetID, killDamage)
+			ms.RecordKillEvent(game.ResultSourcePlayer, req.AttackerID, "monster", req.TargetID, killDamage)
 		}
+		if attackerKilled {
+			ms.RecordKillEvent(game.ResultSourceMonster, req.TargetID, "player", req.AttackerID, counter.Damage)
+			ms.RecordPlayerDefeat(req.AttackerID)
+			ms.RemovePlayerFromTurnOrder(req.AttackerID)
+			ms.AdvanceTurnCombatState(nextActive, false)
+		}
+	}
+	if attackerKilled {
+		unbindPlayer(req.AttackerID)
+		startTurnTimer(req.InstanceID, nextActive)
 	}
 	changes := make([]json.RawMessage, 0, len(c.Events)+1)
 	for _, event := range c.Events {

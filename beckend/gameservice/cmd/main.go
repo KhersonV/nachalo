@@ -51,7 +51,7 @@ func main() {
 
 		ready, err := repository.SchemaReady()
 		if err != nil {
-			http.Error(w, "schema check failed", http.StatusServiceUnavailable)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		if !ready {
