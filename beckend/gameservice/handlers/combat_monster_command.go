@@ -9,8 +9,8 @@ import (
 	"gameservice/repository"
 )
 
-// tryAtomicNonlethalPvE handles exchanges that leave both actors alive and do
-// not trigger a Ranger third shot or quest-artifact effect.
+// tryAtomicNonlethalPvE also handles monster death when the attacker survives.
+// Ranger third shots and quest-artifact effects still use the legacy path.
 func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackRequest) bool {
 	if req.AttackerType != "player" || req.TargetType != "monster" {
 		return false
@@ -51,7 +51,10 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		writeCombatCommandError(w, err)
 		return true
 	}
-	if req.AutoAttack && (req.MoveX<0||req.MoveY<0||req.MoveX>=c.Width||req.MoveY>=c.Height||monster.X!=req.MoveX||monster.Y!=req.MoveY) {http.Error(w,"target moved",http.StatusBadRequest);return true}
+	if req.AutoAttack && (req.MoveX < 0 || req.MoveY < 0 || req.MoveX >= c.Width || req.MoveY >= c.Height || monster.X != req.MoveX || monster.Y != req.MoveY) {
+		http.Error(w, "target moved", http.StatusBadRequest)
+		return true
+	}
 	if attacker.Health <= 0 || monster.Health <= 0 {
 		http.Error(w, "actor defeated", http.StatusBadRequest)
 		return true
@@ -73,9 +76,6 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		effectiveMonster.Defense = effectiveMonster.Defense * mysticMonsterDefensePercent / 100
 	}
 	hit := applyDamage(a, effectiveMonster)
-	if hit.NewHealth <= 0 {
-		return false
-	}
 	preArmorBreak := game.ArmorBreakState{}
 	if ms, ok := game.GetMatchState(req.InstanceID); ok {
 		preArmorBreak = ms.GetArmorBreakState("monster", req.TargetID)
@@ -84,15 +84,9 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		if mode == attackModeRanged && preArmorBreak.Stacks >= armorBreakMaxStacks {
 			return false
 		}
-		if hit.Damage > 0 && monster.Health-(hit.Damage*rangerCriticalDamagePercent)/100 <= 0 {
-			return false
-		}
-	}
-	if attacker.CharacterType == "berserker" && mode == attackModeMelee && berserkerFollowUpLimitPerTurn == 0 && hit.NewHealth <= hit.Damage/2 {
-		return false
 	}
 	counterDamage := 0
-	if mode == attackModeMelee {
+	if mode == attackModeMelee && hit.NewHealth > 0 {
 		effectiveAttacker := a
 		effectiveAttacker.Defense = effectiveDefense(req.InstanceID, "player", req.AttackerID, a.Defense)
 		counterDamage = applyDamage(d, effectiveAttacker).Damage
@@ -130,7 +124,7 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		}
 	}
 	counter := attackResult{NewHealth: a.Health}
-	if mode == attackModeMelee {
+	if mode == attackModeMelee && finalMonsterHP > 0 {
 		counter = attackResult{Damage: counterDamage, NewHealth: a.Health - counterDamage, Triggered: true}
 		steps = append(steps, CombatStep{Kind: "counter", Source: &targetRef, Target: attackerRef, Damage: counter.Damage, TargetHPAfter: counter.NewHealth})
 	}
@@ -141,9 +135,6 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 			responseDamage = 1
 		}
 		guardianResponse = applyFlatDamage(finalMonsterHP, responseDamage)
-		if guardianResponse.NewHealth <= 0 {
-			return false
-		}
 		finalMonsterHP = guardianResponse.NewHealth
 		steps = append(steps, CombatStep{Kind: "guardianResponse", Source: &attackerRef, Target: targetRef, Damage: guardianResponse.Damage, TargetHPAfter: finalMonsterHP})
 	}
@@ -152,9 +143,6 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		followupDamage = hit.Damage / 2
 		if followupDamage > 0 {
 			followup := applyFlatDamage(finalMonsterHP, followupDamage)
-			if followup.NewHealth <= 0 {
-				return false
-			}
 			finalMonsterHP = followup.NewHealth
 			steps = append(steps, CombatStep{Kind: "followup", Source: &attackerRef, Target: targetRef, Damage: followup.Damage, TargetHPAfter: finalMonsterHP})
 		}
@@ -171,17 +159,70 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		writeCombatCommandError(w, err)
 		return true
 	}
-	mapChanged, err := c.SetMonsterHealthAndCellTx(r.Context(), req.TargetID, finalMonsterHP)
+	var mapChanged bool
+	var deathCell *game.FullCell
+	if finalMonsterHP <= 0 {
+		deathCell, mapChanged, err = c.KillMonsterAndClearCellTx(r.Context(), req.TargetID)
+	} else {
+		mapChanged, err = c.SetMonsterHealthAndCellTx(r.Context(), req.TargetID, finalMonsterHP)
+	}
 	if err != nil {
 		writeCombatCommandError(w, err)
 		return true
 	}
-	payload := CombatExchangePayload{InstanceID: req.InstanceID, ExchangeID: req.InstanceID + ":" + req.CommandID, AttackerID: req.AttackerID, AttackerType: attackerRef.Type, TargetID: req.TargetID, TargetType: targetRef.Type, AttackStyle: resolvePresentationAttackStyle(a, mode), Steps: steps, Effects: effects}
+	var drops []EquipmentDropPayload
+	if finalMonsterHP <= 0 {
+		steps = append(steps, CombatStep{Kind: "death", Target: targetRef})
+		if equipmentDropPersistenceAvailable() && RollEquipmentDropChance() {
+			item, dropErr := repository.GrantRandomEquipmentDropForMatchTx(c.Tx, req.AttackerID, req.InstanceID)
+			if dropErr != nil {
+				writeCombatCommandError(w, dropErr)
+				return true
+			}
+			if item != nil {
+				drops = []EquipmentDropPayload{equipmentDropPayloadFromItem(req.AttackerID, item)}
+			}
+		}
+		if err = c.QueueEvent(map[string]interface{}{"type": "UPDATE_CELL", "payload": map[string]interface{}{"instanceId": req.InstanceID, "updatedCell": serialiseUpdatedCell(*deathCell)}}); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+		for _, drop := range drops {
+			if err = c.QueueEvent(map[string]interface{}{"type": "EQUIPMENT_DROPPED", "payload": map[string]interface{}{"instanceId": req.InstanceID, "itemInstanceId": drop.InstanceID, "userId": drop.UserID, "ownerUserId": drop.OwnerUserID, "templateCode": drop.TemplateCode, "name": drop.Name, "rarity": drop.Rarity, "imageUrl": drop.ImageURL, "slot": drop.Slot, "itemType": drop.ItemType, "item": drop.Item}}); err != nil {
+				writeCombatCommandError(w, err)
+				return true
+			}
+		}
+	}
+	for _, event := range []game.DamageEvent{
+		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: hit.Damage},
+		{DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
+		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: guardianResponse.Damage},
+		{DealerID: req.AttackerID, TargetType: "monster", TargetID: req.TargetID, Amount: followupDamage},
+	} {
+		if err = c.RecordDamageEventTx(r.Context(), event); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+	}
+	if finalMonsterHP <= 0 {
+		killDamage := hit.Damage
+		if followupDamage > 0 {
+			killDamage = followupDamage
+		} else if guardianResponse.Damage > 0 {
+			killDamage = guardianResponse.Damage
+		}
+		if _, err = c.RecordKillEventTx(r.Context(), game.KillEvent{KillerID: req.AttackerID, VictimType: "monster", VictimID: req.TargetID, Damage: killDamage}); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+	}
+	payload := CombatExchangePayload{InstanceID: req.InstanceID, ExchangeID: req.InstanceID + ":" + req.CommandID, AttackerID: req.AttackerID, AttackerType: attackerRef.Type, TargetID: req.TargetID, TargetType: targetRef.Type, AttackStyle: resolvePresentationAttackStyle(a, mode), Steps: steps, Effects: effects, Drops: drops}
 	if err = c.QueueEvent(map[string]interface{}{"type": "COMBAT_EXCHANGE", "payload": payload}); err != nil {
 		writeCombatCommandError(w, err)
 		return true
 	}
-	response := &atomicAttackResponse{DamageToTarget: hit.Damage, NewTargetHP: finalMonsterHP, CounterDamage: counter.Damage, NewAttackerHP: counter.NewHealth, AttackMode: mode}
+	response := &atomicAttackResponse{DamageToTarget: hit.Damage, NewTargetHP: finalMonsterHP, CounterDamage: counter.Damage, NewAttackerHP: counter.NewHealth, AttackMode: mode, Drops: drops}
 	state, mapRevision, err := c.Commit(r.Context(), response, mapChanged)
 	if err != nil {
 		writeCombatCommandError(w, err)
@@ -203,6 +244,15 @@ func tryAtomicNonlethalPvE(w http.ResponseWriter, r *http.Request, req AttackReq
 		}
 		if applyArmorBreak {
 			ms.ApplyArmorBreak("monster", req.TargetID, armorBreakMaxStacks, armorBreakDurationTurns)
+		}
+		if finalMonsterHP <= 0 {
+			killDamage := hit.Damage
+			if followupDamage > 0 {
+				killDamage = followupDamage
+			} else if guardianResponse.Damage > 0 {
+				killDamage = guardianResponse.Damage
+			}
+			ms.RecordKillEvent(req.AttackerID, "monster", req.TargetID, killDamage)
 		}
 	}
 	changes := make([]json.RawMessage, 0, len(c.Events)+1)

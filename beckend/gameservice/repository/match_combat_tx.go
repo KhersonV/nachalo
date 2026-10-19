@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"gameservice/game"
 	"gameservice/models"
 )
 
@@ -105,4 +106,32 @@ func (c *MatchCommand) SetMonsterHealthAndCellTx(ctx context.Context, monsterID,
 	}
 	n, err := result.RowsAffected()
 	return n > 0, err
+}
+
+// KillMonsterAndClearCellTx removes both representations of a defeated monster.
+// The match row is already locked by BeginMatchCommand; this method makes no
+// independent database calls or commits.
+func (c *MatchCommand) KillMonsterAndClearCellTx(ctx context.Context, monsterID int) (*game.FullCell, bool, error) {
+	if c == nil || c.Tx == nil {
+		return nil, false, ErrCommandRejected
+	}
+	result, err := c.Tx.ExecContext(ctx, `DELETE FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2`, c.InstanceID, monsterID)
+	if err != nil {
+		return nil, false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil || n != 1 {
+		return nil, false, ErrCommandRejected
+	}
+	row := c.Tx.QueryRowContext(ctx, `SELECT cell_id,x,y,tile_code,resource,barbel,monster,is_portal,is_player,structure_type,structure_owner_user_id,structure_health,structure_defense,structure_attack,structure_energy,is_under_construction,construction_turns_left FROM match_map_cells WHERE instance_id=$1 AND monster->>'db_instance_id'=$2::text FOR UPDATE`, c.InstanceID, monsterID)
+	cell, err := scanMatchMapCell(row)
+	if err != nil {
+		return nil, false, err
+	}
+	cell.Monster = nil
+	cell.TileCode = int(game.Walkable)
+	if err := SaveMapCellTx(c.Tx, c.InstanceID, *cell); err != nil {
+		return nil, false, err
+	}
+	return cell, true, nil
 }

@@ -981,7 +981,9 @@ func EnsureMatchStatsRetentionSchema() {
 func RestoreMatchStates() error {
 	rows, err := DB.Query(`SELECT instance_id, active_user_id, turn_order, turn_number,
 		COALESCE((to_jsonb(matches)->>'schema_version')::integer, 1),
-		to_jsonb(matches)->'geometry' FROM matches`)
+		to_jsonb(matches)->'geometry',
+		COALESCE(to_jsonb(matches)->'combat_result_events','{"damageEvents":[],"killEvents":[],"defeatedUsers":[]}'::jsonb)
+		FROM matches WHERE COALESCE(to_jsonb(matches)->>'finished_at','')=''`)
 	if err != nil {
 		return err
 	}
@@ -994,7 +996,8 @@ func RestoreMatchStates() error {
 		var turnNumber int
 		var schemaVersion int
 		var geometryRaw []byte
-		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber, &schemaVersion, &geometryRaw); err != nil {
+		var resultEventsRaw []byte
+		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber, &schemaVersion, &geometryRaw, &resultEventsRaw); err != nil {
 			return err
 		}
 		geometry, err := models.ParseGeometry(schemaVersion, geometryRaw)
@@ -1018,12 +1021,19 @@ func RestoreMatchStates() error {
 		if turnNumber <= 0 {
 			turnNumber = 1
 		}
+		var resultEvents game.ResultEvents
+		if err := json.Unmarshal(resultEventsRaw, &resultEvents); err != nil {
+			return fmt.Errorf("restore combat events for match %s: %w", instanceID, err)
+		}
 
 		matchState := &game.MatchState{
-			InstanceID:   instanceID,
-			ActiveUserID: activeUserID,
-			TurnOrder:    turnOrder,
-			TurnNumber:   turnNumber,
+			InstanceID:    instanceID,
+			ActiveUserID:  activeUserID,
+			TurnOrder:     turnOrder,
+			TurnNumber:    turnNumber,
+			DamageEvents:  resultEvents.DamageEvents,
+			KillEvents:    resultEvents.KillEvents,
+			DefeatedUsers: resultEvents.DefeatedUsers,
 		}
 		game.MatchStatesMu.Lock()
 		game.MatchStates[instanceID] = matchState
@@ -1288,6 +1298,19 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 		mr.PlayerResults = append(mr.PlayerResults, pr)
 	}
 
+	applyWinnerBonusesAndPlacements(&mr, groupByUser, defeatedUsers)
+
+	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
+	if len(mr.PlayerResults) == 0 {
+		return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)
+	}
+
+	return &mr, nil
+}
+
+// Shared by legacy and transaction-based result calculation so the XP, reward
+// and placement rules remain identical.
+func applyWinnerBonusesAndPlacements(mr *game.MatchResults, groupByUser map[int]int, defeatedUsers []int) {
 	// 3.1) Победный бонус: +XP и +деньги победителю (или его команде).
 	const winnerExpBonus = 120
 	const winnerMoneyBonus = 100
@@ -1337,10 +1360,4 @@ func GetMatchResults(instanceID string) (*game.MatchResults, error) {
 	mr.WinnerUserIDs = winnerUserIDs
 	assignPlacements(mr.PlayerResults, defeatedUsers)
 
-	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
-	if len(mr.PlayerResults) == 0 {
-		return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)
-	}
-
-	return &mr, nil
 }

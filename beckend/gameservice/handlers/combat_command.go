@@ -42,7 +42,10 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 		writeCombatCommandError(w, err)
 		return true
 	}
-	if req.AutoAttack && (req.MoveX<0||req.MoveY<0||req.MoveX>=c.Width||req.MoveY>=c.Height||target.Position.X!=req.MoveX||target.Position.Y!=req.MoveY) {http.Error(w,"target moved",http.StatusBadRequest);return true}
+	if req.AutoAttack && (req.MoveX < 0 || req.MoveY < 0 || req.MoveX >= c.Width || req.MoveY >= c.Height || target.Position.X != req.MoveX || target.Position.Y != req.MoveY) {
+		http.Error(w, "target moved", http.StatusBadRequest)
+		return true
+	}
 	if attacker.CharacterType != "guardian" && attacker.CharacterType != "mystic" && attacker.CharacterType != "berserker" && attacker.CharacterType != "ranger" {
 		return false
 	}
@@ -219,6 +222,17 @@ func tryAtomicNonlethalPvP(w http.ResponseWriter, r *http.Request, req AttackReq
 		writeCombatCommandError(w, err)
 		return true
 	}
+	for _, event := range []game.DamageEvent{
+		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: hit.Damage},
+		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: bonusDamage},
+		{DealerID: req.AttackerID, TargetType: "player", TargetID: req.TargetID, Amount: followupDamage},
+		{DealerID: req.TargetID, TargetType: "player", TargetID: req.AttackerID, Amount: counter.Damage},
+	} {
+		if err = c.RecordDamageEventTx(r.Context(), event); err != nil {
+			writeCombatCommandError(w, err)
+			return true
+		}
+	}
 	payload := CombatExchangePayload{InstanceID: req.InstanceID, ExchangeID: req.InstanceID + ":" + req.CommandID, AttackerID: req.AttackerID, AttackerType: attackerRef.Type, TargetID: req.TargetID, TargetType: targetRef.Type, AttackStyle: resolvePresentationAttackStyle(a, mode), Steps: steps, Effects: effects}
 	if err = c.QueueEvent(map[string]interface{}{"type": "COMBAT_EXCHANGE", "payload": payload}); err != nil {
 		writeCombatCommandError(w, err)
@@ -289,13 +303,14 @@ func combatCommandCanonical(req AttackRequest, kind string) string {
 }
 
 type atomicAttackResponse struct {
-	DamageToTarget int        `json:"damage_to_target"`
-	NewTargetHP    int        `json:"new_target_hp"`
-	CounterDamage  int        `json:"counter_damage"`
-	NewAttackerHP  int        `json:"new_attacker_hp"`
-	AttackMode     attackMode `json:"attack_mode"`
-	StateRevision  int64      `json:"stateRevision"`
-	MapRevision    int64      `json:"mapRevision"`
+	DamageToTarget int                    `json:"damage_to_target"`
+	NewTargetHP    int                    `json:"new_target_hp"`
+	CounterDamage  int                    `json:"counter_damage"`
+	NewAttackerHP  int                    `json:"new_attacker_hp"`
+	AttackMode     attackMode             `json:"attack_mode"`
+	StateRevision  int64                  `json:"stateRevision"`
+	MapRevision    int64                  `json:"mapRevision"`
+	Drops          []EquipmentDropPayload `json:"drops,omitempty"`
 }
 
 func (r *atomicAttackResponse) SetCommandRevisions(state, mapRevision int64) {

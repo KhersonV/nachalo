@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -61,10 +62,24 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 		`CREATE TABLE match_players(instance_id text,user_id int,character_type text,position jsonb,energy int,max_energy int,health int,max_health int,attack int,defense int,agility int,is_ranged bool,attack_range int,group_id int,name text default '',image text default '',character_id int,inventory jsonb default '{}'::jsonb,level int default 1,experience int default 0,max_experience int default 100,mobility int default 3,sight_range int default 3,balance int default 0,primary key(instance_id,user_id))`,
 		`CREATE TABLE artifacts(id int primary key,name text)`,
 		`CREATE TABLE inventory_items(instance_id text,user_id int,item_type text,item_id int,item_count int)`,
-		`CREATE TABLE match_map_cells(instance_id text,cell_id serial,x int,y int,tile_code int,resource jsonb,barbel jsonb,monster jsonb,is_portal bool default false,is_player bool default false,structure_type text default '',is_under_construction bool default false,primary key(instance_id,cell_id),unique(instance_id,x,y))`,
+		`CREATE TABLE match_map_cells(instance_id text,cell_id serial,x int,y int,tile_code int,resource jsonb,barbel jsonb,monster jsonb,is_portal bool default false,is_player bool default false,structure_type text default '',structure_owner_user_id int default 0,structure_health int default 0,structure_defense int default 0,structure_attack int default 0,structure_energy int default 0,is_under_construction bool default false,construction_turns_left int default 0,primary key(instance_id,cell_id),unique(instance_id,x,y))`,
 		`CREATE TABLE match_monsters(instance_id text,monster_instance_id int,monster_ref_id int,pos_x int,pos_y int,health int,max_health int,attack int,defense int,speed int,maneuverability int,vision int,image text,primary key(instance_id,monster_instance_id))`,
+		`CREATE TABLE player_profiles(user_id int primary key)`,
+		`CREATE TABLE item_sets(id int primary key,code text,name text,rarity text,class_restriction text)`,
+		`CREATE TABLE item_templates(id bigint primary key,set_id int,code text,name text,rarity text,image_url text,slot text,item_type text,class_restriction text)`,
+		`CREATE TABLE item_instances(id uuid default gen_random_uuid() primary key,template_id bigint,owner_user_id int,source text,match_instance_id text)`,
+		`CREATE TABLE item_instance_events(item_instance_id uuid,event_type text,from_user_id int,to_user_id int,from_character_id int,to_character_id int,metadata jsonb)`,
 	}
 	for _, q := range setup {
+		if _, err = db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO player_profiles(user_id) VALUES(1)`,
+		`INSERT INTO item_sets(id,code,name,rarity,class_restriction) VALUES(1,'aegiswarden_set','Aegis','green','guardian')`,
+		`INSERT INTO item_templates(id,set_id,code,name,rarity,image_url,slot,item_type,class_restriction) VALUES(1,1,'aegis_helm','Helm','green','helm.png','head','armor','guardian')`,
+	} {
 		if _, err = db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +123,7 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 	if _, err = db.Exec(`UPDATE matches SET map_width=3 WHERE instance_id='pvpRanger'`); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"pve", "pveRollback", "pveMystic", "pveBerserker", "pveRanger", "auto"} {
+	for _, id := range []string{"pve", "pveRollback", "pveMystic", "pveBerserker", "pveRanger", "auto", "pveDeath", "dropRollback", "doubleDeath", "autoDeath"} {
 		if _, err = db.Exec(`INSERT INTO matches(instance_id,active_user_id,map_width,map_height) VALUES($1,1,2,1)`, id); err != nil {
 			t.Fatal(err)
 		}
@@ -119,6 +134,14 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err = db.Exec(`INSERT INTO match_map_cells(instance_id,x,y,tile_code,monster,is_player) VALUES($1,0,0,48,NULL,true),($1,1,0,48,'{"db_instance_id":7,"health":30}',false)`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"pveDeath", "dropRollback", "doubleDeath", "autoDeath"} {
+		if _, err = db.Exec(`UPDATE match_monsters SET health=4 WHERE instance_id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(`UPDATE match_map_cells SET monster='{"db_instance_id":7,"health":4}' WHERE instance_id=$1 AND monster IS NOT NULL`, id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -189,11 +212,22 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 	if err = db.QueryRow(`SELECT health,energy FROM match_players WHERE instance_id='success' AND user_id=1`).Scan(&successHP, &successEnergy); err != nil || successHP != 28 || successEnergy != 14 {
 		t.Fatalf("attacker balance hp=%d energy=%d err=%v", successHP, successEnergy, err)
 	}
+	var persistedCombat game.ResultEvents
+	var persistedCombatRaw []byte
+	if err = db.QueryRow(`SELECT combat_result_events FROM matches WHERE instance_id='success'`).Scan(&persistedCombatRaw); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(persistedCombatRaw, &persistedCombat); err != nil {
+		t.Fatal(err)
+	}
+	if len(persistedCombat.DamageEvents) != 2 || persistedCombat.DamageEvents[0].Amount != 6 || persistedCombat.DamageEvents[1].Amount != 2 {
+		t.Fatalf("persisted pvp events=%+v", persistedCombat)
+	}
 	if err = db.QueryRow(`SELECT health,energy FROM match_players WHERE instance_id='success' AND user_id=2`).Scan(&successHP, &successEnergy); err != nil || successHP != 24 || successEnergy != 8 {
 		t.Fatalf("defender balance hp=%d energy=%d err=%v", successHP, successEnergy, err)
 	}
 	code, replay, handled := call("success", "first")
-	if !handled || code != 200 || replay != result {
+	if !handled || code != 200 || !reflect.DeepEqual(replay, result) {
 		t.Fatalf("replay: status=%d result=%+v", code, replay)
 	}
 	var count int
@@ -257,7 +291,7 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 		t.Fatalf("pve monster=%d cell=%d", monsterHP, cellHP)
 	}
 	code, pveReplay, handled := pveCall("pve", "pve-hit")
-	if !handled || code != 200 || pveReplay != pve {
+	if !handled || code != 200 || !reflect.DeepEqual(pveReplay, pve) {
 		t.Fatalf("pve replay status=%d result=%+v", code, pveReplay)
 	}
 	code, mystic, handled := pveCall("pveMystic", "mystic-hit")
@@ -306,12 +340,93 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 	if afterPveFailure != beforePveFailure {
 		t.Fatal("pve rollback published events")
 	}
+	t.Setenv("EQUIPMENT_DROP_CHANCE_OVERRIDE", "100")
+	code, lethal, handled := pveCall("pveDeath", "kill")
+	if !handled || code != 200 || lethal.NewTargetHP != 0 || lethal.StateRevision != 1 || lethal.MapRevision != 1 || len(lethal.Drops) != 1 {
+		t.Fatalf("lethal pve: code=%d handled=%v response=%+v", code, handled, lethal)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM match_monsters WHERE instance_id='pveDeath'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("dead monster row count=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM match_map_cells WHERE instance_id='pveDeath' AND x=1 AND (monster IS NULL OR monster='null'::jsonb) AND tile_code=48`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("dead monster cell count=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM item_instances WHERE match_instance_id='pveDeath'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("death drop count=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT combat_result_events FROM matches WHERE instance_id='pveDeath'`).Scan(&persistedCombatRaw); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(persistedCombatRaw, &persistedCombat); err != nil {
+		t.Fatal(err)
+	}
+	if len(persistedCombat.KillEvents) != 1 || persistedCombat.KillEvents[0].VictimID != 7 {
+		t.Fatalf("persisted kill events=%+v", persistedCombat)
+	}
+	if err = db.QueryRow(`SELECT health,energy FROM match_players WHERE instance_id='pveDeath' AND user_id=1`).Scan(&health, &energy); err != nil || health != 30 || energy != 14 {
+		t.Fatalf("lethal attack vitals=%d/%d err=%v", health, energy, err)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM item_instance_events e JOIN item_instances i ON i.id=e.item_instance_id WHERE i.match_instance_id='pveDeath' AND e.event_type='created'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("drop event count=%d err=%v", count, err)
+	}
+	code, replayDeath, handled := pveCall("pveDeath", "kill")
+	if !handled || code != 200 || !reflect.DeepEqual(replayDeath, lethal) {
+		t.Fatalf("death replay: code=%d handled=%v response=%+v", code, handled, replayDeath)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM item_instances WHERE match_instance_id='pveDeath'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("duplicate death drop count=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT energy FROM match_players WHERE instance_id='pveDeath' AND user_id=1`).Scan(&energy); err != nil || energy != 14 {
+		t.Fatalf("duplicate death energy=%d err=%v", energy, err)
+	}
+	var deathWG sync.WaitGroup
+	deathWG.Add(2)
+	go func() { defer deathWG.Done(); _, _, _ = pveCall("doubleDeath", "first") }()
+	go func() { defer deathWG.Done(); _, _, _ = pveCall("doubleDeath", "second") }()
+	deathWG.Wait()
+	var persistedState, persistedMap int64
+	if err = db.QueryRow(`SELECT count(*) FROM item_instances WHERE match_instance_id='doubleDeath'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("concurrent death drops=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id='doubleDeath'`).Scan(&persistedState, &persistedMap); err != nil || persistedState != 1 || persistedMap != 1 {
+		t.Fatalf("concurrent death revisions=%d/%d err=%v", persistedState, persistedMap, err)
+	}
+	if _, err = db.Exec(`CREATE FUNCTION fail_death_drop() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.match_instance_id='dropRollback' THEN RAISE EXCEPTION 'injected drop failure'; END IF; RETURN NEW; END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`CREATE TRIGGER fail_death_drop BEFORE INSERT ON item_instances FOR EACH ROW EXECUTE FUNCTION fail_death_drop()`); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	beforePveFailure = len(messages)
+	mu.Unlock()
+	code, _, handled = pveCall("dropRollback", "fail-drop")
+	if !handled || code != 500 {
+		t.Fatalf("drop rollback code=%d handled=%v", code, handled)
+	}
+	if err = db.QueryRow(`SELECT health,energy FROM match_players WHERE instance_id='dropRollback' AND user_id=1`).Scan(&health, &energy); err != nil || health != 30 || energy != 20 {
+		t.Fatalf("drop rollback player=%d/%d err=%v", health, energy, err)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM match_monsters WHERE instance_id='dropRollback' AND health=4`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("drop rollback monster=%d err=%v", count, err)
+	}
+	if err = db.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id='dropRollback'`).Scan(&persistedState, &persistedMap); err != nil || persistedState != 0 || persistedMap != 0 {
+		t.Fatalf("drop rollback revisions=%d/%d err=%v", persistedState, persistedMap, err)
+	}
+	mu.Lock()
+	afterPveFailure = len(messages)
+	mu.Unlock()
+	if afterPveFailure != beforePveFailure {
+		t.Fatal("drop rollback published events")
+	}
 	game.CreateMatchState("auto", []int{1})
 	defer game.DeleteMatchStateInMemory("auto")
-	autoCall := func(command string) (int, atomicAttackResponse) {
+	game.CreateMatchState("autoDeath", []int{1})
+	defer game.DeleteMatchStateInMemory("autoDeath")
+	autoCall := func(instance, command string) (int, atomicAttackResponse) {
 		body, _ := json.Marshal(map[string]interface{}{"new_pos_x": 1, "new_pos_y": 0, "commandId": command})
 		r := httptest.NewRequest("POST", "/game/auto/player/1/move", bytes.NewReader(body))
-		r = mux.SetURLVars(r, map[string]string{"instance_id": "auto", "id": "1"})
+		r = mux.SetURLVars(r, map[string]string{"instance_id": instance, "id": "1"})
 		r = r.WithContext(context.WithValue(r.Context(), common.UserIDKey, 1))
 		w := httptest.NewRecorder()
 		MoveOrAttackHandler(w, r)
@@ -319,13 +434,21 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 		_ = json.Unmarshal(w.Body.Bytes(), &response)
 		return w.Code, response
 	}
-	code, auto := autoCall("auto-hit")
+	code, auto := autoCall("auto", "auto-hit")
 	if code != 200 || auto.NewTargetHP != 22 || auto.StateRevision != 1 {
 		t.Fatalf("autoattack status=%d response=%+v", code, auto)
 	}
-	code, autoReplay := autoCall("auto-hit")
-	if code != 200 || autoReplay != auto {
+	code, autoReplay := autoCall("auto", "auto-hit")
+	if code != 200 || !reflect.DeepEqual(autoReplay, auto) {
 		t.Fatalf("autoattack replay status=%d response=%+v", code, autoReplay)
+	}
+	code, lethalAuto := autoCall("autoDeath", "auto-kill")
+	if code != 200 || lethalAuto.NewTargetHP != 0 || lethalAuto.StateRevision != 1 || lethalAuto.MapRevision != 1 || len(lethalAuto.Drops) != 1 {
+		t.Fatalf("lethal autoattack code=%d response=%+v", code, lethalAuto)
+	}
+	code, autoReplay = autoCall("autoDeath", "auto-kill")
+	if code != 200 || !reflect.DeepEqual(autoReplay, lethalAuto) {
+		t.Fatalf("lethal autoattack replay code=%d response=%+v", code, autoReplay)
 	}
 	var attacks sync.WaitGroup
 	attacks.Add(2)
@@ -389,13 +512,18 @@ func TestAtomicCombatBranchesPostgres(t *testing.T) {
 	if ms, ok := game.GetMatchState("pvpRanger"); !ok || ms.GetArmorBreakState("player", 2).Stacks != 1 {
 		t.Fatal("ranger armor break missing")
 	}
-	fresh,openErr:=sql.Open("postgres",dsn)
-	if openErr!=nil {t.Fatal(openErr)}
+	fresh, openErr := sql.Open("postgres", dsn)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
 	defer fresh.Close()
-	repository.DB=fresh
-	var persistedState,persistedMap int64
-	if err=fresh.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id='pve'`).Scan(&persistedState,&persistedMap);err!=nil||persistedState!=1||persistedMap!=1 {t.Fatalf("fresh connection revisions=%d/%d err=%v",persistedState,persistedMap,err)}
-	replayRaw,found,replayErr:=repository.ReplayMatchCommand(context.Background(),"pve","pve-hit",combatCommandCanonical(AttackRequest{AttackerID:1,TargetID:7},"nonlethal-pve-v1"))
-	if replayErr!=nil||!found||len(replayRaw)==0 {t.Fatalf("fresh connection ledger found=%v err=%v",found,replayErr)}
-	repository.DB=db
+	repository.DB = fresh
+	if err = fresh.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id='pve'`).Scan(&persistedState, &persistedMap); err != nil || persistedState != 1 || persistedMap != 1 {
+		t.Fatalf("fresh connection revisions=%d/%d err=%v", persistedState, persistedMap, err)
+	}
+	replayRaw, found, replayErr := repository.ReplayMatchCommand(context.Background(), "pve", "pve-hit", combatCommandCanonical(AttackRequest{AttackerID: 1, TargetID: 7}, "nonlethal-pve-v1"))
+	if replayErr != nil || !found || len(replayRaw) == 0 {
+		t.Fatalf("fresh connection ledger found=%v err=%v", found, replayErr)
+	}
+	repository.DB = db
 }

@@ -88,6 +88,23 @@ func grantRandomEquipmentDrop(userID int, classID string, matchInstanceID string
 		return nil, fmt.Errorf("GrantRandomEquipmentDrop begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	item, err := grantRandomEquipmentDropTx(tx, userID, classID, matchInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("GrantRandomEquipmentDrop commit: %w", err)
+	}
+	return item, nil
+}
+
+// GrantRandomEquipmentDropForMatchTx joins an existing match command. It never
+// commits and uses the same candidate pool and random choice as the legacy API.
+func GrantRandomEquipmentDropForMatchTx(tx *sql.Tx, userID int, matchInstanceID string) (*DroppedEquipment, error) {
+	return grantRandomEquipmentDropTx(tx, userID, "", strings.TrimSpace(matchInstanceID))
+}
+
+func grantRandomEquipmentDropTx(tx *sql.Tx, userID int, classID string, matchInstanceID string) (*DroppedEquipment, error) {
 
 	var lockedUserID int
 	if err := tx.QueryRow(`
@@ -153,9 +170,6 @@ func grantRandomEquipmentDrop(userID int, classID string, matchInstanceID string
 	rows.Close()
 
 	if len(candidates) == 0 {
-		if err := tx.Commit(); err != nil {
-			return nil, fmt.Errorf("GrantRandomEquipmentDrop empty commit: %w", err)
-		}
 		return nil, nil
 	}
 
@@ -178,10 +192,6 @@ func grantRandomEquipmentDrop(userID int, classID string, matchInstanceID string
 	toUserID := userID
 	if err := insertItemInstanceEventTx(tx, itemInstanceID, "created", nil, &toUserID, nil, nil, ""); err != nil {
 		return nil, fmt.Errorf("GrantRandomEquipmentDrop insert created event: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("GrantRandomEquipmentDrop commit: %w", err)
 	}
 
 	return &DroppedEquipment{

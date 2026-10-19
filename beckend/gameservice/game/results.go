@@ -32,9 +32,18 @@ func CalculateResults(
 		return 0, nil, 0, 0, 0, 0, 0, 0, fmt.Errorf("no state for match %s", instanceID)
 	}
 
+	return CalculateResultsFromEvents(state.SnapshotResultEvents(), userID, survived)
+}
+
+// CalculateResultsFromEvents uses the same rules as CalculateResults but accepts
+// a consistent persisted snapshot instead of process-local MatchState.
+func CalculateResultsFromEvents(events ResultEvents, userID int, survived bool) (
+	exp int, rewards []Reward, playerKills int, monsterKills int,
+	dmgTotal int, dmgPlayers int, dmgMonsters int, dmgTaken int, err error,
+) {
 	// 2) Считаем убийства
-	countedKills := make(map[string]struct{}, len(state.KillEvents))
-	for _, ke := range state.KillEvents {
+	countedKills := make(map[string]struct{}, len(events.KillEvents))
+	for _, ke := range events.KillEvents {
 		isDuplicateKill := false
 		if ke.VictimID > 0 {
 			key := fmt.Sprintf("%s:%d", ke.VictimType, ke.VictimID)
@@ -57,7 +66,7 @@ func CalculateResults(
 
 	// 3) Считаем урон только по DamageEvents.
 	// KillEvents уже отражают факт убийства и могут дублировать последний удар.
-	for _, de := range state.DamageEvents {
+	for _, de := range events.DamageEvents {
 		if de.DealerID == userID {
 			switch de.TargetType {
 			case "player":

@@ -215,6 +215,16 @@ func (m *MatchState) SnapshotDefeatedUsers() []int {
 	return append([]int(nil), m.DefeatedUsers...)
 }
 
+func (m *MatchState) SnapshotResultEvents() ResultEvents {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return ResultEvents{
+		DamageEvents:  append([]DamageEvent(nil), m.DamageEvents...),
+		KillEvents:    append([]KillEvent(nil), m.KillEvents...),
+		DefeatedUsers: append([]int(nil), m.DefeatedUsers...),
+	}
+}
+
 func combatTargetKey(targetType string, targetID int) string {
 	return fmt.Sprintf("%s:%d", targetType, targetID)
 }

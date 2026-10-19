@@ -43,6 +43,7 @@ type MatchCommand struct {
 	Hash       string
 	Replay     json.RawMessage
 	Events     [][]byte
+	Finished   bool
 }
 
 // QueueEvent keeps protocol messages private until the command commits.
@@ -104,7 +105,7 @@ func BeginMatchCommand(ctx context.Context, instanceID string, userID int, comma
 		return nil, err
 	}
 	c := &MatchCommand{Tx: tx, InstanceID: instanceID, CommandID: commandID, UserID: userID}
-	if err := tx.QueryRowContext(ctx, `SELECT active_user_id,map_width,map_height FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&c.ActiveUser, &c.Width, &c.Height); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(active_user_id,0),map_width,map_height,finished_at IS NOT NULL FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&c.ActiveUser, &c.Width, &c.Height, &c.Finished); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -123,6 +124,10 @@ func BeginMatchCommand(ctx context.Context, instanceID string, userID int, comma
 	if err != sql.ErrNoRows {
 		tx.Rollback()
 		return nil, err
+	}
+	if c.Finished {
+		tx.Rollback()
+		return nil, ErrCommandRejected
 	}
 	return c, nil
 }

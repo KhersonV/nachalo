@@ -74,6 +74,14 @@ type DamageEvent struct {
 	Amount     int
 }
 
+// ResultEvents are the MatchState fields needed by CalculateResults and
+// placement calculation. They can be persisted with a match command.
+type ResultEvents struct {
+	DamageEvents  []DamageEvent `json:"damageEvents"`
+	KillEvents    []KillEvent   `json:"killEvents"`
+	DefeatedUsers []int         `json:"defeatedUsers"`
+}
+
 type ArmorBreakState struct {
 	Stacks         int
 	RemainingTurns int
