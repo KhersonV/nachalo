@@ -412,6 +412,10 @@ func CancelTurnTimer(instanceID string) {
 // startTurnTimer schedules an auto-endTurn for instanceID/userID after turnTimerLimit.
 func startTurnTimer(instanceID string, userID int) {
 	CancelTurnTimer(instanceID)
+	scheduledTurn := 0
+	if ms, ok := game.GetMatchState(instanceID); ok {
+		scheduledTurn = ms.TurnNumber
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	turnTimers.Store(instanceID, cancel)
 	go func() {
@@ -421,19 +425,32 @@ func startTurnTimer(instanceID string, userID int) {
 		case <-time.After(turnTimerLimit):
 		}
 		ms, ok := game.GetMatchState(instanceID)
-		if !ok || ms.ActiveUserID != userID {
+		if !ok || ms.ActiveUserID != userID || ms.TurnNumber != scheduledTurn {
 			return
 		}
 		log.Printf("[turnTimer] auto-ending turn for user %d in match %s", userID, instanceID)
-		doEndTurn(instanceID, userID, ms)
+		doEndTurn(instanceID, userID, ms, scheduledTurn)
 	}()
 }
 
 // doEndTurn executes the turn-change logic without an HTTP context (used by both
 // the timer goroutine and EndTurnHandler to avoid duplication).
-func doEndTurn(instanceID string, userID int, ms *game.MatchState) {
+func doEndTurn(instanceID string, userID int, ms *game.MatchState, expectedTurn int) {
 	lockPlayer(userID)
 	defer unlockPlayer(userID)
+	lockCtx, cancelLock := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelLock()
+	releaseMatch, lockErr := acquireMatchSerialization(lockCtx, instanceID)
+	if lockErr != nil {
+		log.Printf("[doEndTurn] match lock: %v", lockErr)
+		return
+	}
+	defer releaseMatch()
+	activeDB, turnDB, turnErr := matchTurnForSerialization(instanceID)
+	if turnErr != nil || activeDB != userID || turnDB != expectedTurn || ms.TurnNumber != expectedTurn {
+		log.Printf("[doEndTurn] stale timer: match=%s user=%d dbActive=%d dbTurn=%d err=%v", instanceID, userID, activeDB, turnDB, turnErr)
+		return
+	}
 
 	if err := progressConstructionByTurn(instanceID); err != nil {
 		log.Printf("[doEndTurn] progressConstructionByTurn error: %v", err)
@@ -520,6 +537,17 @@ func EndTurnHandler(w http.ResponseWriter, r *http.Request) {
 
 	lockPlayer(req.UserID)
 	defer unlockPlayer(req.UserID)
+	releaseMatch, lockErr := acquireMatchSerialization(r.Context(), req.InstanceID)
+	if lockErr != nil {
+		http.Error(w, "match lock unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer releaseMatch()
+	activeDB, turnDB, turnErr := matchTurnForSerialization(req.InstanceID)
+	if turnErr != nil || activeDB != req.UserID || turnDB != matchState.TurnNumber {
+		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if matchState.ActiveUserID != req.UserID {
 		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)

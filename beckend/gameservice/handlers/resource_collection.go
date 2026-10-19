@@ -4,13 +4,10 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
 
-	"gameservice/game"
 	"gameservice/middleware"
 	"gameservice/repository"
 )
@@ -19,6 +16,7 @@ import (
 type CollectResourceRequest struct {
 	InstanceID string `json:"instance_id"`
 	PlayerID   int    `json:"user_id"`
+	CommandID  string `json:"commandId"`
 	CellX      int    `json:"cell_x"`
 	CellY      int    `json:"cell_y"`
 }
@@ -46,17 +44,13 @@ type UpdatedCellResponse struct {
 
 // CollectResourceHandler обрабатывает и сбор ресурсов, и открытие бочек.
 func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
-	// 1) Чтение и парсинг запроса
-	body, _ := io.ReadAll(r.Body)
-	r.Body = io.NopCloser(bytes.NewReader(body))
-
 	var req CollectResourceRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, fmt.Sprintf("парсинг запроса: %v", err), http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	if req.InstanceID == "" || req.PlayerID == 0 {
-		http.Error(w, "instance_id и user_id обязательны", http.StatusBadRequest)
+	if req.InstanceID == "" || req.PlayerID == 0 || req.CommandID == "" {
+		http.Error(w, "instance_id, user_id and commandId are required", http.StatusBadRequest)
 		return
 	}
 	tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
@@ -64,127 +58,66 @@ func CollectResourceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	lockPlayer(req.PlayerID)
-	defer unlockPlayer(req.PlayerID)
-
-	matchState, ok := game.GetMatchState(req.InstanceID)
-	if !ok {
-		http.Error(w, "match not found", http.StatusNotFound)
+	releaseMatch, lockErr := acquireMatchSerialization(r.Context(), req.InstanceID)
+	if lockErr != nil {
+		http.Error(w, "match lock unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if matchState.ActiveUserID != req.PlayerID {
-		http.Error(w, "it's not your turn", http.StatusBadRequest)
-		return
-	}
+	defer releaseMatch()
 
-	// 2) Загружаем только нужную клетку и блокируем её на время сбора
-	tx, err := repository.DB.Begin()
+	result, err := repository.ApplyResourceCollection(r.Context(), req.InstanceID, req.PlayerID, req.CommandID, req.CellX, req.CellY)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("begin tx: %v", err), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if errors.Is(err, repository.ErrCommandConflict) {
+			status = http.StatusConflict
+		}
+		if errors.Is(err, repository.ErrCommandRejected) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
-	defer tx.Rollback()
-
-	targetCell, err := repository.LoadMapCellForUpdateTx(tx, req.InstanceID, req.CellX, req.CellY)
+	updatedCell := serialiseUpdatedCell(result.Cell)
+	playerResp, err := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("загрузка клетки: %v", err), http.StatusInternalServerError)
+		http.Error(w, "committed; reload match snapshot", http.StatusServiceUnavailable)
 		return
 	}
-	if targetCell == nil {
-		http.Error(w, "клетка не найдена", http.StatusBadRequest)
-		return
-	}
-
-	// 3) Проверяем, есть ли ресурс в этой ячейке
-	if targetCell.Resource == nil {
-		http.Error(w, "resource already collected", http.StatusConflict)
-		return
-	}
-
-	// Сохраняем нужные поля ресурса ДО очистки клетки
-	itemID := targetCell.Resource.ID
-	itemName := targetCell.Resource.Type
-	itemDesc := targetCell.Resource.Description
-	itemImage := targetCell.Resource.Image
-	// item_type: "artifact" если это дроп артефакта, иначе "resource"
-	itemType := "resource"
-	if targetCell.Resource.ItemType == "artifact" {
-		itemType = "artifact"
-	}
-
-	// 4) Очищаем клетку
-	targetCell.Resource = nil
-	targetCell.TileCode = 48
-	targetCell.Monster = nil
-	targetCell.IsPortal = false
-
-	// 5) Сохраняем обновлённую клетку в транзакции
-	if err := repository.SaveMapCellTx(tx, req.InstanceID, *targetCell); err != nil {
-		http.Error(w, fmt.Sprintf("сохранение клетки: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		http.Error(w, fmt.Sprintf("commit tx: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err := repository.AddInventoryItem(
-		req.InstanceID,
-		req.PlayerID,
-		itemType, // "resource" или "artifact"
-		itemID,
-		itemName,
-		itemImage,
-		itemDesc,
-		1,
-	); err != nil {
-		http.Error(w, fmt.Sprintf("добавление в инвентарь: %v", err), http.StatusInternalServerError)
-		return
-	}
-	// 7) Формируем и отправляем ответ клиенту
-	updatedCell := serialiseUpdatedCell(*targetCell)
-	playerResp, _ := repository.GetMatchPlayerByID(req.InstanceID, req.PlayerID)
-
-	wsMsg := map[string]interface{}{
-		"type": "RESOURCE_COLLECTED",
-		"payload": map[string]interface{}{
+	playerResp.Inventory = result.Inventory
+	if !result.Replayed {
+		payload := map[string]interface{}{
 			"instanceId":    req.InstanceID,
 			"updatedCell":   updatedCell,
 			"updatedPlayer": playerResp,
-		},
-	}
-	msgBuf, _ := json.Marshal(wsMsg)
-	Broadcast(msgBuf)
-
-	// Если собранный предмет — квест-артефакт, уведомляем всех игроков
-	if itemType == "artifact" {
-		var questArtifactID int
-		repository.DB.QueryRow(
-			`SELECT COALESCE(quest_artifact_id, 0) FROM matches WHERE instance_id=$1`,
-			req.InstanceID,
-		).Scan(&questArtifactID)
-
-		if questArtifactID != 0 && itemID == questArtifactID {
-			questMsg := map[string]interface{}{
-				"type": "QUEST_ARTIFACT_FOUND",
-				"payload": map[string]interface{}{
-					"instanceId": req.InstanceID,
-					"playerName": playerResp.Name,
-					"x":          updatedCell.X,
-					"y":          updatedCell.Y,
-				},
+			"commandId":     req.CommandID,
+		}
+		change := map[string]interface{}{"type": "RESOURCE_COLLECTED", "payload": payload}
+		patch := map[string]interface{}{"type": "MATCH_PATCH", "payload": map[string]interface{}{
+			"instanceId":    req.InstanceID,
+			"schemaVersion": 1,
+			"stateRevision": result.StateRevision,
+			"mapRevision":   result.MapRevision,
+			"commandId":     req.CommandID,
+			"changes":       []interface{}{change},
+		}}
+		if b, e := json.Marshal(patch); e == nil {
+			Broadcast(b)
+		}
+		if b, e := json.Marshal(change); e == nil {
+			Broadcast(b)
+		}
+		if result.ItemType == "artifact" {
+			var questArtifactID int
+			if e := repository.DB.QueryRow(`SELECT COALESCE(quest_artifact_id,0) FROM matches WHERE instance_id=$1`, req.InstanceID).Scan(&questArtifactID); e == nil && questArtifactID == result.ItemID {
+				msg := map[string]interface{}{"type": "QUEST_ARTIFACT_FOUND", "payload": map[string]interface{}{
+					"instanceId": req.InstanceID, "playerName": playerResp.Name, "x": updatedCell.X, "y": updatedCell.Y,
+				}}
+				if b, e := json.Marshal(msg); e == nil {
+					Broadcast(b)
+				}
 			}
-			questBuf, _ := json.Marshal(questMsg)
-			Broadcast(questBuf)
 		}
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":       "успешно",
-		"updatedCell":   updatedCell,
-		"updatedPlayer": playerResp,
-	})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"message": "успешно", "updatedCell": updatedCell, "updatedPlayer": playerResp})
 }

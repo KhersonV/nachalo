@@ -19,6 +19,10 @@ import (
 )
 
 func TestUniversalAttackHandler(t *testing.T) {
+	oldLock, oldTurn := acquireMatchSerialization, matchTurnForSerialization
+	acquireMatchSerialization = func(context.Context, string) (func(), error) { return func() {}, nil }
+	matchTurnForSerialization = func(string) (int, int, error) { return 1, 1, nil }
+	defer func() { acquireMatchSerialization, matchTurnForSerialization = oldLock, oldTurn }()
 	// 1) Подменяем все зависимости через Combat
 	Combat = CombatDeps{
 		UpdatePlayer: func(_ string, _ *models.PlayerResponse) error { return nil },

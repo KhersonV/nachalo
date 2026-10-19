@@ -5,6 +5,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 )
@@ -92,13 +93,25 @@ func AddInventoryItem(
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	if _, err := AddInventoryItemTx(tx, instanceID, playerID, itemType, itemID, itemName, imageURL, description, count); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("tx commit: %w", err)
+	}
+	return nil
+}
+
+// AddInventoryItemTx joins the caller's match transaction and returns the
+// updated JSON inventory for a post-commit response.
+func AddInventoryItemTx(tx *sql.Tx, instanceID string, playerID int, itemType string, itemID int, itemName string, imageURL string, description string, count int) (string, error) {
 
 	// 1) Получаем текущий JSON-инвентарь и matchInstanceID
 	var inventoryJSON, matchInstanceID string
 	if err := tx.
 		QueryRow(selectInventoryQuery, instanceID, playerID).
 		Scan(&inventoryJSON, &matchInstanceID); err != nil {
-		return fmt.Errorf("fetch inventory: %w", err)
+		return "", fmt.Errorf("fetch inventory: %w", err)
 	}
 
 	// 2) Распарсиваем JSON в map или инициализируем пустой map
@@ -138,7 +151,7 @@ func AddInventoryItem(
 	// 4) Сохраняем JSON-инвентарь обратно в match_players
 	newInvBytes, err := json.Marshal(inv)
 	if err != nil {
-		return fmt.Errorf("marshal inventory: %w", err)
+		return "", fmt.Errorf("marshal inventory: %w", err)
 	}
 	if _, err := tx.Exec(
 		updatePlayerInventoryQuery,
@@ -146,7 +159,7 @@ func AddInventoryItem(
 		matchInstanceID,
 		playerID,
 	); err != nil {
-		return fmt.Errorf("update match_players.inventory: %w", err)
+		return "", fmt.Errorf("update match_players.inventory: %w", err)
 	}
 
 	// 5) Обновляем или вставляем строку в inventory_items
@@ -159,11 +172,11 @@ func AddInventoryItem(
 		count,      // $5
 	)
 	if err != nil {
-		return fmt.Errorf("update inventory_items: %w", err)
+		return "", fmt.Errorf("update inventory_items: %w", err)
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
+		return "", fmt.Errorf("rows affected: %w", err)
 	}
 	if rows == 0 {
 		if _, err := tx.Exec(
@@ -176,15 +189,11 @@ func AddInventoryItem(
 			description,
 			count,
 		); err != nil {
-			return fmt.Errorf("insert inventory_items: %w", err)
+			return "", fmt.Errorf("insert inventory_items: %w", err)
 		}
 	}
 
-	// 6) Закрываем транзакцию
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("tx commit: %w", err)
-	}
-	return nil
+	return string(newInvBytes), nil
 }
 
 // RemoveInventoryItemAndSyncJSON уменьшает количество предмета в inventory_items

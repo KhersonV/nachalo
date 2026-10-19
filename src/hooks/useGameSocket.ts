@@ -8,6 +8,7 @@ import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import type { Cell, PlayerState } from "../types";
 import { assertSquareSnapshot } from "@/types/geometry";
+import { decideRevision } from "@/utils/revisionGate.mjs";
 
 // Module-level global lock: shared across ALL instances of this hook in the same
 // browser tab. Prevents multiple simultaneous WebSocket opens for the same session
@@ -108,6 +109,9 @@ export function useGameSocket(
     const connectionKeyRef = useRef<string | null>(null);
     const allowReconnectRef = useRef(true);
     const onMessageRef = useRef(onMessage);
+    const revisionRef = useRef<number | null>(null);
+    const revisionInstanceRef = useRef<string | null>(null);
+    const resyncRef = useRef(false);
 
     const router = useRouter();
     const { user } = useAuth();
@@ -133,10 +137,26 @@ export function useGameSocket(
         }
 
         const { instanceId } = options;
+        if (revisionInstanceRef.current !== instanceId) {
+            revisionInstanceRef.current = instanceId;
+            revisionRef.current = null;
+        }
         const token = user?.token;
         const connectionKey = token ? `${instanceId}:${token}` : null;
         let disposed = false;
         allowReconnectRef.current = true;
+
+        const requestSnapshot = () => {
+            if (resyncRef.current) return;
+            resyncRef.current = true;
+            void fetchFullMatch(instanceId, (snapshot) => {
+                const revision = snapshot.payload?.stateRevision;
+                if (typeof revision !== "number") return;
+                if (revisionRef.current !== null && revision < revisionRef.current) return;
+                revisionRef.current = revision;
+                onMessageRef.current(snapshot);
+            }, token).finally(() => { resyncRef.current = false; });
+        };
 
         const connect = () => {
            
@@ -176,7 +196,7 @@ export function useGameSocket(
                     return;
                 }
                 ws.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
-                fetchFullMatch(instanceId, onMessageRef.current, token);
+                requestSnapshot();
             };
             ws.onmessage = (e) => {
                 let msg: WSMessage;
@@ -194,6 +214,41 @@ export function useGameSocket(
                         instanceId
                 ) {
                     return;
+                }
+
+                if (msg.type === "MATCH_PATCH") {
+                    const patch = msg.payload;
+                    const revision = patch?.stateRevision;
+                    if (!Array.isArray(patch?.changes)) {
+                        requestSnapshot();
+                        return;
+                    }
+                    const decision = decideRevision(revisionRef.current, revision);
+                    if (decision === "resync") {
+                        requestSnapshot();
+                        return;
+                    }
+                    if (decision === "duplicate") return;
+                    for (const change of patch.changes as WSMessage[]) {
+                        if (change.type === "MOVE_PLAYER") {
+                            onMessageRef.current({type: "UPDATE_PLAYER_POSITION", payload: change.payload});
+                        } else {
+                            onMessageRef.current(change);
+                        }
+                    }
+                    revisionRef.current = revision;
+                    onMessageRef.current({type: "MATCH_REVISION", payload: {instanceId, stateRevision: revision, mapRevision: patch.mapRevision}});
+                    return;
+                }
+                // New servers send legacy copies for clients that do not yet
+                // understand MATCH_PATCH. The patch above is authoritative here.
+                if (msg.payload?.commandId) return;
+                if (msg.type === "MATCH_UPDATE") {
+                    const revision = msg.payload?.stateRevision;
+                    if (typeof revision === "number") {
+                        if (revisionRef.current !== null && revision < revisionRef.current) return;
+                        revisionRef.current = revision;
+                    }
                 }
 
                 switch (msg.type) {

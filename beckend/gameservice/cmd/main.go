@@ -188,7 +188,6 @@ func main() {
 	).Methods("DELETE")
 
 	// === Эндпоинты для инвентаря ===
-	router.HandleFunc("/game/player/{id}/inventory/add", handlers.AddInventoryHandler).Methods("POST")
 	router.Handle(
 		"/game/player/{id}/inventory/use",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseInventoryHandler)),

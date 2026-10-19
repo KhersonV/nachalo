@@ -106,7 +106,7 @@ export function usePlayerActions(
                     return null;
                 }
                 const url = `${API_BASE}/game/${instanceId}/player/${myPlayerId}/move`;
-                const body = { new_pos_x: newPosX, new_pos_y: newPosY };
+                const body = { new_pos_x: newPosX, new_pos_y: newPosY, commandId: crypto.randomUUID() };
                 const response = await fetch(url, {
                     method: "POST",
                     headers: {
@@ -154,6 +154,7 @@ export function usePlayerActions(
                         Authorization: `Bearer ${token}`,
                     },
                     body: JSON.stringify({
+                        commandId: crypto.randomUUID(),
                         instance_id: instanceId,
                         attacker_type: "player",
                         attacker_id: myPlayerId,
@@ -189,6 +190,7 @@ export function usePlayerActions(
                         Authorization: `Bearer ${token}`,
                     },
                     body: JSON.stringify({
+                        commandId: crypto.randomUUID(),
                         instance_id: instanceId,
                         attacker_type: "player",
                         attacker_id: myPlayerId,
@@ -230,6 +232,7 @@ export function usePlayerActions(
                         user_id: myPlayerId,
                         cell_x: cellX,
                         cell_y: cellY,
+                        commandId: crypto.randomUUID(),
                     }),
                 });
             } catch {

@@ -7,6 +7,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -124,6 +125,10 @@ type CombatExchangeMessage struct {
 }
 
 type AttackRequest struct {
+	CommandID    string `json:"commandId"`
+	AutoAttack   bool   `json:"-"`
+	MoveX        int    `json:"-"`
+	MoveY        int    `json:"-"`
 	AttackerType string `json:"attacker_type"`
 	AttackerID   int    `json:"attacker_id"`
 	TargetType   string `json:"target_type"`
@@ -187,23 +192,111 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 2) Парсим тело — только новые координаты
 	var req struct {
-		NewPosX int `json:"new_pos_x"`
-		NewPosY int `json:"new_pos_y"`
+		NewPosX   int    `json:"new_pos_x"`
+		NewPosY   int    `json:"new_pos_y"`
+		CommandID string `json:"commandId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Неверный формат запроса", http.StatusBadRequest)
 		return
 	}
+	if req.CommandID == "" || len(req.CommandID) > 128 {
+		http.Error(w, "commandId is required (max 128 characters)", http.StatusBadRequest)
+		return
+	}
 
 	lockPlayer(userID)
 	defer unlockPlayer(userID)
+	releaseMatch, lockErr := acquireMatchSerialization(r.Context(), instanceID)
+	if lockErr != nil {
+		http.Error(w, "match lock unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer releaseMatch()
 
 	matchState, ok := game.GetMatchState(instanceID)
 	if !ok {
 		http.Error(w, "Матч не найден", http.StatusNotFound)
 		return
 	}
+	autoCanonical := fmt.Sprintf("autoattack-v1:%d:%d:%d", userID, req.NewPosX, req.NewPosY)
+	if replay, found, replayErr := repository.ReplayMatchCommand(r.Context(), instanceID, req.CommandID, autoCanonical); replayErr != nil {
+		http.Error(w, "Ошибка чтения команды", http.StatusInternalServerError)
+		return
+	} else if found {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(replay)
+		return
+	}
+	// Simple square moves use the stage-2 transactional path. Occupied cells
+	// still enter the existing combat/structure code until those commands can be
+	// migrated as a whole. A replay is resolved from the durable ledger first.
+	if req.CommandID != "" {
+		playerForCost, loadErr := repository.GetMatchPlayerByID(instanceID, userID)
+		if loadErr != nil {
+			http.Error(w, "Ошибка загрузки игрока", http.StatusInternalServerError)
+			return
+		}
+		playersForCost, loadErr := Combat.LoadPlayers(instanceID)
+		if loadErr != nil {
+			http.Error(w, "Ошибка загрузки игроков", http.StatusInternalServerError)
+			return
+		}
+		moveCost, extraCost := resolveMoveEnergyCostFromPlayers(playerForCost, playersForCost)
+		artifact, loadErr := playerQuestArtifact(instanceID, userID)
+		if loadErr != nil {
+			http.Error(w, "Ошибка загрузки артефакта", http.StatusInternalServerError)
+			return
+		}
+		moveCost += artifactMoveCostBonus(instanceID, userID, matchState.TurnNumber, artifact)
+		if moveCost < 1 {
+			moveCost = 1
+		}
+		// Guardian exit damage also changes health, combat history and possibly
+		// finalization. Keep that entire case on the existing path for now.
+		if extraCost == 0 {
+			result, moveErr := repository.ApplySquareMove(r.Context(), instanceID, userID, req.CommandID, req.NewPosX, req.NewPosY, moveCost)
+			if moveErr == nil {
+				updated := *playerForCost
+				updated.Position.X, updated.Position.Y = result.X, result.Y
+				updated.Energy = result.Energy
+				if !result.Replayed {
+					markArtifactMoveUsed(instanceID, userID, matchState.TurnNumber)
+					movePayload := map[string]interface{}{"instanceId": instanceID, "userId": userID, "newPosition": map[string]int{"x": result.X, "y": result.Y}, "commandId": req.CommandID}
+					playerPayload := map[string]interface{}{"instanceId": instanceID, "player": updated, "commandId": req.CommandID}
+					patch := map[string]interface{}{"type": "MATCH_PATCH", "payload": map[string]interface{}{"instanceId": instanceID, "schemaVersion": 1, "stateRevision": result.StateRevision, "mapRevision": result.MapRevision, "commandId": req.CommandID, "changes": []interface{}{map[string]interface{}{"type": "MOVE_PLAYER", "payload": movePayload}, map[string]interface{}{"type": "UPDATE_PLAYER", "payload": playerPayload}}}}
+					if data, err := json.Marshal(patch); err == nil {
+						Broadcast(data)
+					}
+					for _, legacy := range []map[string]interface{}{{"type": "MOVE_PLAYER", "payload": movePayload}, {"type": "UPDATE_PLAYER", "payload": playerPayload}} {
+						if data, err := json.Marshal(legacy); err == nil {
+							Broadcast(data)
+						}
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(updated)
+				return
+			}
+			if !errors.Is(moveErr, repository.ErrLegacyAction) {
+				status := http.StatusInternalServerError
+				if errors.Is(moveErr, repository.ErrCommandConflict) {
+					status = http.StatusConflict
+				}
+				if errors.Is(moveErr, repository.ErrCommandRejected) {
+					status = http.StatusBadRequest
+				}
+				http.Error(w, moveErr.Error(), status)
+				return
+			}
+		}
+	}
 	if matchState.ActiveUserID != userID {
+		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+		return
+	}
+	activeDB, _, turnErr := matchTurnForSerialization(instanceID)
+	if turnErr != nil || activeDB != userID {
 		http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
 		return
 	}
@@ -230,11 +323,15 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if mm != nil {
 		attackReq := AttackRequest{
+			CommandID: req.CommandID, AutoAttack: true, MoveX: req.NewPosX, MoveY: req.NewPosY,
 			AttackerType: "player",
 			AttackerID:   userID,
 			TargetType:   "monster",
 			TargetID:     mm.MonsterInstanceID,
 			InstanceID:   instanceID,
+		}
+		if tryAtomicNonlethalPvE(w, r, attackReq) {
+			return
 		}
 		universalAttackLocked(w, attackReq)
 		return
@@ -248,11 +345,15 @@ func MoveOrAttackHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		attackReq := AttackRequest{
+			CommandID: req.CommandID, AutoAttack: true, MoveX: req.NewPosX, MoveY: req.NewPosY,
 			AttackerType: "player",
 			AttackerID:   userID,
 			TargetType:   "player",
 			TargetID:     other,
 			InstanceID:   instanceID,
+		}
+		if tryAtomicNonlethalPvP(w, r, attackReq) {
+			return
 		}
 		universalAttackLocked(w, attackReq)
 		return
@@ -1932,6 +2033,10 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if req.AttackerType != "player" {
+		http.Error(w, "only player attacks are accepted over HTTP", http.StatusForbidden)
+		return
+	}
 	if req.AttackerType == "player" {
 		tokenUserID, ok := middleware.GetUserIDFromContext(r.Context())
 		if !ok || tokenUserID != req.AttackerID {
@@ -1941,6 +2046,17 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 
 		lockPlayer(req.AttackerID)
 		defer unlockPlayer(req.AttackerID)
+		releaseMatch, lockErr := acquireMatchSerialization(r.Context(), req.InstanceID)
+		if lockErr != nil {
+			http.Error(w, "match lock unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		defer releaseMatch()
+		activeDB, _, turnErr := matchTurnForSerialization(req.InstanceID)
+		if turnErr != nil || activeDB != req.AttackerID {
+			http.Error(w, game.ErrNotYourTurn.Error(), http.StatusBadRequest)
+			return
+		}
 
 		matchState, ok := Combat.LoadGameState(req.InstanceID)
 		if !ok {
@@ -1953,6 +2069,11 @@ func UniversalAttackHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.CommandID != "" && repository.DB != nil {
+		if tryAtomicNonlethalPvP(w, r, req) || tryAtomicNonlethalPvE(w, r, req) {
+			return
+		}
+	}
 	universalAttackLocked(w, req)
 }
 

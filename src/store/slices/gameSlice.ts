@@ -260,9 +260,16 @@ const gameSlice = createSlice({
     name: "game",
     initialState,
     reducers: {
+        setMatchRevisions(state, action: PayloadAction<{instanceId: string; stateRevision: number; mapRevision: number}>) {
+            if (state.instanceId !== action.payload.instanceId) return;
+            if (action.payload.stateRevision <= state.stateRevision) return;
+            state.stateRevision = action.payload.stateRevision;
+            state.mapRevision = action.payload.mapRevision;
+        },
         setMatchData(state, action: PayloadAction<Partial<GameState>>) {
             if (action.payload.schemaVersion !== undefined && action.payload.schemaVersion !== 1) return;
             if (action.payload.geometry !== undefined && action.payload.geometry.kind !== "square") return;
+            if (action.payload.instanceId === state.instanceId && action.payload.stateRevision !== undefined && action.payload.stateRevision < state.stateRevision) return;
             state.schemaVersion = 1;
             state.geometry = SQUARE_V1;
             if (action.payload.mapRevision !== undefined) state.mapRevision = action.payload.mapRevision;
@@ -563,6 +570,7 @@ const gameSlice = createSlice({
 });
 
 export const {
+    setMatchRevisions,
     setMatchData,
     movePlayer,
     applyCombatExchangeState,

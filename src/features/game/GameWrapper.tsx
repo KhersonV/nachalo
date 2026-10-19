@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "@/store";
-import { resetState } from "@/store/slices/gameSlice";
+import { resetState, setMatchRevisions } from "@/store/slices/gameSlice";
 import { clearCombatPresentation } from "@/store/slices/combatPresentationSlice";
 import { useGameSocket } from "@/hooks/useGameSocket";
 import { debugLog } from "@/utils/log";
@@ -193,6 +193,10 @@ export default function GameWrapper({
       const payload = data.payload ?? {};
       const payloadInstanceId = payload.instanceId ?? payload.instance_id;
       if (payloadInstanceId && payloadInstanceId !== instanceId) return;
+      if (data.type === "MATCH_REVISION") {
+        dispatch(setMatchRevisions(payload));
+        return;
+      }
 
       const normalizedPayload = {
         ...payload,
