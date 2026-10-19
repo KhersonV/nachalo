@@ -1,0 +1,34 @@
+{
+  "locomotion": {
+    "unchangedSpeed": 2.75,
+    "walkMultiplier": 2,
+    "directions": 4
+  },
+  "combat": {
+    "releaseSeconds": 1.4166666666666667,
+    "drawMorph": true,
+    "arrowHiddenAtRelease": true,
+    "stallClockSynchronized": true,
+    "repeatedHitsBounded": true,
+    "hitReturnsToWalk": true,
+    "deathClamped": true,
+    "deadCannotRevive": true
+  },
+  "lifecycle": {
+    "oneSharedAsset": true,
+    "independentSkeletons": true,
+    "finalOwnerDisposes": true,
+    "lateLoadDisposes": true,
+    "defeatedModelSwitch": true
+  },
+  "legacy": {
+    "defaultUnchanged": true,
+    "walkRateUnchanged": true,
+    "originalHitAndDeath": true
+  },
+  "timeline": {
+    "oneProjectile": true,
+    "localRangerOnly": true,
+    "serverPayloadUnchanged": true
+  }
+}

@@ -1,0 +1,105 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+type HexTurnResult struct {
+	ActiveUser    int   `json:"activeUser"`
+	TurnNumber    int   `json:"turnNumber"`
+	Energy        int   `json:"energy"`
+	StateRevision int64 `json:"stateRevision"`
+	MapRevision   int64 `json:"mapRevision"`
+	Replayed      bool  `json:"-"`
+}
+
+func (r *HexTurnResult) SetCommandRevisions(state, mapRevision int64) {
+	r.StateRevision, r.MapRevision = state, mapRevision
+}
+
+// ApplyHexEndTurn uses the same match-row lock and command ledger as movement.
+// regenForClass is the existing pure square character-template lookup. This
+// experimental mode has no buildings or quest artifact; reject any injected
+// effects until they have transactional HEX implementations.
+func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, commandID string, expectedTurn int, regenForClass func(string) int, publish func(HexTurnResult)) (HexTurnResult, error) {
+	var out HexTurnResult
+	if expectedTurn < 1 || regenForClass == nil {
+		return out, ErrCommandRejected
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	c, err := BeginMatchCommand(ctx, instanceID, userID, commandID, fmt.Sprintf("hex-end-turn-v1:%d:%d", userID, expectedTurn))
+	if err != nil {
+		return out, err
+	}
+	defer c.Rollback()
+	if c.Replay != nil {
+		if err := json.Unmarshal(c.Replay, &out); err != nil {
+			return out, err
+		}
+		out.Replayed = true
+		return out, nil
+	}
+	if c.ActiveUser != userID {
+		return out, ErrCommandRejected
+	}
+	var mode string
+	var version, turn, total, artifact int
+	var orderRaw []byte
+	err = c.Tx.QueryRowContext(ctx, `SELECT mode,schema_version,turn_number,total_players,COALESCE(quest_artifact_id,0),turn_order FROM matches WHERE instance_id=$1`, instanceID).Scan(&mode, &version, &turn, &total, &artifact, &orderRaw)
+	if err != nil {
+		return out, err
+	}
+	var order []int
+	if err := json.Unmarshal(orderRaw, &order); err != nil {
+		return out, err
+	}
+	if mode != "hex-test" || version != 2 || turn != expectedTurn || total != 1 || artifact != 0 || len(order) != 1 || order[0] != userID {
+		return out, ErrCommandRejected
+	}
+	var effects int
+	if err := c.Tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_map_cells WHERE instance_id=$1 AND (structure_type<>'' OR is_under_construction OR barbel IS NOT NULL OR is_portal)`, instanceID).Scan(&effects); err != nil {
+		return out, err
+	}
+	if effects != 0 {
+		return out, ErrHexUnavailable
+	}
+	var characterType string
+	var energy, maxEnergy, health int
+	err = c.Tx.QueryRowContext(ctx, `SELECT character_type,energy,max_energy,health FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&characterType, &energy, &maxEnergy, &health)
+	if err != nil {
+		return out, err
+	}
+	if health <= 0 {
+		return out, ErrCommandRejected
+	}
+	regen := regenForClass(characterType)
+	if regen < 0 {
+		regen = 0
+	}
+	energy += regen
+	if energy > maxEnergy {
+		energy = maxEnergy
+	}
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET energy=$1 WHERE instance_id=$2 AND user_id=$3`, energy, instanceID, userID); err != nil {
+		return out, err
+	}
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE matches SET turn_number=turn_number+1 WHERE instance_id=$1`, instanceID); err != nil {
+		return out, err
+	}
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_monsters SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND hex_armor_break_turns>0`, instanceID); err != nil {
+		return out, err
+	}
+	out.ActiveUser, out.TurnNumber, out.Energy = userID, turn+1, energy
+	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, false)
+	if err != nil {
+		return HexTurnResult{}, err
+	}
+	if publish != nil {
+		publish(out)
+	}
+	return out, nil
+}
