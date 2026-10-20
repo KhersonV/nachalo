@@ -884,6 +884,12 @@ func removePlayerHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func currentMatchMember(instanceID string, playerID int) bool {
+	var member bool
+	err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND m.finished_at IS NULL)`, instanceID, playerID).Scan(&member)
+	return err == nil && member
+}
+
 // joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
 func joinHandler(w http.ResponseWriter, r *http.Request) {
 	var req JoinRequest
@@ -896,16 +902,11 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 	instID, hasMatch := playerMatches[req.PlayerID]
 	if hasMatch {
 		if matchInfo, ok := currentMatches[instID]; ok {
-			players, err := repository.GetPlayersInMatch(instID)
-			if err == nil {
-				for _, p := range players {
-					if p.UserID == req.PlayerID {
-						matchMu.Unlock()
-						w.Header().Set("Content-Type", "application/json")
-						json.NewEncoder(w).Encode(matchInfo)
-						return
-					}
-				}
+			if currentMatchMember(instID, req.PlayerID) {
+				matchMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(matchInfo)
+				return
 			}
 		}
 		delete(playerMatches, req.PlayerID)
@@ -1071,15 +1072,7 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 	// This prevents stale in-memory mappings from redirecting the user to a
 	// finished match (e.g., when FinalizeMatch deleted match_players via CASCADE
 	// but unbindPlayer hadn't run yet or failed silently).
-	players, err := repository.GetPlayersInMatch(instanceID)
-	if err != nil || func() bool {
-		for _, p := range players {
-			if p.UserID == playerID {
-				return false
-			}
-		}
-		return true
-	}() {
+	if !currentMatchMember(instanceID, playerID) {
 		// Player no longer in DB — clean up stale mapping
 		delete(playerMatches, playerID)
 		w.Header().Set("Content-Type", "application/json")

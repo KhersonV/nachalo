@@ -4,10 +4,10 @@ import type { HexCoord } from "@/utils/hexGrid";
 export type HexResource = { id: number; type: string; description: string; image: string };
 export type HexCell = { cellId: number; position: HexCoord; terrain: "floor" | "rock"; room?: number; resource?: HexResource; barrel?: HexResource; isPortal?: boolean };
 export type HexEdge = { position: HexCoord; direction: number; kind: "wall" };
-export type HexActor = { id: string; kind: "player" | "monster"; position: HexCoord; health?: number; maxHealth?: number; monsterRefId?: number; name?: string; type?: string; image?: string; attack?: number; defense?: number; speed?: number; maneuverability?: number; vision?: number };
+export type HexActor = { id: string; kind: "player" | "monster"; userId?: number; teamId?: number; position: HexCoord; health?: number; maxHealth?: number; monsterRefId?: number; name?: string; type?: string; image?: string; attack?: number; defense?: number; speed?: number; maneuverability?: number; vision?: number };
 export type HexStart = { userId: number; teamId: number; position: HexCoord };
 export type HexPlayer = {
-  userId: number; name: string; position: HexCoord; energy: number; maxEnergy: number;
+  userId: number; teamId?: number; name: string; position: HexCoord; energy: number; maxEnergy: number;
   health: number; maxHealth: number; mobility: number; agility: number;
   characterType: string; isRanged: boolean; attackRange: number;
   inventory?: Record<string, { item_count?: number; item_name?: string }>;
@@ -18,7 +18,7 @@ export type HexAttackResult = HexAttackPreview & { damage: number; counterDamage
 export type HexSnapshot = {
   schemaVersion: 2;
   geometry: { kind: "hex"; coordinates: "axial"; orientation: "pointy"; version: 1 };
-  instanceId: string; mapRevision: number; stateRevision: number; seed: number; radius?: number;
+  instanceId: string; mode?: string; turnOrder?: number[]; mapRevision: number; stateRevision: number; seed: number; radius?: number;
   starts?: HexStart[]; portal?: HexCoord;
   cells: HexCell[]; edges: HexEdge[]; actors: HexActor[];
   player?: HexPlayer; activeUser?: number; turnNumber?: number;

@@ -405,6 +405,94 @@ func firstHexResource(t *testing.T, snapshot hexmap.Snapshot) (hexgrid.Coord, in
 	return hexgrid.Coord{}, 0
 }
 
+func placeHexPlayerOnCell(t *testing.T, db *sql.DB, id string, userID int, pos hexgrid.Coord) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND is_player=true`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE match_map_cells SET is_player=true WHERE instance_id=$1 AND q=$2 AND r=$3`, id, pos.Q, pos.R); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE match_players SET position_q=$3,position_r=$4 WHERE instance_id=$1 AND user_id=$2`, id, userID, pos.Q, pos.R); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHexResourceRequiresSameCellPostgres(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		distance int
+	}{{"adjacent", 1}, {"far", 2}} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, _ := hexTestDatabase(t)
+			snapshot, err := CreateHexTestMatch(context.Background(), 701, 48)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resource, _ := firstHexResource(t, snapshot)
+			occupied := map[hexgrid.Coord]bool{}
+			for _, actor := range snapshot.Actors {
+				occupied[actor.Position] = true
+			}
+			var playerCell hexgrid.Coord
+			found := false
+			for _, cell := range snapshot.Cells {
+				distance, _ := hexgrid.Distance(resource, cell.Position)
+				if cell.Terrain == "floor" && !occupied[cell.Position] && cell.Position != resource && (tc.distance == 1 && distance == 1 || tc.distance == 2 && distance >= 2) {
+					playerCell, found = cell.Position, true
+					break
+				}
+			}
+			if !found {
+				t.Fatal("no test player cell at requested distance")
+			}
+			placeHexPlayerOnCell(t, db, snapshot.InstanceID, 701, playerCell)
+			var inventory, resourceBefore string
+			var stateBefore, mapBefore, ledgerBefore, itemsBefore int
+			if err := db.QueryRow(`SELECT inventory::text FROM match_players WHERE instance_id=$1 AND user_id=701`, snapshot.InstanceID).Scan(&inventory); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT resource::text FROM match_map_cells WHERE instance_id=$1 AND q=$2 AND r=$3`, snapshot.InstanceID, resource.Q, resource.R).Scan(&resourceBefore); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id=$1`, snapshot.InstanceID).Scan(&stateBefore, &mapBefore); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM match_commands WHERE instance_id=$1`, snapshot.InstanceID).Scan(&ledgerBefore); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM inventory_items WHERE instance_id=$1 AND user_id=701`, snapshot.InstanceID).Scan(&itemsBefore); err != nil {
+				t.Fatal(err)
+			}
+			published := 0
+			_, err = ApplyHexResourceCollection(context.Background(), snapshot.InstanceID, 701, "wrong-cell", resource, func(HexCollectResult) { published++ })
+			if !errors.Is(err, ErrHexInteractionPosition) || published != 0 {
+				t.Fatalf("wrong-cell result: err=%v published=%d", err, published)
+			}
+			var inventoryAfter, resourceAfter string
+			var stateAfter, mapAfter, ledgerAfter, itemsAfter int
+			if err := db.QueryRow(`SELECT inventory::text FROM match_players WHERE instance_id=$1 AND user_id=701`, snapshot.InstanceID).Scan(&inventoryAfter); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT resource::text FROM match_map_cells WHERE instance_id=$1 AND q=$2 AND r=$3`, snapshot.InstanceID, resource.Q, resource.R).Scan(&resourceAfter); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT state_revision,map_revision FROM matches WHERE instance_id=$1`, snapshot.InstanceID).Scan(&stateAfter, &mapAfter); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM match_commands WHERE instance_id=$1`, snapshot.InstanceID).Scan(&ledgerAfter); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM inventory_items WHERE instance_id=$1 AND user_id=701`, snapshot.InstanceID).Scan(&itemsAfter); err != nil {
+				t.Fatal(err)
+			}
+			if inventoryAfter != inventory || resourceAfter != resourceBefore || stateAfter != stateBefore || mapAfter != mapBefore || ledgerAfter != ledgerBefore || itemsAfter != itemsBefore {
+				t.Fatalf("rejected collection mutated state: inventory=%v resource=%v revisions=%d/%d ledger=%d items=%d", inventoryAfter != inventory, resourceAfter != resourceBefore, stateAfter, mapAfter, ledgerAfter, itemsAfter)
+			}
+		})
+	}
+}
+
 func TestHexResourceCollectionPostgres(t *testing.T) {
 	db, dsn := hexTestDatabase(t)
 	ctx := context.Background()
@@ -414,6 +502,7 @@ func TestHexResourceCollectionPostgres(t *testing.T) {
 	}
 	pos, itemID := firstHexResource(t, snapshot)
 	id := snapshot.InstanceID
+	placeHexPlayerOnCell(t, db, id, 701, pos)
 	published := 0
 	var wg sync.WaitGroup
 	results := make(chan error, 2)
@@ -485,6 +574,7 @@ func TestHexCollectionAndTurnRollbackPostgres(t *testing.T) {
 	}
 	id := snapshot.InstanceID
 	pos, _ := firstHexResource(t, snapshot)
+	placeHexPlayerOnCell(t, db, id, 701, pos)
 	if _, err := db.Exec(`CREATE FUNCTION fail_hex_inventory() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'inventory write failed'; END $$`); err != nil {
 		t.Fatal(err)
 	}

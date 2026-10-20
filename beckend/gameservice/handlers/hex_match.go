@@ -19,6 +19,9 @@ func hexCommandStatus(err error) int {
 	if errors.Is(err, repository.ErrCommandRejected) || errors.Is(err, repository.ErrHexUnavailable) {
 		return http.StatusBadRequest
 	}
+	if errors.Is(err, repository.ErrHexInteractionPosition) {
+		return http.StatusBadRequest
+	}
 	return http.StatusInternalServerError
 }
 
@@ -116,7 +119,7 @@ func MoveHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	instanceID := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexMoveWithPublish(r.Context(), instanceID, userID, req.CommandID, req.Destination, func(committed repository.HexRouteResult) {
-		publishHexPatch(instanceID, req.CommandID, committed.StateRevision, committed.MapRevision, "MOVE_PLAYER", map[string]any{"instanceId": instanceID, "userId": userID, "newPosition": committed.Position, "energy": committed.Energy})
+		publishHexPatch(instanceID, req.CommandID, committed.StateRevision, committed.MapRevision, "MOVE_PLAYER", map[string]any{"instanceId": instanceID, "userId": userID, "newPosition": committed.Position})
 	})
 	if err != nil {
 		http.Error(w, err.Error(), repository.HexMoveErrorStatus(err))
@@ -141,7 +144,7 @@ func CollectHexResourceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexResourceCollection(r.Context(), id, userID, req.CommandID, req.Position, func(committed repository.HexCollectResult) {
-		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "RESOURCE_COLLECTED", committed)
+		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "RESOURCE_COLLECTED", map[string]any{"instanceId": id, "userId": userID, "position": committed.Position, "itemType": committed.ItemType})
 	})
 	if err != nil {
 		http.Error(w, err.Error(), hexCommandStatus(err))
@@ -166,14 +169,14 @@ func EndHexTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexEndTurn(r.Context(), id, userID, req.CommandID, req.ExpectedTurn, resolveCharacterRegen, func(committed repository.HexTurnResult) {
-		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "TURN_PASSED", map[string]any{"instanceId": id, "userId": committed.ActiveUser, "active_user": committed.ActiveUser, "turnNumber": committed.TurnNumber, "energy": committed.Energy})
+		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "TURN_PASSED", map[string]any{"instanceId": id, "userId": committed.CompletedUser, "active_user": committed.ActiveUser, "turnNumber": committed.TurnNumber})
 	})
 	if err != nil {
 		http.Error(w, err.Error(), hexCommandStatus(err))
 		return
 	}
 	if !result.Replayed {
-		scheduleHexTurn(id, userID, result.TurnNumber)
+		scheduleHexTurn(id, result.ActiveUser, result.TurnNumber)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)

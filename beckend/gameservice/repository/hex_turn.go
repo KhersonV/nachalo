@@ -9,6 +9,7 @@ import (
 
 type HexTurnResult struct {
 	ActiveUser    int   `json:"activeUser"`
+	CompletedUser int   `json:"completedUser"`
 	TurnNumber    int   `json:"turnNumber"`
 	Energy        int   `json:"energy"`
 	StateRevision int64 `json:"stateRevision"`
@@ -49,7 +50,7 @@ func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	var mode string
 	var version, turn, total, artifact int
 	var orderRaw []byte
-	err = c.Tx.QueryRowContext(ctx, `SELECT mode,schema_version,turn_number,total_players,COALESCE(quest_artifact_id,0),turn_order FROM matches WHERE instance_id=$1`, instanceID).Scan(&mode, &version, &turn, &total, &artifact, &orderRaw)
+	err = c.Tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,turn_number,total_players,COALESCE(quest_artifact_id,0),turn_order FROM matches WHERE instance_id=$1`, instanceID).Scan(&mode, &version, &turn, &total, &artifact, &orderRaw)
 	if err != nil {
 		return out, err
 	}
@@ -57,8 +58,24 @@ func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	if err := json.Unmarshal(orderRaw, &order); err != nil {
 		return out, err
 	}
-	if mode != "hex-test" || version != 2 || turn != expectedTurn || total != 1 || artifact != 0 || len(order) != 1 || order[0] != userID {
+	if mode != "hex" || version != 2 || turn != expectedTurn || total < 1 || artifact != 0 || len(order) == 0 {
 		return out, ErrCommandRejected
+	}
+	index := -1
+	for i, id := range order {
+		if id == userID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return out, ErrCommandRejected
+	}
+	nextIndex := (index + 1) % len(order)
+	nextUser := order[nextIndex]
+	nextTurn := turn
+	if nextIndex == 0 {
+		nextTurn++
 	}
 	var effects int
 	if err := c.Tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_map_cells WHERE instance_id=$1 AND (structure_type<>'' OR is_under_construction)`, instanceID).Scan(&effects); err != nil {
@@ -69,7 +86,7 @@ func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	}
 	var characterType string
 	var energy, maxEnergy, health int
-	err = c.Tx.QueryRowContext(ctx, `SELECT character_type,energy,max_energy,health FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&characterType, &energy, &maxEnergy, &health)
+	err = c.Tx.QueryRowContext(ctx, `SELECT character_type,energy,max_energy,health FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, nextUser).Scan(&characterType, &energy, &maxEnergy, &health)
 	if err != nil {
 		return out, err
 	}
@@ -84,16 +101,16 @@ func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	if energy > maxEnergy {
 		energy = maxEnergy
 	}
-	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET energy=$1 WHERE instance_id=$2 AND user_id=$3`, energy, instanceID, userID); err != nil {
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET energy=$1 WHERE instance_id=$2 AND user_id=$3`, energy, instanceID, nextUser); err != nil {
 		return out, err
 	}
-	if _, err := c.Tx.ExecContext(ctx, `UPDATE matches SET turn_number=turn_number+1 WHERE instance_id=$1`, instanceID); err != nil {
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE matches SET active_user_id=$2,turn_number=$3 WHERE instance_id=$1`, instanceID, nextUser, nextTurn); err != nil {
 		return out, err
 	}
 	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_monsters SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND hex_armor_break_turns>0`, instanceID); err != nil {
 		return out, err
 	}
-	out.ActiveUser, out.TurnNumber, out.Energy = userID, turn+1, energy
+	out.ActiveUser, out.CompletedUser, out.TurnNumber, out.Energy = nextUser, userID, nextTurn, energy
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, false)
 	if err != nil {
 		return HexTurnResult{}, err

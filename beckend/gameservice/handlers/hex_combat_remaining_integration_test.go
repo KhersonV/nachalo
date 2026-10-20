@@ -9,8 +9,90 @@ import (
 
 	"gameservice/game"
 	"gameservice/internal/hexgrid"
+	"gameservice/internal/hexmap"
 	"gameservice/repository"
 )
+
+func TestHexMultiplayerLethalCounterPostgres(t *testing.T) {
+	db, _ := hexCombatDatabase(t)
+	if _, err := repository.CreatePlayerProfile(repository.CreatePlayerProfileInput{UserID: 782, Name: "HEX survivor", CharacterType: "guardian"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	id := "hex-two-death"
+	snapshot, err := repository.CreateHexMatch(ctx, repository.HexMatchPlan{InstanceID: id, Mode: "1x1", Teams: []hexmap.Team{{ID: 1, PlayerIDs: []int{781}}, {ID: 2, PlayerIDs: []int{782}}}, TurnOrder: []int{781, 782}, Seed: 97})
+	if err != nil {
+		t.Fatal(err)
+	}
+	walls := map[hexgrid.EdgeKey]bool{}
+	for _, edge := range snapshot.Edges {
+		next, _ := hexgrid.Neighbor(edge.Position, edge.Direction)
+		key, _ := hexgrid.CanonicalEdge(edge.Position, next)
+		walls[key] = true
+	}
+	occupied := map[hexgrid.Coord]bool{}
+	for _, actor := range snapshot.Actors {
+		occupied[actor.Position] = true
+	}
+	var playerPos hexgrid.Coord
+	var monsterID int
+	found := false
+	for _, actor := range snapshot.Actors {
+		if actor.Kind != "monster" {
+			continue
+		}
+		for _, cell := range snapshot.Cells {
+			if cell.Terrain != "floor" || cell.Barrel != nil || occupied[cell.Position] {
+				continue
+			}
+			distance, _ := hexgrid.Distance(cell.Position, actor.Position)
+			key, _ := hexgrid.CanonicalEdge(cell.Position, actor.Position)
+			if distance == 1 && !walls[key] {
+				if _, err := fmt.Sscanf(actor.ID, "monster-%d", &monsterID); err != nil {
+					t.Fatal(err)
+				}
+				playerPos = cell.Position
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no safe adjacent monster fixture")
+	}
+	if _, err := db.Exec(`UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND is_player=true AND q=$2 AND r=$3`, id, snapshot.Player.Position.Q, snapshot.Player.Position.R); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE match_map_cells SET is_player=true WHERE instance_id=$1 AND q=$2 AND r=$3`, id, playerPos.Q, playerPos.R); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE match_players SET position_q=$2,position_r=$3,health=1,energy=100 WHERE instance_id=$1 AND user_id=781`, id, playerPos.Q, playerPos.R); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE match_monsters SET health=100,max_health=100,attack=100 WHERE instance_id=$1 AND monster_instance_id=$2`, id, monsterID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ApplyHexAttack(ctx, id, 781, monsterID, "multi-fatal", nil)
+	if err != nil || result.NewAttackerHP > 0 {
+		t.Fatalf("fatal counter: %+v %v", result, err)
+	}
+	var active, revision int
+	var order []byte
+	var finished, cell bool
+	if err := db.QueryRow(`SELECT m.active_user_id,m.turn_order,m.finished_at IS NOT NULL,m.state_revision,c.is_player FROM matches m JOIN match_map_cells c ON c.instance_id=m.instance_id AND c.q=$2 AND c.r=$3 WHERE m.instance_id=$1`, id, playerPos.Q, playerPos.R).Scan(&active, &order, &finished, &revision, &cell); err != nil {
+		t.Fatal(err)
+	}
+	if active != 782 || string(order) != "[782]" || finished || revision != 2 || cell {
+		t.Fatalf("death state active=%d order=%s finished=%v rev=%d cell=%v", active, order, finished, revision, cell)
+	}
+	view, err := repository.LoadHexTestMatch(ctx, id, 782)
+	if err != nil || view.ActiveUser != 782 || view.Player.UserID != 782 {
+		t.Fatalf("survivor view: %+v %v", view.Player, err)
+	}
+}
 
 func rangerLineFixture(t *testing.T, db *sql.DB) (string, int, hexgrid.Coord) {
 	t.Helper()

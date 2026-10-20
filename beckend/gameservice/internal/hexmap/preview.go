@@ -24,6 +24,8 @@ type Edge struct {
 type Actor struct {
 	ID              string        `json:"id"`
 	Kind            string        `json:"kind"`
+	UserID          int           `json:"userId,omitempty"`
+	TeamID          int           `json:"teamId,omitempty"`
 	Position        hexgrid.Coord `json:"position"`
 	Health          int           `json:"health,omitempty"`
 	MaxHealth       int           `json:"maxHealth,omitempty"`
@@ -39,6 +41,7 @@ type Actor struct {
 }
 type Player struct {
 	UserID        int            `json:"userId"`
+	TeamID        int            `json:"teamId"`
 	Name          string         `json:"name"`
 	Position      hexgrid.Coord  `json:"position"`
 	Energy        int            `json:"energy"`
@@ -56,6 +59,8 @@ type Snapshot struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Geometry      models.Geometry `json:"geometry"`
 	InstanceID    string          `json:"instanceId"`
+	Mode          string          `json:"mode,omitempty"`
+	TurnOrder     []int           `json:"turnOrder,omitempty"`
 	MapRevision   int64           `json:"mapRevision"`
 	StateRevision int64           `json:"stateRevision"`
 	Seed          int64           `json:"seed"`

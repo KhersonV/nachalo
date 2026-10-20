@@ -62,7 +62,8 @@ export default function GameWrapper({
         { headers: { Authorization: `Bearer ${user.token}` }, cache: "no-store" },
       );
       if (res.status === 409) {
-        const hexRes = await fetch(`${API_BASE}/game/hex-test/${encodeURIComponent(instanceId)}`, {
+        const hexPath = instanceId.startsWith("hex-test-") ? "hex-test" : "hex";
+        const hexRes = await fetch(`${API_BASE}/game/${hexPath}/${encodeURIComponent(instanceId)}`, {
           headers: { Authorization: `Bearer ${user.token}` }, cache: "no-store",
         });
         if (!hexRes.ok) throw new Error(`HEX match ${hexRes.status}: ${await hexRes.text()}`);

@@ -1,0 +1,38 @@
+.viewport { position: relative; width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: radial-gradient(circle at 50% 40%, #182329, #080e16 70%); }
+.map { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; }
+.map[data-panning="true"] { cursor: grabbing; }
+.floor { stroke: #172024; stroke-width: 2; cursor: pointer; }
+.rock { stroke: #10191d; stroke-width: 2; filter: brightness(.42) saturate(.55); cursor: pointer; }
+.floorTint { fill: #41545a; opacity: .17; }
+.interactiveCell { fill: #e5b861; fill-opacity: .08; stroke: #e5b861; stroke-opacity: .55; stroke-width: 3; }
+.heroCell { fill: #3ccde6; fill-opacity: .13; stroke: #5be4f4; stroke-width: 3; }
+.selectedCell { fill: #eecf75; fill-opacity: .14; stroke: #ffe28e; stroke-width: 4; }
+.routeCell { fill: #68e5da; fill-opacity: .22; stroke: #7af4e5; stroke-width: 3; }
+.routeBlocked { fill: #e78672; fill-opacity: .2; stroke: #f6a28b; stroke-width: 3; }
+.routeLineShadow, .routeLine, .routeLineBlocked { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.routeLineShadow { stroke: #071414; stroke-width: 12; }
+.routeLine { stroke: #8fffee; stroke-width: 5; stroke-dasharray: 9 7; }
+.routeLineBlocked { stroke: #ff9e8d; stroke-width: 5; stroke-dasharray: 9 7; }
+.wallBase, .wallStone, .wallLight { stroke-linecap: round; }
+.wallBase { stroke: #090d10; stroke-width: 18; }
+.wallStone { stroke: #6f7774; stroke-width: 12; }
+.wallLight { stroke: #bdc4aa; stroke-width: 3; opacity: .72; }
+.object, .actor { cursor: pointer; }
+.object:hover { filter: brightness(1.16); }
+.portalRing { fill: #55396d; fill-opacity: .55; stroke: #c0a5f0; stroke-width: 3; }
+.portalIcon { fill: #ddc9ff; font-size: 40px; font-weight: 700; }
+.fallbackResource { fill: #876f36; stroke: #f2d679; stroke-width: 3; }
+.fallbackMonster { fill: #8f463b; stroke: #f3ac8d; stroke-width: 3; }
+.fallbackSymbol { fill: #fff5d4; font-size: 24px; font-weight: 800; }
+.shadow { fill: #03080b; opacity: .57; }
+.selfRing { fill: #61e4f0; fill-opacity: .08; stroke: #77eff7; stroke-width: 3; }
+.targetRing { fill: #f7c55f; fill-opacity: .14; stroke: #ffd36c; stroke-width: 5; filter: drop-shadow(0 0 7px #ffd36c); }
+.attackableRing { fill: none; stroke: #8feabc; stroke-width: 3; }
+.healthTrack { fill: #111416; stroke: #d0d4c6; stroke-width: 1; }
+.healthFill { fill: #d96354; }
+.healthText, .playerName { fill: #fff7e4; stroke: #0c1419; stroke-width: 3; paint-order: stroke; font-size: 12px; font-weight: 700; }
+.playerName { font-size: 11px; }
+.cameraControls { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 3; display: flex; gap: 4px; padding: 5px; border: 1px solid rgba(157, 190, 193, .36); border-radius: 999px; background: rgba(8, 16, 23, .86); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
+.cameraControls button { min-width: 34px; min-height: 34px; border: 0; border-radius: 999px; padding: 0 10px; color: #e8f6f3; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
+.cameraControls button:hover { background: rgba(124, 197, 193, .22); }
+@media (max-width: 760px) { .cameraControls { bottom: max(10px, env(safe-area-inset-bottom)); } .cameraControls button { min-height: 32px; } }

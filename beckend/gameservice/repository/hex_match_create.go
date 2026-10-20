@@ -1,0 +1,197 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"gameservice/internal/hexgrid"
+	"gameservice/internal/hexmap"
+	"gameservice/models"
+)
+
+// HexMatchPlan uses the team and turn order already validated by RequestMatch.
+type HexMatchPlan struct {
+	InstanceID string
+	Mode       string
+	Teams      []hexmap.Team
+	TurnOrder  []int
+	Seed       int64
+}
+
+// CreateHexMatch materializes one generated map and every participant in one transaction.
+func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, error) {
+	var empty hexmap.Snapshot
+	if plan.InstanceID == "" || plan.Mode == "" || len(plan.TurnOrder) == 0 {
+		return empty, ErrCommandRejected
+	}
+	seen := map[int]bool{}
+	for _, team := range plan.Teams {
+		for _, id := range team.PlayerIDs {
+			if id <= 0 || seen[id] {
+				return empty, ErrCommandRejected
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != len(plan.TurnOrder) {
+		return empty, ErrCommandRejected
+	}
+	orderSeen := map[int]bool{}
+	for _, id := range plan.TurnOrder {
+		if !seen[id] || orderSeen[id] {
+			return empty, ErrCommandRejected
+		}
+		orderSeen[id] = true
+	}
+	monsters, err := GetMonstersData()
+	if err != nil {
+		return empty, err
+	}
+	if len(monsters) == 0 {
+		return empty, fmt.Errorf("monster catalog is empty")
+	}
+	resources, err := GetResourcesData()
+	if err != nil {
+		return empty, err
+	}
+	snapshot, err := hexmap.GenerateDungeon(hexmap.Config{Teams: plan.Teams, MonsterProb: .05, BarrelProb: .1, ResourceProb: .1}, hexmap.Catalogs{Monsters: monsters, Resources: resources}, plan.Seed)
+	if err != nil {
+		return empty, err
+	}
+	snapshot.InstanceID = plan.InstanceID
+	starts := map[int]hexmap.Start{}
+	for _, start := range snapshot.Starts {
+		starts[start.UserID] = start
+	}
+	// Resolve the same selected hero and effective equipment stats used by Square.
+	type participant struct {
+		profile   *models.PlayerResponse
+		character *PlayerCharacter
+		effective *CharacterEffectiveStats
+	}
+	participants := map[int]participant{}
+	for _, id := range plan.TurnOrder {
+		profile, err := GetPlayerByUserID(id)
+		if err != nil {
+			return empty, fmt.Errorf("player %d: %w", id, err)
+		}
+		character, err := GetSelectedCharacterForUser(id)
+		if err != nil {
+			return empty, fmt.Errorf("selected hero for %d: %w", id, err)
+		}
+		effective, err := GetCharacterEffectiveStats(character.ID)
+		if err != nil {
+			return empty, fmt.Errorf("effective hero for %d: %w", id, err)
+		}
+		participants[id] = participant{profile, character, effective}
+	}
+	orderedStarts := make([]hexgrid.Coord, 0, len(plan.TurnOrder))
+	for _, id := range plan.TurnOrder {
+		orderedStarts = append(orderedStarts, starts[id].Position)
+	}
+	startsJSON, err := json.Marshal(orderedStarts)
+	if err != nil {
+		return empty, err
+	}
+	portalJSON, err := json.Marshal(snapshot.Portal)
+	if err != nil {
+		return empty, err
+	}
+	mapJSON, err := json.Marshal(struct {
+		Seed   int64          `json:"seed"`
+		Cells  []hexmap.Cell  `json:"cells"`
+		Starts []hexmap.Start `json:"starts"`
+	}{snapshot.Seed, snapshot.Cells, snapshot.Starts})
+	if err != nil {
+		return empty, err
+	}
+	geometryJSON, err := json.Marshal(models.HexV1)
+	if err != nil {
+		return empty, err
+	}
+	orderJSON, err := json.Marshal(plan.TurnOrder)
+	if err != nil {
+		return empty, err
+	}
+	tx, err := DB.BeginTx(ctx, nil)
+	if err != nil {
+		return empty, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO matches(instance_id,mode,teams_count,total_players,active_user_id,turn_order,turn_number,map_width,map_height,map,schema_version,geometry,start_positions_v2,portal_position_v2,map_revision,state_revision)
+		VALUES($1,$2,$3,$4,$5,$6,1,$7,$7,$8,2,$9,$10,$11,1,1)`, plan.InstanceID, plan.Mode, len(plan.Teams), len(plan.TurnOrder), plan.TurnOrder[0], orderJSON, snapshot.Radius*2+1, mapJSON, geometryJSON, startsJSON, portalJSON)
+	if err != nil {
+		return empty, err
+	}
+	for _, cell := range snapshot.Cells {
+		tile := 32
+		if cell.Terrain == "floor" {
+			tile = 48
+		}
+		if cell.Resource != nil {
+			tile = 82
+		}
+		if cell.Barrel != nil {
+			tile = 66
+		}
+		var resourceJSON, barrelJSON any
+		if cell.Resource != nil {
+			resourceJSON, err = json.Marshal(cell.Resource)
+			if err != nil {
+				return empty, err
+			}
+		}
+		if cell.Barrel != nil {
+			barrelJSON, err = json.Marshal(cell.Barrel)
+			if err != nil {
+				return empty, err
+			}
+		}
+		occupied := false
+		for _, start := range snapshot.Starts {
+			if start.Position == cell.Position {
+				occupied = true
+				break
+			}
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_map_cells(instance_id,cell_id,q,r,tile_code,is_player,resource,barbel,is_portal) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, plan.InstanceID, cell.CellID, cell.Position.Q, cell.Position.R, tile, occupied, resourceJSON, barrelJSON, cell.IsPortal)
+		if err != nil {
+			return empty, err
+		}
+	}
+	for _, edge := range snapshot.Edges {
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_hex_edges(instance_id,q,r,direction,wall_kind) VALUES($1,$2,$3,$4,$5)`, plan.InstanceID, edge.Position.Q, edge.Position.R, edge.Direction, edge.Kind)
+		if err != nil {
+			return empty, err
+		}
+	}
+	for _, id := range plan.TurnOrder {
+		p := participants[id]
+		start := starts[id]
+		stats := p.effective.EffectiveStats
+		image := p.character.Image
+		if image == "" {
+			image = ResolveHeroClassMeta(p.character.HeroClassID).Image
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_players(instance_id,user_id,name,image,character_id,character_type,position,position_q,position_r,inventory,level,energy,max_energy,health,max_health,experience,max_experience,attack,defense,mobility,agility,sight_range,is_ranged,attack_range,balance,group_id)
+			VALUES($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$11,$12,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`, plan.InstanceID, id, p.profile.Name, image, p.character.ID, p.character.HeroClassID, start.Position.Q, start.Position.R, p.profile.Inventory, p.character.Level, stats.MaxEnergy, stats.MaxHealth, p.character.Exp, p.character.MaxExp, stats.Attack, stats.Defense, stats.Mobility, stats.Agility, stats.SightRange, stats.IsRanged, stats.AttackRange, p.profile.Balance, start.TeamID)
+		if err != nil {
+			return empty, err
+		}
+	}
+	for _, actor := range snapshot.Actors {
+		if actor.Kind != "monster" {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_monsters(instance_id,monster_ref_id,pos_x,pos_y,pos_q,pos_r,health,max_health,attack,defense,speed,maneuverability,vision,image)
+			VALUES($1,$2,NULL,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, plan.InstanceID, actor.MonsterRefID, actor.Position.Q, actor.Position.R, actor.Health, actor.MaxHealth, actor.Attack, actor.Defense, actor.Speed, actor.Maneuverability, actor.Vision, actor.Image)
+		if err != nil {
+			return empty, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return empty, err
+	}
+	return LoadHexTestMatch(ctx, plan.InstanceID, plan.TurnOrder[0])
+}

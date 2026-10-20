@@ -4,12 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"gameservice/game"
 	"gameservice/internal/hexgrid"
 )
+
+// Shared position rule for HEX cell interactions, including a future barrel command.
+var ErrHexInteractionPosition = errors.New("stand on the HEX cell to interact with it")
+
+func requireHexInteractionPosition(player, target hexgrid.Coord) error {
+	if player != target {
+		return ErrHexInteractionPosition
+	}
+	return nil
+}
 
 type HexCollectResult struct {
 	Position      hexgrid.Coord   `json:"position"`
@@ -49,11 +60,15 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	}
 	var mode string
 	var version, health int
-	if err := c.Tx.QueryRowContext(ctx, `SELECT m.mode,m.schema_version,p.health FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health); err != nil {
+	var playerPosition hexgrid.Coord
+	if err := c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health, &playerPosition.Q, &playerPosition.R); err != nil {
 		return out, err
 	}
-	if mode != "hex-test" || version != 2 || health <= 0 {
+	if mode != "hex" || version != 2 || health <= 0 {
 		return out, ErrCommandRejected
+	}
+	if err := requireHexInteractionPosition(playerPosition, pos); err != nil {
+		return out, err
 	}
 	var raw []byte
 	var tile int

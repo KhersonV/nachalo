@@ -74,10 +74,10 @@ func readHexAttackTx(ctx context.Context, tx *sql.Tx, instanceID string, userID,
 	}
 	var mode string
 	var version, active, artifact int
-	if err := tx.QueryRowContext(ctx, `SELECT mode,schema_version,COALESCE(active_user_id,0),COALESCE(quest_artifact_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active, &artifact); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0),COALESCE(quest_artifact_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active, &artifact); err != nil {
 		return out, err
 	}
-	if mode != "hex-test" || version != 2 || active != userID || artifact != 0 {
+	if mode != "hex" || version != 2 || active != userID || artifact != 0 {
 		return out, repository.ErrHexUnavailable
 	}
 	p := &out.Player
@@ -634,15 +634,15 @@ func finishHexPlayerDeathTx(ctx context.Context, c *repository.MatchCommand, pla
 	if err != nil {
 		return err
 	}
-	if turn.ActiveUserID != 0 {
-		return repository.ErrCommandRejected
-	}
 	result, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND q=$2 AND r=$3 AND is_player=true`, c.InstanceID, position.Q, position.R)
 	if err != nil {
 		return err
 	}
 	if n, _ := result.RowsAffected(); n != 1 {
 		return repository.ErrCommandRejected
+	}
+	if turn.ActiveUserID != 0 {
+		return nil
 	}
 	var complete bool
 	if err := c.Tx.QueryRowContext(ctx, `SELECT combat_results_complete FROM matches WHERE instance_id=$1`, c.InstanceID).Scan(&complete); err != nil {
@@ -702,12 +702,17 @@ func AttackHexMonsterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id := mux.Vars(r)["instance_id"]
 	result, err := ApplyHexAttack(r.Context(), id, userID, req.TargetID, req.CommandID, func(committed HexAttackResult) {
-		payload := CombatExchangePayload{InstanceID: id, ExchangeID: id + ":" + req.CommandID, AttackerID: userID, AttackerType: CombatActorPlayer, TargetID: req.TargetID, TargetType: CombatActorMonster, AttackStyle: committed.AttackStyle, Steps: committed.Steps, Effects: committed.Effects, Drops: committed.Drops}
-		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "COMBAT_EXCHANGE", payload)
+		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "COMBAT_EXCHANGE", map[string]any{"instanceId": id, "attackerId": userID, "targetId": req.TargetID})
 	})
 	if err != nil {
 		hexCombatHTTPError(w, err)
 		return
+	}
+	if result.NewAttackerHP <= 0 && !result.Replayed {
+		var active, turn int
+		if err := repository.DB.QueryRowContext(r.Context(), `SELECT active_user_id,turn_number FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, id).Scan(&active, &turn); err == nil {
+			scheduleHexTurn(id, active, turn)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)

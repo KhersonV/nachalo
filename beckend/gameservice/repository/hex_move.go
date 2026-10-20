@@ -124,11 +124,11 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 	var mode string
 	var version int
 	var active int
-	err := tx.QueryRowContext(ctx, `SELECT mode,schema_version,COALESCE(active_user_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active)
+	err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active)
 	if err != nil {
 		return out, err
 	}
-	if mode != "hex-test" || version != 2 || active != userID {
+	if mode != "hex" || version != 2 || active != userID {
 		return out, ErrHexUnavailable
 	}
 	var health, mobility int

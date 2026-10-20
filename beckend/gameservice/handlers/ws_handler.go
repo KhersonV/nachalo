@@ -230,7 +230,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 				} else {
 					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
 					if errors.Is(err, models.ErrUnsupportedGeometry) {
-						if os.Getenv("HEX_TEST_MATCH_ENABLED") == "true" {
+						if os.Getenv("HEX_TEST_MATCH_ENABLED") == "true" || os.Getenv("HEX_MATCH_ENABLED") == "true" {
 							loadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 							snapshot, hexErr := repository.LoadHexTestMatch(loadCtx, client.instanceID, client.userID)
 							cancel()

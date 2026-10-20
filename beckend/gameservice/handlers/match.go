@@ -9,10 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/http"
+	"os"
 
 	"gameservice/game"
+	"gameservice/internal/hexmap"
 	"gameservice/models"
 	"gameservice/repository"
 )
@@ -627,6 +630,23 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	activeUserID := 0
 	if len(plan.TurnOrder) > 0 {
 		activeUserID = plan.TurnOrder[0]
+	}
+	if os.Getenv("HEX_MATCH_ENABLED") == "true" {
+		teams := make([]hexmap.Team, 0, len(plan.Teams))
+		for _, team := range plan.Teams {
+			teams = append(teams, hexmap.Team{ID: team.TeamID, PlayerIDs: copyInts(team.MemberIDs)})
+		}
+		hash := fnv.New64a()
+		_, _ = hash.Write([]byte(req.InstanceID))
+		_, err := repository.CreateHexMatch(r.Context(), repository.HexMatchPlan{InstanceID: req.InstanceID, Mode: req.Mode, Teams: teams, TurnOrder: plan.TurnOrder, Seed: int64(hash.Sum64())})
+		if err != nil {
+			handleError(w, "[CreateMatch] HEX materialization failed", err)
+			return
+		}
+		scheduleHexTurn(req.InstanceID, activeUserID, 1)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"instance_id": req.InstanceID, "schemaVersion": 2, "geometry": models.HexV1})
+		return
 	}
 
 	cfg := game.MapConfig{

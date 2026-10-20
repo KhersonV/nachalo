@@ -13,6 +13,7 @@ import (
 var hexTimerMu sync.Mutex
 var hexTimers = map[string]struct {
 	turn   int
+	userID int
 	cancel context.CancelFunc
 }{}
 
@@ -25,7 +26,7 @@ func scheduleHexTurn(instanceID string, userID, turn int) {
 	}
 	hexTimerMu.Lock()
 	if current, ok := hexTimers[instanceID]; ok {
-		if current.turn == turn {
+		if current.turn == turn && current.userID == userID {
 			hexTimerMu.Unlock()
 			return
 		}
@@ -34,8 +35,9 @@ func scheduleHexTurn(instanceID string, userID, turn int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	hexTimers[instanceID] = struct {
 		turn   int
+		userID int
 		cancel context.CancelFunc
-	}{turn, cancel}
+	}{turn, userID, cancel}
 	hexTimerMu.Unlock()
 	go func() {
 		select {
@@ -44,17 +46,19 @@ func scheduleHexTurn(instanceID string, userID, turn int) {
 		case <-time.After(turnTimerLimit):
 		}
 		hexTimerMu.Lock()
-		if current,ok:=hexTimers[instanceID]; ok && current.turn==turn { delete(hexTimers,instanceID) }
+		if current, ok := hexTimers[instanceID]; ok && current.turn == turn && current.userID == userID {
+			delete(hexTimers, instanceID)
+		}
 		hexTimerMu.Unlock()
-		commandID := fmt.Sprintf("hex-timer:%d", turn)
+		commandID := fmt.Sprintf("hex-timer:%d:%d", turn, userID)
 		result, err := repository.ApplyHexEndTurn(context.Background(), instanceID, userID, commandID, turn, resolveCharacterRegen, func(committed repository.HexTurnResult) {
-			publishHexPatch(instanceID, commandID, committed.StateRevision, committed.MapRevision, "TURN_PASSED", map[string]any{"instanceId": instanceID, "userId": committed.ActiveUser, "active_user": committed.ActiveUser, "turnNumber": committed.TurnNumber, "energy": committed.Energy})
+			publishHexPatch(instanceID, commandID, committed.StateRevision, committed.MapRevision, "TURN_PASSED", map[string]any{"instanceId": instanceID, "userId": committed.CompletedUser, "active_user": committed.ActiveUser, "turnNumber": committed.TurnNumber})
 		})
 		if err != nil && err != repository.ErrCommandRejected {
 			log.Printf("HEX timer %s turn %d: %v", instanceID, turn, err)
 		}
 		if err == nil && !result.Replayed {
-			scheduleHexTurn(instanceID, userID, result.TurnNumber)
+			scheduleHexTurn(instanceID, result.ActiveUser, result.TurnNumber)
 		}
 	}()
 }

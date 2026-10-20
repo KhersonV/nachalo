@@ -83,6 +83,7 @@ services:
       - .env
     environment:
       PORT: 8001
+      HEX_MATCH_ENABLED: "true"
       GAME_DB_DSN: ${GAME_DB_DSN}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     depends_on:
