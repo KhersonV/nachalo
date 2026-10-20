@@ -8,7 +8,7 @@ export type MatchGeometry = SquareGeometry | HexGeometry;
 export const SQUARE_V1: SquareGeometry = { kind: "square", coordinates: "cartesian", version: 1 };
 
 export type SquareSnapshot = { schemaVersion: 1; geometry: SquareGeometry; map: Array<SquarePosition>; players: Array<{ position: SquarePosition }> };
-export type HexSnapshot = { schemaVersion: 2; geometry: HexGeometry; map: Array<HexPosition>; players: Array<{ position: HexPosition }> };
+export type HexSnapshot = import("./HexGameTypes").HexSnapshot;
 export type VersionedSnapshot = SquareSnapshot | HexSnapshot;
 
 function record(value: unknown): Record<string, unknown> | null {

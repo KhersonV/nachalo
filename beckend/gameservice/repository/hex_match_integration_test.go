@@ -92,8 +92,44 @@ func TestHexMatchPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Geometry.Kind != "hex" || snapshot.Player == nil || snapshot.Player.Position.Q >= 0 || len(snapshot.Actors) != 4 {
-		t.Fatalf("bad saved match: %+v", snapshot)
+	if snapshot.Geometry.Kind != "hex" || snapshot.Player == nil || len(snapshot.Actors) < 2 || snapshot.Portal == nil || snapshot.Radius < 8 || snapshot.Seed != -17 {
+		t.Fatalf("bad saved match: player=%+v actors=%d portal=%+v radius=%d", snapshot.Player, len(snapshot.Actors), snapshot.Portal, snapshot.Radius)
+	}
+	monsters, barrels, resources, portals := 0, 0, 0, 0
+	for _, actor := range snapshot.Actors {
+		if actor.Kind == "monster" {
+			monsters++
+			if actor.MonsterRefID <= 0 || actor.Name == "" || actor.Type == "" || actor.MaxHealth <= 0 || actor.Attack <= 0 {
+				t.Fatalf("incomplete catalog monster: %+v", actor)
+			}
+		}
+	}
+	for _, cell := range snapshot.Cells {
+		if cell.Barrel != nil {
+			barrels++
+		}
+		if cell.Resource != nil {
+			resources++
+		}
+		if cell.IsPortal {
+			portals++
+			if cell.Position != *snapshot.Portal || cell.Terrain != "floor" {
+				t.Fatalf("invalid portal cell: %+v", cell)
+			}
+		}
+	}
+	if monsters == 0 || barrels == 0 || resources == 0 || portals != 1 {
+		t.Fatalf("objects monsters=%d barrels=%d resources=%d portals=%d", monsters, barrels, resources, portals)
+	}
+	var dbMonsters, dbBarrels, dbResources, dbPortals int
+	if err := db.QueryRow(`SELECT count(*) FROM match_monsters WHERE instance_id=$1`, snapshot.InstanceID).Scan(&dbMonsters); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FILTER (WHERE barbel IS NOT NULL), count(*) FILTER (WHERE resource IS NOT NULL), count(*) FILTER (WHERE is_portal) FROM match_map_cells WHERE instance_id=$1`, snapshot.InstanceID).Scan(&dbBarrels, &dbResources, &dbPortals); err != nil {
+		t.Fatal(err)
+	}
+	if dbMonsters != monsters || dbBarrels != barrels || dbResources != resources || dbPortals != 1 {
+		t.Fatalf("DB objects=%d/%d/%d/%d snapshot=%d/%d/%d/%d", dbMonsters, dbBarrels, dbResources, dbPortals, monsters, barrels, resources, portals)
 	}
 	var x, y sql.NullInt64
 	var q, r int
@@ -136,6 +172,9 @@ func TestHexMatchPostgres(t *testing.T) {
 	DB = db
 	if restartErr != nil || restarted.Player.Position != dest || restarted.Player.Energy != move.Energy || restarted.StateRevision != 2 || restarted.MapRevision != 2 {
 		t.Fatalf("fresh-session snapshot=%+v err=%v", restarted.Player, restartErr)
+	}
+	if restarted.Seed != snapshot.Seed || restarted.Radius != snapshot.Radius || restarted.Portal == nil || *restarted.Portal != *snapshot.Portal || len(restarted.Actors) != len(snapshot.Actors) {
+		t.Fatalf("fresh-session dungeon metadata changed: seed=%d radius=%d portal=%+v actors=%d", restarted.Seed, restarted.Radius, restarted.Portal, len(restarted.Actors))
 	}
 	loaded, err := LoadHexTestMatch(ctx, snapshot.InstanceID, 701)
 	if err != nil || loaded.Player.Position != dest || loaded.Player.Energy != move.Energy || loaded.StateRevision != 2 {

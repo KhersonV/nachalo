@@ -1,4 +1,4 @@
-/** Isolated pointy-top axial geometry. Not wired into game rules yet. */
+/** Pointy-top axial geometry shared by the HEX map views. */
 export type HexCoord = Readonly<{ q: number; r: number }>;
 export type HexWorld = Readonly<{ x: number; z: number }>;
 export type HexCube = Readonly<{ x: number; y: number; z: number }>;

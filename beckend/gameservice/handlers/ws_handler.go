@@ -5,6 +5,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -229,6 +230,17 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 				} else {
 					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
 					if errors.Is(err, models.ErrUnsupportedGeometry) {
+						if os.Getenv("HEX_TEST_MATCH_ENABLED") == "true" {
+							loadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+							snapshot, hexErr := repository.LoadHexTestMatch(loadCtx, client.instanceID, client.userID)
+							cancel()
+							if hexErr == nil {
+								if b, marshalErr := json.Marshal(map[string]interface{}{"type": "MATCH_UPDATE", "payload": snapshot}); marshalErr == nil {
+									_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+								}
+								continue
+							}
+						}
 						b, _ := json.Marshal(map[string]interface{}{
 							"type":    "MATCH_ERROR",
 							"payload": map[string]string{"instanceId": client.instanceID, "error": err.Error()},

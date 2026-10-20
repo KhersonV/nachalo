@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 
 	"gameservice/game"
 	"gameservice/internal/hexgrid"
@@ -46,12 +45,10 @@ func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Sna
 	if err != nil {
 		return empty, err
 	}
-	resources = hexTestResources(resources)
-	if len(resources) == 0 {
-		return empty, fmt.Errorf("resource catalog is empty")
-	}
-	sort.Slice(monsters, func(i, j int) bool { return monsters[i].ID < monsters[j].ID })
-	snapshot, err := hexmap.Generate(seed)
+	snapshot, err := hexmap.GenerateDungeon(hexmap.Config{
+		Teams:       []hexmap.Team{{ID: 1, PlayerIDs: []int{userID}}},
+		MonsterProb: 0.05, BarrelProb: 0.1, ResourceProb: 0.1,
+	}, hexmap.Catalogs{Monsters: monsters, Resources: resources}, seed)
 	if err != nil {
 		return empty, err
 	}
@@ -61,32 +58,13 @@ func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Sna
 	}
 	id := "hex-test-" + hex.EncodeToString(randomID[:])
 	snapshot.InstanceID = id
-	start := snapshot.Actors[0].Position
-	occupied := map[hexgrid.Coord]bool{}
-	for _, actor := range snapshot.Actors {
-		occupied[actor.Position] = true
-	}
-	resourceIndex := 0
-	for i := range snapshot.Cells {
-		cell := &snapshot.Cells[i]
-		if cell.Terrain != "floor" || occupied[cell.Position] || resourceIndex >= len(resources) {
-			continue
-		}
-		if cell.Room == 0 {
-			continue
-		}
-		resource := resources[resourceIndex]
-		cell.Resource = &resource
-		resourceIndex++
-	}
-	if resourceIndex == 0 {
-		return empty, fmt.Errorf("HEX map has no free resource cells")
-	}
+	start := snapshot.Starts[0].Position
 	startsJSON, _ := json.Marshal([]hexgrid.Coord{start})
-	// Stage 1 requires portal_position_v2 for HEX. It remains metadata only;
-	// portal activation is outside this experimental movement slice.
-	portalJSON, _ := json.Marshal(hexgrid.Coord{})
-	mapJSON, _ := json.Marshal(snapshot.Cells)
+	portalJSON, _ := json.Marshal(snapshot.Portal)
+	mapJSON, _ := json.Marshal(struct {
+		Seed  int64         `json:"seed"`
+		Cells []hexmap.Cell `json:"cells"`
+	}{snapshot.Seed, snapshot.Cells})
 	geometryJSON, _ := json.Marshal(models.HexV1)
 	tx, err := DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -94,7 +72,7 @@ func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Sna
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO matches(instance_id,mode,teams_count,total_players,active_user_id,turn_order,turn_number,map_width,map_height,map,schema_version,geometry,start_positions_v2,portal_position_v2,map_revision,state_revision)
-		VALUES($1,'hex-test',1,1,$2,$3,1,17,17,$4,2,$5,$6,$7,1,1)`, id, userID, fmt.Sprintf("[%d]", userID), mapJSON, geometryJSON, startsJSON, portalJSON)
+		VALUES($1,'hex-test',1,1,$2,$3,1,$4,$4,$5,2,$6,$7,$8,1,1)`, id, userID, fmt.Sprintf("[%d]", userID), snapshot.Radius*2+1, mapJSON, geometryJSON, startsJSON, portalJSON)
 	if err != nil {
 		return empty, err
 	}
@@ -106,14 +84,23 @@ func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Sna
 		if cell.Resource != nil {
 			tile = 82
 		}
-		var resourceJSON any
+		if cell.Barrel != nil {
+			tile = 66
+		}
+		var resourceJSON, barrelJSON any
 		if cell.Resource != nil {
 			resourceJSON, err = json.Marshal(cell.Resource)
 			if err != nil {
 				return empty, err
 			}
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO match_map_cells(instance_id,cell_id,q,r,tile_code,is_player,resource) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, cell.CellID, cell.Position.Q, cell.Position.R, tile, cell.Position == start, resourceJSON)
+		if cell.Barrel != nil {
+			barrelJSON, err = json.Marshal(cell.Barrel)
+			if err != nil {
+				return empty, err
+			}
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_map_cells(instance_id,cell_id,q,r,tile_code,is_player,resource,barbel,is_portal) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, id, cell.CellID, cell.Position.Q, cell.Position.R, tile, cell.Position == start, resourceJSON, barrelJSON, cell.IsPortal)
 		if err != nil {
 			return empty, err
 		}
@@ -131,10 +118,12 @@ func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Sna
 	if err != nil {
 		return empty, err
 	}
-	for i, actor := range snapshot.Actors[1:] {
-		monster := monsters[i%len(monsters)]
+	for _, actor := range snapshot.Actors[1:] {
+		if actor.Kind != "monster" {
+			continue
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO match_monsters(instance_id,monster_ref_id,pos_x,pos_y,pos_q,pos_r,health,max_health,attack,defense,speed,maneuverability,vision,image)
-			VALUES($1,$2,NULL,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, id, monster.ID, actor.Position.Q, actor.Position.R, monster.Health, monster.MaxHealth, monster.Attack, monster.Defense, monster.Speed, monster.Maneuverability, monster.Vision, monster.Image)
+			VALUES($1,$2,NULL,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, id, actor.MonsterRefID, actor.Position.Q, actor.Position.R, actor.Health, actor.MaxHealth, actor.Attack, actor.Defense, actor.Speed, actor.Maneuverability, actor.Vision, actor.Image)
 		if err != nil {
 			return empty, err
 		}
@@ -154,10 +143,11 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	defer tx.Rollback()
 	var rawCells []byte
 	var geometryRaw []byte
+	var startsRaw, portalRaw []byte
 	var mode string
-	var version int
-	err = tx.QueryRowContext(ctx, `SELECT mode,schema_version,geometry,map,state_revision,map_revision,COALESCE(active_user_id,0),turn_number FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).
-		Scan(&mode, &version, &geometryRaw, &rawCells, &snapshot.StateRevision, &snapshot.MapRevision, &snapshot.ActiveUser, &snapshot.TurnNumber)
+	var version, width int
+	err = tx.QueryRowContext(ctx, `SELECT mode,schema_version,geometry,map,state_revision,map_revision,COALESCE(active_user_id,0),turn_number,map_width,start_positions_v2,portal_position_v2 FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).
+		Scan(&mode, &version, &geometryRaw, &rawCells, &snapshot.StateRevision, &snapshot.MapRevision, &snapshot.ActiveUser, &snapshot.TurnNumber, &width, &startsRaw, &portalRaw)
 	if err != nil {
 		return snapshot, err
 	}
@@ -166,26 +156,48 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		return snapshot, ErrHexUnavailable
 	}
 	snapshot.SchemaVersion, snapshot.Geometry, snapshot.InstanceID = 2, models.HexV1, instanceID
-	if err := json.Unmarshal(rawCells, &snapshot.Cells); err != nil {
+	snapshot.Radius = (width - 1) / 2
+	if err := json.Unmarshal(portalRaw, &snapshot.Portal); err != nil {
 		return snapshot, err
+	}
+	var startPositions []hexgrid.Coord
+	if err := json.Unmarshal(startsRaw, &startPositions); err != nil {
+		return snapshot, err
+	}
+	if len(rawCells) > 0 && rawCells[0] == '[' {
+		if err := json.Unmarshal(rawCells, &snapshot.Cells); err != nil {
+			return snapshot, err
+		}
+	} else {
+		var saved struct {
+			Seed  int64         `json:"seed"`
+			Cells []hexmap.Cell `json:"cells"`
+		}
+		if err := json.Unmarshal(rawCells, &saved); err != nil {
+			return snapshot, err
+		}
+		snapshot.Seed, snapshot.Cells = saved.Seed, saved.Cells
 	}
 	cellIndex := make(map[hexgrid.Coord]int, len(snapshot.Cells))
 	for i, cell := range snapshot.Cells {
 		cellIndex[cell.Position] = i
 	}
-	cellRows, err := tx.QueryContext(ctx, `SELECT q,r,resource FROM match_map_cells WHERE instance_id=$1`, instanceID)
+	cellRows, err := tx.QueryContext(ctx, `SELECT q,r,resource,barbel,is_portal FROM match_map_cells WHERE instance_id=$1`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
 	for cellRows.Next() {
 		var pos hexgrid.Coord
-		var rawResource []byte
-		if err := cellRows.Scan(&pos.Q, &pos.R, &rawResource); err != nil {
+		var rawResource, rawBarrel []byte
+		var isPortal bool
+		if err := cellRows.Scan(&pos.Q, &pos.R, &rawResource, &rawBarrel, &isPortal); err != nil {
 			cellRows.Close()
 			return snapshot, err
 		}
 		if i, ok := cellIndex[pos]; ok {
 			snapshot.Cells[i].Resource = nil
+			snapshot.Cells[i].Barrel = nil
+			snapshot.Cells[i].IsPortal = isPortal
 			if len(rawResource) > 0 {
 				var resource game.ResourceData
 				if err := json.Unmarshal(rawResource, &resource); err != nil {
@@ -193,6 +205,14 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 					return snapshot, err
 				}
 				snapshot.Cells[i].Resource = &resource
+			}
+			if len(rawBarrel) > 0 {
+				var barrel game.ResourceData
+				if err := json.Unmarshal(rawBarrel, &barrel); err != nil {
+					cellRows.Close()
+					return snapshot, err
+				}
+				snapshot.Cells[i].Barrel = &barrel
 			}
 		}
 	}
@@ -203,9 +223,8 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	cellRows.Close()
 	var player hexmap.Player
 	var inventoryRaw []byte
-	var maxHealth int
-	err = tx.QueryRowContext(ctx, `SELECT position_q,position_r,energy,max_energy,health,max_health,mobility,inventory FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).
-		Scan(&player.Position.Q, &player.Position.R, &player.Energy, &player.MaxEnergy, &player.Health, &maxHealth, &player.Mobility, &inventoryRaw)
+	err = tx.QueryRowContext(ctx, `SELECT name,position_q,position_r,energy,max_energy,health,max_health,mobility,agility,character_type,is_ranged,attack_range,inventory FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).
+		Scan(&player.Name, &player.Position.Q, &player.Position.R, &player.Energy, &player.MaxEnergy, &player.Health, &player.MaxHealth, &player.Mobility, &player.Agility, &player.CharacterType, &player.IsRanged, &player.AttackRange, &inventoryRaw)
 	if err != nil {
 		return snapshot, err
 	}
@@ -216,20 +235,23 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	}
 	player.UserID = userID
 	snapshot.Player = &player
-	snapshot.Actors = []hexmap.Actor{{ID: fmt.Sprintf("player-%d", userID), Kind: "player", Position: player.Position, Health: player.Health, MaxHealth: maxHealth}}
-	rows, err := tx.QueryContext(ctx, `SELECT monster_instance_id,pos_q,pos_r,health,max_health FROM match_monsters WHERE instance_id=$1 AND health>0 ORDER BY monster_instance_id`, instanceID)
+	if len(startPositions) > 0 {
+		snapshot.Starts = []hexmap.Start{{UserID: userID, TeamID: 1, Position: startPositions[0]}}
+	}
+	snapshot.Actors = []hexmap.Actor{{ID: fmt.Sprintf("player-%d", userID), Kind: "player", Position: player.Position, Health: player.Health, MaxHealth: player.MaxHealth}}
+	rows, err := tx.QueryContext(ctx, `SELECT mm.monster_instance_id,mm.monster_ref_id,mm.pos_q,mm.pos_r,mm.health,mm.max_health,mm.attack,mm.defense,mm.speed,mm.maneuverability,mm.vision,mm.image,COALESCE(m.name,''),COALESCE(m.type,'') FROM match_monsters mm LEFT JOIN monsters m ON m.id=mm.monster_ref_id WHERE mm.instance_id=$1 AND mm.health>0 ORDER BY mm.monster_instance_id`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
 	for rows.Next() {
+		var actor hexmap.Actor
 		var id int
-		var pos hexgrid.Coord
-		var health, maxHealth int
-		if err := rows.Scan(&id, &pos.Q, &pos.R, &health, &maxHealth); err != nil {
+		if err := rows.Scan(&id, &actor.MonsterRefID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.Attack, &actor.Defense, &actor.Speed, &actor.Maneuverability, &actor.Vision, &actor.Image, &actor.Name, &actor.Type); err != nil {
 			rows.Close()
 			return snapshot, err
 		}
-		snapshot.Actors = append(snapshot.Actors, hexmap.Actor{ID: fmt.Sprintf("monster-%d", id), Kind: "monster", Position: pos, Health: health, MaxHealth: maxHealth})
+		actor.ID, actor.Kind = fmt.Sprintf("monster-%d", id), "monster"
+		snapshot.Actors = append(snapshot.Actors, actor)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -241,21 +263,6 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		return snapshot, err
 	}
 	return snapshot, tx.Commit()
-}
-
-func hexTestResources(all []game.ResourceData) []game.ResourceData {
-	allowed := map[string]bool{"food": true, "water": true, "wood": true, "stone": true, "iron": true}
-	filtered := make([]game.ResourceData, 0, 3)
-	for _, resource := range all {
-		if allowed[resource.Type] {
-			filtered = append(filtered, resource)
-		}
-	}
-	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
-	if len(filtered) > 3 {
-		filtered = filtered[:3]
-	}
-	return filtered
 }
 
 type hexQuerier interface {

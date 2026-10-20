@@ -53,6 +53,10 @@ export type {
     ActionLogEntryInput,
     GameState,
     Dir,
+    HexSnapshot,
+    HexPlayer,
+    HexCell,
+    HexActor,
 } from "./GameTypes";
 
 export type {

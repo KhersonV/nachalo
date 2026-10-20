@@ -16,7 +16,14 @@ func rangerLineFixture(t *testing.T, db *sql.DB) (string, int, hexgrid.Coord) {
 	t.Helper()
 	snapshot, monsterID := hexCombatFixture(t, db, "ranger", 2, 100)
 	id := snapshot.InstanceID
-	monster := snapshot.Actors[1].Position
+	var monster hexgrid.Coord
+	for _, actor := range snapshot.Actors[1:] {
+		var id int
+		if _, err := fmt.Sscanf(actor.ID, "monster-%d", &id); err == nil && id == monsterID {
+			monster = actor.Position
+			break
+		}
+	}
 	cells := map[hexgrid.Coord]bool{}
 	for _, cell := range snapshot.Cells {
 		cells[cell.Position] = true

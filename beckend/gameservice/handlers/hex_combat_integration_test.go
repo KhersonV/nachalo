@@ -106,19 +106,18 @@ func hexCombatDatabase(t *testing.T) (*sql.DB, string) {
 
 func hexCombatFixture(t *testing.T, db *sql.DB, class string, distance int, monsterHP int) (hexmap.Snapshot, int) {
 	t.Helper()
-	snapshot, err := repository.CreateHexTestMatch(context.Background(), 781, time.Now().UnixNano())
+	snapshot, err := repository.CreateHexTestMatch(context.Background(), 781, 97)
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := snapshot.InstanceID
-	monster := snapshot.Actors[1]
-	var monsterID int
-	if _, err := fmt.Sscanf(monster.ID, "monster-%d", &monsterID); err != nil {
-		t.Fatal(err)
-	}
 	floors := map[hexgrid.Coord]bool{}
 	for _, cell := range snapshot.Cells {
-		floors[cell.Position] = cell.Terrain == "floor"
+		floors[cell.Position] = cell.Terrain == "floor" && cell.Barrel == nil
+	}
+	occupied := map[hexgrid.Coord]bool{}
+	for _, actor := range snapshot.Actors {
+		occupied[actor.Position] = true
 	}
 	walls := map[hexgrid.EdgeKey]bool{}
 	for _, edge := range snapshot.Edges {
@@ -127,17 +126,26 @@ func hexCombatFixture(t *testing.T, db *sql.DB, class string, distance int, mons
 		walls[key] = true
 	}
 	var chosen hexgrid.Coord
+	var monster hexmap.Actor
 	found := false
-	for _, cell := range snapshot.Cells {
-		d, _ := hexgrid.Distance(cell.Position, monster.Position)
-		if cell.Terrain == "floor" && d == distance && hexgrid.Visible(cell.Position, monster.Position, floors, walls) {
-			chosen = cell.Position
-			found = true
+	for _, candidate := range snapshot.Actors[1:] {
+		for _, cell := range snapshot.Cells {
+			d, _ := hexgrid.Distance(cell.Position, candidate.Position)
+			if floors[cell.Position] && !occupied[cell.Position] && d == distance && hexgrid.Visible(cell.Position, candidate.Position, floors, walls) {
+				chosen, monster, found = cell.Position, candidate, true
+				break
+			}
+		}
+		if found {
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("no visible cell at HEX distance %d", distance)
+	}
+	var monsterID int
+	if _, err := fmt.Sscanf(monster.ID, "monster-%d", &monsterID); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := db.Exec(`UPDATE match_map_cells SET is_player=false WHERE instance_id=$1`, id); err != nil {
 		t.Fatal(err)

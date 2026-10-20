@@ -1,0 +1,9 @@
+.hexGame { background: #080e16; }
+.stage { min-width: 0; }
+.stage svg { max-height: 100dvh; }
+.info { color: #e6eef6; }
+.panel { display: grid; gap: 10px; padding: 14px; border: 1px solid rgba(160,184,206,.3); border-radius: 12px; background: rgba(12,22,34,.84); pointer-events: auto; overflow-wrap: anywhere; }
+.panel button { border: 1px solid #57778d; border-radius: 7px; background: #1b3546; color: white; padding: 8px; cursor: pointer; }
+.panel button:disabled { opacity: .45; cursor: default; }
+.error { padding: 10px; color: #ff9c89; background: #321d20; border-radius: 8px; pointer-events: auto; }
+@media (max-width: 1180px) { .info { position: fixed; z-index: 130; right: 12px; top: 12px; width: min(270px, 40vw); display: grid; gap: 8px; pointer-events: auto; } .stage { width: 100%; } }

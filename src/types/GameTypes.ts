@@ -3,6 +3,7 @@
 // ==============================
 
 import type { SquareGeometry, SquarePosition } from "./geometry";
+export type { HexSnapshot, HexPlayer, HexCell, HexActor } from "./HexGameTypes";
 
 export type BonusAttributes = {
     energy?: number;

@@ -16,6 +16,7 @@ import styles from "../styles/Inventory.module.css";
 interface InventoryProps {
   onBlueprintPlacementStart?: (inventoryKey: string) => void;
   onRequestClose?: () => void;
+  hexInventory?: Record<string, { item_count?: number; item_name?: string }>;
 }
 
 const isConsumableResource = (item: RawInventoryItem): boolean => {
@@ -34,6 +35,7 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
 const Inventory: React.FC<InventoryProps> = ({
   onBlueprintPlacementStart,
   onRequestClose,
+  hexInventory,
 }) => {
   const dispatch = useDispatch();
   const state = useSelector((state: RootState) => state.game);
@@ -50,7 +52,7 @@ const Inventory: React.FC<InventoryProps> = ({
   }, [feedback]);
 
   const player = state.players.find((p) => p.user_id === user?.id);
-  if (!player) return <div>Inventory unavailable</div>;
+  if (!player && !hexInventory) return <div>Inventory unavailable</div>;
 
   // Images are provided by the server in inventory entries; use them directly.
 
@@ -103,9 +105,9 @@ const Inventory: React.FC<InventoryProps> = ({
     let parsed: any;
     try {
       parsed =
-        typeof player.inventory === "string"
+        typeof player?.inventory === "string"
           ? JSON.parse(player.inventory)
-          : player.inventory;
+          : hexInventory ?? player?.inventory ?? {};
     } catch {
       return [];
     }
@@ -129,7 +131,7 @@ const Inventory: React.FC<InventoryProps> = ({
         return normalize(entry);
       }
     });
-  }, [player.inventory]);
+  }, [hexInventory, player?.inventory]);
 
   const { resources, artifacts } = useMemo(() => {
     return rawItems.reduce<{
@@ -152,6 +154,7 @@ const Inventory: React.FC<InventoryProps> = ({
     key: string,
     item: RawInventoryItem,
   ) => {
+    if (hexInventory) return;
     if (item.item_count <= 0 || !user) return;
 
     if (key.startsWith("blueprint_")) {
@@ -252,7 +255,7 @@ const Inventory: React.FC<InventoryProps> = ({
           {section === "resources" && (
             <>
               <div className={styles.itemCount}>Qty: {item.item_count}</div>
-              {(isConsumableResource(item) ||
+              {!hexInventory && (isConsumableResource(item) ||
                 key.startsWith("blueprint_") ||
                 key.startsWith("scroll_") ||
                 item.item_type === "scroll") && (
@@ -271,6 +274,7 @@ const Inventory: React.FC<InventoryProps> = ({
   return (
     <div className={styles.inventoryContainer}>
       <h2 className={styles.title}>Inventory</h2>
+      {hexInventory && <p>HEX: просмотр предметов; использование пока недоступно.</p>}
       {feedback && (
         <div className={styles.feedbackRow}>
           <p className={styles.feedbackError}>{feedback}</p>

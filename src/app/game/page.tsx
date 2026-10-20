@@ -20,7 +20,7 @@ function GameContent() {
 
     return (
         <Provider store={store}>
-            <GameWrapper instanceId={instanceId}>
+            <GameWrapper key={instanceId} instanceId={instanceId}>
                 <GameController instanceId={instanceId} />
             </GameWrapper>
         </Provider>

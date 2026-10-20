@@ -17,6 +17,8 @@ import { API_BASE } from "@/utils/serviceUrls";
 import type { ResourceType, MonsterType } from "@/types/GameTypes";
 import { createWsHandlers } from "./createWsHandlers";
 import { assertSquareSnapshot, assertSquarePatch } from "@/types/geometry";
+import { isHexSnapshot, type HexSnapshot } from "@/types/HexGameTypes";
+import HexGameController from "@/components/HexGameController";
 
 interface GameWrapperProps {
   instanceId: string;
@@ -39,6 +41,8 @@ export default function GameWrapper({
 
   const [resources, setResources] = useState<ResourceType[]>([]);
   const [monsters, setMonsters] = useState<MonsterType[]>([]);
+  const [runtime, setRuntime] = useState<"loading" | "square" | "hex">("loading");
+  const [hexSnapshot, setHexSnapshot] = useState<HexSnapshot | null>(null);
   const prevInstanceIdRef = useRef<string>("");
   const isFetching = useRef(false);
 
@@ -53,6 +57,25 @@ export default function GameWrapper({
         console.warn("[GameWrapper] No user or token — exiting");
         return;
       }
+      const res = await fetch(
+        `${API_BASE}/game/match?instance_id=${encodeURIComponent(instanceId)}`,
+        { headers: { Authorization: `Bearer ${user.token}` }, cache: "no-store" },
+      );
+      if (res.status === 409) {
+        const hexRes = await fetch(`${API_BASE}/game/hex-test/${encodeURIComponent(instanceId)}`, {
+          headers: { Authorization: `Bearer ${user.token}` }, cache: "no-store",
+        });
+        if (!hexRes.ok) throw new Error(`HEX match ${hexRes.status}: ${await hexRes.text()}`);
+        const snapshot: unknown = await hexRes.json();
+        if (!isHexSnapshot(snapshot) || snapshot.instanceId !== instanceId || !snapshot.player) throw new Error("Invalid HEX snapshot");
+        dispatch(resetState());
+        setHexSnapshot(snapshot);
+        setRuntime("hex");
+        return;
+      }
+      if (!res.ok) throw new Error(`match ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      assertSquareSnapshot(data);
       const [resourcesRes, monstersRes] = await Promise.all([
         fetch(`${API_BASE}/api/resources`),
         fetch(`${API_BASE}/api/monsters`),
@@ -72,17 +95,6 @@ export default function GameWrapper({
       setResources(resources);
       setMonsters(monsters);
 
-      const res = await fetch(
-        `${API_BASE}/game/match?instance_id=${instanceId}`,
-        { headers: { Authorization: `Bearer ${user.token}` } },
-      );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`match ${res.status}: ${text}`);
-      }
-      const data = await res.json();
-      assertSquareSnapshot(data);
-
       const players = data.players.map((p: any) => ({
         ...p,
         user_id: p.user_id ?? p.player_id,
@@ -96,6 +108,7 @@ export default function GameWrapper({
 
       if (loadedInstanceId === data.instance_id && isMapLoaded) {
         // ничего не делаем, всё уже актуально
+        setRuntime("square");
         return;
       }
 
@@ -120,6 +133,7 @@ export default function GameWrapper({
           questArtifactDescription: data.quest_artifact_description ?? "",
         },
       });
+      setRuntime("square");
     } catch (e) {
       console.error("Failed to load match, resources, or monsters", e);
       router.replace("/mode");
@@ -137,10 +151,12 @@ export default function GameWrapper({
     if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
       dispatch(resetState());
       dispatch(clearCombatPresentation());
+      setRuntime("loading");
+      setHexSnapshot(null);
     }
     prevInstanceIdRef.current = instanceId;
 
-    if (!isMapLoaded && user && user.token) {
+    if (user && user.token && (runtime === "loading" || !isMapLoaded || loadedInstanceId !== instanceId)) {
       fetchAll();
     } else {
       debugLog(
@@ -228,12 +244,14 @@ export default function GameWrapper({
         console.warn("[WS] Unknown event type:", data.type, data);
       }
     },
-    { instanceId, enabled: !!user },
+    { instanceId, enabled: !!user && runtime === "square" },
   );
 
   useEffect(() => {
     if (!user && socket) socket.close();
   }, [user, socket]);
 
-  return <>{children}</>;
+  if (runtime === "hex" && hexSnapshot) return <HexGameController key={instanceId} instanceId={instanceId} initialSnapshot={hexSnapshot} />;
+  if (runtime === "square") return <>{children}</>;
+  return <div role="status">Loading match...</div>;
 }

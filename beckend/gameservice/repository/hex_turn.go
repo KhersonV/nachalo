@@ -61,7 +61,7 @@ func ApplyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 		return out, ErrCommandRejected
 	}
 	var effects int
-	if err := c.Tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_map_cells WHERE instance_id=$1 AND (structure_type<>'' OR is_under_construction OR barbel IS NOT NULL OR is_portal)`, instanceID).Scan(&effects); err != nil {
+	if err := c.Tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_map_cells WHERE instance_id=$1 AND (structure_type<>'' OR is_under_construction)`, instanceID).Scan(&effects); err != nil {
 		return out, err
 	}
 	if effects != 0 {
