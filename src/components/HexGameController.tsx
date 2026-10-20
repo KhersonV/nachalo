@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { hexKey, type HexCoord } from "@/utils/hexGrid";
-import { type HexActor, type HexAttackPreview, type HexAttackResult, type HexPlayerResult, type HexRoute, type HexSnapshot } from "@/types/HexGameTypes";
+import { type HexActor, type HexAttackPreview, type HexAttackResult, type HexCombatIndicator, type HexPlayerResult, type HexRoute, type HexSnapshot } from "@/types/HexGameTypes";
+import { hexAttackIndicators, hexMoveIndicators } from "@/utils/hexCombatIndicators";
 import { useHexMatchSnapshot } from "@/hooks/useHexMatchSnapshot";
 import type { ActionLogEntry, ActionLogCategory, ActionLogTone } from "@/types";
 import HexMap from "./HexMap";
@@ -24,7 +25,7 @@ type HexItemResult = { itemType: string; itemId: number; health: number; energy:
 export default function HexGameController({ instanceId, initialSnapshot }: Props) {
   const { user } = useAuth();
   const { language, setLanguage, messages: t } = useGameLanguage();
-  const { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice } = useHexMatchSnapshot(instanceId, initialSnapshot, user?.token);
+  const { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice, visualNotices } = useHexMatchSnapshot(instanceId, initialSnapshot, user?.token);
   const [selected, setSelected] = useState<HexCoord | null>(null);
   const [route, setRoute] = useState<HexRoute | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -32,9 +33,13 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
 	const [clockNow, setClockNow] = useState(Date.now());
   const [attackPreview, setAttackPreview] = useState<HexAttackPreview | null>(null);
   const [lastAttack, setLastAttack] = useState<HexAttackResult | null>(null);
+  const [indicators, setIndicators] = useState<HexCombatIndicator[]>([]);
+  const visualized = useRef(new Set<string>());
+  const indicatorTimers = useRef<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [blueprintKey, setBlueprintKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [log, setLog] = useState<ActionLogEntry[]>([]);
   const pendingMove = useRef<Pending | null>(null);
@@ -43,9 +48,41 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const pendingBarrel = useRef<Pending | null>(null);
   const pendingItem = useRef<Pending | null>(null);
   const pendingTurn = useRef<Pending | null>(null);
+  const pendingBuild = useRef<Pending | null>(null);
+  const pendingStructureAttack = useRef<Pending | null>(null);
   const pendingExtract = useRef<Pending | null>(null);
   const routeRequest = useRef(0);
   const actionInFlight = useRef(false);
+
+  useEffect(() => () => indicatorTimers.current.forEach(window.clearTimeout), []);
+  const showIndicators = useCallback((key: string, next: HexCombatIndicator[]) => {
+    if (visualized.current.has(key) || next.length === 0) return;
+    visualized.current.add(key);
+    setIndicators(current => [...current, ...next]);
+    const ids = new Set(next.map(item => item.id));
+    const timer = window.setTimeout(() => {
+      setIndicators(current => current.filter(item => !ids.has(item.id)));
+      indicatorTimers.current = indicatorTimers.current.filter(item => item !== timer);
+    }, 1100);
+    indicatorTimers.current.push(timer);
+  }, []);
+  const showPlayerVitals = (key: string, health: number, energy?: number) => {
+    if (!snapshot.player) return;
+    const position = snapshot.player.position;
+    const next: HexCombatIndicator[] = [];
+    const hp = health - snapshot.player.health;
+    const ep = energy === undefined ? 0 : energy - snapshot.player.energy;
+    if (hp !== 0) next.push({ id: `${key}:hp`, position, text: `${hp > 0 ? "+" : ""}${hp} HP`, tone: hp > 0 ? "heal" : "damage", lane: 0 });
+    if (ep !== 0) next.push({ id: `${key}:energy`, position, text: `${ep > 0 ? "+" : ""}${ep} энергии`, tone: ep > 0 ? "energyGain" : "energyLoss", lane: next.length });
+    showIndicators(key, next);
+  };
+  useEffect(() => {
+    for (const notice of visualNotices) {
+      if (visualized.current.has(notice.commandId)) continue;
+      if (notice.kind === "attack") showIndicators(notice.commandId, hexAttackIndicators(snapshot, notice, notice.commandId));
+      if (notice.kind === "move" && notice.position) showIndicators(notice.commandId, hexMoveIndicators({ ...notice, position: notice.position }, notice.commandId));
+    }
+  }, [visualNotices, showIndicators, snapshot]);
 
   const record = useCallback((message: string, category: ActionLogCategory, tone: ActionLogTone = "info") => {
     setLog(current => [...current.slice(-29), { id: crypto.randomUUID(), timestamp: Date.now(), message, category, tone }]);
@@ -109,6 +146,16 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
 
   const selectCell = async (position: HexCoord) => {
     if (busy || actionInFlight.current || !myTurn) return;
+    if (blueprintKey) {
+      const key = `${blueprintKey}:${hexKey(position)}`;
+      actionInFlight.current = true; setBusy(true); setError("");
+      try {
+        await post("place-blueprint", { blueprintKey, position, commandId: command(pendingBuild, key) });
+        await refresh(); pendingBuild.current = null; setBlueprintKey(null); setSelected(position);
+        record(`${blueprintKey} (${position.q}, ${position.r})`, "effect", "success");
+      } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
+      return;
+    }
     const occupant = snapshot.actors.find(actor => hexKey(actor.position) === hexKey(position));
     if (occupant && (occupant.kind === "monster" || occupant.kind === "player" && occupant.userId !== snapshot.player?.userId)) { selectMonster(occupant); return; }
     if (cellByCoord.get(hexKey(position))?.visibility === "unexplored") return;
@@ -118,7 +165,9 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       if (!route.affordable) { setError(formatHexMessage(t.noEnergy, { cost: route.totalCost, energy: route.energy })); return; }
       actionInFlight.current = true; setBusy(true); setError("");
       try {
-        await post("move", { destination: position, commandId: command(pendingMove, key) });
+        const moveCommandId = command(pendingMove, key);
+        const moved = await post<HexRoute>("move", { destination: position, commandId: moveCommandId });
+        showIndicators(moveCommandId, hexMoveIndicators(moved, moveCommandId));
         await refresh();
         pendingMove.current = null; setSelected(cellByCoord.get(key)?.barrel ? position : null); setRoute(null);
         record(`${t.moved} (${position.q}, ${position.r})`, "movement", "success");
@@ -146,7 +195,9 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     const id = targetId;
     actionInFlight.current = true; setBusy(true); setError("");
     try {
-      const result = await post<HexAttackResult>("attack", { targetId: id, targetKind, commandId: command(pendingAttack, `${targetKind}:${id}`) });
+      const attackCommandId = command(pendingAttack, `${targetKind}:${id}`);
+      const result = await post<HexAttackResult>("attack", { targetId: id, targetKind, commandId: attackCommandId });
+      showIndicators(attackCommandId, hexAttackIndicators(snapshot, result, attackCommandId));
       pendingAttack.current = null;
       setLastAttack(result);
       if (result.monsterDied || result.newTargetHP <= 0 || result.newAttackerHP <= 0) {
@@ -156,6 +207,16 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       }
       await refresh();
       record(`${targetKind === "player" ? t.player : t.monsterHit} ${id}: ${t.damage} ${result.damage}, ${t.counterattack} ${result.counterDamage}${result.monsterDied || result.playerDied ? `, ${t.killed}` : ""}`, "attack", "success");
+    } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
+  };
+  const attackStructure = async () => {
+    if (!selectedCell?.structureType || selectedCell.isUnderConstruction || !myTurn || busy || actionInFlight.current) return;
+    const position = selectedCell.position;
+    actionInFlight.current = true; setBusy(true); setError("");
+    try {
+      const result = await post<{ damage: number; destroyed: boolean }>("attack-structure", { position, commandId: command(pendingStructureAttack, hexKey(position)) });
+      await refresh(); pendingStructureAttack.current = null;
+      record(`${selectedCell.structureType}: ${result.damage} ${t.damage}${result.destroyed ? `, ${t.killed}` : ""}`, "attack", "success");
     } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
   };
   const collect = async () => {
@@ -173,7 +234,9 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     const position = currentCell.position;
     actionInFlight.current = true; setBusy(true); setError("");
     try {
-      const result = await post<HexBarrelResult>("open-barrel", { position, commandId: command(pendingBarrel, hexKey(position)) });
+      const barrelCommandId = command(pendingBarrel, hexKey(position));
+      const result = await post<HexBarrelResult>("open-barrel", { position, commandId: barrelCommandId });
+      if (result.outcome === "damage") showPlayerVitals(barrelCommandId, result.health);
       await refresh(); pendingBarrel.current = null; setSelected(null); setRoute(null);
       record(result.outcome === "damage" ? `${t.barrelDamage} ${result.damage}` : `${result.outcome === "artifact" ? t.barrelArtifact : t.barrelResource} ${result.itemName ?? ""}`, "barrel", "success");
     } catch (reason) { setError(String(reason)); throw reason; } finally { actionInFlight.current = false; setBusy(false); }
@@ -183,7 +246,9 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     const key = `${itemType}_${itemId}`;
     actionInFlight.current = true; setBusy(true); setError("");
     try {
-      const result = await post<HexItemResult>("use-item", { itemType, itemId, commandId: command(pendingItem, key) });
+      const itemCommandId = command(pendingItem, key);
+      const result = await post<HexItemResult>("use-item", { itemType, itemId, commandId: itemCommandId });
+      showPlayerVitals(itemCommandId, result.health, result.energy);
       await refresh(); pendingItem.current = null;
       const message = result.axis ? `${t.scroll}: ${result.axis.toUpperCase()} = ${result.value}` : `${t.itemUsed} · HP ${result.health} · ${t.energy} ${result.energy}`;
       record(message, "resource", "success");
@@ -231,7 +296,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       </aside>
       <main className={hexStyles.stage}>
         <div className={hexStyles.mapContainer}>
-          <HexMap snapshot={snapshot} selected={snapshot.finished || snapshot.player?.health === 0 ? null : selected} route={snapshot.finished || snapshot.player?.health === 0 ? null : route} selectedTargetId={snapshot.finished || snapshot.player?.health === 0 ? null : targetId} selectedTargetKind={targetKind} busy={busy || !myTurn} labels={t}
+          <HexMap snapshot={snapshot} selected={snapshot.finished || snapshot.player?.health === 0 ? null : selected} route={snapshot.finished || snapshot.player?.health === 0 ? null : route} selectedTargetId={snapshot.finished || snapshot.player?.health === 0 ? null : targetId} selectedTargetKind={targetKind} indicators={indicators} busy={busy || !myTurn} labels={t}
             onCellClick={position => void selectCell(position)} onMonsterClick={actor => void selectMonster(actor)} />
         </div>
       </main>
@@ -247,6 +312,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
           {snapshot.actors.filter(actor => actor.kind === "player" && actor.userId !== snapshot.player?.userId).map(actor =>
             <span key={actor.id}>{actor.name || `${t.player} ${actor.userId}`} · {t.team} {actor.teamId} · HP {actor.health}/{actor.maxHealth}</span>)}
           <div className={hexStyles.actions}>
+            {blueprintKey && <button onClick={() => { setBlueprintKey(null); pendingBuild.current = null; }}>{t.close} · {blueprintKey}</button>}
             {contextAction && <button className={hexStyles.contextAction} disabled={busy || !myTurn} onClick={() => contextAction === "collect" ? void collect() : void openBarrel().catch(() => {})}>{contextAction === "collect" ? t.pickUp : t.open}</button>}
             {atPortal && !snapshot.result && <button className={hexStyles.contextAction} disabled={busy || !myTurn || (!hasQuest && (snapshot.player?.balance ?? 0) < 50)} onClick={() => void extract()}>{hasQuest ? t.extractArtifact : t.extractPaid}</button>}
             {atPortal && !hasQuest && !snapshot.result && <span>{t.currentGold}: {snapshot.player?.balance ?? 0}{(snapshot.player?.balance ?? 0) < 50 ? ` · ${t.needGold}` : ""}</span>}
@@ -261,6 +327,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
           </details>
         </div>
         {selectedCell && !snapshot.finished && <div className={hexStyles.panel}>{t.cell}: {selectedCell.terrain === "floor" ? t.floor : t.rock}
+          {selectedCell.structureType && <span>{selectedCell.structureType} · HP {selectedCell.structureHealth}/30 · {t.team} {selectedCell.structureOwnerUserId}{selectedCell.isUnderConstruction ? ` · ${selectedCell.constructionTurnsLeft} ${t.turn}` : ""}</span>}
+          {selectedCell.structureType && !selectedCell.isUnderConstruction && snapshot.player && (selectedCell.structureOwnerUserId !== snapshot.player.userId || selectedCell.structureType === "wall") && <button disabled={busy || !myTurn || snapshot.player.energy < 6} onClick={() => void attackStructure()}>{t.attack} · 6 {t.energy}</button>}
           {route && <span>{t.route}: {route.path.length} {t.steps} · {route.totalCost} {t.energy} · {route.affordable ? t.confirmRoute : t.insufficientEnergy}</span>}
           {selectedCell.resource && <><span>{t.resource}: {selectedCell.resource.type}</span>{hexKey(selectedCell.position) !== hexKey(snapshot.player?.position ?? { q: NaN, r: NaN }) && <span>{t.standOnResource}</span>}</>}
           {selectedCell.barrel && hexKey(selectedCell.position) !== hexKey(snapshot.player?.position ?? { q: NaN, r: NaN }) && <span>{t.barrel} · {t.standOnBarrel}</span>}
@@ -279,7 +347,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     {questNotice && <p role="status" className={hexStyles.questNotice}>{formatHexMessage(t.questAnnouncement, { artifact: quest?.name || t.questArtifact, player: questNotice.playerName || `${t.player} ${questNotice.userId}`, q: questNotice.q, r: questNotice.r })}</p>}
 	{turnTimeoutNotice && <p role="status" className={hexStyles.questNotice}>{t.turnTimedOut}</p>}
     {error && <p role="alert" className={hexStyles.error}>{error}</p>}
-    {inventoryOpen && <Inventory hexInventory={snapshot.player?.inventory ?? {}} onHexUseItem={useItem} hexBusy={busy || !myTurn} hexLabels={t} />}
+    {inventoryOpen && <Inventory hexInventory={snapshot.player?.inventory ?? {}} onHexUseItem={useItem} onHexBlueprintPlacementStart={key => { setBlueprintKey(key); setInventoryOpen(false); setRoute(null); }} hexBusy={busy || !myTurn} hexLabels={t} />}
     {(defeated || extracted) && <HexMatchResults snapshot={snapshot} labels={t} />}
   </div>;
 }

@@ -11,14 +11,21 @@ import (
 )
 
 type Cell struct {
-	CellID     int                `json:"cellId"`
-	Position   hexgrid.Coord      `json:"position"`
-	Terrain    string             `json:"terrain"`
-	Visibility string             `json:"visibility,omitempty"`
-	Room       int                `json:"room,omitempty"`
-	Resource   *game.ResourceData `json:"resource,omitempty"`
-	Barrel     *game.ResourceData `json:"barrel,omitempty"`
-	IsPortal   bool               `json:"isPortal,omitempty"`
+	CellID                int                `json:"cellId"`
+	Position              hexgrid.Coord      `json:"position"`
+	Terrain               string             `json:"terrain"`
+	Visibility            string             `json:"visibility,omitempty"`
+	Room                  int                `json:"room,omitempty"`
+	Resource              *game.ResourceData `json:"resource,omitempty"`
+	Barrel                *game.ResourceData `json:"barrel,omitempty"`
+	IsPortal              bool               `json:"isPortal,omitempty"`
+	StructureType         string             `json:"structureType,omitempty"`
+	StructureOwnerUserID  int                `json:"structureOwnerUserId,omitempty"`
+	StructureHealth       int                `json:"structureHealth,omitempty"`
+	StructureDefense      int                `json:"structureDefense,omitempty"`
+	StructureAttack       int                `json:"structureAttack,omitempty"`
+	IsUnderConstruction   bool               `json:"isUnderConstruction,omitempty"`
+	ConstructionTurnsLeft int                `json:"constructionTurnsLeft,omitempty"`
 }
 type Edge struct {
 	Position  hexgrid.Coord `json:"position"`

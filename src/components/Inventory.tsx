@@ -19,6 +19,7 @@ interface InventoryProps {
   onRequestClose?: () => void;
   hexInventory?: Record<string, { item_count?: number; item_name?: string }>;
   onHexUseItem?: (itemType: "resource" | "scroll", itemId: number) => Promise<string>;
+  onHexBlueprintPlacementStart?: (inventoryKey: string) => void;
   hexBusy?: boolean;
   hexLabels?: HexGameMessages;
 }
@@ -41,6 +42,7 @@ const Inventory: React.FC<InventoryProps> = ({
   onRequestClose,
   hexInventory,
   onHexUseItem,
+  onHexBlueprintPlacementStart,
   hexBusy,
   hexLabels,
 }) => {
@@ -164,7 +166,8 @@ const Inventory: React.FC<InventoryProps> = ({
 
     if (hexInventory) {
       if (key.startsWith("blueprint_")) {
-        setFeedback(hexLabels?.blueprintUnavailable ?? "Строительство в HEX пока недоступно. Чертёж сохранён.");
+        onHexBlueprintPlacementStart?.(key);
+        onRequestClose?.();
         return;
       }
       const isScroll = key.startsWith("scroll_");
@@ -279,10 +282,10 @@ const Inventory: React.FC<InventoryProps> = ({
                 item.item_type === "scroll")) && (
                 <button
                   className={styles.useButton}
-                  disabled={!!hexInventory && (hexBusy || (!key.startsWith("blueprint_") && !onHexUseItem))}
+                  disabled={!!hexInventory && (hexBusy || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem))}
                   onClick={() => handleUseItem(section, key, item)}
                 >
-                  {key.startsWith("blueprint_") ? (hexInventory ? hexLabels?.unavailable ?? "Unavailable" : "Place") : (hexInventory ? hexLabels?.use ?? "Use" : "Use")}
+                  {key.startsWith("blueprint_") ? "Place" : (hexInventory ? hexLabels?.use ?? "Use" : "Use")}
                 </button>
               )}
             </>

@@ -37,6 +37,17 @@
 .healthFill { fill: #d96354; }
 .healthText, .playerName { fill: #fff7e4; stroke: #0c1419; stroke-width: 3; paint-order: stroke; font-size: 12px; font-weight: 700; }
 .playerName { font-size: 11px; }
+.indicators { pointer-events: none; }
+.indicator { font-size: 15px; font-weight: 900; stroke: #071016; stroke-width: 4px; paint-order: stroke; filter: drop-shadow(0 2px 4px #000); animation: hexIndicatorRise 1.05s ease-out both; }
+.damage { fill: #ff7770; }
+.critical { fill: #ffb054; font-size: 19px; }
+.heal { fill: #83ed9a; }
+.energyLoss, .aura { fill: #c19bff; }
+.energyGain { fill: #8ee7fa; }
+.status { fill: #ffc879; font-size: 13px; }
+.push { fill: #eef3e8; font-size: 13px; }
+@keyframes hexIndicatorRise { from { opacity: 0; transform: translateY(7px); } 15% { opacity: 1; } 70% { opacity: 1; } to { opacity: 0; transform: translateY(-27px); } }
+@media (prefers-reduced-motion: reduce) { .indicator { animation: none; } }
 .cameraControls { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 3; display: flex; gap: 4px; padding: 5px; border: 1px solid rgba(157, 190, 193, .36); border-radius: 999px; background: rgba(8, 16, 23, .86); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); }
 .cameraControls button { min-width: 34px; min-height: 34px; border: 0; border-radius: 999px; padding: 0 10px; color: #e8f6f3; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
 .cameraControls button:hover { background: rgba(124, 197, 193, .22); }

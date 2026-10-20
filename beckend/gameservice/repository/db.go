@@ -79,6 +79,7 @@ func RunMigrations() {
 	CreateMatchesTable()
 	CreateMatchMapCellsTable()
 	CreateMatchPlayersTable()
+	EnsureHexGuardianAuraColumns()
 	CreateInventoryTable()
 	CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
@@ -579,6 +580,14 @@ func CreateMatchPlayersTable() {
 	`
 	if _, err := DB.Exec(query); err != nil {
 		log.Fatalf("Ошибка создания таблицы match_players: %v", err)
+	}
+}
+
+func EnsureHexGuardianAuraColumns() {
+	_, err := DB.Exec(`ALTER TABLE match_players ADD COLUMN IF NOT EXISTS hex_guardian_aura_pressure INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE match_players ADD COLUMN IF NOT EXISTS hex_guardian_aura_source_user_id INTEGER NOT NULL DEFAULT 0;`)
+	if err != nil {
+		log.Fatalf("Ошибка добавления состояния ауры Guardian: %v", err)
 	}
 }
 

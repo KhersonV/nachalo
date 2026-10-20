@@ -52,6 +52,19 @@ func publishHexPatchChanges(instanceID, commandID string, state, mapRevision int
 	}
 }
 
+// Visual notices contain only committed combat facts. The socket layer checks
+// each recipient's current HEX visibility before sending them.
+func publishHexVisual(instanceID, commandID string, revision int64, kind string, visual map[string]any) {
+	visual["instanceId"] = instanceID
+	visual["schemaVersion"] = 2
+	visual["commandId"] = commandID
+	visual["stateRevision"] = revision
+	visual["kind"] = kind
+	if data, err := json.Marshal(map[string]any{"type": "MATCH_HEX_VISUAL", "payload": visual}); err == nil {
+		Broadcast(data)
+	}
+}
+
 func hexUser(w http.ResponseWriter, r *http.Request) (int, bool) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok || userID <= 0 {
@@ -155,6 +168,9 @@ func MoveHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 	instanceID := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexMoveWithPublish(r.Context(), instanceID, userID, req.CommandID, req.Destination, func(committed repository.HexRouteResult) {
 		publishHexPatch(instanceID, req.CommandID, committed.StateRevision, committed.MapRevision, "MOVE_PLAYER", map[string]any{"instanceId": instanceID, "userId": userID, "newPosition": committed.Position})
+		if committed.AuraEnergyCost > 0 || len(committed.AuraHits) > 0 || committed.AuraEnded {
+			publishHexVisual(instanceID, req.CommandID, committed.StateRevision, "move", map[string]any{"userId": userID, "position": committed.Position, "path": committed.Path, "auraEnergyCost": committed.AuraEnergyCost, "auraHits": committed.AuraHits, "auraEnded": committed.AuraEnded})
+		}
 	})
 	if err != nil {
 		http.Error(w, err.Error(), repository.HexMoveErrorStatus(err))
@@ -239,6 +255,57 @@ func UseHexItemHandler(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexItem(r.Context(), id, userID, req.CommandID, req.ItemType, req.ItemID, func(committed repository.HexItemResult) {
 		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "ITEM_USED", map[string]any{"instanceId": id, "userId": userID, "itemType": committed.ItemType, "itemId": committed.ItemID})
+	})
+	if err != nil {
+		http.Error(w, err.Error(), hexCommandStatus(err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func PlaceHexBlueprintHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := hexUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		CommandID    string        `json:"commandId"`
+		BlueprintKey string        `json:"blueprintKey"`
+		Position     hexgrid.Coord `json:"position"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CommandID == "" || len(req.CommandID) > 128 {
+		http.Error(w, "commandId, blueprintKey and position required", http.StatusBadRequest)
+		return
+	}
+	id := mux.Vars(r)["instance_id"]
+	result, err := repository.ApplyHexBlueprint(r.Context(), id, userID, req.CommandID, req.BlueprintKey, req.Position, func(committed repository.HexBuildResult) {
+		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "BLUEPRINT_PLACED", nil)
+	})
+	if err != nil {
+		http.Error(w, err.Error(), hexCommandStatus(err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func AttackHexStructureHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := hexUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		CommandID string        `json:"commandId"`
+		Position  hexgrid.Coord `json:"position"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CommandID == "" || len(req.CommandID) > 128 {
+		http.Error(w, "commandId and position required", http.StatusBadRequest)
+		return
+	}
+	id := mux.Vars(r)["instance_id"]
+	result, err := repository.ApplyHexStructureAttack(r.Context(), id, userID, req.CommandID, req.Position, func(committed repository.HexStructureAttackResult) {
+		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "STRUCTURE_ATTACKED", nil)
 	})
 	if err != nil {
 		http.Error(w, err.Error(), hexCommandStatus(err))

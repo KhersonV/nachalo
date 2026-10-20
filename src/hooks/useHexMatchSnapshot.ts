@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE, WS_URL } from "@/utils/serviceUrls";
-import { isHexSnapshot, type HexSnapshot } from "@/types/HexGameTypes";
+import { isHexSnapshot, type HexSnapshot, type HexVisualNotice } from "@/types/HexGameTypes";
 
 export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnapshot, token: string | undefined) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [syncError, setSyncError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
+  const [visualNotices, setVisualNotices] = useState<HexVisualNotice[]>([]);
   const [questNotice, setQuestNotice] = useState<{ userId: number; playerName?: string; q: number; r: number } | null>(null);
 	const [turnTimeoutNotice, setTurnTimeoutNotice] = useState(false);
 	useEffect(() => { if (!turnTimeoutNotice) return; const timer = window.setTimeout(() => setTurnTimeoutNotice(false), 5000); return () => window.clearTimeout(timer); }, [turnTimeoutNotice]);
@@ -54,6 +55,10 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
           const message = JSON.parse(event.data);
           const payload = message?.payload;
           if (payload?.instanceId !== instanceId || payload?.schemaVersion !== 2) return;
+          if (message.type === "MATCH_HEX_VISUAL" && typeof payload.commandId === "string" && (payload.kind === "attack" || payload.kind === "move")) {
+            setVisualNotices(current => [...current.slice(-24), payload as HexVisualNotice]);
+            return;
+          }
           if (message.type === "MATCH_PATCH" && Array.isArray(payload.changes)) {
 			if (payload.changes.some((change: {type?: string}) => change.type === "TURN_TIMEOUT")) setTurnTimeoutNotice(true);
             const found = payload.changes.find((change: { type?: string }) => change.type === "QUEST_ARTIFACT_FOUND")?.payload;
@@ -75,5 +80,5 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
     return () => { closed = true; if (timer) clearTimeout(timer); socket?.close(); };
   }, [instanceId, refresh, token]);
 
-  return { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice };
+  return { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice, visualNotices };
 }

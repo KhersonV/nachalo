@@ -115,6 +115,9 @@ func pushHexPlayerTx(ctx context.Context, c *repository.MatchCommand, from, targ
 	if err := repository.RecordHexExploredForPush(ctx, c.Tx, c.InstanceID, targetID, target, dest); err != nil {
 		return false, dest, err
 	}
+	if err := repository.ClearHexGuardianAuraAfterForcedMoveTx(ctx, c.Tx, c.InstanceID, targetID, target, dest); err != nil {
+		return false, dest, err
+	}
 	return true, dest, nil
 }
 
@@ -148,6 +151,11 @@ func finishHexPvPDeathTx(ctx context.Context, c *repository.MatchCommand, victim
 		_, err = c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),hex_turn_deadline=NULL WHERE instance_id=$1`, c.InstanceID)
 	}
 	return err
+}
+
+func resolveHexRangerPlayerPushFallback(attacker, target stats, currentHealth int) attackResult {
+	target.Health = currentHealth
+	return applyDamage(attacker, target)
 }
 
 func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, targetID int, commandID string, publish func(HexAttackResult)) (HexAttackResult, error) {
@@ -262,6 +270,10 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			if attackerEnergy > s.Player.MaxEnergy {
 				attackerEnergy = s.Player.MaxEnergy
 			}
+			var auraPressureBefore int
+			if err := c.Tx.QueryRowContext(ctx, `SELECT hex_guardian_aura_pressure FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID).Scan(&auraPressureBefore); err != nil {
+				return out, err
+			}
 			pushed, pos, err := pushHexPlayerTx(ctx, c, s.Player.Position, s.Monster.Position, targetID)
 			if err != nil {
 				return out, err
@@ -269,8 +281,17 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			if pushed {
 				mapChanged = true
 				effects = append(effects, CombatEffect{Kind: "push", Source: &attackerRef, Target: &targetRef, Succeeded: true, PositionAfter: &CombatPoint{X: pos.Q, Y: pos.R}})
+				if auraPressureBefore > 0 {
+					var auraPressureAfter int
+					if err := c.Tx.QueryRowContext(ctx, `SELECT hex_guardian_aura_pressure FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID).Scan(&auraPressureAfter); err != nil {
+						return out, err
+					}
+					if auraPressureAfter == 0 {
+						effects = append(effects, CombatEffect{Kind: "guardianAuraEnd", Target: &targetRef, Succeeded: true, PositionAfter: &CombatPoint{X: pos.Q, Y: pos.R}})
+					}
+				}
 			} else {
-				next := applyFlatDamage(targetHP, hit.Damage/2)
+				next := resolveHexRangerPlayerPushFallback(a, d, targetHP)
 				bonus += next.Damage
 				targetHP = next.NewHealth
 				effects = append(effects, CombatEffect{Kind: "push", Source: &attackerRef, Target: &targetRef, Succeeded: false, BonusDamage: next.Damage})
@@ -278,6 +299,11 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_stacks=0,hex_armor_break_turns=0 WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID); err != nil {
 				return out, err
 			}
+			endEffect := CombatEffect{Kind: "armorBreakEnd", Target: &targetRef, Succeeded: true}
+			if pushed {
+				endEffect.PositionAfter = &CombatPoint{X: pos.Q, Y: pos.R}
+			}
+			effects = append(effects, endEffect)
 		} else {
 			stacks := s.Monster.ArmorBreakStacks + 1
 			if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_stacks=$3,hex_armor_break_turns=$4 WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID, stacks, armorBreakDurationTurns); err != nil {
@@ -319,7 +345,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: s.Distance, Cost: s.Cost, Mode: s.Mode, Energy: attackerEnergy, TargetHP: s.Monster.Stats.Health}, Damage: hit.Damage + bonus + followup, CounterDamage: counterDamage, NewTargetHP: targetHP, NewAttackerHP: attackerHP, PlayerDied: targetHP <= 0, AttackStyle: resolvePresentationAttackStyle(a, s.Mode), Effects: effects, Steps: steps, Drops: []EquipmentDropPayload{}}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: s.Distance, Cost: s.Cost, Mode: s.Mode, Energy: attackerEnergy, TargetHP: s.Monster.Stats.Health}, Damage: hit.Damage + bonus + followup, CounterDamage: counterDamage, NewTargetHP: targetHP, NewAttackerHP: attackerHP, PlayerDied: targetHP <= 0, AttackStyle: resolvePresentationAttackStyle(a, s.Mode), Effects: effects, Steps: steps, Drops: []EquipmentDropPayload{}, AttackerPosition: s.Player.Position, TargetPosition: s.Monster.Position, AttackerHPBefore: a.Health}
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, mapChanged)
 	if err != nil {
 		return HexAttackResult{}, err

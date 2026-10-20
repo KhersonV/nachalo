@@ -93,7 +93,7 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	for i, cell := range snapshot.Cells {
 		cellIndex[cell.Position] = i
 	}
-	cellRows, err := tx.QueryContext(ctx, `SELECT q,r,resource,barbel,is_portal FROM match_map_cells WHERE instance_id=$1`, instanceID)
+	cellRows, err := tx.QueryContext(ctx, `SELECT q,r,resource,barbel,is_portal,structure_type,structure_owner_user_id,structure_health,structure_defense,structure_attack,is_under_construction,construction_turns_left FROM match_map_cells WHERE instance_id=$1`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
@@ -101,7 +101,10 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		var pos hexgrid.Coord
 		var rawResource, rawBarrel []byte
 		var isPortal bool
-		if err := cellRows.Scan(&pos.Q, &pos.R, &rawResource, &rawBarrel, &isPortal); err != nil {
+		var structureType string
+		var owner, health, defense, attack, turns int
+		var building bool
+		if err := cellRows.Scan(&pos.Q, &pos.R, &rawResource, &rawBarrel, &isPortal, &structureType, &owner, &health, &defense, &attack, &building, &turns); err != nil {
 			cellRows.Close()
 			return snapshot, err
 		}
@@ -109,6 +112,13 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 			snapshot.Cells[i].Resource = nil
 			snapshot.Cells[i].Barrel = nil
 			snapshot.Cells[i].IsPortal = isPortal
+			snapshot.Cells[i].StructureType = structureType
+			snapshot.Cells[i].StructureOwnerUserID = owner
+			snapshot.Cells[i].StructureHealth = health
+			snapshot.Cells[i].StructureDefense = defense
+			snapshot.Cells[i].StructureAttack = attack
+			snapshot.Cells[i].IsUnderConstruction = building
+			snapshot.Cells[i].ConstructionTurnsLeft = turns
 			if len(rawResource) > 0 {
 				var resource game.ResourceData
 				if err := json.Unmarshal(rawResource, &resource); err != nil {
@@ -216,20 +226,23 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	}
 	// The generator seed is enough to reconstruct the undiscovered dungeon.
 	snapshot.Seed = 0
-	rows, err := tx.QueryContext(ctx, `SELECT position_q,position_r,hex_explored FROM match_players WHERE instance_id=$1 AND group_id=$2 AND health>0 ORDER BY user_id`, snapshot.InstanceID, snapshot.Player.TeamID)
+	rows, err := tx.QueryContext(ctx, `SELECT p.position_q,p.position_r,p.hex_explored,COALESCE(s.has_scout_tower_bonus,false) FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.group_id=$2 AND p.health>0 ORDER BY p.user_id`, snapshot.InstanceID, snapshot.Player.TeamID)
 	if err != nil {
 		return err
 	}
 	positions := []hexgrid.Coord{}
+	radii := map[hexgrid.Coord]int{}
 	explored := map[hexgrid.Coord]bool{}
 	for rows.Next() {
 		var pos hexgrid.Coord
 		var raw []byte
-		if err := rows.Scan(&pos.Q, &pos.R, &raw); err != nil {
+		var bonus bool
+		if err := rows.Scan(&pos.Q, &pos.R, &raw, &bonus); err != nil {
 			rows.Close()
 			return err
 		}
 		positions = append(positions, pos)
+		radii[pos] = hexSightRadius(bonus)
 		var saved []hexgrid.Coord
 		if err := json.Unmarshal(raw, &saved); err != nil {
 			rows.Close()
@@ -246,8 +259,9 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	rows.Close()
 	if len(positions) == 0 {
 		positions = append(positions, snapshot.Player.Position)
+		radii[snapshot.Player.Position] = hexVisionRadius()
 	}
-	visible := hexVisible(positions, snapshot.Cells, snapshot.Edges)
+	visible := hexVisibleWithRadii(positions, radii, snapshot.Cells, snapshot.Edges)
 	for pos := range visible {
 		explored[pos] = true
 	}
@@ -260,12 +274,26 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 			cell.Visibility = "explored"
 			cell.Resource = nil
 			cell.Barrel = nil
+			cell.StructureType = ""
+			cell.StructureOwnerUserID = 0
+			cell.StructureHealth = 0
+			cell.StructureDefense = 0
+			cell.StructureAttack = 0
+			cell.IsUnderConstruction = false
+			cell.ConstructionTurnsLeft = 0
 		default:
 			cell.Visibility = "unexplored"
 			cell.Terrain = "rock"
 			cell.Resource = nil
 			cell.Barrel = nil
 			cell.IsPortal = false
+			cell.StructureType = ""
+			cell.StructureOwnerUserID = 0
+			cell.StructureHealth = 0
+			cell.StructureDefense = 0
+			cell.StructureAttack = 0
+			cell.IsUnderConstruction = false
+			cell.ConstructionTurnsLeft = 0
 			cell.Room = 0
 		}
 	}

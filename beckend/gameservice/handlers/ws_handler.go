@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"gameservice/internal/hexmap"
 	"gameservice/models"
 	"gameservice/repository"
 
@@ -355,6 +356,15 @@ var broadcastFn = func(message []byte) {
 	log.Printf("[Broadcast] type=%s instance=%s targets=%d", msgType, env.Payload.InstanceID, len(targets))
 	// Теперь рассылка без lock!
 	for _, client := range targets {
+		if msgType == "MATCH_HEX_VISUAL" {
+			payload, _ := raw["payload"].(map[string]interface{})
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			snapshot, err := repository.LoadHexTestMatch(ctx, env.Payload.InstanceID, client.userID)
+			cancel()
+			if err != nil || !hexVisualVisibleToUser(snapshot.Cells, payload) {
+				continue
+			}
+		}
 		err := client.Conn.WriteMessage(websocket.TextMessage, message)
 		if err != nil {
 			log.Printf("[Broadcast] write error user=%d err=%v", client.userID, err)
@@ -372,6 +382,60 @@ var broadcastFn = func(message []byte) {
 			}
 		}
 	}
+}
+
+func hexVisualVisibleToUser(cells []hexmap.Cell, payload map[string]interface{}) bool {
+	if payload == nil {
+		return false
+	}
+	positions := []interface{}{}
+	if payload["kind"] == "attack" {
+		positions = append(positions, payload["attackerPosition"], payload["targetPosition"])
+		if effects, ok := payload["effects"].([]interface{}); ok {
+			for _, rawEffect := range effects {
+				effect, ok := rawEffect.(map[string]interface{})
+				if !ok || effect["positionAfter"] == nil {
+					continue
+				}
+				point, ok := effect["positionAfter"].(map[string]interface{})
+				if !ok {
+					return false
+				}
+				positions = append(positions, map[string]interface{}{"q": point["x"], "r": point["y"]})
+			}
+		}
+	} else if payload["kind"] == "move" {
+		positions = append(positions, payload["position"])
+		path, ok := payload["path"].([]interface{})
+		if !ok {
+			return false
+		}
+		positions = append(positions, path...)
+	} else {
+		return false
+	}
+	for _, raw := range positions {
+		position, ok := raw.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		q, qOK := position["q"].(float64)
+		r, rOK := position["r"].(float64)
+		if !qOK || !rOK {
+			return false
+		}
+		visible := false
+		for _, cell := range cells {
+			if cell.Position.Q == int(q) && cell.Position.R == int(r) && cell.Visibility == "visible" {
+				visible = true
+				break
+			}
+		}
+		if !visible {
+			return false
+		}
+	}
+	return true
 }
 
 func Broadcast(msg []byte) {

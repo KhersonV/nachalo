@@ -49,19 +49,22 @@ type HexAttackPreview struct {
 
 type HexAttackResult struct {
 	HexAttackPreview
-	Damage        int                    `json:"damage"`
-	CounterDamage int                    `json:"counterDamage"`
-	NewTargetHP   int                    `json:"newTargetHP"`
-	NewAttackerHP int                    `json:"newAttackerHP"`
-	MonsterDied   bool                   `json:"monsterDied"`
-	PlayerDied    bool                   `json:"playerDied,omitempty"`
-	AttackStyle   AttackStyle            `json:"attackStyle"`
-	Effects       []CombatEffect         `json:"effects"`
-	Steps         []CombatStep           `json:"steps"`
-	Drops         []EquipmentDropPayload `json:"drops"`
-	StateRevision int64                  `json:"stateRevision"`
-	MapRevision   int64                  `json:"mapRevision"`
-	Replayed      bool                   `json:"-"`
+	Damage           int                    `json:"damage"`
+	CounterDamage    int                    `json:"counterDamage"`
+	NewTargetHP      int                    `json:"newTargetHP"`
+	NewAttackerHP    int                    `json:"newAttackerHP"`
+	MonsterDied      bool                   `json:"monsterDied"`
+	PlayerDied       bool                   `json:"playerDied,omitempty"`
+	AttackStyle      AttackStyle            `json:"attackStyle"`
+	Effects          []CombatEffect         `json:"effects"`
+	Steps            []CombatStep           `json:"steps"`
+	Drops            []EquipmentDropPayload `json:"drops"`
+	StateRevision    int64                  `json:"stateRevision"`
+	MapRevision      int64                  `json:"mapRevision"`
+	Replayed         bool                   `json:"-"`
+	AttackerPosition hexgrid.Coord          `json:"attackerPosition"`
+	TargetPosition   hexgrid.Coord          `json:"targetPosition"`
+	AttackerHPBefore int                    `json:"attackerHPBefore"`
 }
 
 func (r *HexAttackResult) SetCommandRevisions(state, mapRevision int64) {
@@ -441,6 +444,11 @@ func ApplyHexAttack(ctx context.Context, instanceID string, userID, targetID int
 			if err != nil {
 				return out, err
 			}
+			endEffect := CombatEffect{Kind: "armorBreakEnd", Target: &targetRef, Succeeded: true}
+			if pushed {
+				endEffect.PositionAfter = &CombatPoint{X: destination.Q, Y: destination.R}
+			}
+			effects = append(effects, endEffect)
 		} else {
 			stacks := state.Monster.ArmorBreakStacks + 1
 			if stacks > armorBreakMaxStacks {
@@ -526,7 +534,7 @@ func ApplyHexAttack(ctx context.Context, instanceID string, userID, targetID int
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: finalMonsterHP, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, state.Mode), Effects: effects, Steps: steps, Drops: drops}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: finalMonsterHP, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, state.Mode), Effects: effects, Steps: steps, Drops: drops, AttackerPosition: state.Player.Position, TargetPosition: state.Monster.Position, AttackerHPBefore: a.Health}
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, mapChanged)
 	if err != nil {
 		return HexAttackResult{}, err
@@ -563,7 +571,12 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		return out, repository.ErrHexBlocked
 	}
 	a, d := state.Monster.Stats, state.Player.Stats
-	hit := applyDamage(a, d)
+	effectivePlayer := d
+	effectivePlayer.Defense -= state.Player.ArmorBreakStacks * armorBreakDefensePenaltyPerStack
+	if effectivePlayer.Defense < 0 {
+		effectivePlayer.Defense = 0
+	}
+	hit := applyDamage(a, effectivePlayer)
 	blocked := resolveGuardianShieldBlock("player", d)
 	if blocked {
 		hit = attackResult{NewHealth: d.Health}
@@ -639,7 +652,7 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: playerID, Distance: state.Distance, Mode: attackModeMelee, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: hit.NewHealth, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, attackModeMelee), Effects: effects, Steps: steps}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: playerID, Distance: state.Distance, Mode: attackModeMelee, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: hit.NewHealth, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, attackModeMelee), Effects: effects, Steps: steps, AttackerPosition: state.Monster.Position, TargetPosition: state.Player.Position, AttackerHPBefore: a.Health}
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, mapChanged)
 	if err != nil {
 		return HexAttackResult{}, err
@@ -747,6 +760,7 @@ func AttackHexMonsterHandler(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["instance_id"]
 	publish := func(committed HexAttackResult) {
 		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "COMBAT_EXCHANGE", map[string]any{"instanceId": id, "attackerId": userID, "targetId": req.TargetID})
+		publishHexVisual(id, req.CommandID, committed.StateRevision, "attack", map[string]any{"attackerPosition": committed.AttackerPosition, "targetPosition": committed.TargetPosition, "attackerHPBefore": committed.AttackerHPBefore, "targetHP": committed.TargetHP, "steps": committed.Steps, "effects": committed.Effects})
 	}
 	var result HexAttackResult
 	var err error

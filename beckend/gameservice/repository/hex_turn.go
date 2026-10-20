@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -91,12 +92,9 @@ func applyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	if nextIndex == 0 {
 		nextTurn++
 	}
-	var effects int
-	if err := c.Tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM match_map_cells WHERE instance_id=$1 AND (structure_type<>'' OR is_under_construction)`, instanceID).Scan(&effects); err != nil {
+	constructionChanged, err := progressHexConstructionTx(ctx, c.Tx, instanceID)
+	if err != nil {
 		return out, err
-	}
-	if effects != 0 {
-		return out, ErrHexUnavailable
 	}
 	var characterType string
 	var energy, maxEnergy, health int
@@ -121,15 +119,47 @@ func applyHexEndTurn(ctx context.Context, instanceID string, userID int, command
 	if err := c.Tx.QueryRowContext(ctx, `UPDATE matches SET active_user_id=$2,turn_number=$3,hex_turn_deadline=now()+$4 * interval '1 second' WHERE instance_id=$1 RETURNING hex_turn_deadline`, instanceID, nextUser, nextTurn, int(HexTurnDuration().Seconds())).Scan(&out.Deadline); err != nil {
 		return out, err
 	}
-	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND hex_armor_break_turns>0`, instanceID); err != nil {
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND user_id=$2 AND hex_armor_break_turns>0`, instanceID, nextUser); err != nil {
 		return out, err
 	}
-	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_monsters SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND hex_armor_break_turns>0`, instanceID); err != nil {
+	if nextIndex == 0 {
+		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_monsters SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND hex_armor_break_turns>0`, instanceID); err != nil {
+			return out, err
+		}
+	}
+	turretsChanged, err := progressHexTurretsTx(ctx, c)
+	if err != nil {
 		return out, err
 	}
-	out.ActiveUser, out.CompletedUser, out.TurnNumber, out.Energy = nextUser, userID, nextTurn, energy
+	var active int
+	var deadline sql.NullTime
+	if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(active_user_id,0),turn_number,hex_turn_deadline FROM matches WHERE instance_id=$1`, instanceID).Scan(&active, &nextTurn, &deadline); err != nil {
+		return out, err
+	}
+	if active != nextUser && active > 0 {
+		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_turns=GREATEST(0,hex_armor_break_turns-1),hex_armor_break_stacks=CASE WHEN hex_armor_break_turns<=1 THEN 0 ELSE hex_armor_break_stacks END WHERE instance_id=$1 AND user_id=$2 AND hex_armor_break_turns>0`, instanceID, active); err != nil {
+			return out, err
+		}
+		var class string
+		var currentEnergy, maxEnergy int
+		if err := c.Tx.QueryRowContext(ctx, `SELECT character_type,energy,max_energy FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, active).Scan(&class, &currentEnergy, &maxEnergy); err != nil {
+			return out, err
+		}
+		currentEnergy += regenForClass(class)
+		if currentEnergy > maxEnergy {
+			currentEnergy = maxEnergy
+		}
+		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET energy=$3 WHERE instance_id=$1 AND user_id=$2`, instanceID, active, currentEnergy); err != nil {
+			return out, err
+		}
+		energy = currentEnergy
+	}
+	if deadline.Valid {
+		out.Deadline = deadline.Time
+	}
+	out.ActiveUser, out.CompletedUser, out.TurnNumber, out.Energy = active, userID, nextTurn, energy
 	out.TimedOut = expired
-	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, false)
+	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, constructionChanged || turretsChanged)
 	if err != nil {
 		return HexTurnResult{}, err
 	}
