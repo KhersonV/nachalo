@@ -2,19 +2,23 @@
 package hexmap
 
 import (
+	"encoding/json"
+	"time"
+
 	"gameservice/game"
 	"gameservice/internal/hexgrid"
 	"gameservice/models"
 )
 
 type Cell struct {
-	CellID   int                `json:"cellId"`
-	Position hexgrid.Coord      `json:"position"`
-	Terrain  string             `json:"terrain"`
-	Room     int                `json:"room,omitempty"`
-	Resource *game.ResourceData `json:"resource,omitempty"`
-	Barrel   *game.ResourceData `json:"barrel,omitempty"`
-	IsPortal bool               `json:"isPortal,omitempty"`
+	CellID     int                `json:"cellId"`
+	Position   hexgrid.Coord      `json:"position"`
+	Terrain    string             `json:"terrain"`
+	Visibility string             `json:"visibility,omitempty"`
+	Room       int                `json:"room,omitempty"`
+	Resource   *game.ResourceData `json:"resource,omitempty"`
+	Barrel     *game.ResourceData `json:"barrel,omitempty"`
+	IsPortal   bool               `json:"isPortal,omitempty"`
 }
 type Edge struct {
 	Position  hexgrid.Coord `json:"position"`
@@ -54,25 +58,43 @@ type Player struct {
 	IsRanged      bool           `json:"isRanged"`
 	AttackRange   int            `json:"attackRange"`
 	Inventory     map[string]any `json:"inventory,omitempty"`
+	Balance       int            `json:"balance"`
+}
+type QuestArtifact struct {
+	ID            int            `json:"id"`
+	Name          string         `json:"name"`
+	Image         string         `json:"image,omitempty"`
+	Description   string         `json:"description,omitempty"`
+	Status        string         `json:"status"`
+	CarrierUserID int            `json:"carrierUserId,omitempty"`
+	CarrierName   string         `json:"carrierName,omitempty"`
+	Position      *hexgrid.Coord `json:"position,omitempty"`
 }
 type Snapshot struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Geometry      models.Geometry `json:"geometry"`
-	InstanceID    string          `json:"instanceId"`
-	Mode          string          `json:"mode,omitempty"`
-	TurnOrder     []int           `json:"turnOrder,omitempty"`
-	MapRevision   int64           `json:"mapRevision"`
-	StateRevision int64           `json:"stateRevision"`
-	Seed          int64           `json:"seed"`
-	Radius        int             `json:"radius"`
-	Starts        []Start         `json:"starts,omitempty"`
-	Portal        *hexgrid.Coord  `json:"portal,omitempty"`
-	Cells         []Cell          `json:"cells"`
-	Edges         []Edge          `json:"edges"`
-	Actors        []Actor         `json:"actors"`
-	Player        *Player         `json:"player,omitempty"`
-	ActiveUser    int             `json:"activeUser,omitempty"`
-	TurnNumber    int             `json:"turnNumber,omitempty"`
+	SchemaVersion    int             `json:"schemaVersion"`
+	Geometry         models.Geometry `json:"geometry"`
+	InstanceID       string          `json:"instanceId"`
+	Mode             string          `json:"mode,omitempty"`
+	TurnOrder        []int           `json:"turnOrder,omitempty"`
+	MapRevision      int64           `json:"mapRevision"`
+	StateRevision    int64           `json:"stateRevision"`
+	Seed             int64           `json:"seed"`
+	Radius           int             `json:"radius"`
+	Starts           []Start         `json:"starts,omitempty"`
+	Portal           *hexgrid.Coord  `json:"portal,omitempty"`
+	Cells            []Cell          `json:"cells"`
+	Edges            []Edge          `json:"edges"`
+	Actors           []Actor         `json:"actors"`
+	Player           *Player         `json:"player,omitempty"`
+	ActiveUser       int             `json:"activeUser,omitempty"`
+	ActivePlayerName string          `json:"activePlayerName,omitempty"`
+	TurnNumber       int             `json:"turnNumber,omitempty"`
+	TurnDeadline     *time.Time      `json:"turnDeadline,omitempty"`
+	TurnSeconds      int             `json:"turnSeconds,omitempty"`
+	Finished         bool            `json:"finished,omitempty"`
+	QuestArtifactID  int             `json:"questArtifactId,omitempty"`
+	QuestArtifact    *QuestArtifact  `json:"questArtifact,omitempty"`
+	Result           json.RawMessage `json:"result,omitempty"`
 }
 
 // Generate keeps the read-only preview endpoint. Its illustrative catalog is

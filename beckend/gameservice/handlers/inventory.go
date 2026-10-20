@@ -151,6 +151,9 @@ func UseInventoryHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "instance_id обязателен", http.StatusBadRequest)
 		return
 	}
+	if rejectLegacyHexAction(w, req.InstanceID) {
+		return
+	}
 
 	lockPlayer(playerID)
 	defer unlockPlayer(playerID)

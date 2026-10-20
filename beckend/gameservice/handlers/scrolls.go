@@ -29,6 +29,9 @@ func UseScrollHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "instance_id required", http.StatusBadRequest)
 		return
 	}
+	if rejectLegacyHexAction(w, instanceID) {
+		return
+	}
 
 	var req struct {
 		ScrollType string `json:"scroll_type"`

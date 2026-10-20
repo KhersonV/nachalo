@@ -27,6 +27,7 @@ import type {
     HeroesState,
 } from "../types";
 import LobbyHeader from "./LobbyHeader";
+import StorageLoadout from "./StorageLoadout";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 
 import styles from "../styles/ModeSelectionPage.module.css";
@@ -290,6 +291,10 @@ export async function startMatchmaking(
 
 export default function ModeSelectionPage() {
     const [mode, setMode] = useState<GameMode>("PVE");
+    useEffect(() => {
+        const repeatMode = new URLSearchParams(window.location.search).get("repeatMode");
+        if (repeatMode && Object.prototype.hasOwnProperty.call(REQUIRED_SIZE, repeatMode)) setMode(repeatMode as GameMode);
+    }, []);
     const [queueSizes, setQueueSizes] = useState<Record<GameMode, number>>({
         PVE: 0,
         "1x1": 0,
@@ -301,6 +306,7 @@ export default function ModeSelectionPage() {
     const router = useRouter();
     const { user } = useAuth();
     const [isMatching, setIsMatching] = useState(false);
+    const [loadoutReady, setLoadoutReady] = useState(false);
     const [pendingInstanceId, setPendingInstanceId] = useState<string | null>(
         null,
     );
@@ -868,6 +874,10 @@ export default function ModeSelectionPage() {
     }
 
     async function handleStart() {
+        if (!loadoutReady) {
+            alert("Save your loadout before joining the queue.");
+            return;
+        }
         if (!token) {
             alert("Please log in first");
             router.push("/login");
@@ -1326,11 +1336,13 @@ export default function ModeSelectionPage() {
                 </p>
             </section>
 
+            <StorageLoadout allowSelection onReadyChange={setLoadoutReady} />
             <div className={styles.buttonGroup}>
                 <button
                     className={styles.queueButton}
                     onClick={handleStart}
                     disabled={
+                        !loadoutReady ||
                         isMatching ||
                         !!pendingInstanceId ||
                         (!!partyState?.inParty && !partyState.isLeader) ||

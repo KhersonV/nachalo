@@ -138,6 +138,9 @@ func PlaceBlueprintHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if rejectLegacyHexAction(w, req.InstanceID) {
+		return
+	}
 
 	lockPlayer(req.UserID)
 	defer unlockPlayer(req.UserID)

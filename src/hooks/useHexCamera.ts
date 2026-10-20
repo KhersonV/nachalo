@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent, WheelEvent, MouseEvent } from "react";
 
 export type CameraPoint = Readonly<{ x: number; y: number }>;
@@ -19,13 +19,17 @@ export function useHexCamera(hero: CameraPoint) {
   const [camera, setCamera] = useState<Camera>(() => ({ x: hero.x, y: hero.y, zoom: 1 }));
   const [panning, setPanning] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const rect = svg.getBoundingClientRect();
-      setSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
-    });
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      setSize(current => current.width === width && current.height === height ? current : { width, height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(svg);
     return () => observer.disconnect();
   }, []);

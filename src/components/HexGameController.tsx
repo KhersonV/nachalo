@@ -3,25 +3,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { hexKey, type HexCoord } from "@/utils/hexGrid";
-import { type HexActor, type HexAttackPreview, type HexAttackResult, type HexRoute, type HexSnapshot } from "@/types/HexGameTypes";
+import { type HexActor, type HexAttackPreview, type HexAttackResult, type HexPlayerResult, type HexRoute, type HexSnapshot } from "@/types/HexGameTypes";
 import { useHexMatchSnapshot } from "@/hooks/useHexMatchSnapshot";
 import type { ActionLogEntry, ActionLogCategory, ActionLogTone } from "@/types";
 import HexMap from "./HexMap";
 import PlayerHUD from "./PlayerHUD";
 import Inventory from "./Inventory";
 import ActionLog from "./ActionLog";
+import HexMatchResults from "./HexMatchResults";
 import styles from "@/styles/GameController.module.css";
 import hexStyles from "@/styles/HexGameController.module.css";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { formatHexMessage, type GameLanguage } from "@/i18n/hexGame";
 
 type Pending = { key: string; commandId: string };
 type Props = { instanceId: string; initialSnapshot: HexSnapshot };
+type HexBarrelResult = { outcome: "damage" | "resource" | "artifact"; damage?: number; health: number; itemName?: string };
+type HexItemResult = { itemType: string; itemId: number; health: number; energy: number; axis?: "q" | "r"; value?: number };
 
 export default function HexGameController({ instanceId, initialSnapshot }: Props) {
   const { user } = useAuth();
-  const { snapshot, refresh, base, unavailable, syncError } = useHexMatchSnapshot(instanceId, initialSnapshot, user?.token);
+  const { language, setLanguage, messages: t } = useGameLanguage();
+  const { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice } = useHexMatchSnapshot(instanceId, initialSnapshot, user?.token);
   const [selected, setSelected] = useState<HexCoord | null>(null);
   const [route, setRoute] = useState<HexRoute | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
+	const [targetKind, setTargetKind] = useState<"player" | "monster">("monster");
+	const [clockNow, setClockNow] = useState(Date.now());
   const [attackPreview, setAttackPreview] = useState<HexAttackPreview | null>(null);
   const [lastAttack, setLastAttack] = useState<HexAttackResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,8 +40,12 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const pendingMove = useRef<Pending | null>(null);
   const pendingAttack = useRef<Pending | null>(null);
   const pendingCollect = useRef<Pending | null>(null);
+  const pendingBarrel = useRef<Pending | null>(null);
+  const pendingItem = useRef<Pending | null>(null);
   const pendingTurn = useRef<Pending | null>(null);
+  const pendingExtract = useRef<Pending | null>(null);
   const routeRequest = useRef(0);
+  const actionInFlight = useRef(false);
 
   const record = useCallback((message: string, category: ActionLogCategory, tone: ActionLogTone = "info") => {
     setLog(current => [...current.slice(-29), { id: crypto.randomUUID(), timestamp: Date.now(), message, category, tone }]);
@@ -45,16 +57,17 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     return () => window.clearTimeout(timer);
   }, [feedback]);
   useEffect(() => { if (syncError) setError(syncError); }, [syncError]);
-  useEffect(() => { if (unavailable) { setTargetId(null); setAttackPreview(null); setLastAttack(null); } }, [unavailable]);
+  useEffect(() => { if (unavailable || snapshot.finished || !snapshot.player || snapshot.player.health <= 0) { setTargetId(null); setAttackPreview(null); setLastAttack(null); setSelected(null); setRoute(null); } }, [unavailable, snapshot.finished, snapshot.player?.health]);
   useEffect(() => { setRoute(null); }, [snapshot.stateRevision]);
+	useEffect(() => { const timer = window.setInterval(() => setClockNow(Date.now()), 250); return () => window.clearInterval(timer); }, []);
   const post = useCallback(async <T,>(action: string, body: object): Promise<T> => {
-    if (!user?.token) throw new Error("Session unavailable");
+    if (!user?.token) throw new Error(t.sessionUnavailable);
     const response = await fetch(`${base}/${action}`, {
       method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
-  }, [base, user?.token]);
+  }, [base, user?.token, t.sessionUnavailable]);
   const command = useCallback((ref: { current: Pending | null }, key: string) => {
     if (!ref.current || ref.current.key !== key) ref.current = { key, commandId: crypto.randomUUID() };
     return ref.current.commandId;
@@ -62,9 +75,18 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
 
   const cellByCoord = useMemo(() => new Map(snapshot.cells.map(cell => [hexKey(cell.position), cell])), [snapshot.cells]);
   const selectedCell = selected ? cellByCoord.get(hexKey(selected)) : undefined;
-  const myTurn = !!snapshot.player && snapshot.activeUser === snapshot.player.userId && snapshot.player.health > 0;
-  const target = targetId === null ? undefined : snapshot.actors.find(actor => actor.id === `monster-${targetId}`);
-  const onResourceCell = !!selectedCell?.resource && !!snapshot.player && hexKey(selectedCell.position) === hexKey(snapshot.player.position);
+  const currentCell = snapshot.player ? cellByCoord.get(hexKey(snapshot.player.position)) : undefined;
+  const myTurn = !snapshot.finished && !snapshot.result && !unavailable && !!snapshot.player && snapshot.activeUser === snapshot.player.userId && snapshot.player.health > 0;
+  const defeated = snapshot.result?.method === "defeat" || (!!snapshot.finished && !snapshot.result && !!snapshot.player && snapshot.player.health <= 0);
+  const extracted = !!snapshot.result && snapshot.result.method !== "defeat";
+  const questKey = `artifact_${snapshot.questArtifactId ?? 0}`;
+  const hasQuest = !!snapshot.questArtifactId && Number(snapshot.player?.inventory?.[questKey]?.item_count ?? 0) > 0;
+  const atPortal = !!currentCell?.isPortal && snapshot.mode !== "hex-test";
+  const target = targetId === null ? undefined : snapshot.actors.find(actor => actor.id === `${targetKind}-${targetId}`);
+	const activeActor = snapshot.actors.find(actor => actor.userId === snapshot.activeUser);
+	const remaining = snapshot.turnDeadline && !snapshot.finished ? Math.max(0, Math.ceil((Date.parse(snapshot.turnDeadline) - clockNow) / 1000)) : 0;
+	const turnSeconds = snapshot.turnSeconds || 60;
+  const contextAction = currentCell?.resource ? "collect" : currentCell?.barrel ? "open" : null;
 
   useEffect(() => {
     if (targetId === null) return;
@@ -73,7 +95,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       return;
     }
     let cancelled = false;
-    void post<HexAttackPreview>("attack-preview", { targetId }).then(preview => {
+    void post<HexAttackPreview>("attack-preview", { targetId, targetKind }).then(preview => {
       if (!cancelled) setAttackPreview(preview);
     }).catch(reason => {
       if (!cancelled) {
@@ -83,26 +105,24 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       }
     });
     return () => { cancelled = true; };
-  }, [targetId, target, myTurn, snapshot.stateRevision, post]);
+  }, [targetId, targetKind, target, myTurn, snapshot.stateRevision, post]);
 
   const selectCell = async (position: HexCoord) => {
-    if (busy || !myTurn) return;
+    if (busy || actionInFlight.current || !myTurn) return;
     const occupant = snapshot.actors.find(actor => hexKey(actor.position) === hexKey(position));
-    if (occupant?.kind === "monster") { selectMonster(occupant); return; }
-    if (snapshot.actors.some(actor => actor.kind === "player" && actor.userId !== snapshot.player?.userId && hexKey(actor.position) === hexKey(position))) {
-      setSelected(position); setRoute(null); setError("PvP-атаки пока недоступны в HEX."); return;
-    }
-    setTargetId(null); setAttackPreview(null); setLastAttack(null);
+    if (occupant && (occupant.kind === "monster" || occupant.kind === "player" && occupant.userId !== snapshot.player?.userId)) { selectMonster(occupant); return; }
+    if (cellByCoord.get(hexKey(position))?.visibility === "unexplored") return;
     const key = hexKey(position);
+    if (snapshot.player && key === hexKey(snapshot.player.position)) { setSelected(position); setRoute(null); setError(""); return; }
     if (selected && hexKey(selected) === key && route?.path.length && hexKey(route.path[route.path.length - 1]) === key) {
-      if (!route.affordable) { setError(`Недостаточно энергии: нужно ${route.totalCost}, доступно ${route.energy}.`); return; }
-      setBusy(true); setError("");
+      if (!route.affordable) { setError(formatHexMessage(t.noEnergy, { cost: route.totalCost, energy: route.energy })); return; }
+      actionInFlight.current = true; setBusy(true); setError("");
       try {
         await post("move", { destination: position, commandId: command(pendingMove, key) });
         await refresh();
-        pendingMove.current = null; setSelected(null); setRoute(null);
-        record(`Перемещение в (${position.q}, ${position.r})`, "movement", "success");
-      } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
+        pendingMove.current = null; setSelected(cellByCoord.get(key)?.barrel ? position : null); setRoute(null);
+        record(`${t.moved} (${position.q}, ${position.r})`, "movement", "success");
+      } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
       return;
     }
     const request = ++routeRequest.current;
@@ -111,22 +131,22 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       const next = await post<HexRoute>("route", { destination: position });
       if (request !== routeRequest.current) return;
       setRoute(next);
-      if (!next.affordable) setError(`Недостаточно энергии: нужно ${next.totalCost}, доступно ${next.energy}.`);
+      if (!next.affordable) setError(formatHexMessage(t.noEnergy, { cost: next.totalCost, energy: next.energy }));
     } catch (reason) { if (request === routeRequest.current) setError(String(reason)); }
   };
   const selectMonster = (actor: HexActor) => {
-    if (busy || !myTurn || actor.kind !== "monster") return;
-    const id = Number(actor.id.replace(/^monster-/, ""));
+    if (busy || actionInFlight.current || !myTurn || actor.kind === "player" && actor.teamId === snapshot.player?.teamId) return;
+    const id = actor.kind === "player" ? actor.userId ?? 0 : Number(actor.id.replace(/^monster-/, ""));
     if (!Number.isSafeInteger(id)) return;
-    if (targetId === id) return;
-    setSelected(null); setRoute(null); setTargetId(id); setAttackPreview(null); setLastAttack(null); setError(""); pendingAttack.current = null;
+    if (targetId === id && targetKind === actor.kind) return;
+    setSelected(null); setRoute(null); setTargetId(id); setTargetKind(actor.kind); setAttackPreview(null); setLastAttack(null); setError(""); pendingAttack.current = null;
   };
   const attackTarget = async () => {
-    if (busy || !myTurn || targetId === null || !target || !attackPreview) return;
+    if (busy || actionInFlight.current || !myTurn || targetId === null || !target || !attackPreview) return;
     const id = targetId;
-    setBusy(true); setError("");
+    actionInFlight.current = true; setBusy(true); setError("");
     try {
-      const result = await post<HexAttackResult>("attack", { targetId: id, commandId: command(pendingAttack, String(id)) });
+      const result = await post<HexAttackResult>("attack", { targetId: id, targetKind, commandId: command(pendingAttack, `${targetKind}:${id}`) });
       pendingAttack.current = null;
       setLastAttack(result);
       if (result.monsterDied || result.newTargetHP <= 0 || result.newAttackerHP <= 0) {
@@ -135,80 +155,131 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
         setAttackPreview(previous => previous ? { ...previous, targetHP: result.newTargetHP, energy: result.energy } : previous);
       }
       await refresh();
-      record(`Монстр ${id}: урон ${result.damage}, контратака ${result.counterDamage}${result.monsterDied ? ", убит" : ""}`, "attack", "success");
-    } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
+      record(`${targetKind === "player" ? t.player : t.monsterHit} ${id}: ${t.damage} ${result.damage}, ${t.counterattack} ${result.counterDamage}${result.monsterDied || result.playerDied ? `, ${t.killed}` : ""}`, "attack", "success");
+    } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
   };
   const collect = async () => {
-    if (busy || !myTurn || !onResourceCell || !selectedCell?.resource) return;
-    setBusy(true); setError("");
+    if (busy || actionInFlight.current || !myTurn || contextAction !== "collect" || !currentCell?.resource) return;
+    actionInFlight.current = true; setBusy(true); setError("");
     try {
-      await post("collect", { position: selectedCell.position, commandId: command(pendingCollect, hexKey(selectedCell.position)) });
+      await post("collect", { position: currentCell.position, commandId: command(pendingCollect, hexKey(currentCell.position)) });
       await refresh();
-      record(`Подобрано: ${selectedCell.resource.type}`, "resource", "success");
+      record(`${t.pickedUp}: ${currentCell.resource.type}`, "resource", "success");
       pendingCollect.current = null; setSelected(null); setRoute(null);
-    } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
+    } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
+  };
+  const openBarrel = async () => {
+    if (busy || actionInFlight.current || !myTurn || contextAction !== "open" || !currentCell?.barrel) return;
+    const position = currentCell.position;
+    actionInFlight.current = true; setBusy(true); setError("");
+    try {
+      const result = await post<HexBarrelResult>("open-barrel", { position, commandId: command(pendingBarrel, hexKey(position)) });
+      await refresh(); pendingBarrel.current = null; setSelected(null); setRoute(null);
+      record(result.outcome === "damage" ? `${t.barrelDamage} ${result.damage}` : `${result.outcome === "artifact" ? t.barrelArtifact : t.barrelResource} ${result.itemName ?? ""}`, "barrel", "success");
+    } catch (reason) { setError(String(reason)); throw reason; } finally { actionInFlight.current = false; setBusy(false); }
+  };
+  const useItem = async (itemType: "resource" | "scroll", itemId: number): Promise<string> => {
+    if (busy || actionInFlight.current || !myTurn) throw new Error(t.cannotUse);
+    const key = `${itemType}_${itemId}`;
+    actionInFlight.current = true; setBusy(true); setError("");
+    try {
+      const result = await post<HexItemResult>("use-item", { itemType, itemId, commandId: command(pendingItem, key) });
+      await refresh(); pendingItem.current = null;
+      const message = result.axis ? `${t.scroll}: ${result.axis.toUpperCase()} = ${result.value}` : `${t.itemUsed} · HP ${result.health} · ${t.energy} ${result.energy}`;
+      record(message, "resource", "success");
+      return message;
+    } catch (reason) { setError(String(reason)); throw reason; } finally { actionInFlight.current = false; setBusy(false); }
   };
   const endTurn = async () => {
-    if (busy || !myTurn || !snapshot.turnNumber) return;
-    setBusy(true); setError("");
+    if (busy || actionInFlight.current || !myTurn || !snapshot.turnNumber) return;
+    actionInFlight.current = true; setBusy(true); setError("");
     try {
       await post("end-turn", { expectedTurn: snapshot.turnNumber, commandId: command(pendingTurn, String(snapshot.turnNumber)) });
       await refresh();
-      record(`Ход ${snapshot.turnNumber} завершён`, "turn", "success");
+      record(`${t.turn} ${snapshot.turnNumber} · ${t.turnEnded}`, "turn", "success");
       pendingTurn.current = null; setSelected(null); setRoute(null);
-    } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
+    } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
   };
+
+  const extract = async () => {
+    if (busy || actionInFlight.current || !myTurn || !atPortal) return;
+    const method = hasQuest ? "artifact" : "paid";
+    if (method === "paid") {
+      if ((snapshot.player?.balance ?? 0) < 50) { setError(t.needGold); return; }
+      if (!window.confirm(t.confirmPaid)) return;
+    }
+    actionInFlight.current = true; setBusy(true); setError("");
+    try {
+      await post<HexPlayerResult>("extract", { method, confirmedPaid: method === "paid", commandId: command(pendingExtract, method) });
+      await refresh(); pendingExtract.current = null; setSelected(null); setRoute(null); setTargetId(null); setAttackPreview(null);
+      record(method === "artifact" ? t.extractedArtifact : t.extractedPaid, "portal", "success");
+    } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
+  };
+
+  const quest = snapshot.questArtifact;
+  const questStatus = quest?.status === "carried" && quest.position ? formatHexMessage(t.questCarried, { player: quest.carrierName || `${t.player} ${quest.carrierUserId}`, q: quest.position.q, r: quest.position.r })
+    : quest?.status === "ground" && quest.position ? formatHexMessage(t.questGround, quest.position)
+    : quest?.status === "extracted" ? t.questExtracted : quest?.status === "found" ? t.questFoundStatus : t.questUnknown;
 
   return <div className={`${styles.container} ${hexStyles.hexGame}`} data-geometry="hex-v1">
     <div className={hexStyles.shell}>
       <aside className={hexStyles.leftHud}>
         {snapshot.player && <PlayerHUD health={snapshot.player.health} maxHealth={snapshot.player.maxHealth} energy={snapshot.player.energy}
           maxEnergy={snapshot.player.maxEnergy} agility={snapshot.player.agility} characterType={snapshot.player.characterType}
-          isRanged={snapshot.player.isRanged} attackRange={snapshot.player.attackRange} />}
-        <ActionLog entries={log} compact />
+          isRanged={snapshot.player.isRanged} attackRange={snapshot.player.attackRange} labels={t} />}
+        <ActionLog entries={log} compact labels={t} />
       </aside>
       <main className={hexStyles.stage}>
         <div className={hexStyles.mapContainer}>
-          <HexMap snapshot={snapshot} selected={selected} route={route} selectedTargetId={targetId} busy={busy}
+          <HexMap snapshot={snapshot} selected={snapshot.finished || snapshot.player?.health === 0 ? null : selected} route={snapshot.finished || snapshot.player?.health === 0 ? null : route} selectedTargetId={snapshot.finished || snapshot.player?.health === 0 ? null : targetId} selectedTargetKind={targetKind} busy={busy || !myTurn} labels={t}
             onCellClick={position => void selectCell(position)} onMonsterClick={actor => void selectMonster(actor)} />
         </div>
       </main>
       <aside className={hexStyles.rightHud}>
+        {quest && <section className={`${hexStyles.panel} ${hexStyles.questCard}`} aria-label={t.questArtifact}>
+          <div className={hexStyles.questHeading}>{quest.image ? <img src={quest.image} alt={t.questImageAlt} /> : <span aria-hidden="true">◆</span>}<strong>{quest.name}</strong></div>
+          <span>{questStatus}</span><small>{t.questGoal}</small>
+        </section>}
         <div className={hexStyles.panel}>
-          <strong>HEX · Ход {snapshot.turnNumber}</strong>
-          <span>{snapshot.player?.name} · {myTurn ? "Ваш ход" : "Ожидание хода"}</span>
+          <div className={hexStyles.heading}><strong>HEX · {t.turn} {snapshot.turnNumber}</strong><label>{t.language} <select aria-label={t.language} value={language} onChange={event => setLanguage(event.target.value as GameLanguage)}><option value="en">EN</option><option value="ru">RU</option><option value="de">DE</option></select></label></div>
+          <span>{snapshot.player?.name} · {snapshot.finished ? t.finished : snapshot.player && snapshot.player.health <= 0 ? t.defeatedWaiting : myTurn ? t.yourTurn : t.waiting}</span>
+		  {!snapshot.finished && <><span>{t.activePlayer}: {snapshot.activePlayerName || activeActor?.name || `${t.player} ${snapshot.activeUser}`} · {remaining}s</span><progress max={turnSeconds} value={Math.min(turnSeconds, remaining)} aria-label={t.turnTime} /></>}
           {snapshot.actors.filter(actor => actor.kind === "player" && actor.userId !== snapshot.player?.userId).map(actor =>
-            <span key={actor.id}>{actor.name || `Игрок ${actor.userId}`} · команда {actor.teamId} · HP {actor.health}/{actor.maxHealth}</span>)}
-          <span>Ресурсы: {Object.entries(snapshot.player?.inventory ?? {}).map(([key, item]) => `${item.item_name ?? key} ×${item.item_count ?? 0}`).join(", ") || "пусто"}</span>
-          {snapshot.mode !== "PVE" && snapshot.mode !== "hex-test" && <span>PvP-атаки пока недоступны в HEX; доступны движение и завершение хода.</span>}
+            <span key={actor.id}>{actor.name || `${t.player} ${actor.userId}`} · {t.team} {actor.teamId} · HP {actor.health}/{actor.maxHealth}</span>)}
           <div className={hexStyles.actions}>
-            <button onClick={() => setInventoryOpen(open => !open)}>{inventoryOpen ? "Закрыть инвентарь" : "Инвентарь"}</button>
-            <button disabled={busy || !myTurn} onClick={() => void endTurn()}>Завершить ход</button>
-            <button onClick={() => void refresh().catch(reason => setError(String(reason)))}>Обновить</button>
+            {contextAction && <button className={hexStyles.contextAction} disabled={busy || !myTurn} onClick={() => contextAction === "collect" ? void collect() : void openBarrel().catch(() => {})}>{contextAction === "collect" ? t.pickUp : t.open}</button>}
+            {atPortal && !snapshot.result && <button className={hexStyles.contextAction} disabled={busy || !myTurn || (!hasQuest && (snapshot.player?.balance ?? 0) < 50)} onClick={() => void extract()}>{hasQuest ? t.extractArtifact : t.extractPaid}</button>}
+            {atPortal && !hasQuest && !snapshot.result && <span>{t.currentGold}: {snapshot.player?.balance ?? 0}{(snapshot.player?.balance ?? 0) < 50 ? ` · ${t.needGold}` : ""}</span>}
+            <button onClick={() => setInventoryOpen(open => !open)}>{inventoryOpen ? t.closeInventory : t.inventory}</button>
+            <button disabled={busy || !myTurn} onClick={() => void endTurn()}>{t.endTurn}</button>
+            <button onClick={() => void refresh().catch(reason => setError(String(reason)))}>{t.refresh}</button>
           </div>
-          <details className={hexStyles.debug}><summary>Диагностика</summary>
-            <span>Позиция героя: ({snapshot.player?.position.q}, {snapshot.player?.position.r})</span>
+          <details className={hexStyles.debug}><summary>{t.debug}</summary>
+            <span>{t.heroPosition}: ({snapshot.player?.position.q}, {snapshot.player?.position.r})</span>
             <span>mapRevision {snapshot.mapRevision} · stateRevision {snapshot.stateRevision}</span>
-            {selectedCell && <span>Выбрана клетка: ({selectedCell.position.q}, {selectedCell.position.r})</span>}
+            {selectedCell && <span>{t.selectedCell}: ({selectedCell.position.q}, {selectedCell.position.r})</span>}
           </details>
         </div>
-        {selectedCell && <div className={hexStyles.panel}>Клетка: {selectedCell.terrain === "floor" ? "каменный пол" : "препятствие"}
-          {route && <span>Маршрут: {route.path.length} шагов · {route.totalCost} энергии · {route.affordable ? "второй клик подтверждает" : "не хватает энергии"}</span>}
-          {selectedCell.resource && <><span>Ресурс: {selectedCell.resource.type}</span><button disabled={busy || !myTurn || !onResourceCell} onClick={() => void collect()}>Подобрать</button>{!onResourceCell && <span>Для подбора встаньте на эту клетку.</span>}</>}
-          {selectedCell.barrel && <span>Бочка · для открытия нужно стоять на её клетке; открытие пока недоступно</span>}
-          {selectedCell.isPortal && <span>Портал · эвакуация пока недоступна</span>}
+        {selectedCell && !snapshot.finished && <div className={hexStyles.panel}>{t.cell}: {selectedCell.terrain === "floor" ? t.floor : t.rock}
+          {route && <span>{t.route}: {route.path.length} {t.steps} · {route.totalCost} {t.energy} · {route.affordable ? t.confirmRoute : t.insufficientEnergy}</span>}
+          {selectedCell.resource && <><span>{t.resource}: {selectedCell.resource.type}</span>{hexKey(selectedCell.position) !== hexKey(snapshot.player?.position ?? { q: NaN, r: NaN }) && <span>{t.standOnResource}</span>}</>}
+          {selectedCell.barrel && hexKey(selectedCell.position) !== hexKey(snapshot.player?.position ?? { q: NaN, r: NaN }) && <span>{t.barrel} · {t.standOnBarrel}</span>}
+          {selectedCell.isPortal && <span>{snapshot.mode === "hex-test" ? t.portalUnavailable : hasQuest ? t.extractArtifact : t.extractPaid}</span>}
         </div>}
-        {targetId !== null && target && <div className={hexStyles.panel}>Монстр {targetId}
-          <button onClick={() => { setTargetId(null); setAttackPreview(null); setLastAttack(null); }}>Закрыть</button>
+        {targetId !== null && target && !snapshot.finished && <div className={hexStyles.panel}>{targetKind === "player" ? t.player : t.monster} {target.name || targetId}
+          <button onClick={() => { setTargetId(null); setAttackPreview(null); setLastAttack(null); }}>{t.close}</button>
           <span>HP {target.health}/{target.maxHealth}</span>
-          {lastAttack && <span>Последний удар: {lastAttack.damage} урона · контратака {lastAttack.counterDamage}{lastAttack.effects.length ? ` · эффекты: ${lastAttack.effects.map(effect => effect.kind).join(", ")}` : ""}</span>}
-          {attackPreview ? <><span>Дистанция {attackPreview.distance} · {attackPreview.mode} · {attackPreview.cost} энергии</span>
-            <button disabled={busy || !myTurn || attackPreview.energy < attackPreview.cost} onClick={() => void attackTarget()}>Атаковать</button></> : <span>Атака пока недоступна или проверяется.</span>}
+          {attackPreview ? <><span>{t.distance} {attackPreview.distance} · {attackPreview.mode} · {attackPreview.cost} {t.energy}</span>
+            <button disabled={busy || !myTurn || attackPreview.energy < attackPreview.cost} onClick={() => void attackTarget()}>{t.attack}</button></> : <span>{t.attackChecking}</span>}
+		  {lastAttack && <span>{t.lastHit}: {lastAttack.damage} {t.damage} · {t.counterattack} {lastAttack.counterDamage}{lastAttack.effects.length ? ` · ${t.effects}: ${lastAttack.effects.map(effect => effect.kind).join(", ")}` : ""}</span>}
         </div>}
       </aside>
     </div>
     {feedback && <p role="status" className={hexStyles.feedback}>{feedback}</p>}
+    {questNotice && <p role="status" className={hexStyles.questNotice}>{formatHexMessage(t.questAnnouncement, { artifact: quest?.name || t.questArtifact, player: questNotice.playerName || `${t.player} ${questNotice.userId}`, q: questNotice.q, r: questNotice.r })}</p>}
+	{turnTimeoutNotice && <p role="status" className={hexStyles.questNotice}>{t.turnTimedOut}</p>}
     {error && <p role="alert" className={hexStyles.error}>{error}</p>}
-    {inventoryOpen && <Inventory hexInventory={snapshot.player?.inventory ?? {}} />}
+    {inventoryOpen && <Inventory hexInventory={snapshot.player?.inventory ?? {}} onHexUseItem={useItem} hexBusy={busy || !myTurn} hexLabels={t} />}
+    {(defeated || extracted) && <HexMatchResults snapshot={snapshot} labels={t} />}
   </div>;
 }

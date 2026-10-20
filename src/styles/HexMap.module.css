@@ -3,6 +3,11 @@
 .map[data-panning="true"] { cursor: grabbing; }
 .floor { stroke: #172024; stroke-width: 2; cursor: pointer; }
 .rock { stroke: #10191d; stroke-width: 2; filter: brightness(.42) saturate(.55); cursor: pointer; }
+.unknownCell { stroke: #111820; stroke-width: 2; cursor: default; }
+.exploredFog { fill: #06101b; fill-opacity: .72; stroke: #284052; stroke-opacity: .4; stroke-width: 1; }
+.boundaryGlow, .boundaryGold { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.boundaryGlow { stroke: #c28e36; stroke-width: 10; opacity: .34; }
+.boundaryGold { stroke: #eecb72; stroke-width: 3; filter: drop-shadow(0 0 3px #d69d3f); }
 .floorTint { fill: #41545a; opacity: .17; }
 .interactiveCell { fill: #e5b861; fill-opacity: .08; stroke: #e5b861; stroke-opacity: .55; stroke-width: 3; }
 .heroCell { fill: #3ccde6; fill-opacity: .13; stroke: #5be4f4; stroke-width: 3; }

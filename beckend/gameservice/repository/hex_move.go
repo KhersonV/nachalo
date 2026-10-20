@@ -103,6 +103,10 @@ func ApplyHexMoveWithPublish(ctx context.Context, instanceID string, userID int,
 			return empty, ErrCommandRejected
 		}
 	}
+	visited := append([]hexgrid.Coord{start}, route.Path...)
+	if err := recordHexExploredTx(ctx, c.Tx, instanceID, userID, visited...); err != nil {
+		return empty, err
+	}
 	route.Position = destination
 	route.Energy -= route.TotalCost
 	route.Affordable = route.Energy >= 0
@@ -140,6 +144,13 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 	if health <= 0 || out.Position == destination {
 		return out, ErrCommandRejected
 	}
+	visible, err := HexVisibleCellsTx(ctx, tx, instanceID, userID)
+	if err != nil {
+		return out, err
+	}
+	if !visible[destination] {
+		return out, ErrHexBlocked
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT q,r,tile_code,is_player,structure_type,is_under_construction FROM match_map_cells WHERE instance_id=$1`, instanceID)
 	if err != nil {
 		return out, err
@@ -154,7 +165,7 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 			rows.Close()
 			return out, err
 		}
-		walkable[pos] = (tile == 48 || tile == 82) && !occupied && structure == "" && !building
+		walkable[pos] = (tile == 48 || tile == 82 || tile == 66) && !occupied && structure == "" && !building
 	}
 	err = rows.Err()
 	rows.Close()
@@ -226,7 +237,7 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 		queue = queue[1:]
 		for direction := 0; direction < 6; direction++ {
 			next, err := hexgrid.Neighbor(current, direction)
-			if err != nil || seen[next] || !walkable[next] {
+			if err != nil || seen[next] || !walkable[next] || !visible[next] {
 				continue
 			}
 			key, _ := hexgrid.CanonicalEdge(current, next)

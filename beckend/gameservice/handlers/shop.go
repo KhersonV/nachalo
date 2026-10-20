@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -371,69 +372,18 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	player, err := repository.GetPlayerByUserID(req.PlayerID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to load player: %v", err), http.StatusInternalServerError)
-		return
-	}
-
 	totalCost := unitPrice * req.Count
-	if player.Balance < totalCost {
-		http.Error(w, "insufficient balance", http.StatusBadRequest)
-		return
-	}
-
-	inv := make(map[string]map[string]interface{})
-	if player.Inventory != "" && player.Inventory != "{}" {
-		if err := json.Unmarshal([]byte(player.Inventory), &inv); err != nil {
-			inv = make(map[string]map[string]interface{})
-		}
-	}
-
 	key := item.InventoryKey
 	if key == "" {
 		key = "resource_" + strconv.Itoa(item.ID)
 	}
-	entry, exists := inv[key]
-	if !exists {
-		entry = map[string]interface{}{
-			"name":        item.Name,
-			"item_count":  0,
-			"image":       item.Image,
-			"description": item.Description,
-			"effect":      item.Effect,
+	if err := repository.PurchaseStorageItem(r.Context(), req.PlayerID, key, req.Count, totalCost, map[string]any{
+		"name": item.Name, "image": item.Image, "description": item.Description, "effect": item.Effect,
+	}); err != nil {
+		if errors.Is(err, repository.ErrStorageInsufficientGold) {
+			http.Error(w, "insufficient balance", http.StatusBadRequest)
+			return
 		}
-	}
-
-	currentCount := 0
-	switch c := entry["item_count"].(type) {
-	case float64:
-		currentCount = int(c)
-	case int:
-		currentCount = c
-	case int64:
-		currentCount = int(c)
-	case string:
-		if parsed, err := strconv.Atoi(c); err == nil {
-			currentCount = parsed
-		}
-	}
-	entry["item_count"] = currentCount + req.Count
-	entry["name"] = item.Name
-	entry["image"] = item.Image
-	entry["description"] = item.Description
-	entry["effect"] = item.Effect
-	inv[key] = entry
-
-	invBytes, err := json.Marshal(inv)
-	if err != nil {
-		http.Error(w, "failed to encode inventory", http.StatusInternalServerError)
-		return
-	}
-
-	player.Balance -= totalCost
-	player.Inventory = string(invBytes)
-	if err := repository.UpdatePlayer(player); err != nil {
 		http.Error(w, fmt.Sprintf("failed to update player: %v", err), http.StatusInternalServerError)
 		return
 	}

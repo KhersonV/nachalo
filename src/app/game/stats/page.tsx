@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { rewardLabel } from "@/utils/matchHistory";
 import styles from "@/styles/GameStatsPage.module.css";
+import GameResultShell from "@/components/GameResultShell";
 
 type Reward = {
     type?: string;
@@ -897,7 +898,7 @@ export default function GameStatsPage() {
 
     if (!stats && isPendingAfterDefeat) {
         return (
-            <main className={styles.page}>
+            <GameResultShell>
                 <section className={styles.card}>
                     <p className={styles.eyebrow}>Match Result</p>
                     <h1 className={`${styles.title} ${styles.titleLoss}`}>
@@ -938,7 +939,7 @@ export default function GameStatsPage() {
                         </button>
                     </div>
                 </section>
-            </main>
+            </GameResultShell>
         );
     }
 
@@ -955,7 +956,7 @@ export default function GameStatsPage() {
               : styles.titleNeutral;
 
     return (
-        <main className={styles.page}>
+        <GameResultShell>
             <section className={styles.card}>
                 <header className={styles.resultHeader}>
                     <p className={styles.eyebrow}>Match Result</p>
@@ -1233,6 +1234,6 @@ export default function GameStatsPage() {
                     </button>
                 </div>
             </section>
-        </main>
+        </GameResultShell>
     );
 }

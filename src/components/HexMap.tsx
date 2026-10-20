@@ -6,19 +6,23 @@ import { heroArt, monsterArt, resourceArt } from "@/utils/hexArt";
 import { useHexCamera } from "@/hooks/useHexCamera";
 import type { HexActor, HexEdge, HexRoute, HexSnapshot } from "@/types/HexGameTypes";
 import styles from "@/styles/HexMap.module.css";
+import type { HexGameMessages } from "@/i18n/hexGame";
 
 const RADIUS = 46;
 const center = (position: HexCoord) => {
   const world = axialToWorld(position, RADIUS);
   return { x: world.x, y: world.z };
 };
-const vertices = (position: HexCoord) => {
+const vertexPoints = (position: HexCoord) => {
   const p = center(position);
   return Array.from({ length: 6 }, (_, i) => {
     const angle = (-90 + i * 60) * Math.PI / 180;
-    return `${p.x + RADIUS * Math.cos(angle)},${p.y + RADIUS * Math.sin(angle)}`;
-  }).join(" ");
+    return { x: p.x + RADIUS * Math.cos(angle), y: p.y + RADIUS * Math.sin(angle) };
+  });
 };
+const vertices = (position: HexCoord) => vertexPoints(position).map(p => `${p.x},${p.y}`).join(" ");
+// For pointy-top axial directions E, NE, NW, W, SW, SE.
+const boundaryCorners = [[1, 2], [0, 1], [5, 0], [4, 5], [3, 4], [2, 3]] as const;
 const wallEnds = (edge: HexEdge) => {
   const a = center(edge.position);
   const d = HEX_DIRECTIONS[edge.direction];
@@ -35,21 +39,35 @@ type Props = {
   selected?: HexCoord | null;
   route?: HexRoute | null;
   selectedTargetId?: number | null;
+	selectedTargetKind?: "player" | "monster";
   attackableTargets?: ReadonlySet<number>;
   busy?: boolean;
   onCellClick: (position: HexCoord) => void;
   onMonsterClick: (actor: HexActor) => void;
+  labels?: HexGameMessages;
 };
 
-export default function HexMap({ snapshot, selected, route, selectedTargetId, attackableTargets, busy, onCellClick, onMonsterClick }: Props) {
+export default function HexMap({ snapshot, selected, route, selectedTargetId, selectedTargetKind, attackableTargets, busy, onCellClick, onMonsterClick, labels }: Props) {
   const hero = useMemo(() => center(snapshot.player?.position ?? { q: 0, r: 0 }), [snapshot.player?.position.q, snapshot.player?.position.r]);
   const camera = useHexCamera(hero);
   const routeCells = useMemo(() => new Set(route?.path.map(hexKey) ?? []), [route]);
+  const boundaryPath = useMemo(() => {
+    const positions = new Set(snapshot.cells.map(cell => hexKey(cell.position)));
+    return snapshot.cells.flatMap(cell => {
+      const corners = vertexPoints(cell.position);
+      return HEX_DIRECTIONS.flatMap((direction, index) => {
+        const neighbor = { q: cell.position.q + direction.q, r: cell.position.r + direction.r };
+        if (positions.has(hexKey(neighbor))) return [];
+        const [a, b] = boundaryCorners[index];
+        return [`M${corners[a].x},${corners[a].y}L${corners[b].x},${corners[b].y}`];
+      });
+    }).join(" ");
+  }, [snapshot.cells]);
   const ownPosition = snapshot.player?.position && hexKey(snapshot.player.position);
   const sprite = heroArt(snapshot.player?.characterType);
 
   return <div className={styles.viewport} data-testid="hex-game-map" data-camera-zoom={camera.camera.zoom.toFixed(3)} data-camera-x={camera.camera.x.toFixed(1)} data-camera-y={camera.camera.y.toFixed(1)}>
-    <svg ref={camera.svgRef} role="img" aria-label="HEX карта подземелья" className={styles.map} viewBox={camera.viewBox}
+    <svg ref={camera.svgRef} role="img" aria-label={labels?.map ?? "HEX dungeon map"} className={styles.map} viewBox={camera.viewBox}
       data-panning={camera.panning} onWheel={camera.onWheel} onPointerDown={camera.onPointerDown} onPointerMove={camera.onPointerMove}
       onPointerUp={camera.onPointerUp} onPointerCancel={camera.onPointerUp} onClickCapture={camera.onClickCapture}>
       <defs>
@@ -63,13 +81,15 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, at
           const floor = cell.terrain === "floor";
           const active = selected && hexKey(selected) === key;
           const interactive = !!cell.resource;
-          return <g key={cell.cellId}>
-            <polygon data-hex-cell={key} points={vertices(cell.position)} fill={floor ? "url(#hex-floor)" : "url(#hex-rock)"}
-              className={floor ? styles.floor : styles.rock} onClick={() => { if (!busy) onCellClick(cell.position); }}>
-              <title>{`${cell.terrain} · ${key}`}</title>
+          const visibility = cell.visibility ?? "visible";
+          return <g key={cell.cellId} data-hex-visibility={visibility}>
+            <polygon data-hex-cell={key} points={vertices(cell.position)} fill={visibility === "unexplored" ? "#05090e" : floor ? "url(#hex-floor)" : "url(#hex-rock)"}
+              className={visibility === "unexplored" ? styles.unknownCell : floor ? styles.floor : styles.rock} onClick={() => { if (!busy && visibility !== "unexplored") onCellClick(cell.position); }}>
+              <title>{visibility === "unexplored" ? labels?.unexplored ?? "Unexplored" : `${cell.terrain === "floor" ? labels?.floor ?? "floor" : labels?.rock ?? "rock"} · ${key}`}</title>
             </polygon>
-            {floor && <polygon points={vertices(cell.position)} className={styles.floorTint} pointerEvents="none" />}
-            {interactive && <polygon points={vertices(cell.position)} className={styles.interactiveCell} pointerEvents="none" />}
+            {floor && visibility === "visible" && <polygon points={vertices(cell.position)} className={styles.floorTint} pointerEvents="none" />}
+            {visibility === "explored" && <polygon points={vertices(cell.position)} className={styles.exploredFog} pointerEvents="none" />}
+            {interactive && visibility === "visible" && <polygon points={vertices(cell.position)} className={styles.interactiveCell} pointerEvents="none" />}
             {ownPosition === key && <polygon points={vertices(cell.position)} className={styles.heroCell} pointerEvents="none" />}
             {routeCells.has(key) && <polygon points={vertices(cell.position)} className={route?.affordable ? styles.routeCell : styles.routeBlocked} pointerEvents="none" />}
             {active && <polygon points={vertices(cell.position)} className={styles.selectedCell} pointerEvents="none" />}
@@ -99,20 +119,20 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, at
             {cell.resource && (resource
               ? <image href={resource} x={p.x - 21} y={p.y - 23} width="42" height="42" preserveAspectRatio="xMidYMid meet" />
               : <><circle cx={p.x} cy={p.y} r="17" className={styles.fallbackResource} /><text x={p.x} y={p.y + 7} textAnchor="middle" className={styles.fallbackSymbol}>◆</text></>)}
-            <title>{cell.resource?.type ?? (cell.barrel ? "Бочка" : "Портал")}</title>
+            <title>{cell.resource?.type ?? (cell.barrel ? labels?.barrel ?? "Barrel" : labels?.portal ?? "Portal")}</title>
           </g>;
         })}
       </g>
       <g className={styles.actors}>
         {snapshot.actors.map(actor => {
           const p = center(actor.position);
-          const targetId = Number(actor.id.replace(/^monster-/, ""));
+          const targetId = actor.kind === "player" ? actor.userId ?? 0 : Number(actor.id.replace(/^monster-/, ""));
           const self = actor.kind === "player" && actor.userId === snapshot.player?.userId;
           const image = actor.kind === "monster" ? monsterArt(actor) : self ? sprite : heroArt(undefined);
-          const selectedMonster = actor.kind === "monster" && selectedTargetId === targetId;
-          return <g key={actor.id} role={actor.kind === "monster" ? "button" : undefined}
-            data-hex-actor={actor.id} aria-label={actor.kind === "monster" ? `Монстр ${targetId}, HP ${actor.health ?? "?"}` : undefined}
-            className={styles.actor} onClick={event => { event.stopPropagation(); if (busy) return; if (actor.kind === "monster") onMonsterClick(actor); else onCellClick(actor.position); }}>
+          const selectedMonster = !self && selectedTargetKind === actor.kind && selectedTargetId === targetId;
+          return <g key={actor.id} role={!self ? "button" : undefined}
+            data-hex-actor={actor.id} aria-label={actor.kind === "monster" ? `${labels?.monster ?? "Monster"} ${targetId}, HP ${actor.health ?? "?"}` : undefined}
+            className={styles.actor} onClick={event => { event.stopPropagation(); if (busy) return; if (!self) onMonsterClick(actor); else onCellClick(actor.position); }}>
             <circle cx={p.x} cy={p.y} r="30" fill="transparent" />
             <ellipse cx={p.x} cy={p.y + 21} rx="24" ry="9" className={styles.shadow} pointerEvents="none" />
             {self && <circle cx={p.x} cy={p.y} r="27" className={styles.selfRing} pointerEvents="none" />}
@@ -121,21 +141,25 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, at
             {image && actor.kind === "monster" && <image href={image} x={p.x - 24} y={p.y - 29} width="48" height="48" preserveAspectRatio="xMidYMid slice" clipPath="url(#hex-portrait)" />}
             {image && actor.kind === "player" && <image href={image} x={p.x - 27} y={p.y - 43} width="54" height="64" preserveAspectRatio="xMidYMid meet" />}
             {!image && <><circle cx={p.x} cy={p.y - 4} r="21" className={styles.fallbackMonster} /><text x={p.x} y={p.y + 3} textAnchor="middle" className={styles.fallbackSymbol}>{actor.name?.slice(0, 1) ?? "M"}</text></>}
-            {actor.kind === "monster" && <g pointerEvents="none">
+            {!self && <g pointerEvents="none">
               <rect x={p.x - 25} y={p.y + 24} width="50" height="7" rx="3" className={styles.healthTrack} />
               <rect x={p.x - 24} y={p.y + 25} width={Math.max(0, 48 * (actor.health ?? 0) / Math.max(1, actor.maxHealth ?? 1))} height="5" rx="2" className={styles.healthFill} />
               <text x={p.x} y={p.y + 43} textAnchor="middle" className={styles.healthText}>{actor.health}/{actor.maxHealth}</text>
             </g>}
-            {actor.kind === "player" && !self && <text x={p.x} y={p.y + 39} textAnchor="middle" className={styles.playerName}>{actor.name ?? `Игрок ${actor.userId}`}</text>}
+            {actor.kind === "player" && !self && <text x={p.x} y={p.y + 39} textAnchor="middle" className={styles.playerName}>{actor.name ?? `${labels?.player ?? "Player"} ${actor.userId}`}</text>}
             <title>{`${actor.name ?? actor.kind} · HP ${actor.health ?? "?"}/${actor.maxHealth ?? "?"}`}</title>
           </g>;
         })}
       </g>
+      <g pointerEvents="none" aria-hidden="true">
+        <path data-hex-boundary="true" d={boundaryPath} className={styles.boundaryGlow} vectorEffect="non-scaling-stroke" />
+        <path d={boundaryPath} className={styles.boundaryGold} vectorEffect="non-scaling-stroke" />
+      </g>
     </svg>
-    <div className={styles.cameraControls} aria-label="Камера карты">
-      <button type="button" onClick={() => camera.zoomBy(1.2)} aria-label="Приблизить карту">+</button>
-      <button type="button" onClick={camera.recenter}>К герою</button>
-      <button type="button" onClick={() => camera.zoomBy(1 / 1.2)} aria-label="Отдалить карту">−</button>
+    <div className={styles.cameraControls} aria-label={labels?.camera ?? "Map camera"}>
+      <button type="button" onClick={() => camera.zoomBy(1.2)} aria-label={labels?.zoomIn ?? "Zoom in"}>+</button>
+      <button type="button" onClick={camera.recenter}>{labels?.recenter ?? "To hero"}</button>
+      <button type="button" onClick={() => camera.zoomBy(1 / 1.2)} aria-label={labels?.zoomOut ?? "Zoom out"}>−</button>
     </div>
   </div>;
 }

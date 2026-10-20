@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { API_BASE as API_GAME } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import LobbyHeader from "./LobbyHeader";
+import StorageLoadout from "./StorageLoadout";
 import type { BaseState, BuildingState, HeroesState, HeroState } from "../types";
 import {
     getBaseReflexForHero,
@@ -660,6 +661,7 @@ export default function LobbyBasePage() {
         <div className={styles.pageRoot}>
             <LobbyHeader />
             <h2 className={styles.pageTitle}>Base</h2>
+            <StorageLoadout />
 
             {baseError && <p className={styles.baseError}>{baseError}</p>}
             {baseInfo && <p className={styles.baseInfo}>{baseInfo}</p>}

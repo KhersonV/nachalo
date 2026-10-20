@@ -8,6 +8,14 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [syncError, setSyncError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
+  const [questNotice, setQuestNotice] = useState<{ userId: number; playerName?: string; q: number; r: number } | null>(null);
+	const [turnTimeoutNotice, setTurnTimeoutNotice] = useState(false);
+	useEffect(() => { if (!turnTimeoutNotice) return; const timer = window.setTimeout(() => setTurnTimeoutNotice(false), 5000); return () => window.clearTimeout(timer); }, [turnTimeoutNotice]);
+  useEffect(() => {
+    if (!questNotice) return;
+    const timer = window.setTimeout(() => setQuestNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [questNotice]);
   const revision = useRef(initialSnapshot.stateRevision);
   const base = `${API_BASE}/game/${initialSnapshot.mode === "hex-test" ? "hex-test" : "hex"}/${encodeURIComponent(instanceId)}`;
 
@@ -46,6 +54,13 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
           const message = JSON.parse(event.data);
           const payload = message?.payload;
           if (payload?.instanceId !== instanceId || payload?.schemaVersion !== 2) return;
+          if (message.type === "MATCH_PATCH" && Array.isArray(payload.changes)) {
+			if (payload.changes.some((change: {type?: string}) => change.type === "TURN_TIMEOUT")) setTurnTimeoutNotice(true);
+            const found = payload.changes.find((change: { type?: string }) => change.type === "QUEST_ARTIFACT_FOUND")?.payload;
+            if (found && Number.isSafeInteger(found.userId) && Number.isSafeInteger(found.position?.q) && Number.isSafeInteger(found.position?.r)) {
+              setQuestNotice({ userId: found.userId, playerName: typeof found.playerName === "string" ? found.playerName : undefined, q: found.position.q, r: found.position.r });
+            }
+          }
           if (message.type === "MATCH_UPDATE" && isHexSnapshot(payload) && payload.player && payload.stateRevision >= revision.current) {
             revision.current = payload.stateRevision;
             setSnapshot(payload);
@@ -60,5 +75,5 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
     return () => { closed = true; if (timer) clearTimeout(timer); socket?.close(); };
   }, [instanceId, refresh, token]);
 
-  return { snapshot, refresh, base, unavailable, syncError };
+  return { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice };
 }

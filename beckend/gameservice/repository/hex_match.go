@@ -45,8 +45,9 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	var startsRaw, portalRaw, orderRaw []byte
 	var mode string
 	var version, width int
-	err = tx.QueryRowContext(ctx, `SELECT mode,schema_version,geometry,map,state_revision,map_revision,COALESCE(active_user_id,0),turn_number,map_width,start_positions_v2,portal_position_v2,turn_order FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).
-		Scan(&mode, &version, &geometryRaw, &rawCells, &snapshot.StateRevision, &snapshot.MapRevision, &snapshot.ActiveUser, &snapshot.TurnNumber, &width, &startsRaw, &portalRaw, &orderRaw)
+	var questSpawned bool
+	err = tx.QueryRowContext(ctx, `SELECT mode,schema_version,geometry,map,state_revision,map_revision,COALESCE(active_user_id,0),turn_number,map_width,start_positions_v2,portal_position_v2,turn_order,finished_at IS NOT NULL,COALESCE(quest_artifact_id,0),hex_quest_spawned,hex_turn_deadline FROM matches WHERE instance_id=$1`, instanceID).
+		Scan(&mode, &version, &geometryRaw, &rawCells, &snapshot.StateRevision, &snapshot.MapRevision, &snapshot.ActiveUser, &snapshot.TurnNumber, &width, &startsRaw, &portalRaw, &orderRaw, &snapshot.Finished, &snapshot.QuestArtifactID, &questSpawned, &snapshot.TurnDeadline)
 	if err != nil {
 		return snapshot, err
 	}
@@ -55,6 +56,13 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		return snapshot, ErrHexUnavailable
 	}
 	snapshot.SchemaVersion, snapshot.Geometry, snapshot.InstanceID, snapshot.Mode = 2, models.HexV1, instanceID, mode
+	snapshot.TurnSeconds = int(HexTurnDuration().Seconds())
+	if snapshot.QuestArtifactID > 0 {
+		snapshot.QuestArtifact, err = loadHexQuestArtifactTx(ctx, tx, instanceID, snapshot.QuestArtifactID, questSpawned)
+		if err != nil {
+			return snapshot, err
+		}
+	}
 	if err := json.Unmarshal(orderRaw, &snapshot.TurnOrder); err != nil {
 		return snapshot, err
 	}
@@ -126,8 +134,8 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	cellRows.Close()
 	var player hexmap.Player
 	var inventoryRaw []byte
-	err = tx.QueryRowContext(ctx, `SELECT name,position_q,position_r,energy,max_energy,health,max_health,mobility,agility,character_type,is_ranged,attack_range,inventory,group_id FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).
-		Scan(&player.Name, &player.Position.Q, &player.Position.R, &player.Energy, &player.MaxEnergy, &player.Health, &player.MaxHealth, &player.Mobility, &player.Agility, &player.CharacterType, &player.IsRanged, &player.AttackRange, &inventoryRaw, &player.TeamID)
+	err = tx.QueryRowContext(ctx, `SELECT p.name,p.position_q,p.position_r,p.energy,p.max_energy,p.health,p.max_health,p.mobility,p.agility,p.character_type,p.is_ranged,p.attack_range,p.inventory,p.group_id,profile.balance FROM match_players p JOIN player_profiles profile ON profile.user_id=p.user_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).
+		Scan(&player.Name, &player.Position.Q, &player.Position.R, &player.Energy, &player.MaxEnergy, &player.Health, &player.MaxHealth, &player.Mobility, &player.Agility, &player.CharacterType, &player.IsRanged, &player.AttackRange, &inventoryRaw, &player.TeamID, &player.Balance)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return snapshot, ErrHexUnavailable
@@ -141,6 +149,16 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	}
 	player.UserID = userID
 	snapshot.Player = &player
+	if snapshot.ActiveUser > 0 {
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, snapshot.ActiveUser).Scan(&snapshot.ActivePlayerName); err != nil {
+			return snapshot, err
+		}
+	}
+	var resultRaw []byte
+	if err := tx.QueryRowContext(ctx, `SELECT result FROM hex_player_results WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&resultRaw); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return snapshot, err
+	}
+	snapshot.Result = json.RawMessage(resultRaw)
 	if len(snapshot.Starts) == 0 && len(startPositions) > 0 {
 		snapshot.Starts = []hexmap.Start{{UserID: userID, TeamID: 1, Position: startPositions[0]}}
 	}
@@ -186,7 +204,100 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	if err != nil {
 		return snapshot, err
 	}
+	if err := filterHexSnapshotTx(ctx, tx, &snapshot); err != nil {
+		return snapshot, err
+	}
 	return snapshot, tx.Commit()
+}
+
+func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snapshot) error {
+	if snapshot.Player == nil {
+		return ErrHexUnavailable
+	}
+	// The generator seed is enough to reconstruct the undiscovered dungeon.
+	snapshot.Seed = 0
+	rows, err := tx.QueryContext(ctx, `SELECT position_q,position_r,hex_explored FROM match_players WHERE instance_id=$1 AND group_id=$2 AND health>0 ORDER BY user_id`, snapshot.InstanceID, snapshot.Player.TeamID)
+	if err != nil {
+		return err
+	}
+	positions := []hexgrid.Coord{}
+	explored := map[hexgrid.Coord]bool{}
+	for rows.Next() {
+		var pos hexgrid.Coord
+		var raw []byte
+		if err := rows.Scan(&pos.Q, &pos.R, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		positions = append(positions, pos)
+		var saved []hexgrid.Coord
+		if err := json.Unmarshal(raw, &saved); err != nil {
+			rows.Close()
+			return err
+		}
+		for _, p := range saved {
+			explored[p] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if len(positions) == 0 {
+		positions = append(positions, snapshot.Player.Position)
+	}
+	visible := hexVisible(positions, snapshot.Cells, snapshot.Edges)
+	for pos := range visible {
+		explored[pos] = true
+	}
+	for i := range snapshot.Cells {
+		cell := &snapshot.Cells[i]
+		switch {
+		case visible[cell.Position]:
+			cell.Visibility = "visible"
+		case explored[cell.Position]:
+			cell.Visibility = "explored"
+			cell.Resource = nil
+			cell.Barrel = nil
+		default:
+			cell.Visibility = "unexplored"
+			cell.Terrain = "rock"
+			cell.Resource = nil
+			cell.Barrel = nil
+			cell.IsPortal = false
+			cell.Room = 0
+		}
+	}
+	actors := snapshot.Actors[:0]
+	for _, actor := range snapshot.Actors {
+		if visible[actor.Position] || actor.Kind == "player" && actor.TeamID == snapshot.Player.TeamID {
+			actors = append(actors, actor)
+		}
+	}
+	snapshot.Actors = actors
+	edges := snapshot.Edges[:0]
+	for _, edge := range snapshot.Edges {
+		next, err := hexgrid.Neighbor(edge.Position, edge.Direction)
+		if err == nil && explored[edge.Position] && explored[next] {
+			edges = append(edges, edge)
+		}
+	}
+	snapshot.Edges = edges
+	starts := snapshot.Starts[:0]
+	for _, start := range snapshot.Starts {
+		if start.TeamID == snapshot.Player.TeamID {
+			starts = append(starts, start)
+		}
+	}
+	snapshot.Starts = starts
+	if snapshot.Portal != nil && !visible[*snapshot.Portal] {
+		snapshot.Portal = nil
+	}
+	if snapshot.QuestArtifact != nil && snapshot.QuestArtifact.Position != nil && !visible[*snapshot.QuestArtifact.Position] && snapshot.QuestArtifact.Status != "carried" {
+		snapshot.QuestArtifact.Position = nil
+	}
+	return nil
 }
 
 type hexQuerier interface {

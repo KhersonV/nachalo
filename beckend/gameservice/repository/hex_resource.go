@@ -26,6 +26,7 @@ type HexCollectResult struct {
 	Position      hexgrid.Coord   `json:"position"`
 	ItemID        int             `json:"itemId"`
 	ItemType      string          `json:"itemType"`
+	PlayerName    string          `json:"playerName,omitempty"`
 	Inventory     json.RawMessage `json:"inventory"`
 	StateRevision int64           `json:"stateRevision"`
 	MapRevision   int64           `json:"mapRevision"`
@@ -61,7 +62,7 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	var mode string
 	var version, health int
 	var playerPosition hexgrid.Coord
-	if err := c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health, &playerPosition.Q, &playerPosition.R); err != nil {
+	if err := c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.position_q,p.position_r,COALESCE(p.name,'') FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health, &playerPosition.Q, &playerPosition.R, &out.PlayerName); err != nil {
 		return out, err
 	}
 	if mode != "hex" || version != 2 || health <= 0 {
@@ -86,8 +87,19 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	if err := json.Unmarshal(raw, &resource); err != nil {
 		return out, err
 	}
-	if resource.ID <= 0 || resource.ItemType == "artifact" {
+	if resource.ID <= 0 {
 		return out, ErrCommandRejected
+	}
+	itemType := "resource"
+	if resource.ItemType == "artifact" {
+		var questID int
+		if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(quest_artifact_id,0) FROM matches WHERE instance_id=$1`, instanceID).Scan(&questID); err != nil {
+			return out, err
+		}
+		if questID == 0 || resource.ID != questID {
+			return out, ErrCommandRejected
+		}
+		itemType = "artifact"
 	}
 	result, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET resource=NULL,tile_code=48 WHERE instance_id=$1 AND q=$2 AND r=$3 AND resource IS NOT NULL`, instanceID, pos.Q, pos.R)
 	if err != nil {
@@ -96,11 +108,11 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	if n, _ := result.RowsAffected(); n != 1 {
 		return out, ErrCommandRejected
 	}
-	updated, err := AddInventoryItemTx(c.Tx, instanceID, userID, "resource", resource.ID, resource.Type, resource.Image, resource.Description, 1)
+	updated, err := AddInventoryItemTx(c.Tx, instanceID, userID, itemType, resource.ID, resource.Type, resource.Image, resource.Description, 1)
 	if err != nil {
 		return out, err
 	}
-	out.Position, out.ItemID, out.ItemType, out.Inventory = pos, resource.ID, resource.Type, json.RawMessage(updated)
+	out.Position, out.ItemID, out.ItemType, out.Inventory = pos, resource.ID, itemType, json.RawMessage(updated)
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
 	if err != nil {
 		return HexCollectResult{}, err

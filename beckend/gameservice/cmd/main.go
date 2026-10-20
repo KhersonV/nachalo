@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -40,6 +41,9 @@ func main() {
 	// Инициализация БД
 	repository.InitDB()
 	defer repository.DB.Close()
+	hexWorkerContext, stopHexWorker := context.WithCancel(context.Background())
+	defer stopHexWorker()
+	handlers.StartHexTurnWorker(hexWorkerContext)
 
 	// Настраиваем маршруты
 	router := mux.NewRouter()
@@ -71,6 +75,9 @@ func main() {
 		router.Handle("/game/hex-test/{instance_id}/route", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexRouteHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/move", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHexTestMatchHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/collect", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectHexResourceHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/open-barrel", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenHexBarrelHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/use-item", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseHexItemHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
@@ -80,6 +87,9 @@ func main() {
 		router.Handle("/game/hex/{instance_id}/route", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexRouteHandler))).Methods("POST")
 		router.Handle("/game/hex/{instance_id}/move", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHexTestMatchHandler))).Methods("POST")
 		router.Handle("/game/hex/{instance_id}/collect", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectHexResourceHandler))).Methods("POST")
+		router.Handle("/game/hex/{instance_id}/open-barrel", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenHexBarrelHandler))).Methods("POST")
+		router.Handle("/game/hex/{instance_id}/use-item", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseHexItemHandler))).Methods("POST")
+		router.Handle("/game/hex/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
 		router.Handle("/game/hex/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
 		router.Handle("/game/hex/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
 		router.Handle("/game/hex/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
@@ -100,6 +110,10 @@ func main() {
 		"/game/shop/buy",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuyShopItemHandler)),
 	).Methods("POST")
+	router.Handle(
+		"/game/storage",
+		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.HexStorageHandler)),
+	).Methods("GET", "PUT")
 	router.Handle(
 		"/game/base/state",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetBaseStateHandler)),

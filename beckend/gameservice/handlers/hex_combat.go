@@ -25,8 +25,11 @@ type hexCombatActor struct {
 	Position         hexgrid.Coord
 	Stats            stats
 	Energy           int
+	MaxEnergy        int
 	Agility          int
 	ArmorBreakStacks int
+	TeamID           int
+	CharacterType    string
 }
 
 type hexAttackState struct {
@@ -51,6 +54,7 @@ type HexAttackResult struct {
 	NewTargetHP   int                    `json:"newTargetHP"`
 	NewAttackerHP int                    `json:"newAttackerHP"`
 	MonsterDied   bool                   `json:"monsterDied"`
+	PlayerDied    bool                   `json:"playerDied,omitempty"`
 	AttackStyle   AttackStyle            `json:"attackStyle"`
 	Effects       []CombatEffect         `json:"effects"`
 	Steps         []CombatStep           `json:"steps"`
@@ -67,36 +71,59 @@ func (r *HexAttackResult) SetCommandRevisions(state, mapRevision int64) {
 // readHexAttackTx is the geometry adapter. All damage/class formulas remain
 // the same helpers used by square combat.go. Preview runs it read-only; the
 // command calls it again after locking the matches row.
-func readHexAttackTx(ctx context.Context, tx *sql.Tx, instanceID string, userID, targetID int, requireEnergy bool) (hexAttackState, error) {
+func readHexAttackTx(ctx context.Context, tx *sql.Tx, instanceID string, userID, targetID int, requireEnergy bool, targetKind ...string) (hexAttackState, error) {
 	var out hexAttackState
 	if targetID <= 0 {
 		return out, repository.ErrCommandRejected
 	}
 	var mode string
-	var version, active, artifact int
-	if err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0),COALESCE(quest_artifact_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active, &artifact); err != nil {
+	var version, active int
+	if err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active); err != nil {
 		return out, err
 	}
-	if mode != "hex" || version != 2 || active != userID || artifact != 0 {
+	if mode != "hex" || version != 2 {
 		return out, repository.ErrHexUnavailable
+	}
+	if active != userID {
+		return out, repository.ErrCommandRejected
 	}
 	p := &out.Player
 	p.ID = userID
-	err := tx.QueryRowContext(ctx, `SELECT position_q,position_r,energy,health,max_health,attack,defense,agility,is_ranged,attack_range,character_type FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&p.Position.Q, &p.Position.R, &p.Energy, &p.Stats.Health, &p.Stats.MaxHealth, &p.Stats.Attack, &p.Stats.Defense, &p.Stats.Agility, &p.Stats.IsRanged, &p.Stats.AttackRange, &p.Stats.CharacterType)
-	if err != nil {
-		return out, err
-	}
-	m := &out.Monster
-	m.ID = targetID
-	err = tx.QueryRowContext(ctx, `SELECT pos_q,pos_r,health,max_health,attack,defense,hex_armor_break_stacks FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2`, instanceID, targetID).Scan(&m.Position.Q, &m.Position.R, &m.Stats.Health, &m.Stats.MaxHealth, &m.Stats.Attack, &m.Stats.Defense, &m.ArmorBreakStacks)
+	err := tx.QueryRowContext(ctx, `SELECT position_q,position_r,energy,max_energy,health,max_health,attack,defense,agility,is_ranged,attack_range,character_type,group_id,hex_armor_break_stacks FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&p.Position.Q, &p.Position.R, &p.Energy, &p.MaxEnergy, &p.Stats.Health, &p.Stats.MaxHealth, &p.Stats.Attack, &p.Stats.Defense, &p.Stats.Agility, &p.Stats.IsRanged, &p.Stats.AttackRange, &p.Stats.CharacterType, &p.TeamID, &p.ArmorBreakStacks)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, repository.ErrCommandRejected
 	}
 	if err != nil {
 		return out, err
 	}
+	m := &out.Monster
+	m.ID = targetID
+	if len(targetKind) > 0 && targetKind[0] == "player" {
+		if targetID == userID {
+			return out, repository.ErrCommandRejected
+		}
+		err = tx.QueryRowContext(ctx, `SELECT position_q,position_r,energy,health,max_health,attack,defense,agility,is_ranged,attack_range,character_type,group_id,hex_armor_break_stacks FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID).Scan(&m.Position.Q, &m.Position.R, &m.Energy, &m.Stats.Health, &m.Stats.MaxHealth, &m.Stats.Attack, &m.Stats.Defense, &m.Stats.Agility, &m.Stats.IsRanged, &m.Stats.AttackRange, &m.Stats.CharacterType, &m.TeamID, &m.ArmorBreakStacks)
+		if err == nil && m.TeamID == p.TeamID {
+			return out, repository.ErrCommandRejected
+		}
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT pos_q,pos_r,health,max_health,attack,defense,hex_armor_break_stacks FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2`, instanceID, targetID).Scan(&m.Position.Q, &m.Position.R, &m.Stats.Health, &m.Stats.MaxHealth, &m.Stats.Attack, &m.Stats.Defense, &m.ArmorBreakStacks)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, repository.ErrHexBlocked
+	}
+	if err != nil {
+		return out, err
+	}
 	if p.Stats.Health <= 0 || m.Stats.Health <= 0 {
 		return out, repository.ErrCommandRejected
+	}
+	visible, err := repository.HexPositionVisibleTx(ctx, tx, instanceID, userID, m.Position)
+	if err != nil {
+		return out, err
+	}
+	if !visible {
+		return out, repository.ErrHexBlocked
 	}
 	distance, err := hexgrid.Distance(p.Position, m.Position)
 	if err != nil {
@@ -630,8 +657,14 @@ func finishHexPlayerDeathTx(ctx context.Context, c *repository.MatchCommand, pla
 	if err := c.MarkCombatPlayerDeadTx(ctx, playerID); err != nil {
 		return err
 	}
+	if err := c.LoseHexBackpackTx(ctx, playerID, position); err != nil {
+		return err
+	}
 	turn, err := c.RemoveCombatPlayerFromTurnOrderTx(ctx, playerID)
 	if err != nil {
+		return err
+	}
+	if err := c.ResetHexTurnDeadlineTx(ctx, turn.ActiveUserID); err != nil {
 		return err
 	}
 	result, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND q=$2 AND r=$3 AND is_player=true`, c.InstanceID, position.Q, position.R)
@@ -651,7 +684,7 @@ func finishHexPlayerDeathTx(ctx context.Context, c *repository.MatchCommand, pla
 	if complete {
 		return repository.ErrCommandRejected
 	}
-	_, err = c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now() WHERE instance_id=$1`, c.InstanceID)
+	_, err = c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),hex_turn_deadline=NULL WHERE instance_id=$1`, c.InstanceID)
 	return err
 }
 
@@ -672,13 +705,23 @@ func PreviewHexAttackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TargetID int `json:"targetId"`
+		TargetID   int    `json:"targetId"`
+		TargetKind string `json:"targetKind"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
-	preview, err := PreviewHexAttack(r.Context(), mux.Vars(r)["instance_id"], userID, req.TargetID)
+	var preview HexAttackPreview
+	var err error
+	if req.TargetKind == "player" {
+		preview, err = PreviewHexPlayerAttack(r.Context(), mux.Vars(r)["instance_id"], userID, req.TargetID)
+	} else if req.TargetKind == "" || req.TargetKind == "monster" {
+		preview, err = PreviewHexAttack(r.Context(), mux.Vars(r)["instance_id"], userID, req.TargetID)
+	} else {
+		http.Error(w, "invalid targetKind", 400)
+		return
+	}
 	if err != nil {
 		hexCombatHTTPError(w, err)
 		return
@@ -693,17 +736,28 @@ func AttackHexMonsterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TargetID  int    `json:"targetId"`
-		CommandID string `json:"commandId"`
+		TargetID   int    `json:"targetId"`
+		TargetKind string `json:"targetKind"`
+		CommandID  string `json:"commandId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CommandID == "" || len(req.CommandID) > 128 {
 		http.Error(w, "commandId and targetId required", 400)
 		return
 	}
 	id := mux.Vars(r)["instance_id"]
-	result, err := ApplyHexAttack(r.Context(), id, userID, req.TargetID, req.CommandID, func(committed HexAttackResult) {
+	publish := func(committed HexAttackResult) {
 		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "COMBAT_EXCHANGE", map[string]any{"instanceId": id, "attackerId": userID, "targetId": req.TargetID})
-	})
+	}
+	var result HexAttackResult
+	var err error
+	if req.TargetKind == "player" {
+		result, err = ApplyHexPlayerAttack(r.Context(), id, userID, req.TargetID, req.CommandID, publish)
+	} else if req.TargetKind == "" || req.TargetKind == "monster" {
+		result, err = ApplyHexAttack(r.Context(), id, userID, req.TargetID, req.CommandID, publish)
+	} else {
+		http.Error(w, "invalid targetKind", 400)
+		return
+	}
 	if err != nil {
 		hexCombatHTTPError(w, err)
 		return

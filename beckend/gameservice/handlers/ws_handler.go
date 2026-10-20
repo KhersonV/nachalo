@@ -76,6 +76,11 @@ func scheduleReconnectGrace(instanceID string, userID int) {
 	if instanceID == "" || userID == 0 {
 		return
 	}
+	// Square's lightning death uses Square cell coordinates and process-local
+	// state. HEX keeps its durable turn deadline while a player is offline.
+	if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
+		return
+	}
 
 	key := graceKey(instanceID, userID)
 

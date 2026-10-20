@@ -3,12 +3,14 @@
 import * as React from "react";
 import type { ActionLogEntry } from "@/types";
 import styles from "@/styles/ActionLog.module.css";
+import type { HexGameMessages } from "@/i18n/hexGame";
 
 type ActionLogProps = {
     entries: ActionLogEntry[];
     compact?: boolean;
     expanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
+    labels?: HexGameMessages;
 };
 
 function toneClass(tone: ActionLogEntry["tone"]) {
@@ -60,6 +62,7 @@ export default function ActionLog({
     compact = false,
     expanded,
     onExpandedChange,
+    labels,
 }: ActionLogProps) {
     const [internalCollapsed, setInternalCollapsed] = React.useState(compact);
     const listRef = React.useRef<HTMLOListElement | null>(null);
@@ -100,7 +103,7 @@ export default function ActionLog({
             className={`${styles.panel} ${compact ? styles.panelCompact : ""} ${
                 collapsed ? styles.panelCollapsed : ""
             }`}
-            aria-label="Action log"
+            aria-label={labels?.actionLog ?? "Action log"}
         >
             <header
                 className={`${styles.header} ${
@@ -108,13 +111,13 @@ export default function ActionLog({
                 }`}
             >
                 <div className={styles.heading}>
-                    <p className={styles.eyebrow}>Action Log</p>
+                    <p className={styles.eyebrow}>{labels?.actionLog ?? "Action Log"}</p>
                     {collapsed ? (
                         <p className={styles.collapsedMessage}>
-                            {latestEntry?.message ?? "No events yet"}
+                            {latestEntry?.message ?? labels?.noEvents ?? "No events yet"}
                         </p>
                     ) : (
-                        <p className={styles.subtitle}>Latest match events</p>
+                        <p className={styles.subtitle}>{labels?.latestEvents ?? "Latest match events"}</p>
                     )}
                 </div>
                 <button
@@ -123,7 +126,7 @@ export default function ActionLog({
                     onClick={handleToggle}
                     aria-expanded={!collapsed}
                 >
-                    {collapsed ? (compact ? "Open" : `Show ${entries.length}`) : "Hide"}
+                    {collapsed ? (compact ? labels?.open ?? "Open" : `${labels?.show ?? "Show"} ${entries.length}`) : labels?.hide ?? "Hide"}
                 </button>
             </header>
 
@@ -135,7 +138,7 @@ export default function ActionLog({
                             className={`${styles.entry} ${toneClass(entry.tone)}`}
                         >
                             <span className={styles.category}>
-                                {categoryLabel(entry.category)}
+                                {labels?.categories[entry.category] ?? categoryLabel(entry.category)}
                             </span>
                             <span className={styles.message}>
                                 {entry.message}
