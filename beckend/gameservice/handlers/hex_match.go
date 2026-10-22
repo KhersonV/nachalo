@@ -45,6 +45,14 @@ func publishHexPatchChanges(instanceID, commandID string, state, mapRevision int
 		if ok && change["type"] == "TURN_TIMEOUT" {
 			safeChanges = append(safeChanges, map[string]any{"type": "TURN_TIMEOUT"})
 		}
+		if ok && change["type"] == "PLAYER_LIGHTNING" {
+			payload, _ := change["payload"].(map[string]any)
+			safeChanges = append(safeChanges, map[string]any{"type": "PLAYER_LIGHTNING", "payload": map[string]any{"userId": payload["userId"]}})
+		}
+		if ok && change["type"] == "PLAYER_LEFT_PORTAL" {
+			payload, _ := change["payload"].(map[string]any)
+			safeChanges = append(safeChanges, map[string]any{"type": "PLAYER_LEFT_PORTAL", "payload": map[string]any{"userId": payload["userId"]}})
+		}
 	}
 	patch := map[string]any{"type": "MATCH_PATCH", "payload": map[string]any{"instanceId": instanceID, "schemaVersion": 2, "geometry": map[string]any{"kind": "hex", "coordinates": "axial", "orientation": "pointy", "version": 1}, "stateRevision": state, "mapRevision": mapRevision, "commandId": commandID, "changes": safeChanges}}
 	if data, err := json.Marshal(patch); err == nil {

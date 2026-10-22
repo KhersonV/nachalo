@@ -7,6 +7,7 @@ import type { HexGameMessages } from "@/i18n/hexGame";
 
 type ActionLogProps = {
     entries: ActionLogEntry[];
+    className?: string;
     compact?: boolean;
     expanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
@@ -59,6 +60,7 @@ function categoryLabel(category: ActionLogEntry["category"]) {
 
 export default function ActionLog({
     entries,
+    className,
     compact = false,
     expanded,
     onExpandedChange,
@@ -100,7 +102,7 @@ export default function ActionLog({
 
     return (
         <section
-            className={`${styles.panel} ${compact ? styles.panelCompact : ""} ${
+            className={`${styles.panel} ${className ?? ""} ${compact ? styles.panelCompact : ""} ${
                 collapsed ? styles.panelCollapsed : ""
             }`}
             aria-label={labels?.actionLog ?? "Action log"}

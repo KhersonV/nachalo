@@ -25,12 +25,19 @@ import type {
     PlayerInfo,
     QueueSizeResponse,
     HeroesState,
+    HeroState,
 } from "../types";
-import LobbyHeader from "./LobbyHeader";
 import StorageLoadout from "./StorageLoadout";
+import type { StorageLoadoutHandle } from "./StorageLoadout";
+import type { SaveStatus } from "@/features/storage/loadoutModel";
+import { availableBattleHeroes, confirmedHeroActivation } from "@/features/heroes/battleHero";
+import { getHeroPortrait } from "@/features/heroes/heroArtwork";
+import ModeCard from "./ModeCard";
+import { Button, StatusMessage } from "./ui";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
 
 import styles from "../styles/ModeSelectionPage.module.css";
+import modesStyles from "../styles/ModesPage.module.css";
 const prepSecondsFromEnv = Number(process.env.NEXT_PUBLIC_PREP_SECONDS || 15);
 const PREP_REDIRECT_SECONDS = Number.isFinite(prepSecondsFromEnv)
     ? Math.max(5, Math.min(120, Math.floor(prepSecondsFromEnv)))
@@ -61,6 +68,7 @@ type ActiveHeroPreview = {
     id: string;
     displayName: string;
     description: string;
+    image: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -102,10 +110,12 @@ function normalizeActiveHeroPreview(value: unknown): {
             const displayName =
                 readString(hero, "displayName").trim() || titleFromHeroId(id);
             const description = readString(hero, "description").trim();
+            const image = readString(hero, "image").trim();
             return {
                 id,
                 displayName,
                 description,
+                image,
                 active: hero.active === true,
             };
         })
@@ -125,6 +135,7 @@ function normalizeActiveHeroPreview(value: unknown): {
                 id: activeHero.id,
                 displayName: activeHero.displayName,
                 description: activeHero.description,
+                image: activeHero.image,
             },
         };
     }
@@ -136,6 +147,7 @@ function normalizeActiveHeroPreview(value: unknown): {
                 id: activeHeroClassId,
                 displayName: titleFromHeroId(activeHeroClassId),
                 description: "",
+                image: "",
             },
         };
     }
@@ -306,7 +318,14 @@ export default function ModeSelectionPage() {
     const router = useRouter();
     const { user } = useAuth();
     const [isMatching, setIsMatching] = useState(false);
-    const [loadoutReady, setLoadoutReady] = useState(false);
+    const [loadoutAvailable, setLoadoutAvailable] = useState(false);
+    const [startBusy, setStartBusy] = useState(false);
+    const [queueError, setQueueError] = useState("");
+    const [loadoutStatus, setLoadoutStatus] = useState<SaveStatus>("saving");
+    const [loadoutError, setLoadoutError] = useState("");
+    const loadoutRef = useRef<StorageLoadoutHandle>(null);
+    const startBusyRef = useRef(false);
+    const [partyOpen, setPartyOpen] = useState(true);
     const [pendingInstanceId, setPendingInstanceId] = useState<string | null>(
         null,
     );
@@ -328,6 +347,12 @@ export default function ModeSelectionPage() {
     const [activeHeroClassId, setActiveHeroClassId] = useState("");
     const [activeHeroLoading, setActiveHeroLoading] = useState(false);
     const [activeHeroError, setActiveHeroError] = useState("");
+    const [heroRoster, setHeroRoster] = useState<HeroState[]>([]);
+    const [heroDialogOpen, setHeroDialogOpen] = useState(false);
+    const [heroBusyId, setHeroBusyId] = useState<string | null>(null);
+    const heroDialogRef = useRef<HTMLDialogElement>(null);
+    const heroOpenerRef = useRef<HTMLButtonElement>(null);
+    const heroSaveRef = useRef<Promise<void> | null>(null);
     const dispatch = useDispatch();
     const currentPartySize = partyState?.partySize ?? 1;
     const partyRefreshInFlightRef = useRef(false);
@@ -665,6 +690,7 @@ export default function ModeSelectionPage() {
         if (!user?.token) {
             setActiveHero(null);
             setActiveHeroClassId("");
+            setHeroRoster([]);
             setActiveHeroError("");
             setActiveHeroLoading(false);
             return;
@@ -679,11 +705,13 @@ export default function ModeSelectionPage() {
                 const preview = normalizeActiveHeroPreview(data);
                 setActiveHero(preview.activeHero);
                 setActiveHeroClassId(preview.activeHeroClassId);
+                setHeroRoster(data.heroes ?? []);
             })
             .catch((error) => {
                 if (!alive) return;
                 setActiveHero(null);
                 setActiveHeroClassId("");
+                setHeroRoster([]);
                 setActiveHeroError(
                     error instanceof Error
                         ? error.message
@@ -873,9 +901,60 @@ export default function ModeSelectionPage() {
         }
     }
 
+    useEffect(() => {
+        const dialog = heroDialogRef.current;
+        if (!dialog) return;
+        if (heroDialogOpen && !dialog.open) dialog.showModal();
+        if (!heroDialogOpen && dialog.open) {
+            dialog.close();
+            heroOpenerRef.current?.focus();
+        }
+    }, [heroDialogOpen]);
+
+    function changeHero(hero: HeroState) {
+        if (!user?.token || heroBusyId || heroSaveRef.current || !hero.owned || hero.locked || !hero.enabled || isMatching || startBusy) return;
+        setHeroBusyId(hero.id);
+        setActiveHeroError("");
+        const request = (async () => {
+            const response = await fetch(`${API_GAME}/game/heroes/active`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ heroClassId: hero.id }),
+            });
+            if (!response.ok) {
+                const body = await response.text();
+                let reason = body;
+                try { reason = JSON.parse(body).error || body; } catch { /* Plain text response. */ }
+                const messages: Record<string, string> = {
+                    hero_not_owned: "You do not own this hero.",
+                    hero_not_found: "This hero is unavailable.",
+                    failed_to_set_active_hero: "The server could not activate this hero.",
+                };
+                throw new Error(messages[reason] || reason || "Failed to change hero");
+            }
+            const data: HeroesState = await response.json();
+            const preview = normalizeActiveHeroPreview(data);
+            if (!Array.isArray(data.heroes) || !confirmedHeroActivation(data, hero.id)) {
+                throw new Error("The server did not confirm the selected hero.");
+            }
+            setActiveHero(preview.activeHero);
+            setActiveHeroClassId(preview.activeHeroClassId);
+            setHeroRoster(data.heroes);
+            setHeroDialogOpen(false);
+        })();
+        heroSaveRef.current = request;
+        void request.catch((error) => {
+            setActiveHeroError(error instanceof Error ? error.message : "Failed to change hero");
+        }).finally(() => {
+            heroSaveRef.current = null;
+            setHeroBusyId(null);
+        });
+    }
+
     async function handleStart() {
-        if (!loadoutReady) {
-            alert("Save your loadout before joining the queue.");
+        if (startBusyRef.current) return;
+        if (!loadoutAvailable) {
+            setQueueError("Loadout unavailable. Wait for it to load before searching.");
             return;
         }
         if (!token) {
@@ -890,7 +969,14 @@ export default function ModeSelectionPage() {
             router.push("/login");
             return;
         }
+        startBusyRef.current = true;
+        setStartBusy(true);
+        setQueueError("");
         try {
+            if (heroSaveRef.current) await heroSaveRef.current;
+            if (activeHeroLoading || !activeHeroClassId) throw new Error("Wait for the active hero to load before searching.");
+            if (!loadoutRef.current) throw new Error("Loadout unavailable");
+            await loadoutRef.current.ensureSaved();
             const [freshParty, freshInvites] = await Promise.all([
                 fetchPartyState(user!.id, token),
                 fetchPartyInvites(user!.id, token),
@@ -927,6 +1013,8 @@ export default function ModeSelectionPage() {
             };
             // отправляем запрос в очередь и при успешном ответе обновляем UI сразу
             await joinQueue(mode, playerInfo, token);
+            startBusyRef.current = false;
+            setStartBusy(false);
             setPartyState((prev) =>
                 prev
                     ? { ...prev, queueMode: mode }
@@ -943,13 +1031,15 @@ export default function ModeSelectionPage() {
         } catch (err) {
             console.error(err);
             setIsMatching(false);
-            alert(
-                err instanceof Error ? err.message : "Error during matchmaking",
-            );
+            setQueueError(err instanceof Error ? err.message : "Error during matchmaking");
+        } finally {
+            startBusyRef.current = false;
+            setStartBusy(false);
         }
     }
 
     async function handleCancel() {
+        setQueueError("");
         const token = user?.token;
         const playerId = user?.id;
         if (!token || !playerId) {
@@ -983,7 +1073,7 @@ export default function ModeSelectionPage() {
             setPartyState((prev) => (prev ? { ...prev, queueMode: "" } : prev));
         } catch (error) {
             console.error(error);
-            alert(`Error leaving the queue: ${error}`);
+            setQueueError(`Error leaving the queue: ${error}`);
         }
     }
 
@@ -993,10 +1083,41 @@ export default function ModeSelectionPage() {
     }
 
     return (
-        <div className={styles.pageRoot}>
-            <LobbyHeader />
-            <h2 className={styles.pageTitle}>Choose a mode:</h2>
-            <section className={styles.partyPanel}>
+        <div className={`${styles.pageRoot} ${modesStyles.workspace}`}>
+            <header className={modesStyles.heroBanner}>
+                <div className={modesStyles.heroCopy}>
+                    <span className={modesStyles.eyebrow}>THE ROAD AHEAD</span>
+                    <h2>Choose a Mode</h2>
+                    <p>Gather your party, ready your supplies, and choose where the next battle begins.</p>
+                </div>
+            </header>
+            <section className={modesStyles.battleSetup} aria-label="Battle Setup and matchmaking">
+                <div className={modesStyles.setupHeading}>
+                    <div><span className={modesStyles.eyebrow}>BATTLE SETUP</span><h3>Ready your next battle</h3></div>
+                    <div className={modesStyles.selectedMode}>Mode <strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong></div>
+                </div>
+                <div className={modesStyles.setupRow}>
+                    <button ref={heroOpenerRef} type="button" className={modesStyles.heroTrigger} onClick={() => setHeroDialogOpen(true)} disabled={activeHeroLoading || !heroRoster.length || !!heroBusyId || isMatching || startBusy}>
+                        {activeHero && <img src={getHeroPortrait(activeHero.id, activeHero.image)} alt="" />}
+                        <span className={modesStyles.heroSummary}><span>ACTIVE HERO</span><strong>{activeHero?.displayName || (activeHeroLoading ? "Loading hero…" : "Hero unavailable")}</strong><small>{activeHeroClassId ? `Class: ${activeHeroClassId}` : "Choose a hero"}</small></span>
+                        <span className={modesStyles.editCue}>Change ↗</span>
+                    </button>
+                    <StorageLoadout ref={loadoutRef} compact allowSelection collapsible locked={startBusy || isMatching} forceClose={isMatching || !!pendingInstanceId} languageOverride="en" onAvailabilityChange={setLoadoutAvailable} onStatusChange={(status, error) => { setLoadoutStatus(status); setLoadoutError(error ?? ""); }} />
+                    <div className={modesStyles.queueControl}>
+                        <div className={modesStyles.queueStatus}><span className={modesStyles.eyebrow}>MATCHMAKING</span><h3>{pendingInstanceId ? "Match found" : isMatching ? "Searching for a match" : startBusy ? "Preparing search" : "Ready to search"}</h3><p><strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong> · {queueSizes[mode]} in queue</p></div>
+                        {isMatching && <span className={modesStyles.searchPulse} aria-hidden="true" />}
+                        <Button variant={isMatching ? "secondary" : "primary"} className={modesStyles.queueAction} onClick={isMatching ? handleCancel : handleStart} disabled={startBusy || pendingInstanceId !== null || (!isMatching && (activeHeroLoading || !!heroBusyId || !activeHeroClassId || !loadoutAvailable || loadoutStatus === "error" || (!!partyState?.inParty && !partyState.isLeader) || !canPlayMode(mode)))}>{pendingInstanceId ? "Match found" : isMatching ? "Cancel search" : startBusy ? "Preparing…" : "Start search"}</Button>
+                    </div>
+                </div>
+                {(queueError || activeHeroError || (loadoutStatus === "error" && loadoutError)) && <div className={modesStyles.setupAlerts}>
+                    {queueError && <StatusMessage tone="error">{queueError}</StatusMessage>}
+                    {activeHeroError && <StatusMessage tone="error">Hero: {activeHeroError}</StatusMessage>}
+                    {loadoutStatus === "error" && <StatusMessage tone="error">Loadout: {loadoutError} <button type="button" onClick={() => { void loadoutRef.current?.retry().catch(() => undefined); }}>Retry loadout</button></StatusMessage>}
+                </div>}
+            </section>
+            <div className={modesStyles.mainGrid}>
+            <aside className={modesStyles.sidebar} aria-label="Party and friends">
+            <section className={`${styles.partyPanel} ${modesStyles.partyPanel}`}>
                 <div className={styles.partyHeaderRow}>
                     <div>
                         <h3 className={styles.partyTitle}>Party</h3>
@@ -1011,7 +1132,9 @@ export default function ModeSelectionPage() {
                             ? ` • queue ${partyState.queueMode}`
                             : ""}
                     </div>
+                    <button type="button" className={modesStyles.partyToggle} aria-expanded={partyOpen} aria-controls="mode-party-body" onClick={() => setPartyOpen(open => !open)}>{partyOpen ? "Hide" : "Show"} party</button>
                 </div>
+                <div id="mode-party-body" className={modesStyles.partyBody} data-open={partyOpen}>
                 {partyError && (
                     <p className={styles.partyError}>{partyError}</p>
                 )}
@@ -1028,8 +1151,9 @@ export default function ModeSelectionPage() {
                         {partyInvites.map((invite) => (
                             <article
                                 key={`${invite.leader.user_id}-${invite.createdAt}`}
-                                className={styles.partyInviteCard}
+                                className={`${styles.partyInviteCard} ${modesStyles.personRow}`}
                             >
+                                <img src={normalizeAvatarPath(invite.leader.image)} alt="" className={styles.partyAvatar} />
                                 <div className={styles.partyInviteMeta}>
                                     <strong>{invite.leader.name}</strong>
                                     <span>
@@ -1084,7 +1208,7 @@ export default function ModeSelectionPage() {
                         return (
                             <article
                                 key={member.user_id}
-                                className={styles.partyMemberCard}
+                                className={`${styles.partyMemberCard} ${modesStyles.personRow}`}
                             >
                                 <img
                                     src={normalizeAvatarPath(member.image)}
@@ -1180,8 +1304,9 @@ export default function ModeSelectionPage() {
                                 .map((friend) => (
                                     <article
                                         key={friend.userId}
-                                        className={styles.partyInviteCard}
+                                        className={`${styles.partyInviteCard} ${modesStyles.personRow}`}
                                     >
+                                        <img src={normalizeAvatarPath(friend.image)} alt="" className={styles.partyAvatar} />
                                         <div className={styles.partyInviteMeta}>
                                             <strong>{friend.name}</strong>
                                             <span>{friend.characterType}</span>
@@ -1228,137 +1353,29 @@ export default function ModeSelectionPage() {
                         )}
                     </div>
                 )}
-            </section>
-            <div className={styles.modeContainer}>
-                {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) =>
-                    (() => {
-                        const modeAllowed = canPlayMode(m);
-                        return (
-                            <div
-                                key={m}
-                                className={`${styles.modeBlock} 
-                                    ${mode === m ? styles.modeBlockSelected : ""}
-                                    ${!modeAllowed ? styles.modeBlockDisabled : ""}
-                                    ${
-                                        isMatching &&
-                                        String(partyState?.queueMode) ===
-                                            String(m)
-                                            ? mode === m
-                                                ? styles.modeBlockSelectedMatching
-                                                : styles.modeBlockMatching
-                                            : ""
-                                    }`}
-                                onClick={() => {
-                                    if (modeAllowed) {
-                                        setMode(m);
-                                    }
-                                }}
-                            >
-                                <div>
-                                    {m === "PVE" ? "PvE (Solo)" : `PvP ${m}`}
-                                </div>
-                                <div
-                                    style={{
-                                        marginTop: "0.5rem",
-                                        fontSize: "0.9rem",
-                                    }}
-                                >
-                                    {queueSizes[m]} / {REQUIRED_SIZE[m]}
-                                </div>
-                                {!modeAllowed && (
-                                    <div
-                                        style={{
-                                            marginTop: "0.3rem",
-                                            fontSize: "0.8rem",
-                                        }}
-                                    >
-                                        Unavailable for party of{" "}
-                                        {currentPartySize}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })(),
-                )}
-            </div>
-
-            <section className={styles.activeHeroPanel}>
-                <div className={styles.activeHeroContent}>
-                    <div>
-                        <h3 className={styles.activeHeroTitle}>
-                            Active Hero
-                        </h3>
-                        {activeHeroLoading ? (
-                            <p className={styles.activeHeroText}>
-                                Loading active hero...
-                            </p>
-                        ) : activeHero ? (
-                            <>
-                                <p className={styles.activeHeroText}>
-                                    You will enter the next match as:{" "}
-                                    <strong>{activeHero.displayName}</strong>
-                                </p>
-                                {activeHero.description && (
-                                    <p className={styles.activeHeroDescription}>
-                                        {activeHero.description}
-                                    </p>
-                                )}
-                            </>
-                        ) : (
-                            <p className={styles.activeHeroText}>
-                                Active hero unavailable. Your default hero will
-                                be used.
-                            </p>
-                        )}
-                        {activeHeroError && (
-                            <p className={styles.activeHeroWarning}>
-                                {activeHeroError}
-                            </p>
-                        )}
-                    </div>
-                    <div className={styles.activeHeroActions}>
-                        {activeHeroClassId && (
-                            <span className={styles.activeHeroBadge}>
-                                {activeHeroClassId}
-                            </span>
-                        )}
-                        <button
-                            type="button"
-                            className={styles.activeHeroButton}
-                            onClick={() => router.push("/base")}
-                        >
-                            Go to Tavern
-                        </button>
-                    </div>
                 </div>
-                <p className={styles.activeHeroHint}>
-                    Change hero in the Tavern.
-                </p>
             </section>
-
-            <StorageLoadout allowSelection onReadyChange={setLoadoutReady} />
-            <div className={styles.buttonGroup}>
-                <button
-                    className={styles.queueButton}
-                    onClick={handleStart}
-                    disabled={
-                        !loadoutReady ||
-                        isMatching ||
-                        !!pendingInstanceId ||
-                        (!!partyState?.inParty && !partyState.isLeader) ||
-                        !canPlayMode(mode)
-                    }
-                >
-                    Join Queue
-                </button>
-                <button
-                    className={styles.queueButton}
-                    onClick={handleCancel}
-                    disabled={!isMatching || !!pendingInstanceId}
-                >
-                    Leave Queue
-                </button>
+            </aside>
+            <section className={modesStyles.modeSection} aria-labelledby="mode-section-title">
+                <div className={modesStyles.sectionHeading}><div><span className={modesStyles.eyebrow}>BATTLEFIELDS</span><h3 id="mode-section-title">Select your path</h3></div><span>{currentPartySize} in your party</span></div>
+                <div className={modesStyles.modeGrid}>
+                    {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => <ModeCard key={m} mode={m} selected={mode === m} disabled={!canPlayMode(m)} matching={isMatching && partyState?.queueMode === m} queuedPlayers={queueSizes[m]} requiredPlayers={REQUIRED_SIZE[m]} partySize={currentPartySize} onSelect={() => setMode(m)} />)}
+                </div>
+            </section>
             </div>
+
+            <dialog ref={heroDialogRef} className={modesStyles.heroDialog} aria-labelledby="hero-dialog-title" onCancel={(event) => { event.preventDefault(); if (!heroBusyId) setHeroDialogOpen(false); }}>
+                <div className={modesStyles.heroDialogHeader}><div><span className={modesStyles.eyebrow}>BATTLE SETUP</span><h2 id="hero-dialog-title">Choose your hero</h2><p>Available heroes for this account</p></div><button type="button" onClick={() => setHeroDialogOpen(false)} disabled={!!heroBusyId} aria-label="Close hero selection">×</button></div>
+                <div className={modesStyles.heroChoices}>
+                    {availableBattleHeroes(heroRoster).map(hero => <button type="button" key={hero.id} className={modesStyles.heroChoice} aria-current={hero.id === activeHeroClassId ? "true" : undefined} disabled={!!heroBusyId || isMatching || startBusy || hero.id === activeHeroClassId} onClick={() => changeHero(hero)}>
+                        <img src={getHeroPortrait(hero.id, hero.image)} alt="" />
+                        <span><strong>{hero.displayName}</strong><small>Class: {hero.id}</small><small>{hero.description}</small></span>
+                        <em>{heroBusyId === hero.id ? "Activating…" : hero.id === activeHeroClassId ? "Active" : "Select"}</em>
+                    </button>)}
+                    {availableBattleHeroes(heroRoster).length === 0 && <p>No available heroes.</p>}
+                </div>
+                {activeHeroError && <p className={modesStyles.heroDialogError} role="alert">{activeHeroError}</p>}
+            </dialog>
 
             {/* Modal moved to global listener mounted in layout */}
         </div>

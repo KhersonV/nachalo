@@ -1,711 +1,301 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
-import { API_BASE as API_GAME } from "@/utils/serviceUrls";
+import Link from "next/link";
+import { API_BASE } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
-import LobbyHeader from "./LobbyHeader";
+import { ConfirmDialog, EmptyState, ErrorState, LoadingState, StatusMessage, Tabs } from "./ui";
+import { actionDisabled, clampShopQuantity, filterShopItems, getSellableEquipment, maxAffordableQuantity, purchaseBlockReason, purchaseTotal, selectionAfterSale, type ShopCategory } from "@/features/shop/shopView";
 import type { PlayerShopState, ShopItem } from "../types";
-import type { EquipmentItem } from "../types/equipment";
-import styles from "../styles/ModeSelectionPage.module.css";
+import type { EquipmentItem, EquipmentSlot } from "../types/equipment";
+import styles from "../styles/LobbyShopPage.module.css";
+import { resourceImage } from "@/utils/resourceAssets";
 
+type ShopTab = "buy" | "sell";
+type EquipmentSnapshot = {
+    inventory?: EquipmentItem[];
+    equippedByCharacter: Record<string, Partial<Record<EquipmentSlot, EquipmentItem>>>;
+    equipped: Partial<Record<EquipmentSlot, EquipmentItem>>;
+};
+
+const CATEGORY_LABELS: Record<ShopCategory, string> = {
+    all: "All goods", resource: "Supplies", scroll: "Scrolls", blueprint: "Blueprints", preview: "Green sets",
+};
+const GREEN_SET_NAMES = ["Sagecloth · Mystic", "Bloodroot · Berserker", "Greenwisp · Ranger", "Aegiswarden · Guardian"];
 const EFFECT_LABELS: Record<string, string> = {
-    health: "HP",
-    energy: "Energy",
-    sight_bonus: "Sight",
-    structure_health: "Structure HP",
-    structure_defense: "Structure Defense",
-    turret_damage: "Turret Damage",
-    structure_blocking: "Blocks Passage",
-};
-function formatBonuses(bonuses?: Record<string, number>) {
-    if (!bonuses) return "";
-    return Object.entries(bonuses)
-        .filter(([, v]) => typeof v === "number" && v !== 0)
-        .map(([k, v]) => `${k}: ${v > 0 ? "+" + v : v}`)
-        .join("; ");
-}
-
-function formatEnum(value: string | undefined) {
-    if (!value) return "";
-    return value
-        .split("_")
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(" ");
-}
-
-// images are provided by server; no client-side blueprint suffixing required
-
-function formatEffect(effect: Record<string, number>): string {
-    const entries = Object.entries(effect || {});
-    if (!entries.length) return "None";
-    return entries
-        .map(([key, value]) => {
-            const label = EFFECT_LABELS[key] ?? key;
-            if (key === "structure_blocking") {
-                return `${label}: ${value > 0 ? "Yes" : "No"}`;
-            }
-            const sign = value > 0 ? "+" : "";
-            return `${label}: ${sign}${value}`;
-        })
-        .join("; ");
-}
-
-// Canonical shop pricing for green equipment (display-only while backend support is pending)
-const GREEN_NORMAL_PRICE = 2000;
-const GREEN_TWO_HANDED_PRICE = 4000;
-
-type GreenItem = {
-    type: string;
-    name: string;
-    description?: string;
-    image?: string;
-    slot?: string;
-    rarity?: string;
-    setName: string;
-    classRestriction: string;
-    isTwoHanded?: boolean;
-    price?: number;
+    health: "Health", energy: "Energy", sight_bonus: "Sight", structure_health: "Structure health",
+    structure_defense: "Structure defense", turret_damage: "Turret damage", structure_blocking: "Blocks passage",
 };
 
-const GREEN_SETS: { setCode: string; setName: string; className: string; items: GreenItem[] }[] = [
-    {
-        setCode: "sagecloth",
-        setName: "Sagecloth Set",
-        className: "Mystic",
-        items: [
-            { type: "sagecloth_staff", name: "Sagecloth Staff", image: "/equipment/mystic/sagecloth/staff.png", slot: "main_hand", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic", isTwoHanded: true },
-            { type: "sagecloth_hood", name: "Sagecloth Hood", image: "/equipment/mystic/sagecloth/hood.png", slot: "helmet", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic" },
-            { type: "sagecloth_jacket", name: "Sagecloth Jacket", image: "/equipment/mystic/sagecloth/jacket.png", slot: "chest", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic" },
-            { type: "sagecloth_pants", name: "Sagecloth Pants", image: "/equipment/mystic/sagecloth/pants.png", slot: "pants", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic" },
-            { type: "sagecloth_gloves", name: "Sagecloth Gloves", image: "/equipment/mystic/sagecloth/gloves.png", slot: "gloves", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic" },
-            { type: "sagecloth_boots", name: "Sagecloth Boots", image: "/equipment/mystic/sagecloth/boots.png", slot: "boots", rarity: "green", setName: "Sagecloth", classRestriction: "Mystic" },
-        ],
-    },
-    {
-        setCode: "bloodroot",
-        setName: "Bloodroot Set",
-        className: "Berserker",
-        items: [
-            { type: "bloodroot_axe", name: "Bloodroot Axe", image: "/equipment/berserker/bloodroot/Bloodroot Axe.png", slot: "main_hand", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker", isTwoHanded: true },
-            { type: "bloodroot_helm", name: "Bloodroot Horned Helm", image: "/equipment/berserker/bloodroot/Bloodroot Horned Helm.png", slot: "helmet", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker" },
-            { type: "bloodroot_vest", name: "Bloodroot War Vest", image: "/equipment/berserker/bloodroot/Bloodroot War Vest.png", slot: "chest", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker" },
-            { type: "bloodroot_pants", name: "Bloodroot Raider Pants", image: "/equipment/berserker/bloodroot/Bloodroot Raider Pants.png", slot: "pants", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker" },
-            { type: "bloodroot_gloves", name: "Bloodroot Grips", image: "/equipment/berserker/bloodroot/Bloodroot Grips.png", slot: "gloves", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker" },
-            { type: "bloodroot_boots", name: "Bloodroot Stompers", image: "/equipment/berserker/bloodroot/Bloodroot Stompers.png", slot: "boots", rarity: "green", setName: "Bloodroot", classRestriction: "Berserker" },
-        ],
-    },
-    {
-        setCode: "greenwisp",
-        setName: "Greenwisp Set",
-        className: "Ranger",
-        items: [
-            { type: "greenwisp_bow", name: "Greenwisp Bow", image: "/equipment/ranger/greenwisp/Greenwisp Bow.png", slot: "main_hand", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger", isTwoHanded: true },
-            { type: "greenwisp_hood", name: "Greenwisp Hood", image: "/equipment/ranger/greenwisp/Greenwisp Hood.png", slot: "helmet", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger" },
-            { type: "greenwisp_vest", name: "Greenwisp Vest", image: "/equipment/ranger/greenwisp/Greenwisp Vest.png", slot: "chest", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger" },
-            { type: "greenwisp_pants", name: "Greenwisp Ranger Pants", image: "/equipment/ranger/greenwisp/Greenwisp Ranger Pants.png", slot: "pants", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger" },
-            { type: "greenwisp_gloves", name: "Greenwisp Gloves", image: "/equipment/ranger/greenwisp/Greenwisp Gloves.png", slot: "gloves", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger" },
-            { type: "greenwisp_boots", name: "Greenwisp Boots", image: "/equipment/ranger/greenwisp/Greenwisp Boots.png", slot: "boots", rarity: "green", setName: "Greenwisp", classRestriction: "Ranger" },
-        ],
-    },
-    {
-        setCode: "aegiswarden",
-        setName: "Aegiswarden Set",
-        className: "Guardian",
-        items: [
-            { type: "aegis_sword", name: "Aegiswarden Sword", image: "/equipment/guardian/aegiswarden/Aegiswarden Sword.png", slot: "main_hand", rarity: "green", setName: "Aegiswarden", classRestriction: "Guardian" },
-            { type: "aegis_helm", name: "Aegiswarden Helm", image: "/equipment/guardian/aegiswarden/Aegiswarden Helm.png", slot: "helmet", rarity: "green", setName: "Aegiswarden", classRestriction: "Guardian" },
-            { type: "aegis_gloves", name: "Aegiswarden Gloves", image: "/equipment/guardian/aegiswarden/Aegiswarden Gloves.png", slot: "gloves", rarity: "green", setName: "Aegiswarden", classRestriction: "Guardian" },
-            { type: "aegis_boots", name: "Aegiswarden Boots", image: "/equipment/guardian/aegiswarden/boots.png", slot: "boots", rarity: "green", setName: "Aegiswarden", classRestriction: "Guardian" },
-        ],
-    },
-];
+function formatGold(value: number) { return `${value.toLocaleString()} Gold`; }
+function formatEnum(value: string) { return value.split("_").map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(" "); }
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : "Shop request failed"; }
 
-function getGreenItemPrice(it: GreenItem) {
-    if (typeof it.price === "number") return it.price;
-    return it.isTwoHanded ? GREEN_TWO_HANDED_PRICE : GREEN_NORMAL_PRICE;
+async function responseError(response: Response): Promise<Error> {
+    const text = (await response.text()).trim();
+    let code = text;
+    try { code = JSON.parse(text)?.error || text; } catch { /* Shop errors can be plain text. */ }
+    const messages: Record<string, string> = {
+        forge_required: "Build the Forge in Base to buy this blueprint.",
+        library_required: "Build the Library in Base to buy scrolls.",
+        "insufficient balance": "Not enough gold for this purchase.",
+        item_is_equipped: "Unequip this item before selling it.",
+        item_locked: "This item is locked and cannot be sold.",
+        item_not_in_inventory: "This item is no longer in your inventory.",
+    };
+    return new Error(messages[code] || code || `Request failed (${response.status})`);
 }
 
-function formatPrice(price: number) {
-    return `${price.toLocaleString()} gold`;
+function equipmentFromResponse(value: unknown): EquipmentSnapshot {
+    const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    const inventory = Array.isArray(raw.inventoryItems) ? raw.inventoryItems : Array.isArray(raw.inventory) ? raw.inventory : undefined;
+    return {
+        inventory: inventory as EquipmentItem[] | undefined,
+        equippedByCharacter: raw.equippedByCharacter && typeof raw.equippedByCharacter === "object" ? raw.equippedByCharacter as EquipmentSnapshot["equippedByCharacter"] : {},
+        equipped: raw.equipped && typeof raw.equipped === "object" ? raw.equipped as EquipmentSnapshot["equipped"] : {},
+    };
 }
 
-function groupConsumables(items: ShopItem[]) {
-    const survival: ShopItem[] = [];
-    const scrolls: ShopItem[] = [];
-    const blueprints: ShopItem[] = [];
-    for (const it of items) {
-        if (it.category === "resource") {
-            if (it.type === "food" || it.type === "water") survival.push(it);
-            else survival.push(it);
-        } else if (it.category === "scroll") scrolls.push(it);
-        else if (it.category === "blueprint") blueprints.push(it);
-    }
-    return { survival, scrolls, blueprints };
+function normalizePlayer(value: unknown): PlayerShopState {
+    const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+    if ((typeof raw.balance !== "number" && typeof raw.balance !== "string") || raw.balance === "") throw new Error("Server balance is unavailable");
+    const balance = Number(raw.balance);
+    if (!Number.isFinite(balance)) throw new Error("Server balance is unavailable");
+    return { user_id: Number(raw.user_id), balance, inventory: typeof raw.inventory === "string" ? raw.inventory : JSON.stringify(raw.inventory ?? {}) };
+}
+
+function ownedCount(player: PlayerShopState | null, item: ShopItem): number {
+    if (!player) return 0;
+    try {
+        const inventory = JSON.parse(player.inventory);
+        const key = item.inventoryKey || `resource_${item.id}`;
+        return Math.max(0, Number(inventory?.[key]?.item_count) || 0);
+    } catch { return 0; }
+}
+
+function ProductImage({ src, name, large = false }: { src?: string; name: string; large?: boolean }) {
+    const [failed, setFailed] = React.useState(false);
+    React.useEffect(() => setFailed(false), [src]);
+    return <span className={`${styles.productImage} ${large ? styles.productImageLarge : ""}`} aria-label={name}>
+        {src && !failed ? <img src={src} alt="" onError={() => setFailed(true)} /> : <span aria-hidden="true">✦</span>}
+    </span>;
+}
+
+function ShopItemCard({ item, selected, onSelect }: { item: ShopItem; selected: boolean; onSelect: () => void }) {
+    return <button type="button" className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`} aria-pressed={selected} onClick={onSelect}>
+        <ProductImage src={item.category === "resource" ? resourceImage(item.type, item.image) ?? item.image : item.image} name={item.name} />
+        <span className={styles.cardCopy}><span className={styles.cardType}>{CATEGORY_LABELS[item.category]}</span><strong>{item.name}</strong><small>{item.description}</small></span>
+        <span className={styles.cardPrice}>{formatGold(item.price)}</span>
+    </button>;
+}
+
+function SellItemCard({ item, selected, onSelect }: { item: EquipmentItem; selected: boolean; onSelect: () => void }) {
+    return <button type="button" className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={onSelect}>
+        <ProductImage src={item.imageUrl} name={item.name} />
+        <span className={styles.cardCopy}><span className={styles.cardType}>{formatEnum(item.slot)} · {formatEnum(item.rarity)}</span><strong>{item.name}</strong><small>{item.setName || item.classRestriction || "Equipment"}</small></span>
+        <span className={styles.cardPrice}>{formatGold(item.sellPrice!)}</span>
+    </button>;
+}
+
+function QuantitySelector({ count, max, disabled, onChange }: { count: number; max: number; disabled: boolean; onChange: (count: number) => void }) {
+    return <div className={styles.quantityControl}>
+        <label htmlFor="shop-quantity">Quantity</label>
+        <div className={styles.quantityRow}>
+            {[-5, -1].map(delta => <button key={delta} type="button" disabled={disabled || count <= 1} onClick={() => onChange(count + delta)}>{delta}</button>)}
+            <input id="shop-quantity" aria-label="Quantity" type="number" inputMode="numeric" min={1} max={99} value={count} disabled={disabled} onChange={event => onChange(Number(event.target.value))} />
+            {[1, 5].map(delta => <button key={delta} type="button" disabled={disabled || count >= 99} onClick={() => onChange(count + delta)}>+{delta}</button>)}
+            <button type="button" disabled={disabled || max < 1 || count === max} onClick={() => onChange(max)}>Max</button>
+        </div>
+    </div>;
+}
+
+function ShopItemDetails({ item, player, count, forgeBuilt, libraryBuilt, busy, onCount, onBuy }: {
+    item: ShopItem; player: PlayerShopState | null; count: number; forgeBuilt: boolean | null; libraryBuilt: boolean | null;
+    busy: boolean; onCount: (count: number) => void; onBuy: () => void;
+}) {
+    const reason = purchaseBlockReason(item, count, player?.balance ?? null, forgeBuilt, libraryBuilt);
+    const max = maxAffordableQuantity(player?.balance ?? null, item.price);
+    const effects = Object.entries(item.effect || {}).filter(([, value]) => typeof value === "number");
+    return <div className={styles.detailsBody}>
+        <div className={styles.detailsHero}><ProductImage src={item.category === "resource" ? resourceImage(item.type, item.image) ?? item.image : item.image} name={item.name} large /><div><span className={styles.eyebrow}>{CATEGORY_LABELS[item.category]}</span><h2>{item.name}</h2><p>{item.description}</p></div></div>
+        {effects.length > 0 && <div className={styles.effects}>{effects.map(([key, value]) => <span key={key}>{EFFECT_LABELS[key] || formatEnum(key)}: {key === "structure_blocking" ? value ? "Yes" : "No" : `${value > 0 ? "+" : ""}${value}`}</span>)}</div>}
+        <div className={styles.detailFacts}><span>Unit price <strong>{formatGold(item.price)}</strong></span><span>Owned <strong>{ownedCount(player, item)}</strong></span></div>
+        <QuantitySelector count={count} max={max} disabled={busy} onChange={onCount} />
+        <div className={styles.totalRow}><span>Total</span><strong>{formatGold(purchaseTotal(item.price, count))}</strong></div>
+        <div className={styles.balanceHint}>Available: {player ? formatGold(player.balance) : "Loading…"}</div>
+        {reason && <p className={styles.blockReason}>{reason}{(reason.includes("Forge") || reason.includes("Library")) && <> · <Link href="/base">Go to Base</Link></>}</p>}
+        <button type="button" className={styles.primaryAction} disabled={actionDisabled(busy, reason)} onClick={onBuy}>{busy ? "Buying…" : `Buy ${count}`}</button>
+    </div>;
+}
+
+function SellItemDetails({ item, busy, onSell }: { item: EquipmentItem; busy: boolean; onSell: () => void }) {
+    return <div className={styles.detailsBody}>
+        <div className={styles.detailsHero}><ProductImage src={item.imageUrl} name={item.name} large /><div><span className={styles.eyebrow}>{formatEnum(item.rarity)} · {formatEnum(item.slot)}</span><h2>{item.name}</h2><p>{item.setName || item.classRestriction || "Available equipment"}</p></div></div>
+        <div className={styles.detailFacts}><span>Item instance <strong className={styles.instanceId}>{item.instanceId}</strong></span><span>Sell value <strong>{formatGold(item.sellPrice!)}</strong></span></div>
+        <p className={styles.sellWarning}>Selling permanently removes this item from your inventory.</p>
+        <button type="button" className={styles.primaryAction} disabled={busy} onClick={onSell}>{busy ? "Selling…" : `Sell for ${formatGold(item.sellPrice!)}`}</button>
+    </div>;
+}
+
+function MobileDetails({ open, children, onClose }: { open: boolean; children: React.ReactNode; onClose: () => void }) {
+    const ref = React.useRef<HTMLDialogElement>(null);
+    React.useEffect(() => {
+        const dialog = ref.current;
+        if (!dialog) return;
+        if (open && !dialog.open) dialog.showModal();
+        if (!open && dialog.open) dialog.close();
+    }, [open]);
+    return <dialog ref={ref} className={styles.mobileDialog} aria-label="Item details" onCancel={event => { event.preventDefault(); onClose(); }}>
+        <button type="button" className={styles.drawerClose} onClick={onClose} aria-label="Close item details">✕</button>{children}
+    </dialog>;
 }
 
 export default function LobbyShopPage() {
-    const router = useRouter();
     const { user } = useAuth();
+    const [tab, setTab] = React.useState<ShopTab>("buy");
+    const [category, setCategory] = React.useState<ShopCategory>("all");
+    const [catalog, setCatalog] = React.useState<ShopItem[]>([]);
+    const [player, setPlayer] = React.useState<PlayerShopState | null>(null);
+    const [equipment, setEquipment] = React.useState<EquipmentSnapshot>({ equippedByCharacter: {}, equipped: {} });
+    const [forgeBuilt, setForgeBuilt] = React.useState<boolean | null>(null);
+    const [libraryBuilt, setLibraryBuilt] = React.useState<boolean | null>(null);
+    const [counts, setCounts] = React.useState<Record<string, number>>({});
+    const [selectedBuyId, setSelectedBuyId] = React.useState<string | null>(null);
+    const [selectedSellId, setSelectedSellId] = React.useState<string | null>(null);
+    const [mobileDetailsOpen, setMobileDetailsOpen] = React.useState(false);
+    const [confirmSellId, setConfirmSellId] = React.useState<string | null>(null);
+    const [busy, setBusy] = React.useState(false);
+    const busyRef = React.useRef(false);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState("");
+    const [notice, setNotice] = React.useState("");
 
-    const [shopItems, setShopItems] = React.useState<ShopItem[]>([]);
-    const [shopPlayer, setShopPlayer] = React.useState<PlayerShopState | null>(
-        null,
-    );
-    const [shopCounts, setShopCounts] = React.useState<Record<string, number>>(
-        {},
-    );
-    const [shopBusyType, setShopBusyType] = React.useState<string | null>(null);
-    const [shopError, setShopError] = React.useState("");
-    const [shopInfo, setShopInfo] = React.useState("");
-    const [forgeBuilt, setForgeBuilt] = React.useState(false);
-    const [libraryBuilt, setLibraryBuilt] = React.useState(false);
-    const [activeCategory, setActiveCategory] = React.useState<"consumables" | "green_sets">("consumables");
-    const [activeTab, setActiveTab] = React.useState<"buy" | "sell">("buy");
+    const sellItems = React.useMemo(() => getSellableEquipment(equipment.inventory, equipment.equippedByCharacter, equipment.equipped), [equipment]);
+    const visibleCatalog = React.useMemo(() => filterShopItems(catalog, category), [catalog, category]);
+    const selectedBuy = visibleCatalog.find(item => item.type === selectedBuyId) || visibleCatalog[0] || null;
+    const selectedSell = sellItems.find(item => item.instanceId === selectedSellId) || sellItems[0] || null;
+    const confirmItem = sellItems.find(item => item.instanceId === confirmSellId) || null;
 
-    // Equipment / Sell tab state (separate from shop catalog)
-    const [equipmentItems, setEquipmentItems] = React.useState<EquipmentItem[]>([]);
-    const sellableEquipment = React.useMemo(
-        () => equipmentItems.filter((it) => it && it.instanceId && it.status !== "equipped" && !it.equippedCharacterId),
-        [equipmentItems],
-    );
-    const [sellBusyId, setSellBusyId] = React.useState<string | null>(null);
-    const [sellInfo, setSellInfo] = React.useState("");
-
-    const loadShopData = React.useCallback(async () => {
-        if (!user) return;
-        try {
-            const [itemsRes, playerRes] = await Promise.all([
-                fetch(`${API_GAME}/game/shop/items`),
-                fetch(`${API_GAME}/game/player/${user.id}`),
-            ]);
-
-            if (user?.token) {
-                const baseRes = await fetch(`${API_GAME}/game/base/state`, {
-                    headers: {
-                        Authorization: `Bearer ${user.token}`,
-                    },
-                });
-                if (baseRes.ok) {
-                    const baseData = await baseRes.json();
-                    setForgeBuilt(
-                        Boolean(baseData?.forge?.built ?? baseData?.built),
-                    );
-                    setLibraryBuilt(
-                        Boolean(
-                            baseData?.library?.built ??
-                            baseData?.Library?.built,
-                        ),
-                    );
-                }
-            }
-
-            if (itemsRes.ok) {
-                const itemsData = await itemsRes.json();
-                const items: ShopItem[] = itemsData.items || [];
-                setShopItems(items);
-                setShopCounts((prev) => {
-                    const next = { ...prev };
-                    for (const item of items) {
-                        if (!next[item.type] || next[item.type] < 1) {
-                            next[item.type] = 1;
-                        }
-                    }
-                    return next;
-                });
-            }
-
-            if (playerRes.ok) {
-                const playerData = await playerRes.json();
-                setShopPlayer({
-                    user_id: playerData.user_id,
-                    balance: Number(playerData.balance ?? 0),
-                    inventory: playerData.inventory ?? "{}",
-                });
-            }
-
-            // Note: shop currently provides consumables/blueprints/scrolls.
-            // Green equipment sets are shown client-side (see GREEN_SETS below).
-
-            // load equipment sellable items (unequipped owned items)
-            try {
-                if (user?.token) {
-                    const eqRes = await fetch(`${API_GAME}/game/equipment`, {
-                        headers: { Authorization: `Bearer ${user.token}` },
-                    });
-                    if (eqRes.ok) {
-                        const eqData = await eqRes.json();
-                        const raw = eqData?.data || {};
-                        const source = Array.isArray(raw.inventoryItems)
-                            ? raw.inventoryItems
-                            : Array.isArray(raw.ownedItems)
-                            ? raw.ownedItems
-                            : raw.inventory || [];
-                        const items: EquipmentItem[] = (source as any[]).map((it) => it as EquipmentItem);
-                        setEquipmentItems(items);
-                    }
-                }
-            } catch (e) {
-                console.error("failed to load equipment for sell list", e);
-            }
-        } catch (e) {
-            console.error("failed to load shop data", e);
+    const loadData = React.useCallback(async (confirmedPlayer?: PlayerShopState | null, confirmedEquipment?: EquipmentSnapshot) => {
+        if (!user?.token) { setLoading(false); return false; }
+        setLoading(true);
+        const headers = { Authorization: `Bearer ${user.token}` };
+        const fetchJson = async (path: string) => {
+            const response = await fetch(`${API_BASE}${path}`, { headers, cache: "no-store" });
+            if (!response.ok) throw await responseError(response);
+            return response.json();
+        };
+        const results = await Promise.allSettled([
+            fetchJson("/game/shop/items"), fetchJson(`/game/player/${user.id}`),
+            fetchJson("/game/base/state"), fetchJson("/game/equipment"),
+        ]);
+        const failures: string[] = [];
+        const [catalogResult, playerResult, baseResult, equipmentResult] = results;
+        if (catalogResult.status === "fulfilled" && Array.isArray(catalogResult.value?.items)) setCatalog(catalogResult.value.items);
+        else { setCatalog([]); failures.push("catalog"); }
+        if (playerResult.status === "fulfilled") { try { setPlayer(normalizePlayer(playerResult.value)); } catch { setPlayer(confirmedPlayer || null); failures.push("balance"); } }
+        else { setPlayer(confirmedPlayer || null); failures.push("balance"); }
+        if (baseResult.status === "fulfilled") {
+            const base = baseResult.value;
+            const forge = typeof base?.forge?.built === "boolean" ? base.forge.built : null;
+            const library = typeof base?.library?.built === "boolean" ? base.library.built : null;
+            setForgeBuilt(forge);
+            setLibraryBuilt(library);
+            if (forge === null || library === null) failures.push("building access");
+        } else { setForgeBuilt(null); setLibraryBuilt(null); failures.push("building access"); }
+        if (equipmentResult.status === "fulfilled") {
+            const snapshot = equipmentFromResponse(equipmentResult.value?.data);
+            setEquipment(snapshot);
+            if (!snapshot.inventory) failures.push("equipment");
         }
-    }, [user]);
+        else { setEquipment(confirmedEquipment || { equippedByCharacter: {}, equipped: {} }); failures.push("equipment"); }
+        setError(failures.length ? `Could not refresh ${failures.join(", ")}. Retry to load current server data.` : "");
+        setLoading(false);
+        return failures.length === 0;
+    }, [user?.id, user?.token]);
 
-    const getItemCountFromInventory = React.useCallback(
-        (item: ShopItem) => {
-            if (!shopPlayer?.inventory) return 0;
-            try {
-                const parsed =
-                    typeof shopPlayer.inventory === "string"
-                        ? JSON.parse(shopPlayer.inventory)
-                        : shopPlayer.inventory;
-                const key = item.inventoryKey || `resource_${item.id}`;
-                const entry = parsed?.[key];
-                if (!entry) return 0;
-                const val = entry.item_count;
-                if (typeof val === "number") return val;
-                if (typeof val === "string") return Number(val) || 0;
-                return 0;
-            } catch {
-                return 0;
-            }
-        },
-        [shopPlayer],
-    );
+    React.useEffect(() => { void loadData(); }, [loadData]);
+    const changeCount = (type: string, next: number) => setCounts(current => ({ ...current, [type]: clampShopQuantity(next) }));
 
-    const handleBuyShopItem = React.useCallback(
-        async (item: ShopItem, count: number) => {
-            if (!user?.token || !shopPlayer) return;
-            const safeCount = Math.max(1, Math.min(99, count));
-            const totalCost = item.price * safeCount;
-            if (shopPlayer.balance < totalCost) {
-                setShopError("Not enough coins to buy");
-                setShopInfo("");
-                return;
-            }
-
-            setShopBusyType(item.type);
-            setShopError("");
-            setShopInfo("");
-
-            try {
-                const res = await fetch(`${API_GAME}/game/shop/buy`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${user.token}`,
-                    },
-                    body: JSON.stringify({
-                        player_id: user.id,
-                        item_type: item.type,
-                        count: safeCount,
-                    }),
-                });
-
-                if (!res.ok) {
-                    const text = await res.text();
-                    if (text.includes("forge_required")) {
-                        throw new Error(
-                            "Forge required to purchase blueprints",
-                        );
-                    }
-                    throw new Error(text || "Purchase error");
-                }
-
-                const data = await res.json();
-                setShopPlayer({
-                    user_id: data.player.user_id,
-                    balance: Number(data.player.balance ?? 0),
-                    inventory: data.player.inventory ?? "{}",
-                });
-                setShopInfo(`Purchased: ${item.name} x${safeCount}`);
-            } catch (e: unknown) {
-                const message =
-                    e instanceof Error ? e.message : "Failed to buy item";
-                setShopError(message);
-            } finally {
-                setShopBusyType(null);
-            }
-        },
-            [user, shopPlayer],
-        );
-
-        const handleSellEquipment = React.useCallback(
-            async (item: EquipmentItem) => {
-                if (!user?.token) return;
-                // confirm with user
-                if (!confirm(`Sell ${item.name} for gold?`)) return;
-
-                setSellBusyId(item.instanceId);
-                setShopError("");
-                setSellInfo("");
-
-                try {
-                    const res = await fetch(`${API_GAME}/game/equipment/sell`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${user.token}`,
-                        },
-                        body: JSON.stringify({ itemInstanceId: item.instanceId }),
-                    });
-
-                    if (!res.ok) {
-                        const text = await res.text();
-                        if (text.includes("item_is_equipped")) {
-                            throw new Error("Unequip this item before selling it.");
-                        }
-                        throw new Error(text || "Failed to sell item");
-                    }
-
-                    const data = await res.json();
-
-                    if (data?.balance !== undefined) {
-                        setShopPlayer((prev) => (prev ? { ...prev, balance: Number(data.balance) } : prev));
-                    } else if (data?.player && data.player.balance !== undefined) {
-                        setShopPlayer({
-                            user_id: data.player.user_id,
-                            balance: Number(data.player.balance ?? 0),
-                            inventory: data.player.inventory ?? "{}",
-                        });
-                    } else {
-                        // fallback: refresh player
-                        const pr = await fetch(`${API_GAME}/game/player/${user.id}`);
-                        if (pr.ok) {
-                            const pd = await pr.json();
-                            setShopPlayer({ user_id: pd.user_id, balance: Number(pd.balance ?? 0), inventory: pd.inventory ?? "{}" });
-                        }
-                    }
-
-                    setEquipmentItems((prev) => prev.filter((i) => i.instanceId !== item.instanceId));
-                    setSellInfo(`Sold: ${item.name} for ${data?.goldDelta ?? item.sellPrice ?? 0} gold`);
-                } catch (e: unknown) {
-                    const message = e instanceof Error ? e.message : String(e);
-                    setShopError(message);
-                } finally {
-                    setSellBusyId(null);
-                }
-            },
-            [user],
-        );
-
-    const setShopCount = React.useCallback(
-        (itemType: string, count: number) => {
-            const safe = Number.isFinite(count)
-                ? Math.max(1, Math.min(99, Math.floor(count)))
-                : 1;
-            setShopCounts((prev) => ({ ...prev, [itemType]: safe }));
-        },
-        [],
-    );
-
-    const increaseShopCount = React.useCallback(
-        (itemType: string, delta: number) => {
-            setShopCounts((prev) => {
-                const current = prev[itemType] ?? 1;
-                const safe = Math.max(1, Math.min(99, current + delta));
-                return { ...prev, [itemType]: safe };
+    const buy = async (item: ShopItem) => {
+        if (!user?.token || busyRef.current || !catalog.some(entry => entry.type === item.type)) return;
+        const count = clampShopQuantity(counts[item.type] ?? 1);
+        const reason = purchaseBlockReason(item, count, player?.balance ?? null, forgeBuilt, libraryBuilt);
+        if (reason) { setError(reason); return; }
+        busyRef.current = true; setBusy(true); setError(""); setNotice("");
+        try {
+            const response = await fetch(`${API_BASE}/game/shop/buy`, {
+                method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ player_id: user.id, item_type: item.type, count }),
             });
-        },
-        [],
-    );
+            if (!response.ok) throw await responseError(response);
+            const data = await response.json().catch(() => null);
+            let confirmedPlayer: PlayerShopState | null = null;
+            try { if (data?.player) confirmedPlayer = normalizePlayer(data.player); } catch { /* Refresh below is authoritative. */ }
+            if (confirmedPlayer) setPlayer(confirmedPlayer);
+            const fresh = await loadData(confirmedPlayer);
+            setNotice(fresh ? `Purchased ${item.name} ×${count}.` : `Purchased ${item.name} ×${count}. Refresh the shop to verify the latest details.`);
+        } catch (caught) { setError(errorMessage(caught)); }
+        finally { busyRef.current = false; setBusy(false); }
+    };
 
-    const setMaxAffordableCount = React.useCallback(
-        (itemType: string, unitPrice: number) => {
-            const balance = shopPlayer?.balance ?? 0;
-            if (unitPrice <= 0) return;
-            const maxByBalance = Math.floor(balance / unitPrice);
-            const next = Math.max(1, Math.min(99, maxByBalance));
-            setShopCounts((prev) => ({ ...prev, [itemType]: next }));
-        },
-        [shopPlayer],
-    );
+    const sell = async () => {
+        const item = confirmItem;
+        if (!item || !user?.token || busyRef.current || !equipment.inventory) return;
+        busyRef.current = true; setBusy(true); setError(""); setNotice("");
+        try {
+            const response = await fetch(`${API_BASE}/game/equipment/sell`, {
+                method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ itemInstanceId: item.instanceId }),
+            });
+            if (!response.ok) throw await responseError(response);
+            const data = await response.json().catch(() => null);
+            const confirmedPlayer = typeof data?.balance === "number" && player ? { ...player, balance: data.balance } : null;
+            if (confirmedPlayer) setPlayer(confirmedPlayer);
+            const confirmedEquipment = data?.data ? equipmentFromResponse(data.data) : undefined;
+            setEquipment(confirmedEquipment || { equippedByCharacter: {}, equipped: {} });
+            setSelectedSellId(current => selectionAfterSale(current, item.instanceId));
+            setConfirmSellId(null);
+            setMobileDetailsOpen(false);
+            const fresh = await loadData(confirmedPlayer, confirmedEquipment);
+            setNotice(fresh ? `Sold ${item.name}.` : `Sold ${item.name}. Refresh the shop to verify the latest details.`);
+        } catch (caught) { setError(errorMessage(caught)); }
+        finally { busyRef.current = false; setBusy(false); }
+    };
 
-    React.useEffect(() => {
-        loadShopData();
-    }, [loadShopData]);
+    const selectTab = (next: ShopTab) => { if (!busyRef.current) { setTab(next); setMobileDetailsOpen(false); setError(""); setNotice(""); } };
+    const showDetails = () => { if (window.matchMedia("(max-width: 760px)").matches) setMobileDetailsOpen(true); };
+    const closeDetails = () => { if (!busyRef.current && !confirmSellId) setMobileDetailsOpen(false); };
+    const detail = tab === "buy" ? selectedBuy && <ShopItemDetails item={selectedBuy} player={player} count={counts[selectedBuy.type] ?? 1} forgeBuilt={forgeBuilt} libraryBuilt={libraryBuilt} busy={busy} onCount={next => changeCount(selectedBuy.type, next)} onBuy={() => void buy(selectedBuy)} /> : selectedSell && <SellItemDetails item={selectedSell} busy={busy} onSell={() => setConfirmSellId(selectedSell.instanceId)} />;
 
-    return (
-        <div className={styles.pageRoot}>
-            <LobbyHeader />
-            <h2 className={styles.pageTitle}>Shop</h2>
-
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
-                <button
-                    className={styles.partyActionButton}
-                    onClick={() => setActiveTab("buy")}
-                    disabled={activeTab === "buy"}
-                >
-                    Buy
-                </button>
-                <button
-                    className={styles.partySecondaryButton}
-                    onClick={() => setActiveTab("sell")}
-                    disabled={activeTab === "sell"}
-                >
-                    Sell
-                </button>
+    return <main className={styles.pageRoot}>
+        <div className={styles.container}>
+            <header className={styles.pageHeader}>
+                <div><span className={styles.eyebrow}>THE MARKETPLACE</span><h1>Shop</h1><p>Supplies for the road. Equipment for the next journey.</p></div>
+                <div className={styles.goldSummary}><span>YOUR GOLD</span><strong>{player ? formatGold(player.balance) : "Loading…"}</strong></div>
+            </header>
+            <div className={styles.toolbar}>
+                <Tabs id="shop-mode" tabs={[{ id: "buy", label: "Buy" }, { id: "sell", label: "Sell" }]} activeId={tab} onChange={id => selectTab(id as ShopTab)} label="Shop mode" />
+                {tab === "buy" && <div className={styles.categoryTabs} role="group" aria-label="Shop categories">
+                    {(["all", "resource", "scroll", "blueprint", "preview"] as ShopCategory[]).filter(key => key === "all" || key === "preview" || catalog.some(item => item.category === key)).map(key =>
+                        <button key={key} type="button" aria-pressed={category === key} onClick={() => { setCategory(key); setMobileDetailsOpen(false); }}>{CATEGORY_LABELS[key]}{key === "preview" && <small> Soon</small>}</button>)}
+                </div>}
             </div>
-
-            {activeTab === "buy" && (
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-                    <button
-                        className={styles.partyActionButton}
-                        onClick={() => setActiveCategory("consumables")}
-                        disabled={activeCategory === "consumables"}
-                    >
-                        Consumables
-                    </button>
-                    <button
-                        className={styles.partySecondaryButton}
-                        onClick={() => setActiveCategory("green_sets")}
-                        disabled={activeCategory === "green_sets"}
-                    >
-                        Green Sets
-                    </button>
-                </div>
-            )}
-
-            {activeTab === "buy" && (
-            <section className={styles.shopPanel}>
-                <div className={styles.shopHeader}>
-                    <h3 className={styles.shopTitle}>Preparation Shop</h3>
-                    <p className={styles.shopSubtitle}>Waiting for the match to start.</p>
-                    <div className={styles.shopBalance}>Balance: {shopPlayer?.balance ?? 0}</div>
-                </div>
-
-                {shopError && <p className={styles.shopError}>{shopError}</p>}
-                {shopInfo && <p className={styles.shopInfo}>{shopInfo}</p>}
-
-                {activeCategory === "consumables" && (() => {
-                    const { survival, scrolls, blueprints } = groupConsumables(shopItems);
-                    return (
-                        <>
-                            {survival.length > 0 && (
-                                <>
-                                    <h4 className={styles.baseTitle}>Survival</h4>
-                                    <div className={styles.shopGrid}>
-                                        {survival.map((item) => {
-                                            const owned = getItemCountFromInventory(item);
-                                            const currentCount = shopCounts[item.type] ?? 1;
-                                            const totalCost = item.price * currentCount;
-                                            const canAfford = (shopPlayer?.balance ?? 0) >= totalCost;
-                                            const blockedByForge = (item.requiresForge && !forgeBuilt) || (item.category === "scroll" && !libraryBuilt);
-                                            const canBuy = canAfford && !blockedByForge;
-
-                                            return (
-                                                <article key={item.type} className={styles.shopCard}>
-                                                    <img src={item.image} alt={item.name} className={styles.shopImage} />
-                                                    <div className={styles.shopMeta}>
-                                                        <strong>{item.name}</strong>
-                                                        <span className={styles.partyMuted}>{item.description}</span>
-                                                        <span>Effect: {formatEffect(item.effect)}</span>
-                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                            <span className={canAfford ? styles.shopCostOk : styles.shopCostWarn}>{formatPrice(item.price)}</span>
-                                                            <span>×{currentCount}</span>
-                                                        </div>
-                                                        <span>In inventory: {owned}</span>
-                                                    </div>
-
-                                                    <div className={styles.shopQtyRow}>
-                                                        <span className={styles.shopQtyLabel}>Qty:</span>
-                                                        <div className={styles.shopQtyActions}>
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, -1)} disabled={!!shopBusyType || currentCount <= 1}>-</button>
-                                                            <input className={styles.shopQtyInput} type="number" min={1} max={99} value={currentCount} onChange={(e) => setShopCount(item.type, Number(e.target.value))} disabled={!!shopBusyType} />
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+</button>
-                                                        </div>
-                                                        <div className={styles.shopQtyQuick}>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+1</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 5)} disabled={!!shopBusyType || currentCount >= 99}>+5</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => setMaxAffordableCount(item.type, item.price)} disabled={!!shopBusyType || (shopPlayer?.balance ?? 0) < item.price}>Max</button>
-                                                        </div>
-                                                    </div>
-
-                                                    <button className={styles.shopBuyButton} disabled={!canBuy || !!shopBusyType} onClick={() => handleBuyShopItem(item, currentCount)}>
-                                                        {shopBusyType === item.type ? 'Buying...' : blockedByForge ? (item.requiresForge && !forgeBuilt ? 'Forge required' : 'Unavailable') : 'Buy'}
-                                                    </button>
-                                                </article>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-
-                            {scrolls.length > 0 && (
-                                <>
-                                    <h4 className={styles.baseTitle}>Scrolls</h4>
-                                    <div className={styles.shopGrid}>
-                                        {scrolls.map((item) => {
-                                            const currentCount = shopCounts[item.type] ?? 1;
-                                            const totalCost = item.price * currentCount;
-                                            const canAfford = (shopPlayer?.balance ?? 0) >= totalCost;
-                                            const blockedByForge = (item.requiresForge && !forgeBuilt) || (item.category === "scroll" && !libraryBuilt);
-                                            return (
-                                                <article key={item.type} className={styles.shopCard}>
-                                                    <img src={item.image} alt={item.name} className={styles.shopImage} />
-                                                    <div className={styles.shopMeta}>
-                                                        <strong>{item.name}</strong>
-                                                        <span className={styles.partyMuted}>{item.description}</span>
-                                                        <span>Effect: {formatEffect(item.effect)}</span>
-                                                        <span className={canAfford ? styles.shopCostOk : styles.shopCostWarn}>{formatPrice(item.price)}</span>
-                                                    </div>
-                                                    <div className={styles.shopQtyRow}>
-                                                        <span className={styles.shopQtyLabel}>Qty:</span>
-                                                        <div className={styles.shopQtyActions}>
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, -1)} disabled={!!shopBusyType || currentCount <= 1}>-</button>
-                                                            <input className={styles.shopQtyInput} type="number" min={1} max={99} value={currentCount} onChange={(e) => setShopCount(item.type, Number(e.target.value))} disabled={!!shopBusyType} />
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+</button>
-                                                        </div>
-                                                        <div className={styles.shopQtyQuick}>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+1</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 5)} disabled={!!shopBusyType || currentCount >= 99}>+5</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => setMaxAffordableCount(item.type, item.price)} disabled={!!shopBusyType || (shopPlayer?.balance ?? 0) < item.price}>Max</button>
-                                                        </div>
-                                                    </div>
-                                                    <button className={styles.shopBuyButton} disabled={blockedByForge || !!shopBusyType} onClick={() => handleBuyShopItem(item, currentCount)}>
-                                                        {shopBusyType === item.type ? 'Buying...' : blockedByForge ? (item.category === 'scroll' && !libraryBuilt ? 'Library required' : 'Unavailable') : 'Buy'}
-                                                    </button>
-                                                </article>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-
-                            {blueprints.length > 0 && (
-                                <>
-                                    <h4 className={styles.baseTitle}>Towers / Blueprints</h4>
-                                    <div className={styles.shopGrid}>
-                                        {blueprints.map((item) => {
-                                            const currentCount = shopCounts[item.type] ?? 1;
-                                            const totalCost = item.price * currentCount;
-                                            const canAfford = (shopPlayer?.balance ?? 0) >= totalCost;
-                                            const blockedByForge = (item.requiresForge && !forgeBuilt) || (item.category === "scroll" && !libraryBuilt);
-                                            return (
-                                                <article key={item.type} className={styles.shopCard}>
-                                                    <img src={item.image} alt={item.name} className={styles.shopImage} />
-                                                    <div className={styles.shopMeta}>
-                                                        <strong>{item.name}</strong>
-                                                        <span className={styles.partyMuted}>{item.description}</span>
-                                                        <span>Effect: {formatEffect(item.effect)}</span>
-                                                        <span className={canAfford ? styles.shopCostOk : styles.shopCostWarn}>{formatPrice(item.price)}</span>
-                                                    </div>
-                                                    <div className={styles.shopQtyRow}>
-                                                        <span className={styles.shopQtyLabel}>Qty:</span>
-                                                        <div className={styles.shopQtyActions}>
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, -1)} disabled={!!shopBusyType || currentCount <= 1}>-</button>
-                                                            <input className={styles.shopQtyInput} type="number" min={1} max={99} value={currentCount} onChange={(e) => setShopCount(item.type, Number(e.target.value))} disabled={!!shopBusyType} />
-                                                            <button type="button" className={styles.shopQtyButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+</button>
-                                                        </div>
-                                                        <div className={styles.shopQtyQuick}>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 1)} disabled={!!shopBusyType || currentCount >= 99}>+1</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => increaseShopCount(item.type, 5)} disabled={!!shopBusyType || currentCount >= 99}>+5</button>
-                                                            <button type="button" className={styles.shopQuickButton} onClick={() => setMaxAffordableCount(item.type, item.price)} disabled={!!shopBusyType || (shopPlayer?.balance ?? 0) < item.price}>Max</button>
-                                                        </div>
-                                                    </div>
-                                                    <button className={styles.shopBuyButton} disabled={blockedByForge || !!shopBusyType} onClick={() => handleBuyShopItem(item, currentCount)}>
-                                                        {shopBusyType === item.type ? 'Buying...' : blockedByForge ? (item.requiresForge && !forgeBuilt ? 'Forge required' : 'Unavailable') : 'Buy'}
-                                                    </button>
-                                                </article>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </>
-                    );
-                })()}
-
-                {activeCategory === "green_sets" && (
-                    <>
-                        {GREEN_SETS.map((set) => (
-                            <div key={set.setCode} style={{ marginTop: '0.8rem' }}>
-                                <h4 className={styles.baseTitle}>{set.setName} · {set.className}</h4>
-                                <div className={styles.shopGrid}>
-                                    {set.items.map((it) => {
-                                        const price = getGreenItemPrice(it);
-                                        const affordable = (shopPlayer?.balance ?? 0) >= price;
-                                        return (
-                                            <article key={it.type} className={styles.shopCard}>
-                                                {it.image ? <img src={it.image} alt={it.name} className={styles.shopImage} /> : <div style={{ width: 58, height: 58 }} />}
-                                                <div className={styles.shopMeta}>
-                                                    <strong>{it.name}</strong>
-                                                    <span className={styles.partyMuted}>{it.setName} · {it.rarity}</span>
-                                                    <span>Slot: {formatEnum(it.slot)}</span>
-                                                    <span>Class: {it.classRestriction}</span>
-                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                        <span className={affordable ? styles.shopCostOk : styles.shopCostWarn}>{formatPrice(price)}</span>
-                                                        {it.isTwoHanded ? <span className={styles.tavernBadge}>Two-handed</span> : null}
-                                                    </div>
-                                                </div>
-                                                <div style={{ gridColumn: '1 / -1' }}>
-                                                    <button className={styles.shopBuyButton} disabled={true} title="Green equipment purchases will be available in a future update">
-                                                        Coming soon
-                                                    </button>
-                                                </div>
-                                            </article>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        ))}
-                    </>
-                )}
-            </section>
-            )}
-
-            {activeTab === "sell" && (
-                <section className={styles.shopPanel}>
-                    <div className={styles.shopHeader}>
-                        <h3 className={styles.shopTitle}>Sell Equipment</h3>
-                        <div className={styles.shopBalance}>{sellableEquipment.length} sellable</div>
-                    </div>
-
-                    {shopError ? <p className={styles.shopError}>{shopError}</p> : null}
-                    {sellInfo ? <p className={styles.shopInfo}>{sellInfo}</p> : null}
-
-                    {sellableEquipment.length === 0 ? (
-                        <div className={styles.emptyState}>No sellable equipment yet. Find or buy equipment first, then return here to sell it.</div>
-                    ) : (
-                        <div className={styles.shopGrid}>
-                            {sellableEquipment.map((item) => {
-                                const busy = sellBusyId === item.instanceId;
-                                return (
-                                    <article className={styles.shopCard} key={item.instanceId}>
-                                        <img src={item.imageUrl || (item as any).image || ""} alt={item.name} className={styles.shopImage} />
-                                        <div className={styles.shopMeta}>
-                                            <strong>{item.name}</strong>
-                                            <span className={styles.partyMuted}>{item.rarity} · {item.classRestriction || "Any Class"} · {item.setName || item.setCode || ""}</span>
-                                            <span>Slot: {formatEnum(item.slot)}</span>
-                                            <span>{formatBonuses(item.bonuses as any)}</span>
-                                            <span>Sell for {item.sellPrice ?? 0} gold</span>
-                                        </div>
-                                        <div style={{ gridColumn: '1 / -1' }}>
-                                            <button type="button" className={styles.shopBuyButton} onClick={() => handleSellEquipment(item)} disabled={busy}>
-                                                {busy ? "Selling..." : `Sell for ${item.sellPrice ?? 0} gold`}
-                                            </button>
-                                        </div>
-                                    </article>
-                                );
-                            })}
-                        </div>
-                    )}
+            {error && <StatusMessage tone="error" className={styles.message}>{error} <button type="button" onClick={() => void loadData()}>Retry</button></StatusMessage>}
+            {notice && <StatusMessage tone="success" className={styles.message}>{notice}</StatusMessage>}
+            {loading && !player && catalog.length === 0 ? <LoadingState title="Opening the market…" /> : <div className={styles.contentGrid}>
+                <section className={styles.catalogPanel} aria-label={tab === "buy" ? "Shop catalog" : "Available equipment for sale"}>
+                    <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>{tab === "buy" ? "BROWSE GOODS" : "YOUR INVENTORY"}</span><h2>{tab === "buy" ? CATEGORY_LABELS[category] : "Sell Equipment"}</h2></div><span>{tab === "buy" ? visibleCatalog.length : sellItems.length} items</span></div>
+                    {tab === "buy" && category === "scroll" && <div className={styles.categoryArt}><span>Scriptorium</span><small>Scrolls require a Library.</small></div>}
+                    {tab === "buy" && category === "preview" ? <div className={styles.previewSection}><div className={styles.previewArt}><span>Green Sets</span><strong>Coming Soon</strong></div><p>Equipment sets cannot be purchased yet.</p><div className={styles.previewNames}>{GREEN_SET_NAMES.map(name => <span key={name}>{name}</span>)}</div></div> : tab === "buy" ? visibleCatalog.length ? <div className={styles.productGrid}>{visibleCatalog.map(item => <ShopItemCard key={item.type} item={item} selected={selectedBuy?.type === item.type} onSelect={() => { setSelectedBuyId(item.type); showDetails(); }} />)}</div> : <EmptyState title="No goods in this category" description="The current server catalog has no items here." /> : !equipment.inventory ? <ErrorState title="Sell inventory unavailable" description="Refresh to load the server's free equipment list." action={<button type="button" className={styles.secondaryAction} onClick={() => void loadData()}>Retry</button>} /> : sellItems.length ? <div className={styles.productGrid}>{sellItems.map(item => <SellItemCard key={item.instanceId} item={item} selected={selectedSell?.instanceId === item.instanceId} onSelect={() => { setSelectedSellId(item.instanceId); showDetails(); }} />)}</div> : <EmptyState title="No unequipped equipment available" description="Equipped items must be removed in Inventory before they can be sold." />}
                 </section>
-            )}
-
-            
-
-            <div className={styles.buttonGroup}>
-                <button
-                    className={styles.queueButton}
-                    onClick={() => router.push("/mode")}
-                >
-                    Back to Modes
-                </button>
-            </div>
+                <aside className={styles.detailsPanel} aria-label="Selected item details">
+                    <div className={styles.detailHeading}><span className={styles.eyebrow}>{tab === "buy" ? "MAKE A PURCHASE" : "SELL AN ITEM"}</span><h2>Item details</h2></div>
+                    {mobileDetailsOpen ? null : detail || <p className={styles.emptyDetail}>{category === "preview" ? "Green sets are coming soon." : "Select an item to view its details."}</p>}
+                </aside>
+            </div>}
         </div>
-    );
+        <MobileDetails open={mobileDetailsOpen && Boolean(detail)} onClose={closeDetails}>{mobileDetailsOpen ? detail : null}</MobileDetails>
+        <ConfirmDialog open={Boolean(confirmItem)} title="Sell equipment?" description={confirmItem ? `Sell ${confirmItem.name} for ${formatGold(confirmItem.sellPrice!)}? This removes this exact item permanently.` : ""} confirmLabel="Confirm sale" tone="danger" busy={busy} onConfirm={() => void sell()} onCancel={() => { if (!busyRef.current) setConfirmSellId(null); }} />
+    </main>;
 }

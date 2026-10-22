@@ -1,0 +1,44 @@
+.pageHeader { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--ui-space-4); margin-bottom: var(--ui-space-6); }
+.pageHeader h1 { margin: 0; color: var(--ui-text); font: 400 var(--ui-text-xl)/1.2 var(--ui-display-font); }
+.pageHeader p { margin: var(--ui-space-2) 0 0; color: var(--ui-text-muted); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); }
+.panel { min-width: 0; padding: var(--ui-space-6); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); }
+.panel h2 { margin: 0 0 var(--ui-space-4); font-size: var(--ui-text-lg); }
+.button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: var(--ui-space-2) var(--ui-space-4); border: 1px solid transparent; border-radius: var(--ui-radius-md); font-weight: 700; cursor: pointer; transition: background var(--ui-speed), border-color var(--ui-speed), color var(--ui-speed); }
+.button:hover:not(:disabled) { filter: brightness(1.12); }
+.button:focus-visible, .tab:focus-visible, .field input:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.button:disabled { cursor: not-allowed; opacity: .58; }
+.primary { background: var(--ui-action); color: #091521; }
+.secondary { background: var(--ui-surface-raised); border-color: var(--ui-border); color: var(--ui-text); }
+.danger { background: var(--ui-danger); color: #211016; }
+.primary:hover:not(:disabled) { background-color: var(--ui-action); }
+.secondary:hover:not(:disabled) { background-color: var(--ui-surface-raised); }
+.danger:hover:not(:disabled) { background-color: var(--ui-danger); }
+.tabs { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); border-bottom: 1px solid var(--ui-border); }
+.tab { min-height: 44px; padding: var(--ui-space-2) var(--ui-space-4); border-bottom: 3px solid transparent; color: var(--ui-text-muted); cursor: pointer; }
+.tab:hover:not(:disabled) { color: var(--ui-text); background: var(--ui-surface-raised); }
+.tab[aria-selected='true'] { border-color: var(--ui-action); color: var(--ui-text); font-weight: 700; }
+.tab:disabled { opacity: .5; cursor: not-allowed; }
+.field { display: grid; gap: var(--ui-space-2); }
+.field label { font-weight: 700; }
+.field input { min-height: 44px; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); padding: var(--ui-space-2) var(--ui-space-3); color: var(--ui-text); background: var(--ui-surface); font: inherit; }
+.field input[aria-invalid='true'] { border-color: var(--ui-danger); }
+.fieldError { color: var(--ui-danger); }
+.hint { color: var(--ui-text-muted); }
+.status { border: 1px solid var(--ui-border); border-left: 4px solid var(--ui-action); border-radius: var(--ui-radius-sm); padding: var(--ui-space-3) var(--ui-space-4); background: var(--ui-surface); }
+.status strong { display: block; }
+.info { border-left-color: var(--ui-action); }
+.success { border-left-color: var(--ui-success); }
+.warning { border-left-color: var(--ui-warning); }
+.error { border-left-color: var(--ui-danger); }
+.state { display: grid; justify-items: start; gap: var(--ui-space-3); padding: var(--ui-space-8); border: 1px dashed var(--ui-border); border-radius: var(--ui-radius-md); background: var(--ui-surface); }
+.state p { margin: 0; color: var(--ui-text-muted); }
+.errorState { border-color: var(--ui-danger); }
+.loader { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--ui-border); border-top-color: var(--ui-action); border-radius: 50%; animation: spin 800ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.dialog { width: min(100% - 2rem, 480px); box-sizing: border-box; padding: var(--ui-space-6); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface-raised); color: var(--ui-text); box-shadow: var(--ui-shadow); }
+.dialog::backdrop { background: rgb(3 8 14 / 75%); }
+.dialog h2 { margin: 0 0 var(--ui-space-3); font: 400 var(--ui-text-xl)/1.2 var(--ui-display-font); }
+.dialog p { color: var(--ui-text-muted); }
+.dialogActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--ui-space-2); margin-top: var(--ui-space-6); }
+@media (prefers-reduced-motion: reduce) { .loader { animation: none; } }

@@ -28,8 +28,9 @@ var (
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
-	clients   = make(map[int]*Client)
-	clientsMu sync.Mutex
+	clients       = make(map[int]map[*Client]struct{})
+	clientsMu     sync.Mutex
+	presenceOpsMu sync.Mutex
 
 	httpPresenceMu sync.Mutex
 	httpPresence   = make(map[int]time.Time)
@@ -40,12 +41,64 @@ var (
 
 const reconnectGracePeriod = 3 * time.Minute
 const httpPresenceTTL = 30 * time.Second
+const socketHeartbeatInterval = 15 * time.Second
+const socketReadTimeout = 45 * time.Second
+
+func StartSocketHeartbeat(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(socketHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				clientsMu.Lock()
+				var active []*Client
+				for _, connections := range clients {
+					for client := range connections {
+						active = append(active, client)
+					}
+				}
+				clientsMu.Unlock()
+				for _, client := range active {
+					if err := client.Conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(2*time.Second)); err != nil {
+						_ = client.Conn.Close()
+					}
+				}
+			}
+		}
+	}()
+}
 
 // Client представляет подключённого клиента WebSocket.
 type Client struct {
 	Conn       *websocket.Conn
 	instanceID string
 	userID     int
+	writeMu    sync.Mutex
+}
+
+func (c *Client) write(message []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.Conn.WriteMessage(websocket.TextMessage, message)
+}
+
+func hasMatchSocketLocked(userID int, instanceID string) bool {
+	for client := range clients[userID] {
+		if client.instanceID == instanceID {
+			return true
+		}
+	}
+	return false
+}
+
+func broadcastPresence(kind, instanceID string, userID int) {
+	message, err := json.Marshal(map[string]any{"type": kind, "payload": map[string]any{"instanceId": instanceID, "schemaVersion": 2, "userId": userID, "graceMs": int(reconnectGracePeriod / time.Millisecond)}})
+	if err == nil {
+		Broadcast(message)
+	}
 }
 
 type broadcastEnvelope struct {
@@ -77,8 +130,8 @@ func scheduleReconnectGrace(instanceID string, userID int) {
 	if instanceID == "" || userID == 0 {
 		return
 	}
-	// Square's lightning death uses Square cell coordinates and process-local
-	// state. HEX keeps its durable turn deadline while a player is offline.
+	// Square retains its legacy process-local grace timer. HEX uses the
+	// persisted disconnect timestamp and the shared deadline worker.
 	if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
 		return
 	}
@@ -119,6 +172,11 @@ func scheduleReconnectGrace(instanceID string, userID int) {
 func isAliveMatchPlayer(instanceID string, userID int) bool {
 	if instanceID == "" || userID == 0 {
 		return false
+	}
+	if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
+		var alive bool
+		err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND p.health>0 AND m.finished_at IS NULL AND m.turn_order @> to_jsonb($2::integer))`, instanceID, userID).Scan(&alive)
+		return err == nil && alive
 	}
 	p, err := repository.GetMatchPlayerByID(instanceID, userID)
 	if err != nil || p == nil {
@@ -162,6 +220,8 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	_ = ws.SetReadDeadline(time.Now().Add(socketReadTimeout))
+	ws.SetPongHandler(func(string) error { return ws.SetReadDeadline(time.Now().Add(socketReadTimeout)) })
 	client := &Client{Conn: ws, userID: int(userID)}
 	// Pre-fill instanceID from query param to avoid race where server
 	// broadcasts match events before client sends JOIN_MATCH message.
@@ -170,21 +230,10 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientsMu.Lock()
-	if oldClient, ok := clients[client.userID]; ok {
-		log.Printf("[WsHandler] Закрываем старый сокет для userID=%d, old instance=%s", oldClient.userID, oldClient.instanceID)
-		// Set a short read deadline so the old goroutine exits promptly, then
-		// send the close frame (code 1000). Do NOT force-close TCP immediately —
-		// that would cause the close frame to be lost and the client would receive
-		// 1006 Abnormal Closure, triggering a reconnect loop.
-		oldClient.Conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_ = oldClient.Conn.WriteControl(
-			websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "replaced by new connection"),
-			time.Now().Add(time.Second),
-		)
-		delete(clients, client.userID)
+	if clients[client.userID] == nil {
+		clients[client.userID] = make(map[*Client]struct{})
 	}
-	clients[client.userID] = client
+	clients[client.userID][client] = struct{}{}
 	clientsMu.Unlock()
 	log.Printf("[WsHandler] Новый клиент userID=%d подключён.", client.userID)
 
@@ -202,20 +251,25 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(message, &envelope); err == nil {
 			if envelope.Type == "JOIN_MATCH" {
 				// Always update instanceID from client message and reply with MATCH_UPDATE.
+				clientsMu.Lock()
 				prevInstance := client.instanceID
 				if envelope.InstanceID != "" {
 					client.instanceID = envelope.InstanceID
 				}
-				if client.instanceID != "" && cancelReconnectGrace(client.instanceID, client.userID) {
-					reconnectedMsg := map[string]interface{}{
-						"type": "PLAYER_RECONNECTED",
-						"payload": map[string]interface{}{
-							"instanceId": client.instanceID,
-							"userId":     client.userID,
-						},
-					}
-					if rb, marshalErr := json.Marshal(reconnectedMsg); marshalErr == nil {
-						Broadcast(rb)
+				clientsMu.Unlock()
+				if client.instanceID != "" {
+					if hex, err := repository.IsHexMatch(client.instanceID); err == nil && hex {
+						presenceOpsMu.Lock()
+						changed, err := repository.SetHexPresence(r.Context(), client.instanceID, client.userID, true)
+						presenceOpsMu.Unlock()
+						if err != nil {
+							log.Printf("HEX reconnect %s user %d: %v", client.instanceID, client.userID, err)
+						}
+						if changed {
+							broadcastPresence("PLAYER_RECONNECTED", client.instanceID, client.userID)
+						}
+					} else if cancelReconnectGrace(client.instanceID, client.userID) {
+						broadcastPresence("PLAYER_RECONNECTED", client.instanceID, client.userID)
 					}
 				}
 				log.Printf("[WsHandler] client %d joined match %s (prev=%s)", client.userID, envelope.InstanceID, prevInstance)
@@ -231,7 +285,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 						Payload: matchResp,
 					}
 					if b, err := json.Marshal(wsMsg); err == nil {
-						client.Conn.WriteMessage(websocket.TextMessage, b)
+						client.write(b)
 					}
 				} else {
 					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
@@ -242,7 +296,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 							cancel()
 							if hexErr == nil {
 								if b, marshalErr := json.Marshal(map[string]interface{}{"type": "MATCH_UPDATE", "payload": snapshot}); marshalErr == nil {
-									_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+									_ = client.write(b)
 								}
 								continue
 							}
@@ -251,7 +305,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 							"type":    "MATCH_ERROR",
 							"payload": map[string]string{"instanceId": client.instanceID, "error": err.Error()},
 						})
-						_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+						_ = client.write(b)
 						continue
 					}
 					if allStats, winnerType, winnerID, serr := buildAllPlayersGameStatsFromStored(client.instanceID); serr == nil {
@@ -265,7 +319,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 							},
 						}
 						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
-							_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+							_ = client.write(b)
 						}
 					} else {
 						endedMsg := map[string]interface{}{
@@ -275,7 +329,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 							},
 						}
 						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
-							_ = client.Conn.WriteMessage(websocket.TextMessage, b)
+							_ = client.write(b)
 						}
 					}
 				}
@@ -289,25 +343,34 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	instanceID := client.instanceID
 	userIDInt := client.userID
 	clientsMu.Lock()
-	if current, ok := clients[client.userID]; ok && current == client {
+	delete(clients[client.userID], client)
+	shouldScheduleGrace = !hasMatchSocketLocked(client.userID, instanceID)
+	if len(clients[client.userID]) == 0 {
 		delete(clients, client.userID)
-		shouldScheduleGrace = true
 	}
 	clientsMu.Unlock()
 
 	if shouldScheduleGrace && instanceID != "" && isAliveMatchPlayer(instanceID, userIDInt) {
-		disconnectedMsg := map[string]interface{}{
-			"type": "PLAYER_DISCONNECTED",
-			"payload": map[string]interface{}{
-				"instanceId": instanceID,
-				"userId":     userIDInt,
-				"graceMs":    int(reconnectGracePeriod / time.Millisecond),
-			},
+		if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
+			presenceOpsMu.Lock()
+			clientsMu.Lock()
+			stillDisconnected := !hasMatchSocketLocked(userIDInt, instanceID)
+			clientsMu.Unlock()
+			changed := false
+			if stillDisconnected {
+				changed, err = repository.SetHexPresence(context.Background(), instanceID, userIDInt, false)
+			}
+			presenceOpsMu.Unlock()
+			if err != nil {
+				log.Printf("HEX disconnect %s user %d: %v", instanceID, userIDInt, err)
+			}
+			if changed {
+				broadcastPresence("PLAYER_DISCONNECTED", instanceID, userIDInt)
+			}
+		} else {
+			broadcastPresence("PLAYER_DISCONNECTED", instanceID, userIDInt)
+			scheduleReconnectGrace(instanceID, userIDInt)
 		}
-		if db, marshalErr := json.Marshal(disconnectedMsg); marshalErr == nil {
-			Broadcast(db)
-		}
-		scheduleReconnectGrace(instanceID, userIDInt)
 	}
 }
 
@@ -325,31 +388,33 @@ var broadcastFn = func(message []byte) {
 
 	clientsMu.Lock()
 	var targets []*Client
-	for _, client := range clients {
-		if env.Payload.SchemaVersion == 2 {
-			var member bool
-			if repository.DB == nil || repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players WHERE instance_id=$1 AND user_id=$2)`, env.Payload.InstanceID, client.userID).Scan(&member) != nil || !member {
-				continue
+	for _, connections := range clients {
+		for client := range connections {
+			if env.Payload.SchemaVersion == 2 {
+				var member bool
+				if repository.DB == nil || repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players WHERE instance_id=$1 AND user_id=$2)`, env.Payload.InstanceID, client.userID).Scan(&member) != nil || !member {
+					continue
+				}
 			}
-		}
-		// If client already has instanceID set — match normally.
-		if client.instanceID != "" {
-			if env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID {
-				continue
-			}
-			targets = append(targets, client)
-			continue
-		}
-
-		// client.instanceID is empty — as a fallback, if message targets a
-		// specific instance, include the client when the user belongs to that match.
-		if env.Payload.InstanceID != "" {
-			if p, err := repository.GetMatchPlayerByID(env.Payload.InstanceID, client.userID); err == nil && p != nil {
+			// If client already has instanceID set — match normally.
+			if client.instanceID != "" {
+				if env.Payload.InstanceID != "" && client.instanceID != env.Payload.InstanceID {
+					continue
+				}
 				targets = append(targets, client)
 				continue
 			}
+
+			// client.instanceID is empty — as a fallback, if message targets a
+			// specific instance, include the client when the user belongs to that match.
+			if env.Payload.InstanceID != "" {
+				if p, err := repository.GetMatchPlayerByID(env.Payload.InstanceID, client.userID); err == nil && p != nil {
+					targets = append(targets, client)
+					continue
+				}
+			}
+			// otherwise skip
 		}
-		// otherwise skip
 	}
 	clientsMu.Unlock()
 
@@ -365,13 +430,14 @@ var broadcastFn = func(message []byte) {
 				continue
 			}
 		}
-		err := client.Conn.WriteMessage(websocket.TextMessage, message)
+		err := client.write(message)
 		if err != nil {
 			log.Printf("[Broadcast] write error user=%d err=%v", client.userID, err)
 			// Если ошибка — безопасно удалить клиента (требуется ещё один lock)
 			clientsMu.Lock()
 			client.Conn.Close()
-			if current, ok := clients[client.userID]; ok && current == client {
+			delete(clients[client.userID], client)
+			if len(clients[client.userID]) == 0 {
 				delete(clients, client.userID)
 			}
 			clientsMu.Unlock()
@@ -467,7 +533,15 @@ func GetUserActivityStatus(userID int) string {
 	}
 
 	clientsMu.Lock()
-	client, ok := clients[userID]
+	connections := clients[userID]
+	var client *Client
+	for current := range connections {
+		client = current
+		if current.instanceID != "" {
+			break
+		}
+	}
+	ok := client != nil
 	clientsMu.Unlock()
 
 	if !ok {

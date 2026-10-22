@@ -20,6 +20,7 @@ type Cell struct {
 	Barrel                *game.ResourceData `json:"barrel,omitempty"`
 	IsPortal              bool               `json:"isPortal,omitempty"`
 	StructureType         string             `json:"structureType,omitempty"`
+	EnvironmentType       string             `json:"environmentType,omitempty"`
 	StructureOwnerUserID  int                `json:"structureOwnerUserId,omitempty"`
 	StructureHealth       int                `json:"structureHealth,omitempty"`
 	StructureDefense      int                `json:"structureDefense,omitempty"`
@@ -32,23 +33,31 @@ type Edge struct {
 	Direction int           `json:"direction"`
 	Kind      string        `json:"kind"`
 }
+type AppearanceItem struct {
+	Code string `json:"code"`
+}
+type HeroAppearance struct {
+	Archetype string                    `json:"archetype"`
+	Equipment map[string]AppearanceItem `json:"equipment"`
+}
 type Actor struct {
-	ID              string        `json:"id"`
-	Kind            string        `json:"kind"`
-	UserID          int           `json:"userId,omitempty"`
-	TeamID          int           `json:"teamId,omitempty"`
-	Position        hexgrid.Coord `json:"position"`
-	Health          int           `json:"health,omitempty"`
-	MaxHealth       int           `json:"maxHealth,omitempty"`
-	MonsterRefID    int           `json:"monsterRefId,omitempty"`
-	Name            string        `json:"name,omitempty"`
-	Type            string        `json:"type,omitempty"`
-	Image           string        `json:"image,omitempty"`
-	Attack          int           `json:"attack,omitempty"`
-	Defense         int           `json:"defense,omitempty"`
-	Speed           int           `json:"speed,omitempty"`
-	Maneuverability int           `json:"maneuverability,omitempty"`
-	Vision          int           `json:"vision,omitempty"`
+	ID              string          `json:"id"`
+	Kind            string          `json:"kind"`
+	UserID          int             `json:"userId,omitempty"`
+	TeamID          int             `json:"teamId,omitempty"`
+	Position        hexgrid.Coord   `json:"position"`
+	Health          int             `json:"health,omitempty"`
+	MaxHealth       int             `json:"maxHealth,omitempty"`
+	MonsterRefID    int             `json:"monsterRefId,omitempty"`
+	Name            string          `json:"name,omitempty"`
+	Type            string          `json:"type,omitempty"`
+	Image           string          `json:"image,omitempty"`
+	Attack          int             `json:"attack,omitempty"`
+	Defense         int             `json:"defense,omitempty"`
+	Speed           int             `json:"speed,omitempty"`
+	Maneuverability int             `json:"maneuverability,omitempty"`
+	Vision          int             `json:"vision,omitempty"`
+	Appearance      *HeroAppearance `json:"appearance,omitempty"`
 }
 type Player struct {
 	UserID        int            `json:"userId"`
@@ -78,30 +87,36 @@ type QuestArtifact struct {
 	Position      *hexgrid.Coord `json:"position,omitempty"`
 }
 type Snapshot struct {
-	SchemaVersion    int             `json:"schemaVersion"`
-	Geometry         models.Geometry `json:"geometry"`
-	InstanceID       string          `json:"instanceId"`
-	Mode             string          `json:"mode,omitempty"`
-	TurnOrder        []int           `json:"turnOrder,omitempty"`
-	MapRevision      int64           `json:"mapRevision"`
-	StateRevision    int64           `json:"stateRevision"`
-	Seed             int64           `json:"seed"`
-	Radius           int             `json:"radius"`
-	Starts           []Start         `json:"starts,omitempty"`
-	Portal           *hexgrid.Coord  `json:"portal,omitempty"`
-	Cells            []Cell          `json:"cells"`
-	Edges            []Edge          `json:"edges"`
-	Actors           []Actor         `json:"actors"`
-	Player           *Player         `json:"player,omitempty"`
-	ActiveUser       int             `json:"activeUser,omitempty"`
-	ActivePlayerName string          `json:"activePlayerName,omitempty"`
-	TurnNumber       int             `json:"turnNumber,omitempty"`
-	TurnDeadline     *time.Time      `json:"turnDeadline,omitempty"`
-	TurnSeconds      int             `json:"turnSeconds,omitempty"`
-	Finished         bool            `json:"finished,omitempty"`
-	QuestArtifactID  int             `json:"questArtifactId,omitempty"`
-	QuestArtifact    *QuestArtifact  `json:"questArtifact,omitempty"`
-	Result           json.RawMessage `json:"result,omitempty"`
+	SchemaVersion       int                  `json:"schemaVersion"`
+	Geometry            models.Geometry      `json:"geometry"`
+	InstanceID          string               `json:"instanceId"`
+	Mode                string               `json:"mode,omitempty"`
+	TurnOrder           []int                `json:"turnOrder,omitempty"`
+	MapRevision         int64                `json:"mapRevision"`
+	StateRevision       int64                `json:"stateRevision"`
+	Seed                int64                `json:"seed"`
+	Radius              int                  `json:"radius"`
+	Starts              []Start              `json:"starts,omitempty"`
+	Portal              *hexgrid.Coord       `json:"portal,omitempty"`
+	Cells               []Cell               `json:"cells"`
+	Edges               []Edge               `json:"edges"`
+	Actors              []Actor              `json:"actors"`
+	Player              *Player              `json:"player,omitempty"`
+	ActiveUser          int                  `json:"activeUser,omitempty"`
+	ActivePlayerName    string               `json:"activePlayerName,omitempty"`
+	TurnNumber          int                  `json:"turnNumber,omitempty"`
+	TurnDeadline        *time.Time           `json:"turnDeadline,omitempty"`
+	DisconnectedPlayers []DisconnectedPlayer `json:"disconnectedPlayers,omitempty"`
+	TurnSeconds         int                  `json:"turnSeconds,omitempty"`
+	Finished            bool                 `json:"finished,omitempty"`
+	QuestArtifactID     int                  `json:"questArtifactId,omitempty"`
+	QuestArtifact       *QuestArtifact       `json:"questArtifact,omitempty"`
+	Result              json.RawMessage      `json:"result,omitempty"`
+}
+
+type DisconnectedPlayer struct {
+	UserID   int       `json:"userId"`
+	Deadline time.Time `json:"deadline"`
 }
 
 // Generate keeps the read-only preview endpoint. Its illustrative catalog is

@@ -142,6 +142,9 @@ func (c *MatchCommand) Commit(ctx context.Context, response interface{}, mapChan
 	if c == nil || c.Tx == nil {
 		return 0, 0, ErrCommandRejected
 	}
+	if err := c.persistHexCompletedMatchTx(ctx); err != nil {
+		return 0, 0, err
+	}
 	mapDelta := 0
 	if mapChanged {
 		mapDelta = 1

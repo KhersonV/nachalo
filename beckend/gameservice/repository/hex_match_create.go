@@ -199,8 +199,8 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 		if err != nil {
 			return empty, err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO match_players(instance_id,user_id,name,image,character_id,character_type,position,position_q,position_r,inventory,level,energy,max_energy,health,max_health,experience,max_experience,attack,defense,mobility,agility,sight_range,is_ranged,attack_range,balance,group_id)
-			VALUES($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$11,$12,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`, plan.InstanceID, id, p.profile.Name, image, p.character.ID, p.character.HeroClassID, start.Position.Q, start.Position.R, matchInventory, p.character.Level, stats.MaxEnergy, stats.MaxHealth, p.character.Exp, p.character.MaxExp, stats.Attack, stats.Defense, stats.Mobility, stats.Agility, stats.SightRange, stats.IsRanged, stats.AttackRange, loadouts[id].Balance, start.TeamID)
+		_, err = tx.ExecContext(ctx, `INSERT INTO match_players(instance_id,user_id,name,image,character_id,character_type,position,position_q,position_r,inventory,level,energy,max_energy,health,max_health,experience,max_experience,attack,defense,mobility,agility,sight_range,is_ranged,attack_range,balance,group_id,hex_disconnected_at)
+			VALUES($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$11,$12,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now())`, plan.InstanceID, id, p.profile.Name, image, p.character.ID, p.character.HeroClassID, start.Position.Q, start.Position.R, matchInventory, p.character.Level, stats.MaxEnergy, stats.MaxHealth, p.character.Exp, p.character.MaxExp, stats.Attack, stats.Defense, stats.Mobility, stats.Agility, stats.SightRange, stats.IsRanged, stats.AttackRange, loadouts[id].Balance, start.TeamID)
 		if err != nil {
 			return empty, err
 		}

@@ -269,6 +269,15 @@ func takeHexLoadoutsTx(ctx context.Context, tx *sql.Tx, playerIDs []int) (map[in
 		if err := tx.QueryRowContext(ctx, `SELECT inventory,hex_loadout,balance FROM player_profiles WHERE user_id=$1 FOR UPDATE`, id).Scan(&inventoryRaw, &loadoutRaw, &balance); err != nil {
 			return nil, err
 		}
+		// The profile lock serializes concurrent HEX creation for this user.
+		// Finished and defeated HEX participants retain their historical rows.
+		var playing bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.user_id=$1 AND m.finished_at IS NULL AND COALESCE(m.mode,'')<>'hex-test' AND (COALESCE(m.geometry->>'kind','')<>'hex' OR p.health>0))`, id).Scan(&playing); err != nil {
+			return nil, err
+		}
+		if playing {
+			return nil, ErrCommandRejected
+		}
 		storage, err := parseStorage(inventoryRaw)
 		if err != nil {
 			return nil, err

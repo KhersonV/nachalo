@@ -4,6 +4,7 @@
 
 import React from "react";
 import { Cell } from "@/types/GameTypes";
+import { resourceImage } from "@/utils/resourceAssets";
 import styles from "@/styles/Map.module.css";
 
 type Visibility = "visible" | "explored" | "unknown";
@@ -41,7 +42,7 @@ function MapCell({
     const structureImage = (cell as any).structure_image as string | undefined;
     const isUnderConstruction = cell.is_under_construction;
     const monsterImage = cell.monster?.image;
-    const resourceImage = cell.resource?.image;
+    const mappedResourceImage = cell.resource ? resourceImage(cell.resource.type, cell.resource.image) ?? cell.resource.image : undefined;
     const barrelImage = cell.barbel?.image;
     const hasMonster = !!cell.monster;
     const hasResource = !!cell.resource;
@@ -99,10 +100,10 @@ function MapCell({
                     style={IMAGE_STYLE}
                 />
             );
-        } else if (resourceImage) {
+        } else if (mappedResourceImage) {
             cellContent = (
                 <img
-                    src={resourceImage}
+                    src={mappedResourceImage}
                     alt="resource"
                     className={styles.image}
                     style={IMAGE_STYLE}

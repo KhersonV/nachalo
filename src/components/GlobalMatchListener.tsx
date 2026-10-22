@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MATCHMAKING_BASE as API_MATCH } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
@@ -36,6 +36,7 @@ export default function GlobalMatchListener() {
         string | null
     >(null);
     const [suppressedUntil, setSuppressedUntil] = useState<number | null>(null);
+    const pollSequence = useRef(0);
 
     const storageKeyFor = (userId: number | string | undefined) =>
         userId
@@ -46,7 +47,12 @@ export default function GlobalMatchListener() {
 
     const handlePendingMatch = useCallback(
         (instanceId: string | null | undefined) => {
-            if (!instanceId) return;
+            if (!instanceId) {
+                setPendingInstanceId(null);
+                setRedirectAtMs(null);
+                setShowMatchModal(false);
+                return;
+            }
 
             const now = Date.now();
             const isNewInstance = instanceId !== pendingInstanceId;
@@ -69,7 +75,7 @@ export default function GlobalMatchListener() {
             }
 
             setPendingInstanceId(instanceId);
-            if (isNewInstance || !redirectAtMs || redirectAtMs <= now) {
+            if (isNewInstance || !redirectAtMs) {
                 setRedirectAtMs(now + PREP_REDIRECT_MS);
             }
 
@@ -164,6 +170,7 @@ export default function GlobalMatchListener() {
 
         let alive = true;
         const checkCurrentMatch = async () => {
+            const sequence = ++pollSequence.current;
             try {
                 const res = await fetch(
                     withBust(
@@ -179,7 +186,7 @@ export default function GlobalMatchListener() {
                 if (!res.ok) return;
 
                 const data: CurrentMatchResponse = await res.json();
-                if (!alive) return;
+                if (!alive || sequence !== pollSequence.current) return;
 
                 handlePendingMatch(data.instance_id ?? data.instanceId);
             } catch (e) {
@@ -192,6 +199,7 @@ export default function GlobalMatchListener() {
 
         return () => {
             alive = false;
+            pollSequence.current++;
             window.clearInterval(intervalId);
         };
     }, [handlePendingMatch, user?.id, user?.token]);

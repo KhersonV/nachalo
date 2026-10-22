@@ -1,6 +1,7 @@
 import type { Cell, PlayerState } from "@/types/GameTypes";
 import { getCellIndex } from "./fogOfWar";
 import { normalizeAvatarPath } from "./normalizeAvatarPath";
+import { resourceImage } from "./resourceAssets";
 
 // GameService writes rune values, not terrain names. Keep these codes aligned
 // with game/mapgen.go and the existing Map background/interaction rules.
@@ -75,7 +76,7 @@ export function adaptRealMap(source: RealMapSource,
     if (!visible.has(index)) continue;
     if (cell.isPortal || cell.tileCode === TILE.portal) add("portal", cell, "/portal.png");
     if (cell.barbel) add("barrel", cell, cell.barbel.image);
-    if (cell.resource) add("resource", cell, cell.resource.image);
+    if (cell.resource) add("resource", cell, resourceImage(cell.resource.type, cell.resource.image) ?? cell.resource.image);
     if (cell.monster) add("monster", cell, cell.monster.image);
     if (cell.structure_type) add(cell.structure_type === "base" ? "base" : "structure", cell,
       cell.structure_image || (cell.structure_type === "base" ? "/ui-icons/base.png" : undefined));

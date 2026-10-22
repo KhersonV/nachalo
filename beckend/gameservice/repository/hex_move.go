@@ -156,8 +156,8 @@ func ApplyHexMoveWithPublish(ctx context.Context, instanceID string, userID int,
 			return empty, ErrCommandRejected
 		}
 	}
-	for _, hit := range hits {
-		if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: hit.sourceUserID, TargetType: "player", TargetID: userID, Amount: hit.damage}); err != nil {
+	for i, hit := range hits {
+		if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: hit.sourceUserID, TargetType: "player", TargetID: userID, Amount: route.AuraHits[i].Damage}); err != nil {
 			return empty, err
 		}
 	}

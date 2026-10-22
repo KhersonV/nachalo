@@ -89,7 +89,7 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
     // immediately send current match if exists
     matchMu.Lock()
     if inst, ok := playerMatches[pid]; ok {
-        if m, ok2 := currentMatches[inst]; ok2 {
+        if m, ok2 := currentMatches[inst]; ok2 && currentMatchMember(inst, pid) {
             b, _ := json.Marshal(m)
             fmt.Fprintf(w, "data: %s\n\n", b)
             flusher.Flush()
@@ -114,6 +114,16 @@ func sseHandler(w http.ResponseWriter, r *http.Request) {
         case msg, ok := <-ch:
             if !ok {
                 return
+            }
+            var queued MatchInfo
+            if err := json.Unmarshal([]byte(msg), &queued); err != nil {
+                continue
+            }
+            matchMu.Lock()
+            current := playerMatches[pid] == queued.InstanceID && currentMatchMember(queued.InstanceID, pid)
+            matchMu.Unlock()
+            if !current {
+                continue
             }
             fmt.Fprintf(w, "data: %s\n\n", msg)
             flusher.Flush()

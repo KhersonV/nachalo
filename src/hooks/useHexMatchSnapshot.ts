@@ -5,13 +5,16 @@ import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { isHexSnapshot, type HexSnapshot, type HexVisualNotice } from "@/types/HexGameTypes";
 
 export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnapshot, token: string | undefined) {
+  const [connection, setConnection] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [syncError, setSyncError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
   const [visualNotices, setVisualNotices] = useState<HexVisualNotice[]>([]);
   const [questNotice, setQuestNotice] = useState<{ userId: number; playerName?: string; q: number; r: number } | null>(null);
-	const [turnTimeoutNotice, setTurnTimeoutNotice] = useState(false);
+  const [turnTimeoutNotice, setTurnTimeoutNotice] = useState(false);
+	const [presenceNotice, setPresenceNotice] = useState<{ type: "disconnected" | "reconnected" | "lightning" | "exit"; userId: number } | null>(null);
 	useEffect(() => { if (!turnTimeoutNotice) return; const timer = window.setTimeout(() => setTurnTimeoutNotice(false), 5000); return () => window.clearTimeout(timer); }, [turnTimeoutNotice]);
+	useEffect(() => { if (!presenceNotice) return; const timer = window.setTimeout(() => setPresenceNotice(null), 8000); return () => window.clearTimeout(timer); }, [presenceNotice]);
   useEffect(() => {
     if (!questNotice) return;
     const timer = window.setTimeout(() => setQuestNotice(null), 8000);
@@ -32,6 +35,7 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
       setSnapshot(next);
       setUnavailable(false);
       setSyncError("");
+      return next;
     }
   }, [base, instanceId, token]);
 
@@ -48,19 +52,30 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
       socket = new WebSocket(url.toString());
       socket.onopen = () => {
         socket?.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
-        void refresh().catch(report);
+        void refresh().then(() => { if (!closed && socket?.readyState === WebSocket.OPEN) setConnection("live"); }).catch(report);
       };
       socket.onmessage = event => {
         try {
           const message = JSON.parse(event.data);
           const payload = message?.payload;
           if (payload?.instanceId !== instanceId || payload?.schemaVersion !== 2) return;
+		  if ((message.type === "PLAYER_DISCONNECTED" || message.type === "PLAYER_RECONNECTED") && Number.isSafeInteger(payload.userId)) {
+			setPresenceNotice({ type: message.type === "PLAYER_DISCONNECTED" ? "disconnected" : "reconnected", userId: payload.userId });
+			void refresh().catch(report);
+			return;
+		  }
           if (message.type === "MATCH_HEX_VISUAL" && typeof payload.commandId === "string" && (payload.kind === "attack" || payload.kind === "move")) {
             setVisualNotices(current => [...current.slice(-24), payload as HexVisualNotice]);
             return;
           }
           if (message.type === "MATCH_PATCH" && Array.isArray(payload.changes)) {
 			if (payload.changes.some((change: {type?: string}) => change.type === "TURN_TIMEOUT")) setTurnTimeoutNotice(true);
+			if (payload.changes.some((change: {type?: string}) => change.type === "PLAYER_LIGHTNING")) {
+			  const lightning = payload.changes.find((change: {type?: string; payload?: {userId?: number}}) => change.type === "PLAYER_LIGHTNING");
+			  setPresenceNotice({ type: "lightning", userId: Number(lightning?.payload?.userId) || 0 });
+			}
+			const exit = payload.changes.find((change: {type?: string; payload?: {userId?: number}}) => change.type === "PLAYER_LEFT_PORTAL");
+			if (exit) setPresenceNotice({ type: "exit", userId: Number(exit.payload?.userId) || 0 });
             const found = payload.changes.find((change: { type?: string }) => change.type === "QUEST_ARTIFACT_FOUND")?.payload;
             if (found && Number.isSafeInteger(found.userId) && Number.isSafeInteger(found.position?.q) && Number.isSafeInteger(found.position?.r)) {
               setQuestNotice({ userId: found.userId, playerName: typeof found.playerName === "string" ? found.playerName : undefined, q: found.position.q, r: found.position.r });
@@ -74,11 +89,12 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
           }
         } catch { /* Ignore unrelated socket frames. */ }
       };
-      socket.onclose = () => { if (!closed) timer = setTimeout(connect, 1500); };
+      socket.onclose = () => { if (!closed) { setConnection("reconnecting"); timer = setTimeout(connect, 1500); } };
+      socket.onerror = () => { if (!closed) setConnection("reconnecting"); };
     };
     connect();
     return () => { closed = true; if (timer) clearTimeout(timer); socket?.close(); };
   }, [instanceId, refresh, token]);
 
-  return { snapshot, refresh, base, unavailable, syncError, questNotice, turnTimeoutNotice, visualNotices };
+  return { snapshot, refresh, base, unavailable, syncError, connection: unavailable ? "unavailable" as const : connection, questNotice, turnTimeoutNotice, presenceNotice, visualNotices };
 }

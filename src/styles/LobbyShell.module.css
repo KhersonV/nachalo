@@ -1,0 +1,29 @@
+.shell {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 50% -18%, #233448 0%, transparent 55%), var(--ui-canvas);
+    color: var(--ui-text);
+    font-family: var(--ui-font);
+    line-height: 1.5;
+}
+.frame {
+    width: min(100%, var(--ui-page-width));
+    min-width: 0;
+    margin: 0 auto;
+    padding: var(--ui-page-gutter);
+    box-sizing: border-box;
+}
+.content { min-width: 0; }
+.wideFrame { width: min(100%, 1720px); }
+.modeShell {
+    background:
+        linear-gradient(180deg, rgb(7 13 22 / 58%) 0%, rgb(8 15 24 / 83%) 45%, rgb(7 13 22 / 92%) 100%),
+        url('/assets/ui/optimized/misty_cathedral_ruins_over_a_golden_valley.webp') center top / cover no-repeat,
+        var(--ui-canvas);
+}
+.content :is(button, input, select, textarea, a):focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 3px;
+}
+@media (max-width: 600px) {
+    .frame { padding: var(--ui-space-3); }
+}

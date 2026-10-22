@@ -503,13 +503,7 @@ func ApplyHexAttack(ctx context.Context, instanceID string, userID, targetID int
 			drops = []EquipmentDropPayload{equipmentDropPayloadFromItem(userID, item)}
 		}
 	}
-	for _, event := range []game.DamageEvent{
-		{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: targetID, Amount: hit.Damage},
-		{SourceType: game.ResultSourceMonster, DealerID: targetID, TargetType: "player", TargetID: userID, Amount: counter.Damage},
-		{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: targetID, Amount: guardianResponse.Damage},
-		{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: targetID, Amount: followupDamage},
-		{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: targetID, Amount: fallbackDamage},
-	} {
+	for _, event := range hexDamageEventsFromSteps(steps, effects, map[CombatTargetRef]int{attackerRef: state.Player.Stats.Health, targetRef: state.Monster.Stats.Health}) {
 		if err := c.RecordDamageEventTx(ctx, event); err != nil {
 			return out, err
 		}
@@ -632,10 +626,7 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 			return out, err
 		}
 	}
-	for _, event := range []game.DamageEvent{
-		{SourceType: game.ResultSourceMonster, DealerID: monsterID, TargetType: "player", TargetID: playerID, Amount: hit.Damage},
-		{SourceType: game.ResultSourcePlayer, DealerID: playerID, TargetType: "monster", TargetID: monsterID, Amount: counter.Damage},
-	} {
+	for _, event := range hexDamageEventsFromSteps(steps, effects, map[CombatTargetRef]int{monsterRef: state.Monster.Stats.Health, playerRef: state.Player.Stats.Health}) {
 		if err := c.RecordDamageEventTx(ctx, event); err != nil {
 			return out, err
 		}

@@ -1,6 +1,6 @@
 /* src/components/ModeSelectionPage.module.css */
 .pageRoot {
-    padding: var(--lobby-page-padding);
+    padding: var(--ui-space-6) 0 0;
     width: 100%;
     max-width: var(--lobby-page-max-width);
     margin: 0 auto;
@@ -718,6 +718,17 @@
     justify-content: space-between;
     gap: 0.6rem;
     align-items: flex-start;
+}
+
+.tavernHeroPortrait {
+    width: 52px;
+    height: 52px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    object-position: center top;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    background: rgba(18, 34, 48, 0.82);
 }
 
 .tavernHeroCardTop h5 {

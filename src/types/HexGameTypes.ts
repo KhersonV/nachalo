@@ -1,10 +1,15 @@
 import { parseGeometry, parsePosition } from "./geometry";
 import type { HexCoord } from "@/utils/hexGrid";
+import type { EquipmentSlot } from "./equipment";
 
 export type HexResource = { id: number; type: string; description: string; image: string; item_type?: "resource" | "artifact" };
-export type HexCell = { cellId: number; position: HexCoord; terrain: "floor" | "rock"; visibility?: "unexplored" | "explored" | "visible"; room?: number; resource?: HexResource; barrel?: HexResource; isPortal?: boolean; structureType?: string; structureOwnerUserId?: number; structureHealth?: number; structureDefense?: number; structureAttack?: number; isUnderConstruction?: boolean; constructionTurnsLeft?: number };
+export type HexCell = { cellId: number; position: HexCoord; terrain: "floor" | "rock"; visibility?: "unexplored" | "explored" | "visible"; room?: number; environmentType?: "brazier"; resource?: HexResource; barrel?: HexResource; isPortal?: boolean; structureType?: string; structureOwnerUserId?: number; structureHealth?: number; structureDefense?: number; structureAttack?: number; isUnderConstruction?: boolean; constructionTurnsLeft?: number };
 export type HexEdge = { position: HexCoord; direction: number; kind: "wall" };
-export type HexActor = { id: string; kind: "player" | "monster"; userId?: number; teamId?: number; position: HexCoord; health?: number; maxHealth?: number; monsterRefId?: number; name?: string; type?: string; image?: string; attack?: number; defense?: number; speed?: number; maneuverability?: number; vision?: number };
+export type HexHeroAppearance = {
+  archetype: "guardian" | "berserker" | "ranger" | "mystic";
+  equipment: Partial<Record<EquipmentSlot, { code: string }>>;
+};
+export type HexActor = { id: string; kind: "player" | "monster"; userId?: number; teamId?: number; position: HexCoord; health?: number; maxHealth?: number; monsterRefId?: number; name?: string; type?: string; image?: string; attack?: number; defense?: number; speed?: number; maneuverability?: number; vision?: number; appearance?: HexHeroAppearance };
 export type HexStart = { userId: number; teamId: number; position: HexCoord };
 export type HexQuestArtifact = { id: number; name: string; image?: string; description?: string; status: "not_found" | "found" | "carried" | "ground" | "extracted"; carrierUserId?: number; carrierName?: string; position?: HexCoord };
 export type HexPlayer = {
@@ -16,8 +21,9 @@ export type HexPlayer = {
 };
 export type HexResultItem = { name: string; image?: string; status?: string };
 export type HexResultStats = { playerKills: number; monsterKills: number; damageTotal: number; damageToPlayers: number; damageToMonsters: number; damageTaken: number };
-export type HexPlayerResult = { method: "artifact" | "paid" | "defeat" | "team_victory" | "opponent_extracted"; reason?: string; winnerUserId?: number; winnerTeamId?: number; goldEarned: number; goldSpent: number; xp: number; transferred: Record<string, { item_count?: number; item_name?: string; name?: string; image?: string }>; lost: Record<string, { item_count?: number; item_name?: string; name?: string; image?: string }>; equipment: string[]; lostEquipment: string[]; equipmentItems?: HexResultItem[]; lostEquipmentItems?: HexResultItem[]; wornEquipment?: HexResultItem[]; stats?: HexResultStats; activeUser?: number; turnNumber?: number };
+export type HexPlayerResult = { method: "artifact" | "paid" | "defeat" | "victory" | "team_victory" | "opponent_extracted"; isWinner?: boolean; reason?: string; winnerUserId?: number; winnerTeamId?: number; goldEarned: number; goldSpent: number; xp: number; transferred: Record<string, { item_count?: number; item_name?: string; name?: string; image?: string }>; lost: Record<string, { item_count?: number; item_name?: string; name?: string; image?: string }>; equipment: string[]; lostEquipment: string[]; equipmentItems?: HexResultItem[]; lostEquipmentItems?: HexResultItem[]; wornEquipment?: HexResultItem[]; stats?: HexResultStats; activeUser?: number; turnNumber?: number };
 export type HexRoute = { path: HexCoord[]; stepCost: number; totalCost: number; energy: number; affordable: boolean; position: HexCoord; auraEnergyCost?: number; auraHits?: Array<{ position: HexCoord; damage: number; sourceId: number }>; auraEnded?: boolean; stateRevision?: number };
+export type HexVisualMove = { commandId: string; instanceId: string; from: HexCoord; position: HexCoord; path?: HexCoord[]; stateRevision?: number };
 export type HexAttackPreview = { targetId: number; distance: number; cost: number; mode: "melee" | "ranged"; energy: number; targetHP: number };
 export type HexCombatRef = { id: number; type: "player" | "monster" };
 export type HexCombatStep = { kind: string; source?: HexCombatRef; target: HexCombatRef; damage?: number; targetHpAfter?: number };
@@ -31,7 +37,7 @@ export type HexSnapshot = {
   instanceId: string; mode?: string; turnOrder?: number[]; mapRevision: number; stateRevision: number; seed: number; radius?: number;
   starts?: HexStart[]; portal?: HexCoord;
   cells: HexCell[]; edges: HexEdge[]; actors: HexActor[];
-  player?: HexPlayer; activeUser?: number; activePlayerName?: string; turnNumber?: number; turnDeadline?: string; turnSeconds?: number; finished?: boolean; questArtifactId?: number; questArtifact?: HexQuestArtifact; result?: HexPlayerResult;
+  player?: HexPlayer; activeUser?: number; activePlayerName?: string; turnNumber?: number; turnDeadline?: string; turnSeconds?: number; disconnectedPlayers?: { userId: number; deadline: string }[]; finished?: boolean; questArtifactId?: number; questArtifact?: HexQuestArtifact; result?: HexPlayerResult;
 };
 
 export function isHexSnapshot(value: unknown): value is HexSnapshot {

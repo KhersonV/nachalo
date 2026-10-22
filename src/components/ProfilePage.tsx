@@ -1,1487 +1,336 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { API_BASE as API_GAME } from "@/utils/serviceUrls";
-import { useAuth } from "../contexts/AuthContext";
-import LobbyHeader from "./LobbyHeader";
-import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
-import {
-    getClassReflexEffectDescription,
-    getClassReflexEffectName,
-    getReflexProcChance,
-} from "../utils/reflex";
-import styles from "../styles/ProfilePage.module.css";
+import { API_BASE } from "@/utils/serviceUrls";
+import { useAuth } from "@/contexts/AuthContext";
+import { getHeroPortrait } from "@/features/heroes/heroArtwork";
+import { matchesProfileView, ownedHeroes, performConfirmedSocialAction, profileViewId, relationActions, xpProgress, type Relation, type RelationAction, type SocialTab } from "@/features/profile/profileView";
+import { normalizeAvatarPath } from "@/utils/normalizeAvatarPath";
+import styles from "@/styles/ProfilePage.module.css";
 
-type ProfileApiResponse = {
-    status: string;
-    data: {
-        player: {
-            userId: number;
-            name: string;
-            image: string;
-            online: boolean;
-            activityStatus: "in_match" | "in_lobby" | "offline";
-            characterType: string;
-            level: number;
-            experience: number;
-            maxExperience: number;
-            balance: number;
-            attack: number;
-            defense: number;
-            mobility: number;
-            agility: number;
-            sightRange: number;
-            isRanged: boolean;
-            attackRange: number;
-        };
-        progress: {
-            matchesPlayed: number;
-            wins: number;
-            winRate: number;
-            totalExpGained: number;
-            playerKills: number;
-            monsterKills: number;
-            damageTotal: number;
-        };
-        resources: {
-            food: number;
-            water: number;
-            wood: number;
-            stone: number;
-            iron: number;
-        };
-        base: {
-            forgeLevel: number;
-            built: boolean;
-            canBuild: boolean;
-            costs: {
-                wood: number;
-                stone: number;
-                iron: number;
-            };
-            resources: {
-                wood: number;
-                stone: number;
-                iron: number;
-            };
-            recipes: Array<{
-                id: string;
-                name: string;
-                description: string;
-            }>;
-        };
-    };
+type Activity = "in_match" | "in_lobby" | "offline";
+type Player = {
+    userId: number;
+    name: string;
+    image: string;
+    activityStatus: Activity;
+    characterType: string;
+    level: number;
+    experience: number;
+    maxExperience: number;
+    balance?: number;
 };
+type Progress = { matchesPlayed: number; wins: number; losses: number; winRate: number };
+type OwnProfile = { player: Player; progress: Progress | null };
+type PublicProfile = { player: Player; progress: Progress | null; friendRelation: Relation };
+type Hero = { id: string; displayName: string; image?: string; owned: boolean; enabled: boolean; active: boolean; sortOrder: number };
+type SocialPlayer = { userId: number; name: string; image: string; activityStatus: Activity; characterType: string; level: number };
+type SearchPlayer = SocialPlayer & { friendRelation: Relation };
+type SocialData = { friends: SocialPlayer[]; incoming: SocialPlayer[]; outgoing: SocialPlayer[] };
+type ResponseData<T> = { data: T };
 
-type PublicProfileApiResponse = {
-    status: string;
-    data: {
-        player: ProfileApiResponse["data"]["player"];
-        progress: ProfileApiResponse["data"]["progress"];
-        isFriend: boolean;
-        friendRelation: "self" | "friend" | "outgoing" | "incoming" | "none";
-    };
-};
+const TABS: { key: SocialTab; label: string }[] = [
+    { key: "friends", label: "Friends" },
+    { key: "incoming", label: "Incoming" },
+    { key: "outgoing", label: "Outgoing" },
+    { key: "search", label: "Search" },
+];
 
-type FriendsApiResponse = {
-    status: string;
-    data: Array<{
-        userId: number;
-        name: string;
-        image: string;
-        characterType: string;
-        level: number;
-        activityStatus: "in_match" | "in_lobby" | "offline";
-    }>;
-};
+async function readApi<T>(path: string, token: string): Promise<T> {
+    const response = await fetch(API_BASE + path, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+    if (!response.ok) throw new Error("Could not load data (" + response.status + ")");
+    const body = await response.json() as ResponseData<T>;
+    if (!body || !("data" in body)) throw new Error("The server returned an incomplete response");
+    return body.data;
+}
 
-type SearchPlayersApiResponse = {
-    status: string;
-    data: Array<{
-        userId: number;
-        name: string;
-        image: string;
-        characterType: string;
-        level: number;
-        isFriend: boolean;
-        friendRelation: "self" | "friend" | "outgoing" | "incoming" | "none";
-        activityStatus: "in_match" | "in_lobby" | "offline";
-    }>;
-};
+async function writeApi(path: string, token: string, method: "POST" | "DELETE" | "PATCH", body?: unknown): Promise<void> {
+    const response = await fetch(API_BASE + path, {
+        method,
+        headers: { Authorization: "Bearer " + token, ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (!response.ok) throw new Error((await response.text()) || "The action failed");
+}
 
-type IncomingFriendRequestsApiResponse = {
-    status: string;
-    data: Array<{
-        userId: number;
-        name: string;
-        image: string;
-        characterType: string;
-        level: number;
-        activityStatus: "in_match" | "in_lobby" | "offline";
-        createdAt: string;
-    }>;
-};
+function activityLabel(status: Activity): string {
+    return status === "in_match" ? "In Match" : status === "in_lobby" ? "In Lobby" : "Offline";
+}
 
-type OutgoingFriendRequestsApiResponse = {
-    status: string;
-    data: Array<{
-        userId: number;
-        name: string;
-        image: string;
-        characterType: string;
-        level: number;
-        activityStatus: "in_match" | "in_lobby" | "offline";
-        createdAt: string;
-    }>;
-};
+function PlayerRow({ player, children }: { player: SocialPlayer; children?: React.ReactNode }) {
+    return <div className={styles.playerRow}>
+        <img className={styles.rowAvatar} src={normalizeAvatarPath(player.image)} alt="" />
+        <div className={styles.playerMeta}><strong>{player.name}</strong><span>{activityLabel(player.activityStatus)} · {player.characterType} · Hero Lv. {player.level}</span></div>
+        <div className={styles.rowActions}><Link href={"/profile?view=" + player.userId}>View Profile</Link>{children}</div>
+    </div>;
+}
+
+function Identity({ player, own }: { player: Player; own: boolean }) {
+    const progress = xpProgress(player.experience, player.maxExperience);
+    return <section className={styles.identity} aria-label="Player identity">
+        <div className={styles.accountIdentity}>
+            <img className={styles.avatar} src={normalizeAvatarPath(player.image)} alt={player.name + " avatar"} />
+            <div className={styles.accountCopy}>
+                <span className={styles.eyebrow}>{own ? "PLAYER IDENTITY" : "PLAYER PROFILE"}</span>
+                <h1>{player.name}</h1>
+                <span className={styles.activity} data-status={player.activityStatus}>{activityLabel(player.activityStatus)}</span>
+                {own && Number.isFinite(player.balance) && <span className={styles.accountBalance}>{player.balance!.toLocaleString()} Gold</span>}
+            </div>
+        </div>
+        <div className={styles.heroProgress}>
+            <div className={styles.progressHeading}><span>Active hero progress</span><strong>Level {player.level}</strong></div>
+            <span className={styles.xpText}>{Number.isFinite(player.experience) ? player.experience.toLocaleString() : "—"}{Number.isFinite(player.maxExperience) && player.maxExperience > 0 ? " / " + player.maxExperience.toLocaleString() : ""} XP</span>
+            {progress !== null && <div className={styles.expTrack} role="progressbar" aria-label="Active hero experience" aria-valuenow={player.experience} aria-valuemin={0} aria-valuemax={player.maxExperience}><div style={{ width: progress + "%" }} /></div>}
+        </div>
+        <div className={styles.activeHero}>
+            <img src={getHeroPortrait(player.characterType)} alt="" />
+            <div><span className={styles.eyebrow}>ACTIVE HERO</span><strong>{player.characterType}</strong><small>Hero Level {player.level}</small></div>
+        </div>
+    </section>;
+}
+
+function Overview({ progress, own }: { progress: Progress | null; own: boolean }) {
+    const values = progress && [progress.matchesPlayed, progress.wins, progress.losses, progress.winRate].every(Number.isFinite)
+        ? [{ label: "Matches", value: progress.matchesPlayed }, { label: "Wins", value: progress.wins }, { label: "Losses", value: progress.losses }, { label: "Win Rate", value: progress.winRate + "%" }]
+        : null;
+    return <section className={styles.panel} aria-label="Player overview">
+        <div className={styles.sectionHead}><div><span className={styles.eyebrow}>PLAYER OVERVIEW</span><h2>Match record</h2></div>{own && <Link href="/matches">View Match History ↗</Link>}</div>
+        {values ? <div className={styles.stats}>{values.map(item => <div className={styles.stat} key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div> : <p className={styles.empty}>Match statistics are unavailable.</p>}
+    </section>;
+}
 
 export default function ProfilePage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const params = useSearchParams();
     const { user } = useAuth();
-
-    const [profile, setProfile] = useState<ProfileApiResponse["data"] | null>(
-        null,
-    );
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-
+    const token = user?.token ?? "";
+    const viewId = profileViewId(params.get("view"));
+    const ownMode = viewId === null;
+    const [own, setOwn] = useState<{ token: string; data: OwnProfile } | null>(null);
+    const [ownError, setOwnError] = useState("");
+    const [publicProfile, setPublicProfile] = useState<{ token: string; data: PublicProfile } | null>(null);
+    const [publicError, setPublicError] = useState("");
+    const [heroes, setHeroes] = useState<{ token: string; data: Hero[] } | null>(null);
+    const [heroesError, setHeroesError] = useState("");
+    const [social, setSocial] = useState<{ token: string; data: SocialData } | null>(null);
+    const [socialError, setSocialError] = useState("");
+    const [tab, setTab] = useState<SocialTab>("friends");
+    const [editOpen, setEditOpen] = useState(false);
     const [editName, setEditName] = useState("");
     const [editImage, setEditImage] = useState("");
     const [saving, setSaving] = useState(false);
-    const [info, setInfo] = useState("");
-
-    const [friends, setFriends] = useState<FriendsApiResponse["data"]>([]);
-    const [friendsError, setFriendsError] = useState("");
-    const [incomingRequests, setIncomingRequests] = useState<
-        IncomingFriendRequestsApiResponse["data"]
-    >([]);
-    const [requestsError, setRequestsError] = useState("");
-    const [outgoingRequests, setOutgoingRequests] = useState<
-        OutgoingFriendRequestsApiResponse["data"]
-    >([]);
-    const [outgoingRequestsError, setOutgoingRequestsError] = useState("");
-
-    const [lookupId, setLookupId] = useState("");
-    const [viewedProfile, setViewedProfile] = useState<
-        PublicProfileApiResponse["data"] | null
-    >(null);
-    const [lookupLoading, setLookupLoading] = useState(false);
-    const [lookupError, setLookupError] = useState("");
-    const [addingFriend, setAddingFriend] = useState(false);
-    const [removingFriendUserId, setRemovingFriendUserId] = useState<
-        number | null
-    >(null);
-    const [processingRequestUserId, setProcessingRequestUserId] = useState<
-        number | null
-    >(null);
-    const [cancelingOutgoingUserId, setCancelingOutgoingUserId] = useState<
-        number | null
-    >(null);
-    const [friendInfo, setFriendInfo] = useState("");
-
+    const [editError, setEditError] = useState("");
+    const [editNotice, setEditNotice] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchingPlayers, setSearchingPlayers] = useState(false);
-    const [searchResults, setSearchResults] = useState<
-        SearchPlayersApiResponse["data"]
-    >([]);
+    const [searchedQuery, setSearchedQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<SearchPlayer[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [searchError, setSearchError] = useState("");
+    const [actionKey, setActionKey] = useState("");
+    const [actionError, setActionError] = useState("");
+    const [actionNotice, setActionNotice] = useState("");
+    const publicRequest = useRef(0);
+    const socialRequest = useRef(0);
+    const searchRequest = useRef(0);
+    const scopeKey = token + ":" + (viewId ?? "self");
+    const scopeRef = useRef(scopeKey);
+    scopeRef.current = scopeKey;
 
-    const fetchProfile = useCallback(async () => {
-        if (!user?.token) return null;
-        const res = await fetch(`${API_GAME}/game/profile`, {
-            headers: {
-                Authorization: `Bearer ${user.token}`,
-            },
-            cache: "no-store",
-        });
-        if (!res.ok) {
-            throw new Error("Failed to load profile");
-        }
-        const data: ProfileApiResponse = await res.json();
-        return data.data;
-    }, [user]);
+    useEffect(() => {
+        setActionKey(""); setActionError(""); setActionNotice("");
+        setSearchQuery(""); setSearchedQuery(""); setSearchResults([]); setSearchError("");
+        setEditOpen(false); setEditError(""); setEditNotice("");
+    }, [scopeKey]);
 
-    const loadProfile = useCallback(async () => {
-        if (!user?.token) return;
+    useEffect(() => {
+        setOwnError(""); setHeroesError(""); setSocialError("");
+    }, [token]);
 
-        setLoading(true);
-        setError("");
+    const refreshOwn = useCallback(async () => {
+        if (!token) return;
+        const data = await readApi<OwnProfile>("/game/profile", token);
+        setOwn({ token, data });
+        setOwnError("");
+    }, [token]);
+
+    const refreshHeroes = useCallback(async () => {
+        if (!token) return;
+        const result = await fetch(API_BASE + "/game/heroes", { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+        if (!result.ok) throw new Error("Could not load heroes (" + result.status + ")");
+        const response = await result.json() as { heroes: Hero[] };
+        if (!Array.isArray(response.heroes)) throw new Error("Hero roster is unavailable");
+        setHeroes({ token, data: response.heroes });
+        setHeroesError("");
+    }, [token]);
+
+    const refreshSocial = useCallback(async () => {
+        if (!token) return;
+        const requestId = ++socialRequest.current;
+        const [friends, incoming, outgoing] = await Promise.all([
+            readApi<SocialPlayer[]>("/game/friends", token),
+            readApi<SocialPlayer[]>("/game/friends/requests/incoming", token),
+            readApi<SocialPlayer[]>("/game/friends/requests/outgoing", token),
+        ]);
+        if (requestId !== socialRequest.current) return;
+        setSocial({ token, data: { friends, incoming, outgoing } });
+        setSocialError("");
+    }, [token]);
+
+    const refreshPublic = useCallback(async (id: number) => {
+        if (!token) return;
+        const requestId = ++publicRequest.current;
+        const data = await readApi<PublicProfile>("/game/profile/" + id, token);
+        if (requestId !== publicRequest.current || data.player.userId !== id) return;
+        setPublicProfile({ token, data });
+        setPublicError("");
+    }, [token]);
+
+    const runSearch = useCallback(async (query: string) => {
+        if (!token) return;
+        const q = query.trim();
+        if (q.length < 2) { setSearchError("Enter at least 2 characters."); return; }
+        const requestId = ++searchRequest.current;
+        setSearching(true);
+        setSearchError("");
         try {
-            const data = await fetchProfile();
-            if (!data) return;
-            setProfile(data);
-            setEditName(data.player.name || "");
-            setEditImage(normalizeAvatarPath(data.player.image));
-        } catch (e: any) {
-            setError(e?.message || "Profile load error");
+            const data = await readApi<SearchPlayer[]>("/game/players/search?q=" + encodeURIComponent(q), token);
+            if (requestId !== searchRequest.current) return;
+            setSearchResults(data);
+            setSearchedQuery(q);
+        } catch (error) {
+            if (requestId === searchRequest.current) setSearchError(error instanceof Error ? error.message : "Search failed");
         } finally {
-            setLoading(false);
+            if (requestId === searchRequest.current) setSearching(false);
         }
-    }, [user, fetchProfile]);
-
-    const fetchFriends = useCallback(async () => {
-        if (!user?.token) return [];
-        const res = await fetch(`${API_GAME}/game/friends`, {
-            headers: {
-                Authorization: `Bearer ${user.token}`,
-            },
-            cache: "no-store",
-        });
-        if (!res.ok) {
-            throw new Error("Failed to load friends");
-        }
-        const data: FriendsApiResponse = await res.json();
-        return data.data;
-    }, [user]);
-
-    const fetchIncomingRequests = useCallback(async () => {
-        if (!user?.token) return [];
-        const res = await fetch(`${API_GAME}/game/friends/requests/incoming`, {
-            headers: {
-                Authorization: `Bearer ${user.token}`,
-            },
-            cache: "no-store",
-        });
-        if (!res.ok) {
-            throw new Error("Failed to load incoming requests");
-        }
-        const data: IncomingFriendRequestsApiResponse = await res.json();
-        return data.data;
-    }, [user]);
-
-    const fetchOutgoingRequests = useCallback(async () => {
-        if (!user?.token) return [];
-        const res = await fetch(`${API_GAME}/game/friends/requests/outgoing`, {
-            headers: {
-                Authorization: `Bearer ${user.token}`,
-            },
-            cache: "no-store",
-        });
-        if (!res.ok) {
-            throw new Error("Failed to load outgoing requests");
-        }
-        const data: OutgoingFriendRequestsApiResponse = await res.json();
-        return data.data;
-    }, [user]);
+    }, [token]);
 
     useEffect(() => {
-        loadProfile();
-    }, [loadProfile]);
+        if (!token || !ownMode) return;
+        void refreshOwn().catch(error => setOwnError(error instanceof Error ? error.message : "Profile unavailable"));
+        void refreshHeroes().catch(error => setHeroesError(error instanceof Error ? error.message : "Heroes unavailable"));
+        void refreshSocial().catch(error => setSocialError(error instanceof Error ? error.message : "Social data unavailable"));
+        const interval = window.setInterval(() => {
+            void refreshOwn().catch(() => undefined);
+            void refreshHeroes().catch(() => undefined);
+            void refreshSocial().catch(() => undefined);
+        }, 8000);
+        return () => { window.clearInterval(interval); ++socialRequest.current; ++searchRequest.current; };
+    }, [token, ownMode, refreshOwn, refreshHeroes, refreshSocial]);
 
     useEffect(() => {
-        if (!user?.token) return;
+        if (!token || viewId === null) return;
+        setPublicError("");
+        setPublicProfile(null);
+        void refreshPublic(viewId).catch(error => setPublicError(error instanceof Error ? error.message : "Player profile unavailable"));
+        return () => { ++publicRequest.current; };
+    }, [token, viewId, refreshPublic]);
 
-        let alive = true;
-        (async () => {
-            try {
-                const data = await fetchFriends();
-                if (!alive) return;
-                setFriends(data);
-                setFriendsError("");
-            } catch (e: any) {
-                if (!alive) return;
-                setFriendsError(e?.message || "Failed to load friends");
-            }
-        })();
-
-        return () => {
-            alive = false;
-        };
-    }, [user, fetchFriends]);
-
-    useEffect(() => {
-        if (!user?.token) return;
-
-        let alive = true;
-        (async () => {
-            try {
-                const data = await fetchIncomingRequests();
-                if (!alive) return;
-                setIncomingRequests(data);
-                setRequestsError("");
-            } catch (e: any) {
-                if (!alive) return;
-                setRequestsError(e?.message || "Failed to load requests");
-            }
-        })();
-
-        return () => {
-            alive = false;
-        };
-    }, [user, fetchIncomingRequests]);
-
-    useEffect(() => {
-        if (!user?.token) return;
-
-        let alive = true;
-        (async () => {
-            try {
-                const data = await fetchOutgoingRequests();
-                if (!alive) return;
-                setOutgoingRequests(data);
-                setOutgoingRequestsError("");
-            } catch (e: any) {
-                if (!alive) return;
-                setOutgoingRequestsError(
-                    e?.message || "Failed to load outgoing requests",
-                );
-            }
-        })();
-
-        return () => {
-            alive = false;
-        };
-    }, [user, fetchOutgoingRequests]);
-
-    useEffect(() => {
-        if (!user?.token) return;
-
-        let alive = true;
-
-        const refreshSilently = async () => {
-            try {
-                const data = await fetchProfile();
-                if (!alive || !data) return;
-                setProfile(data);
-
-                const friendsData = await fetchFriends();
-                if (!alive) return;
-                setFriends(friendsData);
-
-                const incomingData = await fetchIncomingRequests();
-                if (!alive) return;
-                setIncomingRequests(incomingData);
-
-                const outgoingData = await fetchOutgoingRequests();
-                if (!alive) return;
-                setOutgoingRequests(outgoingData);
-            } catch {
-                // Silent polling: keep existing UI state if refresh fails.
-            }
-        };
-
-        const interval = window.setInterval(refreshSilently, 8000);
-
-        const onVisibilityChange = () => {
-            if (!document.hidden) {
-                refreshSilently();
-            }
-        };
-        document.addEventListener("visibilitychange", onVisibilityChange);
-
-        return () => {
-            alive = false;
-            window.clearInterval(interval);
-            document.removeEventListener(
-                "visibilitychange",
-                onVisibilityChange,
-            );
-        };
-    }, [
-        user,
-        fetchProfile,
-        fetchFriends,
-        fetchIncomingRequests,
-        fetchOutgoingRequests,
-    ]);
-
-    const loadPublicProfileById = useCallback(
-        async (userId: number) => {
-            if (!user?.token) return;
-
-            if (!Number.isFinite(userId) || userId <= 0) {
-                setLookupError("Enter a valid player ID");
-                return;
-            }
-
-            setLookupLoading(true);
-            setLookupError("");
-            setFriendInfo("");
-
-            try {
-                const res = await fetch(`${API_GAME}/game/profile/${userId}`, {
-                    headers: {
-                        Authorization: `Bearer ${user.token}`,
-                    },
-                    cache: "no-store",
-                });
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(
-                        text || "Failed to load player profile",
-                    );
-                }
-                const data: PublicProfileApiResponse = await res.json();
-                setViewedProfile(data.data);
-            } catch (e: any) {
-                setViewedProfile(null);
-                setLookupError(e?.message || "Failed to load player profile");
-            } finally {
-                setLookupLoading(false);
-            }
-        },
-        [user],
-    );
-
-    const viewOtherProfile = useCallback(async () => {
-        const parsed = Number.parseInt(lookupId.trim(), 10);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-            setLookupError("Enter a valid player ID");
-            return;
-        }
-
-        await loadPublicProfileById(parsed);
-    }, [lookupId, loadPublicProfileById]);
-
-    const openFriendProfile = useCallback(
-        async (friendUserID: number) => {
-            setLookupId(String(friendUserID));
-            await loadPublicProfileById(friendUserID);
-        },
-        [loadPublicProfileById],
-    );
-
-    useEffect(() => {
-        if (!user?.token) return;
-
-        const viewParam = searchParams.get("view");
-        if (!viewParam) return;
-
-        const parsedId = Number.parseInt(viewParam, 10);
-        if (!Number.isFinite(parsedId) || parsedId <= 0) return;
-
-        setLookupId(String(parsedId));
-        void loadPublicProfileById(parsedId);
-    }, [user, searchParams, loadPublicProfileById]);
-
-    const addFriend = useCallback(async () => {
-        if (!user?.token || !viewedProfile) return;
-        if (viewedProfile.player.userId === user.id) {
-            setLookupError("You cannot add yourself as a friend");
-            return;
-        }
-
-        setAddingFriend(true);
-        setLookupError("");
-        setFriendInfo("");
+    const saveIdentity = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!token || !ownMode) return;
+        setSaving(true); setEditError(""); setEditNotice("");
         try {
-            const res = await fetch(`${API_GAME}/game/friends/add`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${user.token}`,
-                },
-                body: JSON.stringify({
-                    friendUserId: viewedProfile.player.userId,
-                }),
-            });
-                if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || "Failed to add friend");
-            }
-
-            setViewedProfile((prev) =>
-                prev
-                    ? {
-                          ...prev,
-                          isFriend: false,
-                          friendRelation: "outgoing",
-                      }
-                    : prev,
-            );
-            const friendsData = await fetchFriends();
-            setFriends(friendsData);
-            const incomingData = await fetchIncomingRequests();
-            setIncomingRequests(incomingData);
-            setSearchResults((prev) =>
-                prev.map((item) =>
-                    item.userId === viewedProfile.player.userId
-                        ? {
-                              ...item,
-                              friendRelation: "outgoing",
-                              isFriend: false,
-                          }
-                        : item,
-                ),
-            );
-            setFriendInfo("Friend request sent");
-        } catch (e: any) {
-            setLookupError(e?.message || "Failed to add friend");
-        } finally {
-            setAddingFriend(false);
-        }
-    }, [user, viewedProfile, fetchFriends, fetchIncomingRequests]);
-
-    const removeFriend = useCallback(
-        async (friendUserId: number) => {
-            if (!user?.token) return;
-
-            setRemovingFriendUserId(friendUserId);
-            setLookupError("");
-            setFriendInfo("");
-
-            try {
-                const res = await fetch(
-                    `${API_GAME}/game/friends/${friendUserId}`,
-                    {
-                        method: "DELETE",
-                        headers: {
-                            Authorization: `Bearer ${user.token}`,
-                        },
-                    },
-                );
-                    if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || "Failed to remove friend");
-                }
-
-                const friendsData = await fetchFriends();
-                setFriends(friendsData);
-                setSearchResults((prev) =>
-                    prev.map((item) =>
-                        item.userId === friendUserId
-                            ? {
-                                  ...item,
-                                  isFriend: false,
-                                  friendRelation: "none",
-                              }
-                            : item,
-                    ),
-                );
-                setViewedProfile((prev) =>
-                    prev && prev.player.userId === friendUserId
-                        ? { ...prev, isFriend: false, friendRelation: "none" }
-                        : prev,
-                );
-                setFriendInfo("Friend removed");
-            } catch (e: any) {
-                setLookupError(e?.message || "Failed to remove friend");
-            } finally {
-                setRemovingFriendUserId(null);
-            }
-        },
-        [user, fetchFriends],
-    );
-
-    const searchPlayers = useCallback(async () => {
-        if (!user?.token) return;
-
-        const q = searchQuery.trim();
-        if (q.length < 2) {
-            setLookupError("Enter at least 2 characters to search");
-            return;
-        }
-
-        setSearchingPlayers(true);
-        setLookupError("");
-
-        try {
-            const res = await fetch(
-                `${API_GAME}/game/players/search?q=${encodeURIComponent(q)}`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${user.token}`,
-                    },
-                    cache: "no-store",
-                },
-            );
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || "Failed to perform search");
-            }
-
-            const data: SearchPlayersApiResponse = await res.json();
-            setSearchResults(data.data);
-            if (data.data.length === 0) {
-                setFriendInfo("No players found for your query");
-            }
-        } catch (e: any) {
-            setLookupError(e?.message || "Player search error");
-        } finally {
-            setSearchingPlayers(false);
-        }
-    }, [user, searchQuery]);
-
-    const acceptFriendRequest = useCallback(
-        async (requesterUserId: number) => {
-            if (!user?.token) return;
-
-            setProcessingRequestUserId(requesterUserId);
-            setLookupError("");
-            setFriendInfo("");
-            try {
-                const res = await fetch(
-                    `${API_GAME}/game/friends/requests/${requesterUserId}/accept`,
-                    {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${user.token}`,
-                        },
-                    },
-                );
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || "Failed to accept request");
-                }
-
-                const [friendsData, incomingData] = await Promise.all([
-                    fetchFriends(),
-                    fetchIncomingRequests(),
-                ]);
-                setFriends(friendsData);
-                setIncomingRequests(incomingData);
-                setSearchResults((prev) =>
-                    prev.map((item) =>
-                        item.userId === requesterUserId
-                            ? {
-                                  ...item,
-                                  isFriend: true,
-                                  friendRelation: "friend",
-                              }
-                            : item,
-                    ),
-                );
-                setViewedProfile((prev) =>
-                    prev && prev.player.userId === requesterUserId
-                        ? { ...prev, isFriend: true, friendRelation: "friend" }
-                        : prev,
-                );
-                setFriendInfo("Request accepted");
-            } catch (e: any) {
-                setLookupError(e?.message || "Failed to accept request");
-            } finally {
-                setProcessingRequestUserId(null);
-            }
-        },
-        [user, fetchFriends, fetchIncomingRequests],
-    );
-
-    const rejectFriendRequest = useCallback(
-        async (requesterUserId: number) => {
-            if (!user?.token) return;
-
-            setProcessingRequestUserId(requesterUserId);
-            setLookupError("");
-            setFriendInfo("");
-            try {
-                const res = await fetch(
-                    `${API_GAME}/game/friends/requests/${requesterUserId}/reject`,
-                    {
-                        method: "POST",
-                        headers: {
-                            Authorization: `Bearer ${user.token}`,
-                        },
-                    },
-                );
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || "Failed to decline request");
-                }
-
-                const incomingData = await fetchIncomingRequests();
-                setIncomingRequests(incomingData);
-                setSearchResults((prev) =>
-                    prev.map((item) =>
-                        item.userId === requesterUserId
-                            ? {
-                                  ...item,
-                                  isFriend: false,
-                                  friendRelation: "none",
-                              }
-                            : item,
-                    ),
-                );
-                setViewedProfile((prev) =>
-                    prev && prev.player.userId === requesterUserId
-                        ? { ...prev, isFriend: false, friendRelation: "none" }
-                        : prev,
-                );
-                setFriendInfo("Request declined");
-            } catch (e: any) {
-                setLookupError(e?.message || "Failed to decline request");
-            } finally {
-                setProcessingRequestUserId(null);
-            }
-        },
-        [user, fetchIncomingRequests],
-    );
-
-    const cancelOutgoingRequest = useCallback(
-        async (targetUserId: number) => {
-            if (!user?.token) return;
-
-            setCancelingOutgoingUserId(targetUserId);
-            setLookupError("");
-            setFriendInfo("");
-            try {
-                const res = await fetch(
-                    `${API_GAME}/game/friends/requests/${targetUserId}`,
-                    {
-                        method: "DELETE",
-                        headers: {
-                            Authorization: `Bearer ${user.token}`,
-                        },
-                    },
-                );
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || "Failed to cancel request");
-                }
-
-                const outgoingData = await fetchOutgoingRequests();
-                setOutgoingRequests(outgoingData);
-                setSearchResults((prev) =>
-                    prev.map((item) =>
-                        item.userId === targetUserId
-                            ? {
-                                  ...item,
-                                  isFriend: false,
-                                  friendRelation: "none",
-                              }
-                            : item,
-                    ),
-                );
-                setViewedProfile((prev) =>
-                    prev && prev.player.userId === targetUserId
-                        ? { ...prev, isFriend: false, friendRelation: "none" }
-                        : prev,
-                );
-                setFriendInfo("Request canceled");
-            } catch (e: any) {
-                setLookupError(e?.message || "Failed to cancel request");
-            } finally {
-                setCancelingOutgoingUserId(null);
-            }
-        },
-        [user, fetchOutgoingRequests],
-    );
-
-    const saveProfile = useCallback(async () => {
-        if (!user?.token) return;
-        setSaving(true);
-        setError("");
-        setInfo("");
-        try {
-            const res = await fetch(`${API_GAME}/game/profile`, {
+            const response = await fetch(API_BASE + "/game/profile", {
                 method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${user.token}`,
-                },
-                body: JSON.stringify({
-                    name: editName,
-                    image: editImage,
-                }),
+                headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                body: JSON.stringify({ name: editName, image: editImage }),
             });
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || "Failed to save profile");
-            }
-            const data: ProfileApiResponse = await res.json();
-            setProfile(data.data);
-            setInfo("Profile saved");
-        } catch (e: any) {
-            setError(e?.message || "Profile save error");
-        } finally {
-            setSaving(false);
-        }
-    }, [user, editName, editImage]);
-
-    if (loading) {
-        return <div className={styles.page}>Loading profile...</div>;
-    }
-
-    if (error && !profile) {
-        return <div className={styles.page}>Error: {error}</div>;
-    }
-
-    if (!profile) {
-        return <div className={styles.page}>Profile unavailable</div>;
-    }
-
-    const viewedUserParamRaw = searchParams.get("view");
-    const viewedUserParam = viewedUserParamRaw
-        ? Number.parseInt(viewedUserParamRaw, 10)
-        : NaN;
-    const fromParam = searchParams.get("from") || "";
-    const returnInstanceId = searchParams.get("instance_id") || "";
-    const isExternalProfileMode =
-        Number.isFinite(viewedUserParam) && viewedUserParam > 0;
-
-    const activePlayer =
-        isExternalProfileMode && viewedProfile
-            ? viewedProfile.player
-            : profile.player;
-    const activeProgress =
-        isExternalProfileMode && viewedProfile
-            ? viewedProfile.progress
-            : profile.progress;
-    const activePlayerReflexChance = getReflexProcChance(activePlayer.agility);
-    const activePlayerReflexEffectName = getClassReflexEffectName(
-        activePlayer.characterType,
-    );
-    const activePlayerReflexEffectDescription =
-        getClassReflexEffectDescription(activePlayer.characterType);
-
-    const expPercent = activePlayer.maxExperience
-        ? Math.min(
-              100,
-              Math.round(
-                  (activePlayer.experience / activePlayer.maxExperience) * 100,
-              ),
-          )
-        : 0;
-
-    const getActivityLabel = (status: "in_match" | "in_lobby" | "offline") =>
-        status === "in_match"
-            ? "In Match"
-            : status === "in_lobby"
-              ? "In Lobby"
-              : "Offline";
-
-    const getActivityClass = (status: "in_match" | "in_lobby" | "offline") =>
-        status === "in_match"
-            ? styles.statusInMatch
-            : status === "in_lobby"
-              ? styles.statusInLobby
-              : styles.statusOffline;
-
-    const activityLabel = getActivityLabel(activePlayer.activityStatus);
-    const activityClass = getActivityClass(activePlayer.activityStatus);
-    const isViewingFromRoute = !!searchParams.get("view");
-
-    const handleBack = () => {
-        if (isExternalProfileMode && fromParam === "game" && returnInstanceId) {
-            router.push(
-                `/game?instance_id=${encodeURIComponent(returnInstanceId)}`,
-            );
-            return;
-        }
-        router.push("/mode");
+            if (!response.ok) throw new Error((await response.text()) || "Profile save failed");
+            const body = await response.json() as ResponseData<OwnProfile>;
+            if (!body?.data?.player) throw new Error("The server did not confirm the profile");
+            setOwn({ token, data: body.data });
+            setEditOpen(false);
+            setEditNotice("Profile saved");
+        } catch (error) { setEditError(error instanceof Error ? error.message : "Profile save failed"); }
+        finally { setSaving(false); }
     };
 
-    return (
-        <div className={styles.page}>
-            {!isExternalProfileMode && <LobbyHeader />}
-            <div className={styles.topRow}>
-                <h2 className={styles.title}>Player Profile</h2>
-                <button className={styles.backBtn} onClick={handleBack}>
-                    {isExternalProfileMode && fromParam === "game"
-                        ? "Back to Game"
-                        : "To Modes"}
-                </button>
-            </div>
+    const runRelationAction = async (action: RelationAction, targetId: number) => {
+        if (!token || !user || targetId === user.id) return;
+        const key = action + ":" + targetId;
+        const actionScope = scopeKey;
+        if (actionKey) return;
+        setActionKey(key); setActionError(""); setActionNotice("");
+        const path = action === "send" ? "/game/friends/add"
+            : action === "remove" ? "/game/friends/" + targetId
+            : action === "cancel" ? "/game/friends/requests/" + targetId
+            : "/game/friends/requests/" + targetId + "/" + (action === "accept" ? "accept" : "reject");
+        const method = action === "remove" || action === "cancel" ? "DELETE" : "POST";
+        try {
+            await performConfirmedSocialAction(
+                () => writeApi(path, token, method, action === "send" ? { friendUserId: targetId } : undefined),
+                async () => {
+                    if (scopeRef.current !== actionScope) return;
+                    if (viewId !== null) await refreshPublic(targetId);
+                    else {
+                        await refreshSocial();
+                        if (searchedQuery) await runSearch(searchedQuery);
+                    }
+                },
+            );
+            if (scopeRef.current === actionScope) setActionNotice(action === "send" ? "Friend request sent" : action === "remove" ? "Friend removed" : action === "accept" ? "Request accepted" : action === "decline" ? "Request declined" : "Request canceled");
+        } catch (error) { if (scopeRef.current === actionScope) setActionError(error instanceof Error ? error.message : "Social action failed"); }
+        finally { setActionKey(current => current === key ? "" : current); }
+    };
 
-            {isViewingFromRoute && (
-                <div className={styles.info}>
-                    {viewedProfile
-                        ? `Viewing profile: ${viewedProfile.player.name}`
-                        : "Loading player profile..."}
-                </div>
-            )}
-
-            <section className={styles.card}>
-                <div className={styles.identityRow}>
-                    <img
-                        className={styles.avatar}
-                        src={normalizeAvatarPath(activePlayer.image)}
-                        alt="avatar"
-                    />
-                    <div className={styles.identityMeta}>
-                        <div className={styles.name}>{activePlayer.name}</div>
-                        <div
-                            className={`${styles.statusBadge} ${activityClass}`}
-                        >
-                            {activityLabel}
-                        </div>
-                        <div className={styles.subline}>
-                            Class: {activePlayer.characterType}
-                        </div>
-                        <div className={styles.subline}>
-                            Balance: {activePlayer.balance}
-                        </div>
-                    </div>
-                </div>
-
-                <div className={styles.expWrap}>
-                    <div className={styles.expLabel}>
-                        Level {activePlayer.level} • {activePlayer.experience}/
-                        {activePlayer.maxExperience} XP
-                    </div>
-                    <div className={styles.expBarTrack}>
-                        <div
-                            className={styles.expBarFill}
-                            style={{ width: `${expPercent}%` }}
-                        />
-                    </div>
-                </div>
-
-                {!isExternalProfileMode && (
-                    <>
-                        <div className={styles.editGrid}>
-                            <label className={styles.label}>
-                                Nickname
-                                <input
-                                    className={styles.input}
-                                    value={editName}
-                                    onChange={(e) =>
-                                        setEditName(e.target.value)
-                                    }
-                                    maxLength={32}
-                                />
-                            </label>
-                            <label className={styles.label}>
-                                Avatar URL
-                                <input
-                                    className={styles.input}
-                                    value={editImage}
-                                    onChange={(e) =>
-                                        setEditImage(e.target.value)
-                                    }
-                                    maxLength={512}
-                                />
-                            </label>
-                        </div>
-
-                        <div className={styles.inlineActions}>
-                            <button
-                                className={styles.primaryBtn}
-                                onClick={saveProfile}
-                                disabled={saving}
-                            >
-                                {saving ? "Saving..." : "Save"}
-                            </button>
-                            {info && (
-                                <span className={styles.info}>{info}</span>
-                            )}
-                            {error && (
-                                <span className={styles.error}>{error}</span>
-                            )}
-                        </div>
-                    </>
-                )}
-            </section>
-
-            {!isExternalProfileMode && (
-                <section className={styles.card}>
-                    <h3 className={styles.sectionTitle}>
-                        Other player profiles
-                    </h3>
-                    <div className={styles.lookupRow}>
-                        <input
-                            className={styles.input}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search players by name"
-                        />
-                        <button
-                            className={styles.primaryBtn}
-                            onClick={searchPlayers}
-                            disabled={searchingPlayers}
-                        >
-                            {searchingPlayers ? "Searching..." : "Search"}
-                        </button>
-                    </div>
-
-                    {lookupError && (
-                        <div className={styles.error}>{lookupError}</div>
-                    )}
-                    {friendInfo && (
-                        <div className={styles.info}>{friendInfo}</div>
-                    )}
-
-                    {searchResults.length > 0 && (
-                        <div className={styles.friendList}>
-                            {searchResults.map((p) => (
-                                <div
-                                    key={`search-${p.userId}`}
-                                    className={styles.friendItem}
-                                >
-                                    <img
-                                        className={styles.friendAvatar}
-                                        src={normalizeAvatarPath(p.image)}
-                                        alt="search avatar"
-                                    />
-                                    <div className={styles.friendMeta}>
-                                        <strong>{p.name}</strong>
-                                        <span>
-                                            ID: {p.userId} • Lv. {p.level} •{" "}
-                                            {p.characterType}
-                                        </span>
-                                    </div>
-                                    <div
-                                        className={`${styles.statusBadge} ${getActivityClass(p.activityStatus)}`}
-                                    >
-                                        {getActivityLabel(p.activityStatus)}
-                                    </div>
-                                    <button
-                                        className={styles.backBtn}
-                                        onClick={() =>
-                                            openFriendProfile(p.userId)
-                                        }
-                                    >
-                                        Open
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {viewedProfile && (
-                        <div className={styles.previewCard}>
-                            <div className={styles.identityRow}>
-                                <img
-                                    className={styles.avatar}
-                                    src={normalizeAvatarPath(
-                                        viewedProfile.player.image,
-                                    )}
-                                    alt="viewed avatar"
-                                />
-                                <div className={styles.identityMeta}>
-                                    <div className={styles.name}>
-                                        {viewedProfile.player.name}
-                                    </div>
-                                    <div
-                                        className={`${styles.statusBadge} ${getActivityClass(viewedProfile.player.activityStatus)}`}
-                                    >
-                                        {getActivityLabel(
-                                            viewedProfile.player.activityStatus,
-                                        )}
-                                    </div>
-                                    <div className={styles.subline}>
-                                        ID: {viewedProfile.player.userId} •
-                                        Class:{" "}
-                                        {viewedProfile.player.characterType}
-                                    </div>
-                                    <div className={styles.subline}>
-                                        Level: {viewedProfile.player.level} •
-                                        Winrate:{" "}
-                                        {viewedProfile.progress.winRate}%
-                                    </div>
-                                </div>
-                            </div>
-
-                            {viewedProfile.player.userId !== user?.id && (
-                                <div className={styles.inlineActions}>
-                                    <button
-                                        className={styles.primaryBtn}
-                                        onClick={addFriend}
-                                        disabled={
-                                            addingFriend ||
-                                            viewedProfile.friendRelation !==
-                                                "none"
-                                        }
-                                    >
-                                        {viewedProfile.friendRelation ===
-                                        "friend"
-                                            ? "Already friends"
-                                            : viewedProfile.friendRelation ===
-                                                "outgoing"
-                                              ? "Request sent"
-                                              : viewedProfile.friendRelation ===
-                                                  "incoming"
-                                                ? "Incoming request"
-                                                : addingFriend
-                                                  ? "Sending..."
-                                                  : "Send request"}
-                                    </button>
-
-                                    {viewedProfile.friendRelation ===
-                                        "friend" && (
-                                        <button
-                                            className={styles.dangerBtn}
-                                            onClick={() =>
-                                                removeFriend(
-                                                    viewedProfile.player.userId,
-                                                )
-                                            }
-                                            disabled={
-                                                removingFriendUserId ===
-                                                viewedProfile.player.userId
-                                            }
-                                        >
-                                            {removingFriendUserId ===
-                                            viewedProfile.player.userId
-                                                ? "Removing..."
-                                                : "Remove friend"}
-                                        </button>
-                                    )}
-
-                                    {viewedProfile.friendRelation ===
-                                        "incoming" && (
-                                        <>
-                                            <button
-                                                className={styles.primaryBtn}
-                                                onClick={() =>
-                                                    acceptFriendRequest(
-                                                        viewedProfile.player
-                                                            .userId,
-                                                    )
-                                                }
-                                                disabled={
-                                                    processingRequestUserId ===
-                                                    viewedProfile.player.userId
-                                                }
-                                            >
-                                                {processingRequestUserId ===
-                                                viewedProfile.player.userId
-                                                    ? "Processing..."
-                                                    : "Accept request"}
-                                            </button>
-                                            <button
-                                                className={styles.dangerBtn}
-                                                onClick={() =>
-                                                    rejectFriendRequest(
-                                                        viewedProfile.player
-                                                            .userId,
-                                                    )
-                                                }
-                                                disabled={
-                                                    processingRequestUserId ===
-                                                    viewedProfile.player.userId
-                                                }
-                                            >
-                                                Reject request
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {viewedProfile.friendRelation ===
-                                        "outgoing" && (
-                                        <button
-                                            className={styles.dangerBtn}
-                                            onClick={() =>
-                                                cancelOutgoingRequest(
-                                                    viewedProfile.player.userId,
-                                                )
-                                            }
-                                            disabled={
-                                                cancelingOutgoingUserId ===
-                                                viewedProfile.player.userId
-                                            }
-                                        >
-                                            {cancelingOutgoingUserId ===
-                                            viewedProfile.player.userId
-                                                ? "Cancelling..."
-                                                : "Cancel"}
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </section>
-            )}
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>
-                    Incoming friend requests
-                </h3>
-                {requestsError && (
-                    <div className={styles.error}>{requestsError}</div>
-                )}
-                {incomingRequests.length === 0 ? (
-                    <div className={styles.subline}>No incoming requests</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {incomingRequests.map((req) => (
-                            <div
-                                key={`request-${req.userId}`}
-                                className={styles.friendItem}
-                            >
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={normalizeAvatarPath(req.image)}
-                                    alt="request avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{req.name}</strong>
-                                    <span>
-                                        Lv. {req.level} • {req.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
-                                >
-                                    {getActivityLabel(req.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.primaryBtn}
-                                    onClick={() =>
-                                        acceptFriendRequest(req.userId)
-                                    }
-                                    disabled={
-                                        processingRequestUserId === req.userId
-                                    }
-                                >
-                                    {processingRequestUserId === req.userId
-                                        ? "Processing..."
-                                        : "Accept"}
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() =>
-                                        rejectFriendRequest(req.userId)
-                                    }
-                                    disabled={
-                                        processingRequestUserId === req.userId
-                                    }
-                                >
-                                    Reject
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>
-                    Outgoing friend requests
-                </h3>
-                {outgoingRequestsError && (
-                    <div className={styles.error}>{outgoingRequestsError}</div>
-                )}
-                {outgoingRequests.length === 0 ? (
-                    <div className={styles.subline}>No outgoing requests</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {outgoingRequests.map((req) => (
-                            <div
-                                key={`outgoing-${req.userId}`}
-                                className={styles.friendItem}
-                            >
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={normalizeAvatarPath(req.image)}
-                                    alt="outgoing request avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{req.name}</strong>
-                                    <span>
-                                        Lv. {req.level} • {req.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(req.activityStatus)}`}
-                                >
-                                    {getActivityLabel(req.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.backBtn}
-                                    onClick={() =>
-                                        openFriendProfile(req.userId)
-                                    }
-                                >
-                                    Open
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() =>
-                                        cancelOutgoingRequest(req.userId)
-                                    }
-                                    disabled={
-                                        cancelingOutgoingUserId === req.userId
-                                    }
-                                >
-                                    {cancelingOutgoingUserId === req.userId
-                                        ? "Cancelling..."
-                                        : "Cancel"}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>Friends</h3>
-                {friendsError && (
-                    <div className={styles.error}>{friendsError}</div>
-                )}
-                {friends.length === 0 ? (
-                    <div className={styles.subline}>Friend list is empty</div>
-                ) : (
-                    <div className={styles.friendList}>
-                        {friends.map((f) => (
-                            <div key={f.userId} className={styles.friendItem}>
-                                <img
-                                    className={styles.friendAvatar}
-                                    src={normalizeAvatarPath(f.image)}
-                                    alt="friend avatar"
-                                />
-                                <div className={styles.friendMeta}>
-                                    <strong>{f.name}</strong>
-                                    <span>
-                                        ID: {f.userId} • Lv. {f.level} •{" "}
-                                        {f.characterType}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${styles.statusBadge} ${getActivityClass(f.activityStatus)}`}
-                                >
-                                    {getActivityLabel(f.activityStatus)}
-                                </div>
-                                <button
-                                    className={styles.backBtn}
-                                    onClick={() => openFriendProfile(f.userId)}
-                                >
-                                    Quick view
-                                </button>
-                                <button
-                                    className={styles.dangerBtn}
-                                    onClick={() => removeFriend(f.userId)}
-                                    disabled={removingFriendUserId === f.userId}
-                                >
-                                    {removingFriendUserId === f.userId
-                                        ? "Removing..."
-                                        : "Remove"}
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-
-            <section className={styles.grid}>
-                <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Progress</h3>
-                    <div className={styles.statRow}>
-                        <span>Matches</span>
-                        <strong>{activeProgress.matchesPlayed}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Wins</span>
-                        <strong>{activeProgress.wins}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Winrate</span>
-                        <strong>{activeProgress.winRate}%</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>XP from matches</span>
-                        <strong>{activeProgress.totalExpGained}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Player kills</span>
-                        <strong>{activeProgress.playerKills}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Monster kills</span>
-                        <strong>{activeProgress.monsterKills}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Total damage</span>
-                        <strong>{activeProgress.damageTotal}</strong>
-                    </div>
-                </article>
-
-                {!isExternalProfileMode && (
-                    <article className={styles.card}>
-                        <h3 className={styles.sectionTitle}>Resources</h3>
-                        <div className={styles.statRow}>
-                            <span>Food</span>
-                            <strong>{profile.resources.food}</strong>
-                        </div>
-                        <div className={styles.statRow}>
-                            <span>Water</span>
-                            <strong>{profile.resources.water}</strong>
-                        </div>
-                        <div className={styles.statRow}>
-                            <span>Wood</span>
-                            <strong>{profile.resources.wood}</strong>
-                        </div>
-                        <div className={styles.statRow}>
-                            <span>Stone</span>
-                            <strong>{profile.resources.stone}</strong>
-                        </div>
-                        <div className={styles.statRow}>
-                            <span>Iron</span>
-                            <strong>{profile.resources.iron}</strong>
-                        </div>
-                    </article>
-                )}
-
-                {!isExternalProfileMode && (
-                    <article className={styles.card}>
-                        <h3 className={styles.sectionTitle}>Base</h3>
-                        <div className={styles.statRow}>
-                            <span>Forge</span>
-                            <strong>
-                                {profile.base.built
-                                    ? `Built (lvl ${profile.base.forgeLevel})`
-                                    : "Not built"}
-                            </strong>
-                        </div>
-                        {!profile.base.built && (
-                            <div className={styles.requirements}>
-                                Requires: wood {profile.base.costs.wood}, stone{" "}
-                                {profile.base.costs.stone}, iron{" "}
-                                {profile.base.costs.iron}
-                            </div>
-                        )}
-                        {profile.base.recipes.length > 0 && (
-                            <div className={styles.recipeList}>
-                                {profile.base.recipes.map((r) => (
-                                    <div
-                                        key={r.id}
-                                        className={styles.recipeItem}
-                                    >
-                                        <strong>{r.name}</strong>
-                                        <span>{r.description}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </article>
-                )}
-
-                <article className={styles.card}>
-                    <h3 className={styles.sectionTitle}>Combat stats</h3>
-                    <div className={styles.statRow}>
-                        <span>Attack</span>
-                        <strong>{activePlayer.attack}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Defense</span>
-                        <strong>{activePlayer.defense}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Mobility</span>
-                        <strong>{activePlayer.mobility}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Reflex</span>
-                        <strong>{activePlayer.agility}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Chance</span>
-                        <strong>{activePlayerReflexChance}%</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Effect</span>
-                        <strong>{activePlayerReflexEffectName}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Sight</span>
-                        <strong>{activePlayer.sightRange}</strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Combat type</span>
-                        <strong>
-                            {activePlayer.isRanged ? "Ranged" : "Melee"}
-                        </strong>
-                    </div>
-                    <div className={styles.statRow}>
-                        <span>Attack range</span>
-                        <strong>{activePlayer.attackRange}</strong>
-                    </div>
-                    <p className={styles.reflexDescription}>
-                        {activePlayerReflexEffectDescription}
-                    </p>
-                </article>
-            </section>
-        </div>
+    const renderActions = (relation: Relation, targetId: number) => relationActions(relation, targetId, user?.id ?? -1).map(action =>
+        <button className={action === "remove" || action === "decline" || action === "cancel" ? styles.dangerButton : styles.primaryButton}
+            type="button" key={action} disabled={Boolean(actionKey)} onClick={() => void runRelationAction(action, targetId)}>
+            {actionKey === action + ":" + targetId ? "Working…" : action === "send" ? "Add Friend" : action === "remove" ? "Remove" : action === "accept" ? "Accept" : action === "decline" ? "Decline" : "Cancel"}
+        </button>,
     );
+
+    const ownData = own?.token === token ? own.data : null;
+    const publicData = publicProfile?.token === token && matchesProfileView(viewId, publicProfile.data.player.userId) ? publicProfile.data : null;
+    const activeData = ownMode ? ownData : publicData;
+    const roster = heroes?.token === token ? ownedHeroes(heroes.data) : null;
+    const socialData = social?.token === token ? social.data : null;
+    const fromGame = params.get("from") === "game";
+    const instanceId = params.get("instance_id");
+    const backPath = fromGame && instanceId ? "/game?instance_id=" + encodeURIComponent(instanceId) : "/mode";
+
+    return <main className={styles.page}>
+        <header className={styles.topRow}><div><span className={styles.eyebrow}>NACHALO · PLAYER</span><h2>{ownMode ? "Your Profile" : "Player Profile"}</h2></div><button className={styles.secondaryButton} type="button" onClick={() => router.push(backPath)}>{fromGame && !ownMode ? "Back to Game" : "To Modes"}</button></header>
+        {!activeData ? <section className={styles.panel} role={ownError || publicError ? "alert" : "status"}>{(ownMode ? ownError : publicError) || "Loading profile…"}{(ownMode ? ownError : publicError) && <button className={styles.secondaryButton} type="button" onClick={() => void (ownMode ? refreshOwn() : refreshPublic(viewId!)).catch(error => ownMode ? setOwnError(String(error)) : setPublicError(String(error)))}>Retry</button>}</section> : <>
+            <Identity player={activeData.player} own={ownMode} />
+            {ownMode && <div className={styles.ownerTools}>
+                <button className={styles.secondaryButton} type="button" aria-expanded={editOpen} onClick={() => { setEditName(activeData.player.name); setEditImage(""); setEditError(""); setEditOpen(value => !value); }}>Edit identity</button>
+                <span className={styles.subtle}>Account avatar and nickname</span>
+                <Link href="/equipment">View Inventory ↗</Link><Link href="/base">View Base ↗</Link>
+                {editNotice && <span className={styles.success} role="status">{editNotice}</span>}
+            </div>}
+            {ownMode && editOpen && <form className={styles.editor} onSubmit={event => void saveIdentity(event)}>
+                <label>Nickname<input value={editName} onChange={event => setEditName(event.target.value)} maxLength={32} /></label>
+                <label>New avatar URL (optional)<input value={editImage} onChange={event => setEditImage(event.target.value)} maxLength={512} placeholder="Leave blank to keep saved avatar" /></label>
+                <button className={styles.primaryButton} type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                {editError && <p className={styles.error} role="alert">{editError}</p>}
+            </form>}
+            <div className={styles.overviewGrid}>
+                <Overview progress={activeData.progress} own={ownMode} />
+                {ownMode && <section className={styles.panel} aria-label="Hero roster">
+                    <div className={styles.sectionHead}><div><span className={styles.eyebrow}>YOUR COMPANY</span><h2>Owned heroes</h2></div><Link href="/base">Manage in Tavern ↗</Link></div>
+                    {heroesError && <p className={styles.error} role="alert">{heroesError}</p>}
+                    {!roster ? <p className={styles.empty}>{heroesError ? "Hero roster unavailable." : "Loading heroes…"}</p> : roster.length === 0 ? <p className={styles.empty}>No owned heroes returned by the server.</p> : <div className={styles.heroRoster}>{roster.map(hero => <div className={styles.heroTile} key={hero.id}><img src={getHeroPortrait(hero.id, hero.image)} alt="" /><strong>{hero.displayName}</strong>{hero.active && <span>ACTIVE</span>}</div>)}</div>}
+                </section>}
+            </div>
+            {ownMode ? <section className={styles.panel} aria-label="Social">
+                <div className={styles.sectionHead}><div><span className={styles.eyebrow}>SOCIAL</span><h2>Players & friends</h2></div></div>
+                <div className={styles.socialTabs} role="group" aria-label="Social views">{TABS.map(item => <button key={item.key} type="button" aria-pressed={tab === item.key} onClick={() => setTab(item.key)}>{item.label}{socialData && item.key !== "search" ? " " + socialData[item.key].length : ""}</button>)}</div>
+                {socialError && <p className={styles.error} role="alert">{socialError} <button type="button" onClick={() => void refreshSocial().catch(error => setSocialError(String(error)))}>Retry</button></p>}
+                {actionError && <p className={styles.error} role="alert">{actionError}</p>}
+                {actionNotice && <p className={styles.success} role="status">{actionNotice}</p>}
+                {tab === "search" ? <div className={styles.socialBody}>
+                    <form className={styles.searchForm} onSubmit={event => { event.preventDefault(); void runSearch(searchQuery); }}><label htmlFor="profile-search">Find players by name</label><div><input id="profile-search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="At least 2 characters" /><button className={styles.primaryButton} type="submit" disabled={searching}>{searching ? "Searching…" : "Search"}</button></div></form>
+                    {searchError && <p className={styles.error} role="alert">{searchError}</p>}
+                    {searching && <p className={styles.subtle} role="status">Searching players…</p>}
+                    {!searching && searchedQuery && searchResults.length === 0 && <p className={styles.empty}>No players found for “{searchedQuery}”.</p>}
+                    {searchResults.length > 0 && <div className={styles.playerList}>{searchResults.map(player => <PlayerRow key={player.userId} player={player}>{renderActions(player.friendRelation, player.userId)}</PlayerRow>)}</div>}
+                </div> : !socialData ? <p className={styles.empty}>{socialError ? "Social data unavailable." : "Loading social data…"}</p> : socialData[tab].length === 0 ? <p className={styles.empty}>{tab === "friends" ? "Your friend list is empty." : tab === "incoming" ? "No incoming requests." : "No outgoing requests."}</p> : <div className={styles.playerList}>{socialData[tab].map(player => <PlayerRow key={player.userId} player={player}>
+                    {tab === "friends" ? <button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("remove", player.userId)}>{actionKey === "remove:" + player.userId ? "Removing…" : "Remove"}</button> : tab === "incoming" ? <><button className={styles.primaryButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("accept", player.userId)}>Accept</button><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("decline", player.userId)}>Decline</button></> : <><span className={styles.pending}>Pending</span><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("cancel", player.userId)}>Cancel</button></>}
+                </PlayerRow>)}</div>}
+            </section> : <section className={styles.panel} aria-label="Friend relation"><div className={styles.sectionHead}><div><span className={styles.eyebrow}>SOCIAL</span><h2>Connection</h2></div></div><p className={styles.subtle}>Status: {publicData?.friendRelation ?? "—"}</p>{actionError && <p className={styles.error} role="alert">{actionError}</p>}{actionNotice && <p className={styles.success} role="status">{actionNotice}</p>}<div className={styles.publicActions}>{publicData && renderActions(publicData.friendRelation, publicData.player.userId)}</div></section>}
+        </>}
+    </main>;
 }

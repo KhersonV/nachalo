@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { axialToWorld, HEX_DIRECTIONS, hexKey, type HexCoord } from "@/utils/hexGrid";
 import { heroArt, monsterArt, resourceArt } from "@/utils/hexArt";
 import { useHexCamera } from "@/hooks/useHexCamera";
-import type { HexActor, HexCombatIndicator, HexEdge, HexRoute, HexSnapshot } from "@/types/HexGameTypes";
+import type { HexActor, HexCombatIndicator, HexEdge, HexPlayer, HexRoute, HexSnapshot } from "@/types/HexGameTypes";
 import styles from "@/styles/HexMap.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
 
@@ -35,7 +35,7 @@ const wallEnds = (edge: HexEdge) => {
 };
 
 type Props = {
-  snapshot: HexSnapshot;
+  snapshot: Pick<HexSnapshot, "cells" | "edges" | "actors"> & { player?: Pick<HexPlayer, "userId" | "position" | "characterType"> };
   selected?: HexCoord | null;
   route?: HexRoute | null;
   selectedTargetId?: number | null;
@@ -109,7 +109,7 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
         </g>)}
       </g>
       <g className={styles.objects}>
-        {snapshot.cells.filter(cell => cell.resource || cell.barrel || cell.isPortal || cell.structureType).map(cell => {
+        {snapshot.cells.filter(cell => (cell.visibility === undefined || cell.visibility === "visible") && (cell.resource || cell.barrel || cell.isPortal || cell.structureType)).map(cell => {
           const p = center(cell.position);
           const resource = cell.resource && resourceArt(cell.resource);
           return <g key={`object-${cell.cellId}`} data-hex-object={hexKey(cell.position)} className={styles.object}
@@ -117,7 +117,7 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
             <circle cx={p.x} cy={p.y} r="29" fill="transparent" />
             {cell.isPortal && <><circle cx={p.x} cy={p.y} r="26" className={styles.portalRing} /><text x={p.x} y={p.y + 11} textAnchor="middle" className={styles.portalIcon}>◉</text></>}
             {cell.structureType && <><image href={`/Forge-items/${cell.structureType}.png`} x={p.x - 22} y={p.y - 26} width="44" height="44" /><text x={p.x} y={p.y + 23} textAnchor="middle" className={styles.healthText}>{cell.isUnderConstruction ? `🚧 ${cell.constructionTurnsLeft}` : `HP ${cell.structureHealth}`}</text></>}
-            {cell.barrel && <image href="/main_resources/barrel.webp" x={p.x - 21} y={p.y - 26} width="42" height="45" preserveAspectRatio="xMidYMid meet" />}
+            {cell.barrel && <image href="/assets/nachalo/objects/barrel.png" x={p.x - 21} y={p.y - 26} width="42" height="45" preserveAspectRatio="xMidYMid meet" />}
             {cell.resource && (resource
               ? <image href={resource} x={p.x - 21} y={p.y - 23} width="42" height="42" preserveAspectRatio="xMidYMid meet" />
               : <><circle cx={p.x} cy={p.y} r="17" className={styles.fallbackResource} /><text x={p.x} y={p.y + 7} textAnchor="middle" className={styles.fallbackSymbol}>◆</text></>)}

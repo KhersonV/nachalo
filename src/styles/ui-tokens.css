@@ -1,0 +1,38 @@
+:root {
+    --ui-canvas: #0b111b;
+    --ui-surface: #121b29;
+    --ui-surface-raised: #1c2938;
+    --ui-border: #344356;
+    --ui-text: #f2f0e8;
+    --ui-text-muted: #b3c0ce;
+    --ui-gold: #d7b46a;
+    --ui-action: #6bb9e8;
+    --ui-success: #79c99a;
+    --ui-warning: #e2ae5d;
+    --ui-danger: #e47d83;
+    --ui-focus: #9cd6ff;
+    --ui-font: Arial, Helvetica, sans-serif;
+    --ui-display-font: Georgia, 'Times New Roman', serif;
+    --ui-text-sm: 0.875rem;
+    --ui-text-md: 1rem;
+    --ui-text-lg: 1.25rem;
+    --ui-text-xl: 1.75rem;
+    --ui-space-1: 0.25rem;
+    --ui-space-2: 0.5rem;
+    --ui-space-3: 0.75rem;
+    --ui-space-4: 1rem;
+    --ui-space-6: 1.5rem;
+    --ui-space-8: 2rem;
+    --ui-space-12: 3rem;
+    --ui-radius-sm: 6px;
+    --ui-radius-md: 10px;
+    --ui-radius-lg: 14px;
+    --ui-shadow: 0 16px 40px rgb(0 0 0 / 22%);
+    --ui-speed: 160ms;
+    --ui-page-width: 1440px;
+    --ui-page-gutter: clamp(0.75rem, 2vw, 2rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root { --ui-speed: 0ms; }
+}

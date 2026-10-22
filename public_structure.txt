@@ -1,0 +1,233 @@
+public
+public/.DS_Store
+public/Forge-items
+public/Forge-items/scout_tower.png
+public/Forge-items/scout_tower_blueprint.png
+public/Forge-items/turret.png
+public/Forge-items/turret_blueprint.png
+public/Forge-items/wall.png
+public/Forge-items/wall_blueprint.png
+public/artifacts
+public/artifacts/berserker-axe.webp
+public/artifacts/boots_of_stealth.webp
+public/artifacts/crown-of-enlightenment.webp
+public/artifacts/dragon-eye.webp
+public/artifacts/fire-amulet.webp
+public/artifacts/gloves-of-precision.webp
+public/artifacts/guardian-shield.webp
+public/artifacts/knight-sword.webp
+public/artifacts/ring-of-wisdom.webp
+public/artifacts/titan-breastplate.webp
+public/assets
+public/assets/.DS_Store
+public/assets/nachalo
+public/assets/nachalo/.DS_Store
+public/assets/nachalo/catacombs
+public/assets/nachalo/catacombs/.DS_Store
+public/assets/nachalo/catacombs/artifact_reference.webp
+public/assets/nachalo/catacombs/barrel_reference.webp
+public/assets/nachalo/catacombs/column_reference.webp
+public/assets/nachalo/catacombs/floor_base.webp
+public/assets/nachalo/catacombs/floor_cracked.webp
+public/assets/nachalo/catacombs/floor_moss.webp
+public/assets/nachalo/catacombs/floor_runes.webp
+public/assets/nachalo/catacombs/floor_stone.webp
+public/assets/nachalo/catacombs/hero_reference.webp
+public/assets/nachalo/catacombs/portal_reference.webp
+public/assets/nachalo/catacombs/stone_trim.webp
+public/assets/nachalo/catacombs/wall_base.webp
+public/assets/nachalo/catacombs/wall_cracked.webp
+public/assets/nachalo/catacombs/wall_moss.webp
+public/assets/nachalo/catacombs/wall_stone.webp
+public/assets/nachalo/characters
+public/assets/nachalo/characters/ranger
+public/assets/nachalo/characters/ranger/ranger.glb
+public/assets/nachalo/characters/ranger/ranger_v2.glb
+public/assets/nachalo/characters/ranger/ranger_walk_tuned.glb
+public/assets/nachalo/nachalo-catacombs-props-v1
+public/assets/nachalo/nachalo-catacombs-props-v1/.DS_Store
+public/assets/nachalo/nachalo-catacombs-props-v1/README.md
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/column_broken.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/column_intact.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/floor_brazier.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/rubble_pile.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/wall_torch_01.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/preview-webp/wall_torch_02.webp
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/column_broken.png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/column_intact.png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/floor_brazier.png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/rubble_pile.png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/wall_torch_01.png
+public/assets/nachalo/nachalo-catacombs-props-v1/references-png/wall_torch_02.png
+public/assets/ui
+public/assets/ui/.DS_Store
+public/assets/ui/a_hero_against_two_dark_lords.png
+public/assets/ui/backgrounds
+public/assets/ui/backgrounds/base.webp
+public/assets/ui/backgrounds/history.webp
+public/assets/ui/backgrounds/inventory.webp
+public/assets/ui/backgrounds/modes.webp
+public/assets/ui/backgrounds/profile.webp
+public/assets/ui/backgrounds/shop.webp
+public/assets/ui/base
+public/assets/ui/base/forge.webp
+public/assets/ui/base/library.webp
+public/assets/ui/base/tavern.webp
+public/assets/ui/cinematic_2v2_duel_on_a_ruined_bridge.png
+public/assets/ui/citadel_siege_beneath_stormy_skies.png
+public/assets/ui/heroes
+public/assets/ui/heroes/.DS_Store
+public/assets/ui/heroes/berserker.webp
+public/assets/ui/heroes/full-body
+public/assets/ui/heroes/full-body/guardian-full.webp
+public/assets/ui/heroes/full-body/mystic-full.webp
+public/assets/ui/heroes/guardian.webp
+public/assets/ui/heroes/mystic.webp
+public/assets/ui/heroes/ranger.webp
+public/assets/ui/history
+public/assets/ui/history/battlefield.webp
+public/assets/ui/hooded_mage_with_sapphire_diadem.png
+public/assets/ui/hooded_mystic_in_the_ruined_cathedral.png
+public/assets/ui/inventory
+public/assets/ui/inventory/armory.webp
+public/assets/ui/lone_hero_before_the_burning_fortress.png
+public/assets/ui/misty_cathedral_ruins_over_a_golden_valley.png
+public/assets/ui/modes
+public/assets/ui/modes/pve-solo.webp
+public/assets/ui/modes/pvp-1v1.webp
+public/assets/ui/modes/pvp-1v2.webp
+public/assets/ui/modes/pvp-2v2.webp
+public/assets/ui/modes/pvp-3v3.webp
+public/assets/ui/modes/pvp-5v5.webp
+public/assets/ui/moonlit_duel_arena_of_twin_fortresses.png
+public/assets/ui/optimized
+public/assets/ui/optimized/a_hero_against_two_dark_lords.webp
+public/assets/ui/optimized/cinematic_2v2_duel_on_a_ruined_bridge.webp
+public/assets/ui/optimized/citadel_siege_beneath_stormy_skies.webp
+public/assets/ui/optimized/hooded_mage_with_sapphire_diadem.webp
+public/assets/ui/optimized/lone_hero_before_the_burning_fortress.webp
+public/assets/ui/optimized/misty_cathedral_ruins_over_a_golden_valley.webp
+public/assets/ui/optimized/moonlit_duel_arena_of_twin_fortresses.webp
+public/assets/ui/optimized/siege_of_the_moonlit_fortress.webp
+public/assets/ui/profile
+public/assets/ui/profile/throne-hall.webp
+public/assets/ui/shop
+public/assets/ui/shop/market-stall.webp
+public/assets/ui/shop/scriptorium.webp
+public/assets/ui/siege_of_the_moonlit_fortress.png
+public/berserk
+public/berserk/berserk.webp
+public/berserk/idle-back-2.png
+public/berserk/idle-front-2.png
+public/berserk/idle-side-left-2.png
+public/berserk/idle-side-right-2.png
+public/berserk/walk-down-2.png
+public/berserk/walk-left-2.png
+public/berserk/walk-right-2.png
+public/berserk/walk-up-2.png
+public/equipment
+public/equipment/.DS_Store
+public/equipment/berserker
+public/equipment/berserker/.DS_Store
+public/equipment/berserker/bloodroot
+public/equipment/berserker/bloodroot/.DS_Store
+public/equipment/berserker/bloodroot/Bloodroot Axe.png
+public/equipment/berserker/bloodroot/Bloodroot Grips.png
+public/equipment/berserker/bloodroot/Bloodroot Horned Helm.png
+public/equipment/berserker/bloodroot/Bloodroot Raider Pants.png
+public/equipment/berserker/bloodroot/Bloodroot Stompers.png
+public/equipment/berserker/bloodroot/Bloodroot War Vest.png
+public/equipment/guardian
+public/equipment/guardian/.DS_Store
+public/equipment/guardian/aegiswarden
+public/equipment/guardian/aegiswarden/.DS_Store
+public/equipment/guardian/aegiswarden/Aegiswarden Gloves.png
+public/equipment/guardian/aegiswarden/Aegiswarden Helm.png
+public/equipment/guardian/aegiswarden/Aegiswarden Pants.png
+public/equipment/guardian/aegiswarden/Aegiswarden Shield.png
+public/equipment/guardian/aegiswarden/Aegiswarden Sword.png
+public/equipment/guardian/aegiswarden/Aegiswarden Vest.png
+public/equipment/guardian/aegiswarden/boots.png
+public/equipment/mystic
+public/equipment/mystic/sagecloth
+public/equipment/mystic/sagecloth/boots.png
+public/equipment/mystic/sagecloth/gloves.png
+public/equipment/mystic/sagecloth/hood.png
+public/equipment/mystic/sagecloth/jacket.png
+public/equipment/mystic/sagecloth/pants.png
+public/equipment/mystic/sagecloth/staff.png
+public/equipment/ranger
+public/equipment/ranger/.DS_Store
+public/equipment/ranger/greenwisp
+public/equipment/ranger/greenwisp/.DS_Store
+public/equipment/ranger/greenwisp/Greenwisp Boots.png
+public/equipment/ranger/greenwisp/Greenwisp Bow.png
+public/equipment/ranger/greenwisp/Greenwisp Gloves.png
+public/equipment/ranger/greenwisp/Greenwisp Hood.png
+public/equipment/ranger/greenwisp/Greenwisp Ranger Pants.png
+public/equipment/ranger/greenwisp/Greenwisp Vest.png
+public/guardian
+public/guardian/guardian.webp
+public/guardian/idle-back-1.png
+public/guardian/idle-front-1.png
+public/guardian/idle-side-left-1.png
+public/guardian/idle-side-right-1.png
+public/guardian/walk-down-1.png
+public/guardian/walk-left-1.png
+public/guardian/walk-right-1.png
+public/guardian/walk-up-1.png
+public/library_items
+public/library_items/barrel.png
+public/library_items/player.png
+public/library_items/portal.png
+public/mag
+public/mag/.DS_Store
+public/mag/green set
+public/mag/green set/.DS_Store
+public/mag/green set/boots.png
+public/mag/green set/gloves.png
+public/mag/green set/helmet.png
+public/mag/green set/jacket.png
+public/mag/green set/pants.png
+public/mag/green set/staff.png
+public/mag/mag-idle-back-2.png
+public/mag/mag-idle-front-2.png
+public/mag/mag-idle-side-left-2.png
+public/mag/mag-idle-side-right-2.png
+public/mag/mag-walk-down-2.png
+public/mag/mag-walk-left-2.png
+public/mag/mag-walk-right-2.png
+public/mag/mag-walk-up-2.png
+public/mag/mag.webp
+public/main_resources
+public/main_resources/barrel.webp
+public/main_resources/food.webp
+public/main_resources/iron.webp
+public/main_resources/stone.webp
+public/main_resources/water.webp
+public/main_resources/wood.webp
+public/monsters
+public/monsters/goblin.webp
+public/monsters/goblins.webp
+public/monsters/orc.webp
+public/monsters/troll.webp
+public/portal.png
+public/ranger
+public/ranger/idle-back-1.png
+public/ranger/idle-front-1.png
+public/ranger/idle-side-left-1.png
+public/ranger/idle-side-right-1.png
+public/ranger/ranger.webp
+public/ranger/walk-down-1.png
+public/ranger/walk-left-1.png
+public/ranger/walk-right-1.png
+public/ranger/walk-up-1.png
+public/ui-icons
+public/ui-icons/backpack.png
+public/ui-icons/base.png
+public/ui-icons/battle.png
+public/ui-icons/profile.png
+public/ui-icons/shop.png
+public/ui-icons/statistick.png

@@ -172,7 +172,7 @@ func progressHexTurretsTx(ctx context.Context, c *MatchCommand) (bool, error) {
 			if monsterTarget {
 				targetType = "monster"
 			}
-			if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: t.owner, TargetType: targetType, TargetID: selected.id, Amount: damage}); err != nil {
+			if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: t.owner, TargetType: targetType, TargetID: selected.id, Amount: selected.health - newHealth}); err != nil {
 				return false, err
 			}
 			if monsterTarget {

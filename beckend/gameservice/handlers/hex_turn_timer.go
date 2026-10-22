@@ -21,9 +21,43 @@ func StartHexTurnWorker(ctx context.Context) {
 				return
 			case <-ticker.C:
 				expireHexTurns(ctx)
+				expireHexDisconnects(ctx)
 			}
 		}
 	}()
+}
+
+func expireHexDisconnects(ctx context.Context) {
+	rows, err := repository.DB.QueryContext(ctx, `SELECT p.instance_id,p.user_id FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE m.geometry->>'kind'='hex' AND m.finished_at IS NULL AND p.health>0 AND m.turn_order @> to_jsonb(p.user_id) AND p.hex_disconnected_at<=now()-$1 * interval '1 second' ORDER BY p.hex_disconnected_at LIMIT 100`, int(repository.HexReconnectGrace.Seconds()))
+	if err != nil {
+		log.Printf("HEX disconnect scan: %v", err)
+		return
+	}
+	type due struct {
+		id   string
+		user int
+	}
+	var all []due
+	for rows.Next() {
+		var d due
+		if err := rows.Scan(&d.id, &d.user); err != nil {
+			log.Printf("HEX disconnect scan: %v", err)
+			break
+		}
+		all = append(all, d)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("HEX disconnect scan: %v", err)
+	}
+	rows.Close()
+	for _, d := range all {
+		_, err := repository.ApplyHexLightning(ctx, d.id, d.user, func(result repository.HexLightningResult) {
+			publishHexPatch(d.id, fmt.Sprintf("hex-lightning:%d", d.user), result.StateRevision, result.MapRevision, "PLAYER_LIGHTNING", map[string]any{"userId": d.user})
+		})
+		if err != nil && err != repository.ErrCommandRejected {
+			log.Printf("HEX lightning %s user %d: %v", d.id, d.user, err)
+		}
+	}
 }
 
 func expireHexTurns(ctx context.Context) {

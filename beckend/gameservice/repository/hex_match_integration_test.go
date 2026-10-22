@@ -51,7 +51,7 @@ func hexTestDatabase(t *testing.T) (*sql.DB, string) {
 	DB = db
 	t.Cleanup(func() { DB = old; db.Close() })
 	RunMigrations()
-	for _, name := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql", "stage4_storage_loadout.sql", "stage5_quest_artifact.sql", "stage5_portal_extraction.sql", "stage6_fog_turn.sql"} {
+	for _, name := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql", "stage4_storage_loadout.sql", "stage5_quest_artifact.sql", "stage5_portal_extraction.sql", "stage6_fog_turn.sql", "stage10_presence.sql"} {
 		data, err := os.ReadFile("../../../docs/hex-migration/" + name)
 		if err != nil {
 			t.Fatal(err)

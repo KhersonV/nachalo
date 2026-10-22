@@ -55,6 +55,9 @@ type matchHistoryListItem struct {
 	MatchID             string                    `json:"matchId"`
 	FinishedAt          time.Time                 `json:"finishedAt"`
 	Mode                string                    `json:"mode"`
+	CharacterType       string                    `json:"characterType"`
+	DamageDealt         int                       `json:"damageDealt"`
+	DamageTaken         int                       `json:"damageTaken"`
 	Participants        []matchHistoryParticipant `json:"participants"`
 	Winner              matchHistoryWinner        `json:"winner"`
 	PlayerRewardSummary matchPlayerRewardSummary  `json:"playerRewardSummary"`
@@ -104,6 +107,7 @@ type matchHistoryDetailItem struct {
 	MatchID             string                    `json:"matchId"`
 	FinishedAt          time.Time                 `json:"finishedAt"`
 	Mode                string                    `json:"mode"`
+	CharacterType       string                    `json:"characterType"`
 	Participants        []matchHistoryParticipant `json:"participants"`
 	Winner              matchHistoryWinner        `json:"winner"`
 	PlayerRewardSummary matchPlayerRewardSummary  `json:"playerRewardSummary"`
@@ -370,11 +374,14 @@ func buildOtherBonuses(playerStats models.PlayerMatchStat) []matchHistoryBonus {
 func buildMatchHistoryListItem(record repository.CompletedMatchRecord) matchHistoryListItem {
 	rewards := parseMatchRewards(record.PlayerStats.Rewards)
 	return matchHistoryListItem{
-		MatchID:      record.Match.InstanceID,
-		FinishedAt:   record.Match.FinishedAt,
-		Mode:         record.Match.Mode,
-		Participants: resolveParticipants(record.Match),
-		Winner:       buildMatchWinner(record.Match),
+		MatchID:       record.Match.InstanceID,
+		FinishedAt:    record.Match.FinishedAt,
+		Mode:          record.Match.Mode,
+		CharacterType: record.PlayerStats.CharacterType,
+		DamageDealt:   record.PlayerStats.DamageTotal,
+		DamageTaken:   record.PlayerStats.DamageTaken,
+		Participants:  resolveParticipants(record.Match),
+		Winner:        buildMatchWinner(record.Match),
 		PlayerRewardSummary: matchPlayerRewardSummary{
 			ExpGained:      record.PlayerStats.ExpGained,
 			CurrencyGained: totalCurrencyGained(rewards),
@@ -395,11 +402,12 @@ func buildMatchHistoryListItem(record repository.CompletedMatchRecord) matchHist
 func buildMatchHistoryDetailItem(record repository.CompletedMatchRecord) matchHistoryDetailItem {
 	rewards := parseMatchRewards(record.PlayerStats.Rewards)
 	return matchHistoryDetailItem{
-		MatchID:      record.Match.InstanceID,
-		FinishedAt:   record.Match.FinishedAt,
-		Mode:         record.Match.Mode,
-		Participants: resolveParticipants(record.Match),
-		Winner:       buildMatchWinner(record.Match),
+		MatchID:       record.Match.InstanceID,
+		FinishedAt:    record.Match.FinishedAt,
+		Mode:          record.Match.Mode,
+		CharacterType: record.PlayerStats.CharacterType,
+		Participants:  resolveParticipants(record.Match),
+		Winner:        buildMatchWinner(record.Match),
 		PlayerRewardSummary: matchPlayerRewardSummary{
 			ExpGained:      record.PlayerStats.ExpGained,
 			CurrencyGained: totalCurrencyGained(rewards),

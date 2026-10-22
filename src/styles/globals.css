@@ -10,14 +10,16 @@
 ********************************************************************************************
 */
 
+@import './ui-tokens.css';
+
 :root {
   --bg-color: #1a1a1a;
   --text-color: #fff;
   --primary-color: #555;
   --primary-hover-color: #777;
   --header-footer-bg: #333;
-  --lobby-page-max-width: 1100px;
-  --lobby-page-padding: clamp(0.75rem, 2vw, 1.5rem);
+  --lobby-page-max-width: var(--ui-page-width);
+  --lobby-page-padding: var(--ui-page-gutter);
 }
 
 html, body {

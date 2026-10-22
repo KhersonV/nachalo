@@ -1,44 +1,39 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import styles from "../styles/LobbyHeader.module.css";
 
 type NavItem = {
     id: string;
     label: string;
     iconSrc: string;
-    iconScale?: number;
-    iconShiftY?: number;
+    href: string;
     isActive?: boolean;
-    onClick: () => void;
 };
 
 function NavButton({ item }: { item: NavItem }) {
     return (
         <div className={styles.navItemWrap}>
-            <button
-                type="button"
+            <Link
+                href={item.href}
                 className={`${styles.navButton} ${item.isActive ? styles.navButtonActive : ""}`}
-                onClick={item.onClick}
-                aria-label={item.label}
-                title={item.label}
+                aria-current={item.isActive ? "page" : undefined}
             >
                 <img
                     src={item.iconSrc}
-                    alt={item.label}
+                    alt=""
                     className={styles.navIcon}
                     draggable={false}
                 />
-            </button>
-            <span className={styles.navHint}>{item.label}</span>
+                <span className={styles.navHint}>{item.label}</span>
+            </Link>
         </div>
     );
 }
 
 export default function LobbyHeader() {
-    const router = useRouter();
     const pathname = usePathname();
 
     const navItems: NavItem[] = [
@@ -47,42 +42,42 @@ export default function LobbyHeader() {
             label: "Profile",
             iconSrc: "/ui-icons/profile.png",
             isActive: pathname === "/profile",
-            onClick: () => router.push("/profile"),
+            href: "/profile",
         },
         {
             id: "history",
             label: "History",
             iconSrc: "/ui-icons/statistick.png",
             isActive: pathname === "/matches" || pathname.startsWith("/matches/"),
-            onClick: () => router.push("/matches"),
+            href: "/matches",
         },
         {
             id: "shop",
             label: "Shop",
             iconSrc: "/ui-icons/shop.png",
             isActive: pathname === "/shop",
-            onClick: () => router.push("/shop"),
+            href: "/shop",
         },
         {
             id: "base",
             label: "Base",
             iconSrc: "/ui-icons/base.png",
             isActive: pathname === "/base",
-            onClick: () => router.push("/base"),
+            href: "/base",
         },
         {
             id: "equipment",
             label: "Inventory",
             iconSrc: "/ui-icons/backpack.png",
             isActive: pathname === "/equipment",
-            onClick: () => router.push("/equipment"),
+            href: "/equipment",
         },
         {
             id: "modes",
             label: "Modes",
             iconSrc: "/ui-icons/battle.png",
             isActive: pathname === "/mode",
-            onClick: () => router.push("/mode"),
+            href: "/mode",
         },
     ];
 
@@ -96,7 +91,6 @@ export default function LobbyHeader() {
                     <NavButton key={item.id} item={item} />
                 ))}
             </nav>
-            <div className={styles.headerSpacer} aria-hidden="true" />
         </header>
     );
 }

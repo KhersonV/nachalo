@@ -13,8 +13,10 @@ import type { RawInventoryItem, PlayerState } from "../types";
 import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
+import { resourceImage } from "@/utils/resourceAssets";
 
 interface InventoryProps {
+  className?: string;
   onBlueprintPlacementStart?: (inventoryKey: string) => void;
   onRequestClose?: () => void;
   hexInventory?: Record<string, { item_count?: number; item_name?: string }>;
@@ -38,6 +40,7 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
 };
 
 const Inventory: React.FC<InventoryProps> = ({
+  className,
   onBlueprintPlacementStart,
   onRequestClose,
   hexInventory,
@@ -261,7 +264,7 @@ const Inventory: React.FC<InventoryProps> = ({
               : null;
             const displayImage = isBlueprint
               ? `/Forge-items/${blueprintName}.png`
-              : item.image || "";
+              : item.item_type === "resource" ? resourceImage(item.name, item.image) ?? item.image ?? "" : item.image || "";
 
             return (
               <img
@@ -294,8 +297,8 @@ const Inventory: React.FC<InventoryProps> = ({
       ));
 
   return (
-    <div className={styles.inventoryContainer}>
-      <h2 className={styles.title}>{hexInventory ? hexLabels?.inventory ?? "Inventory" : "Inventory"}</h2>
+    <div className={`${styles.inventoryContainer} ${className ?? ""}`}>
+      <div className={styles.sheetHeader}><h2 className={styles.title}>{hexInventory ? hexLabels?.inventory ?? "Inventory" : "Inventory"}</h2>{hexInventory && onRequestClose && <button type="button" className={styles.sheetClose} onClick={onRequestClose} aria-label={hexLabels?.closeInventory ?? "Close inventory"}>×</button>}</div>
       {feedback && (
         <div className={styles.feedbackRow}>
           <p className={styles.feedbackError}>{feedback}</p>

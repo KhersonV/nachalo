@@ -1,140 +1,32 @@
-/* styles/Home.module.css */
-
-.hero {
-    background: linear-gradient(
-        rgba(23, 139, 185, 0.613),
-        rgba(0, 0, 0, 0.5)
-      );
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  }
-  
-  .overlay {
-    text-align: center;
-    max-width: 900px;
-    padding: 0 20px;
-  }
-  
-  .header h1 {
-    font-size: 3.5rem;
-    margin-bottom: 1rem;
-    animation: fadeInDown 1s ease-out;
-  }
-  
-  .header p {
-    font-size: 1.3rem;
-    margin-bottom: 2rem;
-    line-height: 1.6;
-    animation: fadeInUp 1s ease-out;
-  }
-  
-  .ctaButtons {
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-    animation: fadeIn 1.2s ease-out;
-  }
-  
-  /* Общий стиль для кнопок */
-  .btn {
-    display: inline-block;
-    padding: 0.8rem 1.6rem;
-    font-weight: bold;
-    border-radius: 30px;
-    border: none;
-    cursor: pointer;
-    text-decoration: none;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-  }
-  
-  /* Кнопка "Вход" */
-  .btnLogin {
-    background-color: #ff4b2b;
-    color: #fff;
-  }
-  
-  .btnLogin:hover {
-    background-color: #ff416c;
-    transform: translateY(-2px);
-  }
-  
-  /* Кнопка "Регистрация" */
-  .btnRegister {
-    background-color: #ff4b2b;
-    color: #fff;
-  }
-  
-  .btnRegister:hover {
-    background-color: #ff416c;
-    transform: translateY(-2px);
-  }
-  
-  .features {
-    margin-top: 4rem;
-    display: flex;
-    justify-content: space-around;
-    flex-wrap: wrap;
-    gap: 2rem;
-    animation: fadeIn 1.5s ease-out;
-  }
-  
-  .featureCard {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 1.5rem;
-    border-radius: 10px;
-    width: 280px;
-    backdrop-filter: blur(5px);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    transition: transform 0.3s ease;
-  }
-  
-  .featureCard:hover {
-    transform: translateY(-10px);
-  }
-  
-  .featureCard h3 {
-    margin-bottom: 0.8rem;
-    font-size: 1.5rem;
-  }
-  
-  .featureCard p {
-    font-size: 1rem;
-    line-height: 1.4;
-  }
-  
-  @keyframes fadeInDown {
-    from {
-      opacity: 0;
-      transform: translateY(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  
+.page { position: relative; isolation: isolate; display: flex; flex-direction: column; min-height: 100svh; overflow: hidden; color: var(--ui-text); background: var(--ui-canvas); }
+.scene { position: absolute; z-index: -1; inset: 0; background-image: linear-gradient(90deg, rgba(5, 10, 18, .88) 0%, rgba(7, 14, 24, .77) 33%, rgba(7, 13, 22, .29) 68%, rgba(5, 10, 17, .18) 100%), linear-gradient(0deg, rgba(5, 10, 17, .91), transparent 35%, rgba(5, 10, 17, .35)), url('/assets/ui/modes/pve-solo.webp'); background-size: cover; background-position: center; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: clamp(18px, 3vw, 34px) clamp(20px, 5vw, 80px); }
+.wordmark { font-family: var(--ui-display-font); font-size: 16px; font-weight: 800; letter-spacing: .23em; text-shadow: 0 2px 15px #000; }
+.wordmark span { color: var(--ui-gold); }
+.signIn { color: var(--ui-text); text-decoration: none; font-size: 13px; font-weight: 700; letter-spacing: .05em; }
+.signIn span { color: var(--ui-gold); margin-left: 5px; }
+.signIn:hover, .smallLink a:hover { color: var(--ui-gold); }
+.hero { flex: 1; display: flex; align-items: center; padding: 40px clamp(20px, 8vw, 130px) 60px; }
+.copy { width: min(660px, 100%); animation: rise .8s ease-out both; }
+.eyebrow { color: var(--ui-gold); font-size: clamp(10px, 1vw, 12px); font-weight: 800; letter-spacing: .24em; }
+.eyebrow span { font-size: 17px; margin-right: 8px; }
+.copy h1 { margin: 12px 0 16px; font-family: var(--ui-display-font); font-size: clamp(58px, 9vw, 138px); font-weight: 700; line-height: .9; letter-spacing: .075em; text-shadow: 0 6px 28px #000b; }
+.tagline { max-width: 560px; margin: 0; font-family: var(--ui-display-font); font-size: clamp(23px, 2.7vw, 36px); line-height: 1.22; color: #f3eee0; text-wrap: balance; }
+.description { max-width: 480px; margin: 17px 0 0; color: #c5cbd0; font-size: clamp(14px, 1.15vw, 16px); line-height: 1.5; }
+.actions { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 32px; }
+.button { display: inline-flex; justify-content: center; align-items: center; gap: 22px; min-height: 52px; padding: 0 24px; border: 1px solid transparent; border-radius: var(--ui-radius-sm); text-decoration: none; font-size: 14px; font-weight: 800; letter-spacing: .03em; transition: background-color var(--ui-speed), border-color var(--ui-speed), transform var(--ui-speed); }
+.button:hover { transform: translateY(-2px); }
+.button:focus-visible, .signIn:focus-visible, .smallLink a:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 4px; }
+.primary { color: #101820; background: linear-gradient(115deg, #f0d69a, var(--ui-gold)); box-shadow: 0 8px 30px #0006; }
+.primary:hover { background: #f3dfae; }
+.loading { opacity: .78; }
+.secondary { color: var(--ui-text); border-color: #93a2ac; background: rgba(13, 24, 37, .44); backdrop-filter: blur(8px); }
+.secondary:hover { border-color: var(--ui-gold); background: rgba(25, 38, 50, .8); }
+.smallLink { margin: 16px 0 0; color: #b5bec8; font-size: 12px; }
+.smallLink a { color: #f5e2b3; text-underline-offset: 3px; }
+.features { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: clamp(9px, 2vw, 28px); padding: 18px 24px max(18px, env(safe-area-inset-bottom)); border-top: 1px solid rgba(215, 180, 106, .24); background: rgba(5, 10, 17, .67); backdrop-filter: blur(7px); color: #c7c7bf; font-size: 10px; font-weight: 800; letter-spacing: .17em; }
+.features i { width: 3px; height: 3px; border-radius: 50%; background: var(--ui-gold); }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 700px) { .scene { background-position: 35% center; background-image: linear-gradient(90deg, rgba(5,10,18,.8), rgba(5,10,18,.55)), linear-gradient(0deg, rgba(5,10,18,.95), transparent 48%, rgba(5,10,18,.37)), url('/assets/ui/modes/pve-solo.webp'); } .hero { align-items: center; padding: 28px 22px 46px; } .copy h1 { font-size: clamp(48px, 13vw, 85px); letter-spacing: .04em; } .tagline { font-size: clamp(21px, 6vw, 29px); } .features { gap: 9px 14px; font-size: 9px; } .features i:nth-of-type(2) { display: none; } }
+@media (max-width: 440px) { .actions { display: grid; grid-template-columns: 1fr; } .button { min-height: 48px; } .features { justify-content: flex-start; } .features i { display: none; } .features span { width: calc(50% - 7px); } }
+@media (prefers-reduced-motion: reduce) { .copy { animation: none; } .button { transition: none; } .button:hover { transform: none; } }

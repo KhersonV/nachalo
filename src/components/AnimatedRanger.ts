@@ -159,6 +159,14 @@ export class AnimatedRanger {
     return this.instance?.getObjectByName("hand_l")?.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,-.08,0));
   }
 
+  /** Place the visual at an authoritative position after a discontinuous snapshot. */
+  snapTo(position: { x: number; y: number }) {
+    this.destination.set(position.x, 0, position.y);
+    this.root.position.copy(this.destination);
+    this.speed = 0;
+    if (!this.dead && this.loaded) this.play("Idle");
+  }
+
   setSpec(spec: RangerSpec, now: number) {
     this.serverDefeated ||= spec.defeated === true;
     this.applyDefeat();

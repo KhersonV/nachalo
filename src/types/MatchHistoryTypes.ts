@@ -38,6 +38,9 @@ export type MatchHistoryListItem = {
     matchId: string;
     finishedAt: string;
     mode: string;
+    characterType?: string;
+    damageDealt?: number;
+    damageTaken?: number;
     participants: MatchHistoryParticipant[];
     winner: MatchHistoryWinner;
     playerRewardSummary: MatchPlayerRewardSummary;
@@ -82,6 +85,7 @@ export type MatchHistoryDetailItem = {
     matchId: string;
     finishedAt: string;
     mode: string;
+    characterType?: string;
     participants: MatchHistoryParticipant[];
     winner: MatchHistoryWinner;
     playerRewardSummary: MatchPlayerRewardSummary;

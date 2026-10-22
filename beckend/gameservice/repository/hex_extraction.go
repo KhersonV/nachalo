@@ -311,7 +311,11 @@ func finishHexQuestMatchTx(ctx context.Context, tx *sql.Tx, instanceID string, w
 			return err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),active_user_id=NULL,turn_order='[]'::jsonb,hex_turn_deadline=NULL WHERE instance_id=$1 AND finished_at IS NULL`, instanceID)
+	winningUser := winner.WinnerUserID
+	if winner.WinnerTeamID > 0 {
+		winningUser = 0
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),active_user_id=NULL,turn_order='[]'::jsonb,hex_turn_deadline=NULL,winner_id=$2,winner_group_id=$3 WHERE instance_id=$1 AND finished_at IS NULL`, instanceID, winningUser, winner.WinnerTeamID)
 	return err
 }
 

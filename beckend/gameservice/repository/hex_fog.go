@@ -129,6 +129,39 @@ func hexVisibleWithRadii(positions []hexgrid.Coord, radii map[hexgrid.Coord]int,
 	return visible
 }
 
+// Reveal only rock touching a legitimately visible floor cell. This is visual
+// discovery for snapshots, never a substitute for gameplay line of sight.
+func hexDiscoveredRock(positions []hexgrid.Coord, radii map[hexgrid.Coord]int, cells []hexmap.Cell, visible map[hexgrid.Coord]bool) map[hexgrid.Coord]bool {
+	terrain := make(map[hexgrid.Coord]string, len(cells))
+	for _, cell := range cells {
+		terrain[cell.Position] = cell.Terrain
+	}
+	discovered := map[hexgrid.Coord]bool{}
+	for floor := range visible {
+		if terrain[floor] != "floor" {
+			continue
+		}
+		for direction := 0; direction < 6; direction++ {
+			neighbor, err := hexgrid.Neighbor(floor, direction)
+			if err != nil || terrain[neighbor] != "rock" {
+				continue
+			}
+			for _, origin := range positions {
+				limit := hexVisionRadius()
+				if radii != nil {
+					limit = radii[origin]
+				}
+				distance, err := hexgrid.Distance(origin, neighbor)
+				if err == nil && distance <= limit {
+					discovered[neighbor] = true
+					break
+				}
+			}
+		}
+	}
+	return discovered
+}
+
 // Called under the match-row lock before the move commits. The stored set is
 // a discovery history; currently visible cells are always recomputed.
 func recordHexExploredTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, positions ...hexgrid.Coord) error {
@@ -177,7 +210,11 @@ func recordHexExploredTx(ctx context.Context, tx *sql.Tx, instanceID string, use
 	for _, pos := range positions {
 		radii[pos] = hexSightRadius(bonus)
 	}
-	for pos := range hexVisibleWithRadii(positions, radii, cells, edges) {
+	visible := hexVisibleWithRadii(positions, radii, cells, edges)
+	for pos := range visible {
+		known[pos] = true
+	}
+	for pos := range hexDiscoveredRock(positions, radii, cells, visible) {
 		known[pos] = true
 	}
 	merged := make([]hexgrid.Coord, 0, len(known))

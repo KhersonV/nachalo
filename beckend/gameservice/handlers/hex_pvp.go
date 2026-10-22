@@ -148,7 +148,15 @@ func finishHexPvPDeathTx(ctx context.Context, c *repository.MatchCommand, victim
 		return repository.ErrCommandRejected
 	}
 	if turn.ActiveUserID == 0 {
-		_, err = c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),hex_turn_deadline=NULL WHERE instance_id=$1`, c.InstanceID)
+		var groupID int
+		if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(group_id,0) FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, killerID).Scan(&groupID); err != nil {
+			return err
+		}
+		winnerID, winnerGroup := killerID, 0
+		if groupID > 0 {
+			winnerID, winnerGroup = 0, groupID
+		}
+		_, err = c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),hex_turn_deadline=NULL,winner_id=$2,winner_group_id=$3 WHERE instance_id=$1`, c.InstanceID, winnerID, winnerGroup)
 	}
 	return err
 }
@@ -294,6 +302,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 				next := resolveHexRangerPlayerPushFallback(a, d, targetHP)
 				bonus += next.Damage
 				targetHP = next.NewHealth
+				steps = append(steps, CombatStep{Kind: "bonus", Source: &attackerRef, Target: targetRef, Damage: next.Damage, TargetHPAfter: targetHP})
 				effects = append(effects, CombatEffect{Kind: "push", Source: &attackerRef, Target: &targetRef, Succeeded: false, BonusDamage: next.Damage})
 			}
 			if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_stacks=0,hex_armor_break_turns=0 WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID); err != nil {
@@ -326,7 +335,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			return out, err
 		}
 	}
-	for _, event := range []game.DamageEvent{{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "player", TargetID: targetID, Amount: hit.Damage}, {SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "player", TargetID: targetID, Amount: bonus}, {SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "player", TargetID: targetID, Amount: followup}, {SourceType: game.ResultSourcePlayer, DealerID: targetID, TargetType: "player", TargetID: userID, Amount: counterDamage}} {
+	for _, event := range hexDamageEventsFromSteps(steps, effects, map[CombatTargetRef]int{attackerRef: s.Player.Stats.Health, targetRef: s.Monster.Stats.Health}) {
 		if err := c.RecordDamageEventTx(ctx, event); err != nil {
 			return out, err
 		}

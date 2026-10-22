@@ -159,6 +159,23 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	}
 	player.UserID = userID
 	snapshot.Player = &player
+	disconnectedRows, err := tx.QueryContext(ctx, `SELECT p.user_id,p.hex_disconnected_at + $2 * interval '1 second' FROM match_players p WHERE p.instance_id=$1 AND p.health>0 AND p.hex_disconnected_at IS NOT NULL AND p.user_id IN (SELECT jsonb_array_elements_text(m.turn_order)::integer FROM matches m WHERE m.instance_id=$1) ORDER BY p.user_id`, instanceID, int(HexReconnectGrace.Seconds()))
+	if err != nil {
+		return snapshot, err
+	}
+	for disconnectedRows.Next() {
+		var item hexmap.DisconnectedPlayer
+		if err := disconnectedRows.Scan(&item.UserID, &item.Deadline); err != nil {
+			disconnectedRows.Close()
+			return snapshot, err
+		}
+		snapshot.DisconnectedPlayers = append(snapshot.DisconnectedPlayers, item)
+	}
+	if err := disconnectedRows.Err(); err != nil {
+		disconnectedRows.Close()
+		return snapshot, err
+	}
+	disconnectedRows.Close()
 	if snapshot.ActiveUser > 0 {
 		if err := tx.QueryRowContext(ctx, `SELECT name FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, snapshot.ActiveUser).Scan(&snapshot.ActivePlayerName); err != nil {
 			return snapshot, err
@@ -262,7 +279,11 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 		radii[snapshot.Player.Position] = hexVisionRadius()
 	}
 	visible := hexVisibleWithRadii(positions, radii, snapshot.Cells, snapshot.Edges)
+	discoveredRock := hexDiscoveredRock(positions, radii, snapshot.Cells, visible)
 	for pos := range visible {
+		explored[pos] = true
+	}
+	for pos := range discoveredRock {
 		explored[pos] = true
 	}
 	for i := range snapshot.Cells {
@@ -270,6 +291,18 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 		switch {
 		case visible[cell.Position]:
 			cell.Visibility = "visible"
+		case discoveredRock[cell.Position]:
+			cell.Visibility = "visible"
+			cell.Resource = nil
+			cell.Barrel = nil
+			cell.IsPortal = false
+			cell.StructureType = ""
+			cell.StructureOwnerUserID = 0
+			cell.StructureHealth = 0
+			cell.StructureDefense = 0
+			cell.StructureAttack = 0
+			cell.IsUnderConstruction = false
+			cell.ConstructionTurnsLeft = 0
 		case explored[cell.Position]:
 			cell.Visibility = "explored"
 			cell.Resource = nil
@@ -284,6 +317,7 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 		default:
 			cell.Visibility = "unexplored"
 			cell.Terrain = "rock"
+			cell.EnvironmentType = ""
 			cell.Resource = nil
 			cell.Barrel = nil
 			cell.IsPortal = false
@@ -299,11 +333,24 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	}
 	actors := snapshot.Actors[:0]
 	for _, actor := range snapshot.Actors {
-		if visible[actor.Position] || actor.Kind == "player" && actor.TeamID == snapshot.Player.TeamID {
+		if visible[actor.Position] {
 			actors = append(actors, actor)
 		}
 	}
 	snapshot.Actors = actors
+	// Attach public visual codes only after the personal LOS filter. The match
+	// character_id, rather than the account's current selected hero, owns them.
+	for i := range snapshot.Actors {
+		actor := &snapshot.Actors[i]
+		if actor.Kind != "player" {
+			continue
+		}
+		appearance, err := loadHexActorAppearanceTx(ctx, tx, snapshot.InstanceID, actor.UserID)
+		if err != nil {
+			return err
+		}
+		actor.Appearance = appearance
+	}
 	edges := snapshot.Edges[:0]
 	for _, edge := range snapshot.Edges {
 		next, err := hexgrid.Neighbor(edge.Position, edge.Direction)
@@ -326,6 +373,45 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 		snapshot.QuestArtifact.Position = nil
 	}
 	return nil
+}
+
+func loadHexActorAppearanceTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int) (*hexmap.HeroAppearance, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT COALESCE(mp.character_type, ''), ce.slot, it.code
+		FROM match_players mp
+		LEFT JOIN character_equipment ce ON ce.character_id = mp.character_id
+		LEFT JOIN item_instances ii ON ii.id = ce.item_instance_id
+			AND ii.owner_user_id = mp.user_id AND ii.current_character_id = mp.character_id
+			AND ii.status = 'equipped'
+		LEFT JOIN item_templates it ON it.id = ii.template_id
+		WHERE mp.instance_id = $1 AND mp.user_id = $2 AND mp.character_id IS NOT NULL
+		ORDER BY ce.slot`, instanceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var appearance *hexmap.HeroAppearance
+	for rows.Next() {
+		var archetype string
+		var slot, code sql.NullString
+		if err := rows.Scan(&archetype, &slot, &code); err != nil {
+			return nil, err
+		}
+		archetype = NormalizeHeroClassID(archetype)
+		if !IsKnownHeroClassID(archetype) {
+			continue
+		}
+		if appearance == nil {
+			appearance = &hexmap.HeroAppearance{Archetype: archetype, Equipment: map[string]hexmap.AppearanceItem{}}
+		}
+		if slot.Valid && code.Valid && code.String != "" && isValidEquipmentSlot(slot.String) {
+			appearance.Equipment[slot.String] = hexmap.AppearanceItem{Code: code.String}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return appearance, nil
 }
 
 type hexQuerier interface {

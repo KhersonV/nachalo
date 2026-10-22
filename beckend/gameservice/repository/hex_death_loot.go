@@ -99,7 +99,8 @@ func (c *MatchCommand) LoseHexBackpackTx(ctx context.Context, userID int, deathC
 	}
 	result := HexPlayerResult{Method: "defeat", Transferred: map[string]map[string]any{}, Lost: lost, Equipment: []string{}, LostEquipment: lostEquipment, LostEquipmentItems: lostEquipmentItems, WornEquipment: wornEquipment}
 	var rewardsReady bool
-	if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(turn_number,1),hex_reward_events_ready FROM matches WHERE instance_id=$1`, c.InstanceID).Scan(&result.TurnNumber, &rewardsReady); err != nil {
+	var mode string
+	if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(turn_number,1),hex_reward_events_ready,mode FROM matches WHERE instance_id=$1`, c.InstanceID).Scan(&result.TurnNumber, &rewardsReady, &mode); err != nil {
 		return err
 	}
 	if rewardsReady {
@@ -107,9 +108,27 @@ func (c *MatchCommand) LoseHexBackpackTx(ctx context.Context, userID int, deathC
 		if err != nil {
 			return err
 		}
-		_, _, playerKills, monsterKills, damageTotal, damagePlayers, damageMonsters, damageTaken, err := game.CalculateResultsFromEvents(events, userID, false)
+		xp, rewards, playerKills, monsterKills, damageTotal, damagePlayers, damageMonsters, damageTaken, err := game.CalculateResultsFromEvents(events, userID, false)
 		if err != nil {
 			return err
+		}
+		gold := 0
+		for _, reward := range rewards {
+			if reward.Type != "balance" {
+				return ErrCommandRejected
+			}
+			gold += reward.Amount
+		}
+		if mode != "hex-test" && gold > 0 {
+			if _, err := c.Tx.ExecContext(ctx, `UPDATE player_profiles SET balance=balance+$2,updated_at=now() WHERE user_id=$1`, userID, gold); err != nil {
+				return err
+			}
+		}
+		if mode != "hex-test" {
+			if err := grantHexExperienceTx(ctx, c.Tx, characterID, xp); err != nil {
+				return err
+			}
+			result.XP, result.GoldEarned = xp, gold
 		}
 		result.Stats = &HexResultStats{PlayerKills: playerKills, MonsterKills: monsterKills, DamageTotal: damageTotal, DamageToPlayers: damagePlayers, DamageToMonsters: damageMonsters, DamageTaken: damageTaken}
 	}

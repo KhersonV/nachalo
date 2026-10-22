@@ -142,6 +142,7 @@ func GenerateDungeon(cfg Config, catalogs Catalogs, seed int64) (Snapshot, error
 				continue
 			}
 			placeObjects(&snap, cfg, monsters, normal, barrel, floor, rng)
+			placeBrazierEnvironment(&snap, floor, seed)
 			nm, nb, nr := 0, 0, 0
 			for _, a := range snap.Actors {
 				if a.Kind == "monster" {
@@ -163,6 +164,73 @@ func GenerateDungeon(cfg Config, catalogs Catalogs, seed int64) (Snapshot, error
 		}
 	}
 	return Snapshot{}, fmt.Errorf("HEX cannot fit %d players in %d teams with portal and objects", total, len(cfg.Teams))
+}
+
+// Braziers replace the appearance of a few existing rock cells. Their terrain
+// remains rock, so generation, connectivity and movement rules are unchanged.
+func placeBrazierEnvironment(s *Snapshot, floor map[hexgrid.Coord]floorInfo, seed int64) {
+	eligible := func(cell Cell) bool {
+		if cell.Terrain != "rock" || cell.EnvironmentType != "" || cell.Resource != nil || cell.Barrel != nil || cell.IsPortal || cell.StructureType != "" {
+			return false
+		}
+		if s.Portal != nil {
+			distance, _ := hexgrid.Distance(cell.Position, *s.Portal)
+			if distance <= 1 {
+				return false
+			}
+		}
+		for direction := 0; direction < 6; direction++ {
+			neighbor, err := hexgrid.Neighbor(cell.Position, direction)
+			if err == nil {
+				if _, ok := floor[neighbor]; ok {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	chosen := []hexgrid.Coord{}
+	for _, start := range s.Starts {
+		best, bestDistance, bestHash := -1, 4, ^uint64(0)
+		for i, cell := range s.Cells {
+			if !eligible(cell) {
+				continue
+			}
+			distance, _ := hexgrid.Distance(start.Position, cell.Position)
+			if distance > 3 || distance < 1 {
+				continue
+			}
+			hash := uint64(int64(cell.Position.Q)*73856093 ^ int64(cell.Position.R)*19349663 ^ seed)
+			if distance < bestDistance || distance == bestDistance && hash < bestHash {
+				best, bestDistance, bestHash = i, distance, hash
+			}
+		}
+		if best >= 0 {
+			s.Cells[best].EnvironmentType = "brazier"
+			chosen = append(chosen, s.Cells[best].Position)
+		}
+	}
+	for i, cell := range s.Cells {
+		if len(chosen) >= len(s.Starts)+3 || !eligible(cell) || cell.EnvironmentType != "" {
+			continue
+		}
+		hash := uint64(int64(cell.Position.Q)*73856093 ^ int64(cell.Position.R)*19349663 ^ seed)
+		if hash%37 != 0 {
+			continue
+		}
+		near := false
+		for _, position := range chosen {
+			distance, _ := hexgrid.Distance(position, cell.Position)
+			if distance < 3 {
+				near = true
+				break
+			}
+		}
+		if !near {
+			s.Cells[i].EnvironmentType = "brazier"
+			chosen = append(chosen, cell.Position)
+		}
+	}
 }
 
 func geometry(radius, teams, total int, seed int64, rng *rand.Rand) (Snapshot, []hexgrid.Coord, map[hexgrid.Coord]floorInfo, error) {

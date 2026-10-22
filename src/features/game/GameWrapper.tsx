@@ -45,12 +45,15 @@ export default function GameWrapper({
   const [hexSnapshot, setHexSnapshot] = useState<HexSnapshot | null>(null);
   const prevInstanceIdRef = useRef<string>("");
   const isFetching = useRef(false);
+  const fetchSequence = useRef(0);
+  useEffect(() => () => { fetchSequence.current++; isFetching.current = false; }, []);
 
   // ========== FETCH MATCH ==========
 
   async function fetchAll() {
     if (isFetching.current) return;
     isFetching.current = true;
+    const sequence = fetchSequence.current;
 
     try {
       if (!user || !user.token) {
@@ -68,6 +71,7 @@ export default function GameWrapper({
         });
         if (!hexRes.ok) throw new Error(`HEX match ${hexRes.status}: ${await hexRes.text()}`);
         const snapshot: unknown = await hexRes.json();
+        if (sequence !== fetchSequence.current) return;
         if (!isHexSnapshot(snapshot) || snapshot.instanceId !== instanceId || !snapshot.player) throw new Error("Invalid HEX snapshot");
         dispatch(resetState());
         setHexSnapshot(snapshot);
@@ -93,6 +97,7 @@ export default function GameWrapper({
         resourcesRes.json(),
         monstersRes.json(),
       ]);
+      if (sequence !== fetchSequence.current) return;
       setResources(resources);
       setMonsters(monsters);
 
@@ -136,10 +141,11 @@ export default function GameWrapper({
       });
       setRuntime("square");
     } catch (e) {
+      if (sequence !== fetchSequence.current) return;
       console.error("Failed to load match, resources, or monsters", e);
       router.replace("/mode");
     } finally {
-      isFetching.current = false;
+      if (sequence === fetchSequence.current) isFetching.current = false;
     }
   }
   useEffect(() => {
@@ -150,6 +156,8 @@ export default function GameWrapper({
       return;
     }
     if (prevInstanceIdRef.current && prevInstanceIdRef.current !== instanceId) {
+      fetchSequence.current++;
+      isFetching.current = false;
       dispatch(resetState());
       dispatch(clearCombatPresentation());
       setRuntime("loading");

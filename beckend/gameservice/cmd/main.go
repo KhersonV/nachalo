@@ -41,9 +41,13 @@ func main() {
 	// Инициализация БД
 	repository.InitDB()
 	defer repository.DB.Close()
+	if err := repository.MarkHexPresenceUnknownOnStart(context.Background()); err != nil {
+		log.Fatalf("HEX presence initialization: %v", err)
+	}
 	hexWorkerContext, stopHexWorker := context.WithCancel(context.Background())
 	defer stopHexWorker()
 	handlers.StartHexTurnWorker(hexWorkerContext)
+	handlers.StartSocketHeartbeat(hexWorkerContext)
 
 	// Настраиваем маршруты
 	router := mux.NewRouter()

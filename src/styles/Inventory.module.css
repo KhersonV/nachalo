@@ -33,6 +33,10 @@
     font-size: 1.8rem;
     font-weight: bold;
 }
+.sheetHeader { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.sheetHeader .title { min-width: 0; flex: 1; }
+.sheetClose { flex: none; width: 34px; height: 34px; border: 1px solid #61788e; border-radius: 7px; background: #25394e; color: #f3f5f7; font-size: 22px; line-height: 1; cursor: pointer; }
+.sheetClose:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
 
 .feedbackRow {
     margin: -4px 0 12px;

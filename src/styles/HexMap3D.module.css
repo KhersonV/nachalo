@@ -1,0 +1,10 @@
+.viewport { position: relative; width: 100%; height: 100%; min-height: 0; overflow: hidden; isolation: isolate; background: #0b131c; }
+.viewport::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(180deg, #0a111bd1 0%, #101b29a6 42%, #090e17e8 100%), url("/assets/ui/backgrounds/modes.webp") center 32% / cover no-repeat; filter: saturate(.7); }
+.viewport::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 48%, transparent 16%, #071019a8 82%), linear-gradient(90deg, #060c15a6, transparent 24% 76%, #060c15a6); }
+.canvas { position: absolute; inset: 0; z-index: 1; }
+.canvas canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.controls { position: absolute; z-index: 2; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 3px; padding: 5px; border: 1px solid #b18b51a6; border-radius: 7px; background: #0b1522ed; box-shadow: 0 9px 24px #000a; }
+.controls button { min-width: 34px; min-height: 34px; padding: 0 9px; border: 0; border-radius: 4px; background: transparent; color: #e8d2a2; font: 700 14px/1 var(--ui-font, Arial, sans-serif); cursor: pointer; }
+.controls button:hover { background: #a47c463b; }
+.controls button:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
+@media (max-width: 680px) { .viewport::before { background-position: 54% 28%; } .controls { bottom: max(8px, env(safe-area-inset-bottom)); } .controls button { min-width: 29px; min-height: 32px; padding: 0 5px; font-size: 12px; } }

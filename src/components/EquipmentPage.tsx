@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import LobbyHeader from "./LobbyHeader";
+import { getHeroFullbody, getHeroPortrait } from "@/features/heroes/heroArtwork";
+import { BONUS_FIELDS, compareItemBonuses, equipBlockReason, filterEquipmentItems, getAvailableEquipment, getGearCount, isTwoHanded, type InventoryFilters } from "@/features/equipment/equipmentView";
+import ItemBonusComparison from "./equipment/ItemBonusComparison";
 import styles from "../styles/EquipmentPage.module.css";
 import { API_BASE } from "../utils/serviceUrls";
 import type {
@@ -64,17 +66,6 @@ const STAT_ROWS: Array<{ key: keyof EquipmentStats; label: string }> = [
     { key: "defense", label: "Defense" },
     { key: "mobility", label: "Mobility" },
     { key: "agility", label: "Reflex" },
-    { key: "sightRange", label: "Sight Range" },
-    { key: "attackRange", label: "Attack Range" },
-];
-
-const BONUS_ROWS: Array<{ key: keyof EquipmentBonuses; label: string }> = [
-    { key: "attack", label: "Attack" },
-    { key: "defense", label: "Defense" },
-    { key: "mobility", label: "Mobility" },
-    { key: "agility", label: "Reflex" },
-    { key: "maxHealth", label: "Max Health" },
-    { key: "maxEnergy", label: "Max Energy" },
     { key: "sightRange", label: "Sight Range" },
     { key: "attackRange", label: "Attack Range" },
 ];
@@ -168,6 +159,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         slot: value.slot,
         itemType: stringOrEmpty(value.itemType),
         handedness: normalizeHandedness(value.handedness),
+        isTwoHanded: value.isTwoHanded === true,
         rarity: normalizeRarity(value.rarity),
         classRestriction,
         levelRequirement: numberOrUndefined(value.levelRequirement),
@@ -270,6 +262,7 @@ function normalizeEquipmentState(value: unknown): EquipmentState {
               .map(normalizeItem)
               .filter((item): item is EquipmentItem => item !== null)
         : inventory;
+    const availableEquipmentKnown = Array.isArray(raw.inventoryItems) || Array.isArray(raw.inventory);
     const ownedItems = Array.isArray(raw.ownedItems)
         ? raw.ownedItems
               .map(normalizeItem)
@@ -297,6 +290,7 @@ function normalizeEquipmentState(value: unknown): EquipmentState {
         characters,
         inventory,
         inventoryItems,
+        availableEquipmentKnown,
         ownedItems,
         equipped,
         equippedByCharacter: normalizeEquippedByCharacter(raw.equippedByCharacter),
@@ -323,7 +317,7 @@ function formatBonusValue(value: number): string {
 }
 
 function getBonusEntries(bonuses?: EquipmentBonuses) {
-    return BONUS_ROWS.map((row) => ({
+    return BONUS_FIELDS.map((row) => ({
         ...row,
         value: numberOrZero(bonuses?.[row.key]),
     })).filter((row) => row.value !== 0);
@@ -338,7 +332,15 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function readableApiError(payload: EquipmentApiResponse, status: number): string {
     if (payload.error) {
-        return payload.error.replace(/_/g, " ");
+        const messages: Record<string, string> = {
+            class_restricted: "This item cannot be equipped by the selected class.",
+            level_too_low: "This hero does not meet the item's level requirement.",
+            off_hand_blocked_by_two_handed_weapon: "Remove the two-handed weapon before equipping an off-hand item.",
+            item_is_equipped: "This item is already equipped.",
+            item_not_in_inventory: "This item is no longer available in your inventory.",
+            item_unavailable: "This item is currently unavailable.",
+        };
+        return messages[payload.error] || payload.error.replace(/_/g, " ");
     }
     return `Equipment request failed (${status})`;
 }
@@ -387,11 +389,13 @@ function BonusList({ bonuses }: { bonuses?: EquipmentBonuses }) {
 }
 
 function ItemMeta({ item }: { item: EquipmentItem }) {
+    const itemTypeLabel = formatEnum(item.itemType || item.slot);
+    const slotLabel = SLOT_LABELS[item.slot];
     return (
         <div className={styles.itemMeta}>
-            <span>{formatEnum(item.itemType || item.slot)}</span>
-            <span>{SLOT_LABELS[item.slot]}</span>
-            <span>{formatEnum(item.handedness)}</span>
+            <span>{itemTypeLabel}</span>
+            {itemTypeLabel.toLowerCase() !== slotLabel.toLowerCase() && <span>{slotLabel}</span>}
+            {item.handedness !== "none" && <span>{formatEnum(item.handedness)}</span>}
             {item.classRestriction ? <span>{formatEnum(item.classRestriction)}</span> : null}
             {item.levelRequirement ? <span>Level {item.levelRequirement}</span> : null}
         </div>
@@ -402,94 +406,59 @@ function EquippedSlotCard({
     slot,
     item,
     blocked,
+    blockedBy,
     busy,
+    selected,
+    error,
+    onSelect,
     onUnequip,
 }: {
     slot: EquipmentSlot;
     item?: EquipmentItem;
     blocked: boolean;
+    blockedBy?: string;
     busy: boolean;
+    selected: boolean;
+    error?: string;
+    onSelect: (slot: EquipmentSlot) => void;
     onUnequip: (slot: EquipmentSlot) => void;
 }) {
     return (
-        <article
-            className={`${styles.slotCard} ${blocked ? styles.slotCardBlocked : ""}`}
-        >
-            <div className={styles.slotHeader}>
-                <span className={styles.slotLabel}>{SLOT_LABELS[slot]}</span>
-                {item ? (
-                    <span className={`${styles.rarityBadge} ${styles[`rarity_${item.rarity}`]}`}>
-                        {formatEnum(item.rarity)}
-                    </span>
-                ) : null}
-            </div>
-
-            {item ? (
-                <div className={styles.equippedBody}>
-                    <ItemImage item={item} />
-                    <div className={styles.itemText}>
-                        <h3>{item.name}</h3>
-                        <ItemMeta item={item} />
-                        <BonusList bonuses={item.bonuses} />
-                    </div>
-                    <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => onUnequip(slot)}
-                        disabled={busy}
-                    >
-                        {busy ? "Unequipping..." : "Unequip"}
-                    </button>
-                </div>
-            ) : (
-                <div className={styles.emptySlot}>
-                    {blocked ? "Blocked by two-handed weapon" : "Empty slot"}
-                </div>
-            )}
+        <article className={`${styles.slotCard} ${blocked ? styles.slotCardBlocked : ""} ${selected ? styles.slotCardSelected : ""}`} data-rarity={item?.rarity}>
+            <button type="button" className={styles.slotPrimary} aria-pressed={selected} onClick={() => onSelect(slot)}>
+                {item ? <ItemImage item={item} /> : <span className={styles.slotGlyph}>{blocked ? "🔒" : SLOT_LABELS[slot].slice(0, 2).toUpperCase()}</span>}
+                <span className={styles.slotIdentity}>
+                    <span className={styles.slotLabel}>{SLOT_LABELS[slot]}</span>
+                    <strong title={item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : undefined)}>{item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : "Empty slot")}</strong>
+                    {item && <small>{formatEnum(item.rarity)}</small>}
+                </span>
+            </button>
+            {item && <button type="button" className={styles.slotUnequip} onClick={() => onUnequip(slot)} disabled={busy}>{busy ? "Working…" : "Unequip"}</button>}
+            {error && <span className={styles.inlineError} role="alert">{error}</span>}
         </article>
     );
 }
 
 function InventoryCard({
     item,
-    busy,
-    canEquip,
-    statusLabel,
-    onEquip,
+    selected,
+    reason,
+    onSelect,
 }: {
     item: EquipmentItem;
-    busy: boolean;
-    canEquip: boolean;
-    statusLabel?: string;
-    onEquip: (item: EquipmentItem) => void;
+    selected: boolean;
+    reason: string | null;
+    onSelect: (item: EquipmentItem) => void;
 }) {
     return (
-        <article className={styles.inventoryCard}>
-            <div className={styles.inventoryItemTop}>
-                <ItemImage item={item} />
-                <div className={styles.itemText}>
-                    <div className={styles.itemTitleRow}>
-                        <h3>{item.name}</h3>
-                        <span className={`${styles.rarityBadge} ${styles[`rarity_${item.rarity}`]}`}>
-                            {formatEnum(item.rarity)}
-                        </span>
-                    </div>
-                    <ItemMeta item={item} />
-                </div>
-            </div>
-            <BonusList bonuses={item.bonuses} />
-            {statusLabel ? <div className={styles.itemStatus}>{statusLabel}</div> : null}
-            <div className={styles.inventoryActions}>
-                <button
-                    type="button"
-                    className={styles.primaryButton}
-                    onClick={() => onEquip(item)}
-                    disabled={busy || !canEquip}
-                >
-                    {busy ? "Equipping..." : "Equip"}
-                </button>
-            </div>
-        </article>
+        <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} title={item.name}>
+            <ItemImage item={item} />
+            <span className={styles.inventoryCardCopy}>
+                <strong>{item.name}</strong>
+                <small>{SLOT_LABELS[item.slot]} · {formatEnum(item.rarity)}</small>
+                {reason && <small className={styles.inventoryUnavailable}>{reason}</small>}
+            </span>
+        </button>
     );
 }
 
@@ -559,7 +528,12 @@ export default function EquipmentPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [busyAction, setBusyAction] = useState<string | null>(null);
+    const busyActionRef = useRef(false);
+    const [actionError, setActionError] = useState<{ key: string; message: string } | null>(null);
     const [selectedCharacterId, setSelectedCharacterId] = useState<number>(0);
+    const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+    const [selectedSlot, setSelectedSlot] = useState<EquipmentSlot | null>(null);
+    const [filters, setFilters] = useState<InventoryFilters>({ slot: "all", heroClass: "all", rarity: "all", availableOnly: false });
 
     const authHeaders = useMemo(
         () => ({
@@ -607,13 +581,15 @@ export default function EquipmentPage() {
             const nextState = await readResponse(response);
             if (nextState) {
                 setEquipment(nextState);
-                setSelectedCharacterId((current) => current || nextState.activeCharacterId);
+                setSelectedCharacterId((current) => nextState.characters.some(character => character.characterId === current) ? current : nextState.activeCharacterId);
+                return true;
             }
         } catch (err) {
             setError(getErrorMessage(err, "Failed to load equipment"));
         } finally {
             setLoading(false);
         }
+        return false;
     }, [authHeaders, readResponse, user?.token]);
 
     useEffect(() => {
@@ -622,9 +598,11 @@ export default function EquipmentPage() {
 
     const postEquipmentAction = useCallback(
         async (path: string, body: unknown, actionKey: string) => {
-            if (!user?.token) return;
+            if (!user?.token || busyActionRef.current) return false;
 
+            busyActionRef.current = true;
             setBusyAction(actionKey);
+            setActionError(null);
             setError(null);
             try {
                 const response = await fetch(`${API_BASE}${path}`, {
@@ -636,16 +614,18 @@ export default function EquipmentPage() {
                     body: JSON.stringify(body),
                     cache: "no-store",
                 });
-                const nextState = await readResponse(response, false);
-                if (nextState) {
-                    setEquipment(nextState);
-                    setSelectedCharacterId((current) => current || nextState.activeCharacterId);
-                } else {
-                    await loadEquipment();
+                await readResponse(response, false);
+                if (!await loadEquipment()) {
+                    setEquipment(null);
+                    setSelectedItemId(null);
+                    throw new Error("Equipment changed, but the latest server state could not be loaded. Retry loading equipment.");
                 }
+                return true;
             } catch (err) {
-                setError(getErrorMessage(err, "Equipment action failed"));
+                setActionError({ key: actionKey, message: getErrorMessage(err, "Equipment action failed") });
+                return false;
             } finally {
+                busyActionRef.current = false;
                 setBusyAction(null);
             }
         },
@@ -663,7 +643,7 @@ export default function EquipmentPage() {
                     itemInstanceId: item.instanceId,
                 },
                 `equip-${item.instanceId}`,
-            );
+            ).then((success) => { if (success) { setSelectedItemId(null); setSelectedSlot(item.slot); } });
         },
         [equipment?.activeCharacterId, postEquipmentAction, selectedCharacterId],
     );
@@ -691,60 +671,34 @@ export default function EquipmentPage() {
 
     const effectiveSelectedCharacterId =
         selectedCharacter?.characterId || equipment?.activeCharacterId || 0;
+    const viewingActiveCharacter = effectiveSelectedCharacterId === equipment?.activeCharacterId;
     const selectedEquipped =
         equipment?.equippedByCharacter[String(effectiveSelectedCharacterId)] ||
-        equipment?.equipped ||
+        (viewingActiveCharacter ? equipment?.equipped : undefined) ||
         {};
     const selectedCharacterStats =
         equipment?.statsByCharacter[String(effectiveSelectedCharacterId)];
-    const selectedBaseStats = selectedCharacterStats?.baseStats || equipment?.baseStats || {};
+    const selectedBaseStats = selectedCharacterStats?.baseStats || (viewingActiveCharacter ? equipment?.baseStats : undefined) || {};
     const selectedEffectiveStats =
-        selectedCharacterStats?.effectiveStats || equipment?.effectiveStats || {};
+        selectedCharacterStats?.effectiveStats || (viewingActiveCharacter ? equipment?.effectiveStats : undefined) || {};
     const selectedSetBonuses =
         equipment?.activeSetBonusesByCharacter[String(effectiveSelectedCharacterId)] ||
-        equipment?.activeSetBonuses ||
+        (viewingActiveCharacter ? equipment?.activeSetBonuses : undefined) ||
         [];
-    const ownedItems = equipment?.ownedItems?.length ? equipment.ownedItems : equipment?.inventory || [];
-    const equippedItemIds = useMemo(() => {
-        const ids = new Set<string>();
-        const allEquipped = equipment?.equippedByCharacter || {};
-        for (const slots of Object.values(allEquipped)) {
-            for (const item of Object.values(slots)) {
-                if (item?.instanceId) ids.add(item.instanceId);
-            }
-        }
-        for (const item of Object.values(equipment?.equipped || {})) {
-            if (item?.instanceId) ids.add(item.instanceId);
-        }
-        return ids;
-    }, [equipment]);
-    const inventoryItems = useMemo(() => {
-        const source = equipment?.inventoryItems?.length
-            ? equipment.inventoryItems
-            : ownedItems;
-        return source.filter(
-            (item) =>
-                item.status !== "equipped" &&
-                !item.equippedCharacterId &&
-                !equippedItemIds.has(item.instanceId),
-        );
-    }, [equipment?.inventoryItems, equippedItemIds, ownedItems]);
-
-    const groupedOwnedItems = useMemo(() => {
-        const groups = new Map<string, { title: string; items: EquipmentItem[] }>();
-        for (const item of inventoryItems) {
-            const className = item.classRestriction
-                ? CLASS_LABELS[item.classRestriction] || formatEnum(item.classRestriction)
-                : "Any Class";
-            const setName = item.setName || item.setCode || "Equipment";
-            const key = `${className}:${setName}`;
-            if (!groups.has(key)) {
-                groups.set(key, { title: `${className} / ${setName}`, items: [] });
-            }
-            groups.get(key)?.items.push(item);
-        }
-        return Array.from(groups.values());
-    }, [inventoryItems]);
+    const availableItems = useMemo(() => equipment ? getAvailableEquipment(equipment.availableEquipmentKnown ? equipment.inventoryItems : undefined, equipment.equippedByCharacter, equipment.equipped) : [], [equipment]);
+    const availableSlots = useMemo(() => Array.from(new Set(availableItems.map(item => item.slot))), [availableItems]);
+    const availableClasses = useMemo(() => Array.from(new Set(availableItems.map(item => item.classRestriction).filter((value): value is string => Boolean(value)))), [availableItems]);
+    const availableRarities = useMemo(() => Array.from(new Set(availableItems.map(item => item.rarity))), [availableItems]);
+    const filteredItems = useMemo(
+        () => filterEquipmentItems(availableItems, filters, selectedCharacter, selectedEquipped),
+        [availableItems, filters, selectedCharacter, selectedEquipped],
+    );
+    const selectedInventoryItem = availableItems.find(item => item.instanceId === selectedItemId) ?? null;
+    const inspectedItem = selectedInventoryItem ?? (selectedSlot ? selectedEquipped[selectedSlot] ?? null : null);
+    const comparedItem = selectedInventoryItem ? selectedEquipped[selectedInventoryItem.slot] : undefined;
+    const itemComparison = compareItemBonuses(comparedItem, selectedInventoryItem ?? undefined);
+    const selectedBlockReason = selectedInventoryItem ? equipBlockReason(selectedInventoryItem, selectedCharacter, selectedEquipped) : null;
+    const { occupiedSlotsCount } = getGearCount(selectedEquipped);
 
     const handleGrantClassSet = useCallback(() => {
         const heroClassId =
@@ -758,160 +712,102 @@ export default function EquipmentPage() {
     }, [equipment?.activeHeroClassId, postEquipmentAction, selectedCharacter]);
 
     const offHandBlocked =
-        selectedEquipped.main_hand?.handedness === "two_hand" &&
+        isTwoHanded(selectedEquipped.main_hand) &&
         !selectedEquipped.off_hand;
 
     return (
         <main className={styles.pageRoot}>
             <div className={styles.container}>
-                <LobbyHeader />
-
-                <section className={styles.pageHeader}>
-                    <div>
-                        <h1>Equipment</h1>
-                        <p>
-                            {selectedCharacter
-                                ? `${selectedCharacter.name} #${selectedCharacter.characterId}`
-                                : equipment?.activeCharacterId
-                                  ? `Active character #${equipment.activeCharacterId}`
-                                  : "Active character -"}
-                        </p>
+                <header className={styles.pageHeader}>
+                    <div className={styles.headerCopy}>
+                        <span className={styles.eyebrow}>THE ARMORY</span>
+                        <h1>Inventory</h1>
+                        <p>Equip your heroes, inspect your gear, and prepare for the next battle.</p>
                     </div>
-                    {equipmentDevGrantEnabled ? (
-                        <button
-                            type="button"
-                            className={styles.devButton}
-                            onClick={handleGrantClassSet}
-                            disabled={busyAction !== null}
-                        >
-                            {busyAction?.startsWith("grant-")
-                                ? "Granting..."
-                                : "Grant class set"}
-                        </button>
-                    ) : null}
-                </section>
+                    <div className={styles.headerActions}>
+                        <span>{equipment?.characters.length ?? 0} owned heroes · {equipment?.ownedItems.length ?? 0} items</span>
+                        {equipmentDevGrantEnabled && <button type="button" className={styles.devButton} onClick={handleGrantClassSet} disabled={busyAction !== null}>{busyAction?.startsWith("grant-") ? "Granting…" : "Grant class set"}</button>}
+                    </div>
+                </header>
 
-                {error ? (
-                    <section className={styles.errorPanel}>
-                        <span>{error}</span>
-                        <button
-                            type="button"
-                            className={styles.secondaryButton}
-                            onClick={() => void loadEquipment()}
-                        >
-                            Retry
-                        </button>
-                    </section>
-                ) : null}
+                {error && <div className={styles.errorPanel} role="alert"><span>{error}</span><button type="button" className={styles.secondaryButton} onClick={() => void loadEquipment()}>Retry</button></div>}
+                {actionError?.key.startsWith("grant-") && <div className={styles.errorPanel} role="alert">{actionError.message}</div>}
+                {loading && !equipment && <div className={styles.statePanel}>Loading equipment…</div>}
 
-                {loading && !equipment ? (
-                    <section className={styles.statePanel}>Loading equipment...</section>
-                ) : null}
-
-                {equipment ? (
-                    <>
-                        {equipment.characters.length > 0 ? (
-                            <section className={styles.characterTabs} aria-label="Characters">
-                                {equipment.characters.map((character) => {
-                                    const active = character.characterId === effectiveSelectedCharacterId;
-                                    return (
-                                        <button
-                                            key={character.characterId}
-                                            type="button"
-                                            className={`${styles.characterTab} ${active ? styles.characterTabActive : ""}`}
-                                            onClick={() => setSelectedCharacterId(character.characterId)}
-                                        >
-                                            <span>{character.name}</span>
-                                            <small>Level {character.level}</small>
-                                        </button>
-                                    );
-                                })}
-                            </section>
-                        ) : null}
-
-                        <div className={styles.topGrid}>
-                            <section className={styles.panel}>
-                                <div className={styles.panelHeader}>
-                                    <h2>Character Slots</h2>
-                                    {selectedCharacter ? (
-                                        <span>{formatEnum(selectedCharacter.heroClassId)}</span>
-                                    ) : null}
-                                </div>
-                                <div className={styles.slotsGrid}>
-                                    {EQUIPMENT_SLOTS.map((slot) => (
-                                        <EquippedSlotCard
-                                            key={slot}
-                                            slot={slot}
-                                            item={selectedEquipped[slot]}
-                                            blocked={slot === "off_hand" && offHandBlocked}
-                                            busy={busyAction === `unequip-${slot}`}
-                                            onUnequip={handleUnequip}
-                                        />
-                                    ))}
-                                </div>
-                            </section>
-
-                            <aside className={styles.panel}>
-                                <div className={styles.panelHeader}>
-                                    <h2>Stats</h2>
-                                </div>
-                                <StatsComparison
-                                    baseStats={selectedBaseStats}
-                                    effectiveStats={selectedEffectiveStats}
-                                />
-
-                                <div className={styles.panelHeaderCompact}>
-                                    <h2>Set Bonuses</h2>
-                                </div>
-                                <ActiveSetBonuses bonuses={selectedSetBonuses} />
-                            </aside>
-                        </div>
-
-                        <section className={styles.panel}>
+                {equipment && <>
+                    <div className={styles.topGrid}>
+                        <section className={styles.heroPanel} aria-label="Hero and equipment slots">
                             <div className={styles.panelHeader}>
-                                <h2>Owned Equipment</h2>
-                                <span>{inventoryItems.length} unequipped items</span>
+                                <div><span className={styles.eyebrow}>YOUR HERO</span><h2>{selectedCharacter?.name || "Hero"}</h2><p>{selectedCharacter ? `${formatEnum(selectedCharacter.heroClassId)} · Hero level ${selectedCharacter.level}` : "Choose a hero"}</p></div>
+                                <span className={styles.viewBadge}>{viewingActiveCharacter ? "Match hero" : "Viewing only"}</span>
+                            </div>
+                            <div className={styles.characterTabs} role="group" aria-label="Choose hero to view">
+                                {equipment.characters.map(character => <button key={character.characterId} type="button" className={`${styles.characterTab} ${character.characterId === effectiveSelectedCharacterId ? styles.characterTabActive : ""}`} aria-pressed={character.characterId === effectiveSelectedCharacterId} disabled={busyAction !== null} onClick={() => { setSelectedCharacterId(character.characterId); setSelectedItemId(null); setSelectedSlot(null); setActionError(null); }}>
+                                    <img src={getHeroPortrait(character.heroClassId)} alt="" />
+                                    <span><strong>{character.name}</strong><small>Lv. {character.level}</small></span>
+                                </button>)}
+                            </div>
+                            <div className={styles.heroStage}>
+                                <div className={styles.slotRail}>
+                                    {EQUIPMENT_SLOTS.slice(0, 4).map(slot => <EquippedSlotCard key={slot} slot={slot} item={selectedEquipped[slot]} blocked={false} busy={busyAction !== null} selected={selectedSlot === slot && !selectedItemId} error={actionError?.key === `unequip-${slot}` ? actionError.message : undefined} onSelect={(nextSlot) => { setSelectedSlot(nextSlot); setSelectedItemId(null); }} onUnequip={handleUnequip} />)}
+                                </div>
+                                <div className={styles.heroFigure}>
+                                    {selectedCharacter && <img src={getHeroFullbody(selectedCharacter.heroClassId)} alt={`${selectedCharacter.name}, full-length class artwork`} />}
+                                    <div className={styles.figureCaption}><span>GEAR</span><strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></div>
+                                </div>
+                                <div className={styles.slotRail}>
+                                    {EQUIPMENT_SLOTS.slice(4).map(slot => <EquippedSlotCard key={slot} slot={slot} item={selectedEquipped[slot]} blocked={slot === "off_hand" && offHandBlocked} blockedBy={slot === "off_hand" ? selectedEquipped.main_hand?.name : undefined} busy={busyAction !== null} selected={selectedSlot === slot && !selectedItemId} error={actionError?.key === `unequip-${slot}` ? actionError.message : undefined} onSelect={(nextSlot) => { setSelectedSlot(nextSlot); setSelectedItemId(null); }} onUnequip={handleUnequip} />)}
+                                </div>
+                            </div>
+                        </section>
+
+                        <aside className={styles.statsPanel} aria-label="Hero statistics and set bonuses">
+                            <div className={styles.panelHeader}><div><span className={styles.eyebrow}>CHARACTER SHEET</span><h2>Statistics</h2><p>Base → equipped, as confirmed by the server</p></div></div>
+                            <StatsComparison baseStats={selectedBaseStats} effectiveStats={selectedEffectiveStats} />
+                            <div className={styles.gearSummary}><span>Occupied slots <strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></span><span>Main hand <strong>{selectedEquipped.main_hand?.name || "Empty"}</strong></span></div>
+                            <div className={styles.statsDivider} />
+                            <div className={styles.panelHeaderCompact}><h2>Set bonuses</h2><span>{selectedSetBonuses.length} active</span></div>
+                            <ActiveSetBonuses bonuses={selectedSetBonuses} />
+                        </aside>
+                    </div>
+
+                    <section className={styles.inventoryPanel} aria-label="Available equipment">
+                        <div className={styles.panelHeader}><div><span className={styles.eyebrow}>YOUR COLLECTION</span><h2>Available Equipment</h2><p>Unequipped items ready to use.</p></div><span>{filteredItems.length} / {availableItems.length} items</span></div>
+                        <div className={styles.inventoryLayout}>
+                            <div className={styles.inventoryCollection}>
+                                <div className={styles.filterBar}>
+                                    <div className={styles.filterToggle} role="group" aria-label="Hero compatibility"><button type="button" aria-pressed={!filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: false }))}>All</button><button type="button" aria-pressed={filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: true }))}>For hero</button></div>
+                                    <label>Slot <select value={filters.slot} onChange={event => setFilters(current => ({ ...current, slot: event.target.value as InventoryFilters["slot"] }))}><option value="all">All slots</option>{EQUIPMENT_SLOTS.filter(slot => availableSlots.includes(slot)).map(slot => <option key={slot} value={slot}>{SLOT_LABELS[slot]}</option>)}</select></label>
+                                    <label>Class <select value={filters.heroClass} onChange={event => setFilters(current => ({ ...current, heroClass: event.target.value }))}><option value="all">All classes</option>{availableClasses.map(heroClass => <option key={heroClass} value={heroClass}>{formatEnum(heroClass)}</option>)}</select></label>
+                                    <label>Rarity <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all">All rarities</option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{formatEnum(rarity)}</option>)}</select></label>
+                                </div>
+                                {!equipment.availableEquipmentKnown ? <div className={styles.emptyState}>Available equipment data is unavailable. Retry loading equipment.</div> : availableItems.length === 0 ? <div className={styles.emptyState}>No unequipped items available.</div> : filteredItems.length === 0 ? <div className={styles.emptyState}>No items match these filters.</div> : <div className={styles.inventoryGrid}>
+                                    {filteredItems.map(item => {
+                                        return <InventoryCard key={item.instanceId} item={item} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedSlot(null); setActionError(null); }} />;
+                                    })}
+                                </div>}
                             </div>
 
-                            {inventoryItems.length === 0 ? (
-                                <div className={styles.emptyState}>
-                                    No equipment items yet.
-                                </div>
-                            ) : (
-                                <div className={styles.inventoryGroups}>
-                                    {groupedOwnedItems.map((group) => (
-                                        <section key={group.title} className={styles.inventoryGroup}>
-                                            <h3>{group.title}</h3>
-                                            <div className={styles.inventoryGrid}>
-                                                {group.items.map((item) => {
-                                                    const classMatches =
-                                                        !selectedCharacter ||
-                                                        !item.classRestriction ||
-                                                        item.classRestriction === selectedCharacter.heroClassId;
-                                                    const canEquip =
-                                                        item.status === "inventory" && classMatches;
-                                                    const statusLabel = !classMatches
-                                                        ? "Different hero class"
-                                                        : undefined;
-                                                    return (
-                                                        <InventoryCard
-                                                            key={item.instanceId}
-                                                            item={item}
-                                                            busy={busyAction === `equip-${item.instanceId}`}
-                                                            canEquip={canEquip}
-                                                            statusLabel={statusLabel}
-                                                            onEquip={handleEquip}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </section>
-                                    ))}
-                                </div>
-                            )}
-                        </section>
-                    </>
-                ) : null}
+                            <aside className={styles.detailPanel} aria-label="Item details and comparison">
+                                <div className={styles.detailHeading}><span className={styles.eyebrow}>INSPECT</span><h3>{selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item"}</h3></div>
+                                {selectedInventoryItem ? <>
+                                    <div className={styles.compareCards}>
+                                        <div className={styles.compareCard}><span>NOW EQUIPPED</span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{formatEnum(comparedItem.rarity)} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small>Set: {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p>Empty {SLOT_LABELS[selectedInventoryItem.slot]} slot</p>}</div>
+                                        <div className={styles.compareCard}><span>SELECTED ITEM</span><ItemImage item={selectedInventoryItem} /><strong>{selectedInventoryItem.name}</strong><small>{formatEnum(selectedInventoryItem.rarity)} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small>Set: {selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")}</small>}</div>
+                                    </div>
+                                    <ItemBonusComparison rows={itemComparison} />
+                                    <div className={styles.itemRestrictions}><ItemMeta item={selectedInventoryItem} /></div>
+                                    {selectedBlockReason && <p className={styles.restrictionMessage}>{selectedBlockReason}</p>}
+                                    <div className={styles.detailAction}>
+                                        {actionError?.key === `equip-${selectedInventoryItem.instanceId}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
+                                        {actionError?.key === `unequip-${selectedInventoryItem.slot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
+                                        {selectedEquipped[selectedInventoryItem.slot]?.instanceId === selectedInventoryItem.instanceId ? <button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedInventoryItem.slot)}>{busyAction ? "Working…" : "Unequip"}</button> : <button type="button" className={styles.primaryButton} disabled={busyAction !== null || !!selectedBlockReason} onClick={() => handleEquip(selectedInventoryItem)}>{busyAction?.startsWith("equip-") ? "Equipping…" : "Equip item"}</button>}
+                                    </div>
+                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4>{inspectedItem.name}</h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} />{(inspectedItem.setName || inspectedItem.setCode) && <p>Set: {inspectedItem.setName || formatEnum(inspectedItem.setCode || "")}</p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{busyAction ? "Working…" : "Unequip"}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `Blocked by ${selectedEquipped.main_hand?.name}.` : "This slot is empty. Select a compatible item from Available Equipment."}</p> : <p className={styles.detailPrompt}>Choose an available item or an equipment slot to see its details here.</p>}
+                            </aside>
+                        </div>
+                    </section>
+                </>}
             </div>
         </main>
     );

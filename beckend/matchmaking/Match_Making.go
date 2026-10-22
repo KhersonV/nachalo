@@ -886,8 +886,14 @@ func removePlayerHandler(w http.ResponseWriter, r *http.Request) {
 
 func currentMatchMember(instanceID string, playerID int) bool {
 	var member bool
-	err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND m.finished_at IS NULL)`, instanceID, playerID).Scan(&member)
+	err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND m.finished_at IS NULL AND (COALESCE(m.geometry->>'kind','')<>'hex' OR p.health>0))`, instanceID, playerID).Scan(&member)
 	return err == nil && member
+}
+
+func playerHasActiveMatch(playerID int) (bool, error) {
+	var active bool
+	err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.user_id=$1 AND m.finished_at IS NULL AND COALESCE(m.mode,'')<>'hex-test' AND (COALESCE(m.geometry->>'kind','')<>'hex' OR p.health>0))`, playerID).Scan(&active)
+	return active, err
 }
 
 // joinHandler – добавляет игрока в очередь и вызывает checkAndMakeMatch
@@ -928,6 +934,17 @@ func joinHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	partyMu.Unlock()
+	for _, memberID := range memberIDs {
+		active, err := playerHasActiveMatch(memberID)
+		if err != nil {
+			http.Error(w, "Cannot check active match", http.StatusInternalServerError)
+			return
+		}
+		if active {
+			http.Error(w, "Player is already in an active match", http.StatusConflict)
+			return
+		}
+	}
 
 	if leaderID != req.PlayerID {
 		http.Error(w, "Только лидер пати может начать поиск матча", http.StatusForbidden)
@@ -1063,6 +1080,7 @@ func currentMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	match, ok := currentMatches[instanceID]
 	if !ok {
+		delete(playerMatches, playerID)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "waiting"})
 		return
