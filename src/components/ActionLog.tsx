@@ -4,6 +4,8 @@ import * as React from "react";
 import type { ActionLogEntry } from "@/types";
 import styles from "@/styles/ActionLog.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 type ActionLogProps = {
     entries: ActionLogEntry[];
@@ -66,6 +68,7 @@ export default function ActionLog({
     onExpandedChange,
     labels,
 }: ActionLogProps) {
+    const { language } = useGameLanguage();
     const [internalCollapsed, setInternalCollapsed] = React.useState(compact);
     const listRef = React.useRef<HTMLOListElement | null>(null);
     const isControlled = typeof expanded === "boolean";
@@ -116,7 +119,7 @@ export default function ActionLog({
                     <p className={styles.eyebrow}>{labels?.actionLog ?? "Action Log"}</p>
                     {collapsed ? (
                         <p className={styles.collapsedMessage}>
-                            {latestEntry?.message ?? labels?.noEvents ?? "No events yet"}
+                            {uiText(language, latestEntry?.message ?? labels?.noEvents ?? "No events yet")}
                         </p>
                     ) : (
                         <p className={styles.subtitle}>{labels?.latestEvents ?? "Latest match events"}</p>
@@ -140,10 +143,10 @@ export default function ActionLog({
                             className={`${styles.entry} ${toneClass(entry.tone)}`}
                         >
                             <span className={styles.category}>
-                                {labels?.categories[entry.category] ?? categoryLabel(entry.category)}
+                                {uiText(language, labels?.categories[entry.category] ?? categoryLabel(entry.category))}
                             </span>
                             <span className={styles.message}>
-                                {entry.message}
+                                {uiText(language, entry.message)}
                             </span>
                         </li>
                     ))}

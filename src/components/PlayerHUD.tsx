@@ -12,6 +12,8 @@ import {
 } from "../utils/reflex";
 import styles from "../styles/GameController.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 interface PlayerHUDProps {
     health: number;
@@ -38,6 +40,8 @@ export default React.memo(function PlayerHUD({
     groupId,
     labels,
 }: PlayerHUDProps) {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const healthPercent = Math.round((health / maxHealth) * 100);
     const energyPercent = Math.round((energy / maxEnergy) * 100);
     const attackTypeLabel = isRanged ? (labels?.ranged ?? "Ranged") : (labels?.melee ?? "Melee");
@@ -46,12 +50,12 @@ export default React.memo(function PlayerHUD({
         typeof agility === "number" ? getReflexProcChance(agility) : null;
     const reflexEffectName = getClassReflexEffectName(characterType);
     const reflexDescription = getClassReflexEffectDescription(characterType);
-    const reflexTitle = `Effect: ${reflexEffectName}. ${reflexDescription}`;
+    const reflexTitle = `${t("Effect:")} ${t(reflexEffectName)}. ${t(reflexDescription)}`;
 
     return (
         <div className={styles.hud}>
             <div className={styles.hudRow}>
-                <span>{labels?.hp ?? "HP"}:</span>
+                <span>{labels?.hp ?? t("HP")}:</span>
                 <div className={styles.progressBar}>
                     <div
                         className={`${styles.progressFill} ${styles.progressFillHealth}`}
@@ -63,7 +67,7 @@ export default React.memo(function PlayerHUD({
                 </span>
             </div>
             <div className={styles.hudRow}>
-                <span>{labels?.energy ?? "Energy"}:</span>
+                <span>{labels?.energy ?? t("Energy")}:</span>
                 <div className={styles.progressBar}>
                     <div
                         className={`${styles.progressFill} ${styles.progressFillEnergy}`}
@@ -75,11 +79,11 @@ export default React.memo(function PlayerHUD({
                 </span>
             </div>
             <div className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}>
-                <span className={styles.hudMetaLabel}>{labels?.attackType ?? "Attack Type"}</span>
-                <span className={styles.hudMetaValue}>{attackTypeLabel}</span>
+                <span className={styles.hudMetaLabel}>{labels?.attackType ?? t("Attack Type")}</span>
+                <span className={styles.hudMetaValue}>{t(attackTypeLabel)}</span>
             </div>
             <div className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}>
-                <span className={styles.hudMetaLabel}>{labels?.range ?? "Range"}</span>
+                <span className={styles.hudMetaLabel}>{labels?.range ?? t("Range")}</span>
                 <span className={styles.hudMetaValue}>{attackRangeLabel}</span>
             </div>
             {typeof agility === "number" && (
@@ -87,7 +91,7 @@ export default React.memo(function PlayerHUD({
                     className={`${styles.hudMetaRow} ${styles.hudCombatMeta}`}
                     title={reflexTitle}
                 >
-                    <span className={styles.hudMetaLabel}>{labels?.reflex ?? "Reflex"}</span>
+                    <span className={styles.hudMetaLabel}>{labels?.reflex ?? t("Reflex")}</span>
                     <span className={styles.hudMetaValue}>
                         {agility} · {reflexChance}%
                     </span>
@@ -95,7 +99,7 @@ export default React.memo(function PlayerHUD({
             )}
             {typeof groupId === "number" && (
                 <div className={styles.hudMetaRow}>
-                    <span className={styles.hudMetaLabel}>{labels?.group ?? "Group"}</span>
+                    <span className={styles.hudMetaLabel}>{labels?.group ?? t("Group")}</span>
                     <span className={styles.hudMetaValue}>{groupId}</span>
                 </div>
             )}

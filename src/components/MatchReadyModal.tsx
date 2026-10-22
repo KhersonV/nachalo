@@ -1,5 +1,6 @@
 "use client";
 
+import UiText from "@/components/UiText";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../styles/ModeSelectionPage.module.css";
@@ -60,9 +61,9 @@ export default function MatchReadyModal({
                 >
                     ✕
                 </button>
-                <div className={styles.matchReadyTitle}>Match Ready</div>
+                <div className={styles.matchReadyTitle}><UiText text="Match Ready" /></div>
                 <div className={styles.matchReadyText}>
-                    Auto-start in {secondsLeft} sec.
+                    <UiText text="Auto-start in" /> {secondsLeft} <UiText text="sec." />
                 </div>
                 <div
                     style={{
@@ -72,13 +73,13 @@ export default function MatchReadyModal({
                     }}
                 >
                     <button className={styles.queueButton} onClick={joinNow}>
-                        Start Match Now
+                        <UiText text="Start Match Now" />
                     </button>
                     <button
                         className={styles.partySecondaryButton}
                         onClick={onClose}
                     >
-                        Close
+                        <UiText text="Close" />
                     </button>
                 </div>
             </div>

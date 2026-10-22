@@ -1,5 +1,9 @@
 "use client";
 
+import UiText from "@/components/UiText";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
+
 import React from "react";
 import Link from "next/link";
 import { API_BASE } from "@/utils/serviceUrls";
@@ -84,7 +88,7 @@ function ProductImage({ src, name, large = false }: { src?: string; name: string
 function ShopItemCard({ item, selected, onSelect }: { item: ShopItem; selected: boolean; onSelect: () => void }) {
     return <button type="button" className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`} aria-pressed={selected} onClick={onSelect}>
         <ProductImage src={item.category === "resource" ? resourceImage(item.type, item.image) ?? item.image : item.image} name={item.name} />
-        <span className={styles.cardCopy}><span className={styles.cardType}>{CATEGORY_LABELS[item.category]}</span><strong>{item.name}</strong><small>{item.description}</small></span>
+        <span className={styles.cardCopy}><span className={styles.cardType}><UiText text={CATEGORY_LABELS[item.category]} /></span><strong><UiText text={item.name} /></strong><small><UiText text={item.description} /></small></span>
         <span className={styles.cardPrice}>{formatGold(item.price)}</span>
     </button>;
 }
@@ -92,19 +96,19 @@ function ShopItemCard({ item, selected, onSelect }: { item: ShopItem; selected: 
 function SellItemCard({ item, selected, onSelect }: { item: EquipmentItem; selected: boolean; onSelect: () => void }) {
     return <button type="button" className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={onSelect}>
         <ProductImage src={item.imageUrl} name={item.name} />
-        <span className={styles.cardCopy}><span className={styles.cardType}>{formatEnum(item.slot)} · {formatEnum(item.rarity)}</span><strong>{item.name}</strong><small>{item.setName || item.classRestriction || "Equipment"}</small></span>
+        <span className={styles.cardCopy}><span className={styles.cardType}><UiText text={formatEnum(item.slot)} /> · <UiText text={formatEnum(item.rarity)} /></span><strong><UiText text={item.name} /></strong><small><UiText text={item.setName || item.classRestriction || "Equipment"} /></small></span>
         <span className={styles.cardPrice}>{formatGold(item.sellPrice!)}</span>
     </button>;
 }
 
 function QuantitySelector({ count, max, disabled, onChange }: { count: number; max: number; disabled: boolean; onChange: (count: number) => void }) {
     return <div className={styles.quantityControl}>
-        <label htmlFor="shop-quantity">Quantity</label>
+        <label htmlFor="shop-quantity"><UiText text="Quantity" /></label>
         <div className={styles.quantityRow}>
             {[-5, -1].map(delta => <button key={delta} type="button" disabled={disabled || count <= 1} onClick={() => onChange(count + delta)}>{delta}</button>)}
             <input id="shop-quantity" aria-label="Quantity" type="number" inputMode="numeric" min={1} max={99} value={count} disabled={disabled} onChange={event => onChange(Number(event.target.value))} />
             {[1, 5].map(delta => <button key={delta} type="button" disabled={disabled || count >= 99} onClick={() => onChange(count + delta)}>+{delta}</button>)}
-            <button type="button" disabled={disabled || max < 1 || count === max} onClick={() => onChange(max)}>Max</button>
+            <button type="button" disabled={disabled || max < 1 || count === max} onClick={() => onChange(max)}><UiText text="Max" /></button>
         </div>
     </div>;
 }
@@ -117,23 +121,23 @@ function ShopItemDetails({ item, player, count, forgeBuilt, libraryBuilt, busy, 
     const max = maxAffordableQuantity(player?.balance ?? null, item.price);
     const effects = Object.entries(item.effect || {}).filter(([, value]) => typeof value === "number");
     return <div className={styles.detailsBody}>
-        <div className={styles.detailsHero}><ProductImage src={item.category === "resource" ? resourceImage(item.type, item.image) ?? item.image : item.image} name={item.name} large /><div><span className={styles.eyebrow}>{CATEGORY_LABELS[item.category]}</span><h2>{item.name}</h2><p>{item.description}</p></div></div>
-        {effects.length > 0 && <div className={styles.effects}>{effects.map(([key, value]) => <span key={key}>{EFFECT_LABELS[key] || formatEnum(key)}: {key === "structure_blocking" ? value ? "Yes" : "No" : `${value > 0 ? "+" : ""}${value}`}</span>)}</div>}
-        <div className={styles.detailFacts}><span>Unit price <strong>{formatGold(item.price)}</strong></span><span>Owned <strong>{ownedCount(player, item)}</strong></span></div>
+        <div className={styles.detailsHero}><ProductImage src={item.category === "resource" ? resourceImage(item.type, item.image) ?? item.image : item.image} name={item.name} large /><div><span className={styles.eyebrow}><UiText text={CATEGORY_LABELS[item.category]} /></span><h2><UiText text={item.name} /></h2><p><UiText text={item.description} /></p></div></div>
+        {effects.length > 0 && <div className={styles.effects}>{effects.map(([key, value]) => <span key={key}><UiText text={EFFECT_LABELS[key] || formatEnum(key)} />: {key === "structure_blocking" ? <UiText text={value ? "Yes" : "No"} /> : `${value > 0 ? "+" : ""}${value}`}</span>)}</div>}
+        <div className={styles.detailFacts}><span><UiText text="Unit price" /> <strong>{formatGold(item.price)}</strong></span><span><UiText text="Owned" /> <strong>{ownedCount(player, item)}</strong></span></div>
         <QuantitySelector count={count} max={max} disabled={busy} onChange={onCount} />
-        <div className={styles.totalRow}><span>Total</span><strong>{formatGold(purchaseTotal(item.price, count))}</strong></div>
-        <div className={styles.balanceHint}>Available: {player ? formatGold(player.balance) : "Loading…"}</div>
-        {reason && <p className={styles.blockReason}>{reason}{(reason.includes("Forge") || reason.includes("Library")) && <> · <Link href="/base">Go to Base</Link></>}</p>}
-        <button type="button" className={styles.primaryAction} disabled={actionDisabled(busy, reason)} onClick={onBuy}>{busy ? "Buying…" : `Buy ${count}`}</button>
+        <div className={styles.totalRow}><span><UiText text="Total" /></span><strong>{formatGold(purchaseTotal(item.price, count))}</strong></div>
+        <div className={styles.balanceHint}><UiText text="Available:" /> {player ? formatGold(player.balance) : <UiText text="Loading…" />}</div>
+        {reason && <p className={styles.blockReason}><UiText text={reason} />{(reason.includes("Forge") || reason.includes("Library")) && <> · <Link href="/base"><UiText text="Go to Base" /></Link></>}</p>}
+        <button type="button" className={styles.primaryAction} disabled={actionDisabled(busy, reason)} onClick={onBuy}><UiText text={busy ? "Buying…" : "Buy"} /> {!busy && count}</button>
     </div>;
 }
 
 function SellItemDetails({ item, busy, onSell }: { item: EquipmentItem; busy: boolean; onSell: () => void }) {
     return <div className={styles.detailsBody}>
-        <div className={styles.detailsHero}><ProductImage src={item.imageUrl} name={item.name} large /><div><span className={styles.eyebrow}>{formatEnum(item.rarity)} · {formatEnum(item.slot)}</span><h2>{item.name}</h2><p>{item.setName || item.classRestriction || "Available equipment"}</p></div></div>
-        <div className={styles.detailFacts}><span>Item instance <strong className={styles.instanceId}>{item.instanceId}</strong></span><span>Sell value <strong>{formatGold(item.sellPrice!)}</strong></span></div>
-        <p className={styles.sellWarning}>Selling permanently removes this item from your inventory.</p>
-        <button type="button" className={styles.primaryAction} disabled={busy} onClick={onSell}>{busy ? "Selling…" : `Sell for ${formatGold(item.sellPrice!)}`}</button>
+        <div className={styles.detailsHero}><ProductImage src={item.imageUrl} name={item.name} large /><div><span className={styles.eyebrow}><UiText text={formatEnum(item.rarity)} /> · <UiText text={formatEnum(item.slot)} /></span><h2><UiText text={item.name} /></h2><p><UiText text={item.setName || item.classRestriction || "Available equipment"} /></p></div></div>
+        <div className={styles.detailFacts}><span><UiText text="Item instance" /> <strong className={styles.instanceId}>{item.instanceId}</strong></span><span><UiText text="Sell value" /> <strong>{formatGold(item.sellPrice!)}</strong></span></div>
+        <p className={styles.sellWarning}><UiText text="Selling permanently removes this item from your inventory." /></p>
+        <button type="button" className={styles.primaryAction} disabled={busy} onClick={onSell}><UiText text={busy ? "Selling…" : "Sell for"} /> {!busy && formatGold(item.sellPrice!)}</button>
     </div>;
 }
 
@@ -151,6 +155,8 @@ function MobileDetails({ open, children, onClose }: { open: boolean; children: R
 }
 
 export default function LobbyShopPage() {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const { user } = useAuth();
     const [tab, setTab] = React.useState<ShopTab>("buy");
     const [category, setCategory] = React.useState<ShopCategory>("all");
@@ -234,7 +240,7 @@ export default function LobbyShopPage() {
             try { if (data?.player) confirmedPlayer = normalizePlayer(data.player); } catch { /* Refresh below is authoritative. */ }
             if (confirmedPlayer) setPlayer(confirmedPlayer);
             const fresh = await loadData(confirmedPlayer);
-            setNotice(fresh ? `Purchased ${item.name} ×${count}.` : `Purchased ${item.name} ×${count}. Refresh the shop to verify the latest details.`);
+            setNotice(`${t("Purchased")} ${t(item.name)} ×${count}.${fresh ? "" : ` ${t("Refresh the shop to verify the latest details.")}`}`);
         } catch (caught) { setError(errorMessage(caught)); }
         finally { busyRef.current = false; setBusy(false); }
     };
@@ -258,7 +264,7 @@ export default function LobbyShopPage() {
             setConfirmSellId(null);
             setMobileDetailsOpen(false);
             const fresh = await loadData(confirmedPlayer, confirmedEquipment);
-            setNotice(fresh ? `Sold ${item.name}.` : `Sold ${item.name}. Refresh the shop to verify the latest details.`);
+            setNotice(`${t("Sold")} ${t(item.name)}.${fresh ? "" : ` ${t("Refresh the shop to verify the latest details.")}`}`);
         } catch (caught) { setError(errorMessage(caught)); }
         finally { busyRef.current = false; setBusy(false); }
     };
@@ -271,31 +277,31 @@ export default function LobbyShopPage() {
     return <main className={styles.pageRoot}>
         <div className={styles.container}>
             <header className={styles.pageHeader}>
-                <div><span className={styles.eyebrow}>THE MARKETPLACE</span><h1>Shop</h1><p>Supplies for the road. Equipment for the next journey.</p></div>
-                <div className={styles.goldSummary}><span>YOUR GOLD</span><strong>{player ? formatGold(player.balance) : "Loading…"}</strong></div>
+                <div><span className={styles.eyebrow}><UiText text="THE MARKETPLACE" /></span><h1><UiText text="Shop" /></h1><p><UiText text="Supplies for the road. Equipment for the next journey." /></p></div>
+                <div className={styles.goldSummary}><span><UiText text="YOUR GOLD" /></span><strong>{player ? formatGold(player.balance) : <UiText text="Loading…" />}</strong></div>
             </header>
             <div className={styles.toolbar}>
                 <Tabs id="shop-mode" tabs={[{ id: "buy", label: "Buy" }, { id: "sell", label: "Sell" }]} activeId={tab} onChange={id => selectTab(id as ShopTab)} label="Shop mode" />
                 {tab === "buy" && <div className={styles.categoryTabs} role="group" aria-label="Shop categories">
                     {(["all", "resource", "scroll", "blueprint", "preview"] as ShopCategory[]).filter(key => key === "all" || key === "preview" || catalog.some(item => item.category === key)).map(key =>
-                        <button key={key} type="button" aria-pressed={category === key} onClick={() => { setCategory(key); setMobileDetailsOpen(false); }}>{CATEGORY_LABELS[key]}{key === "preview" && <small> Soon</small>}</button>)}
+                        <button key={key} type="button" aria-pressed={category === key} onClick={() => { setCategory(key); setMobileDetailsOpen(false); }}><UiText text={CATEGORY_LABELS[key]} />{key === "preview" && <small> <UiText text="Soon" /></small>}</button>)}
                 </div>}
             </div>
-            {error && <StatusMessage tone="error" className={styles.message}>{error} <button type="button" onClick={() => void loadData()}>Retry</button></StatusMessage>}
+            {error && <StatusMessage tone="error" className={styles.message}>{error} <button type="button" onClick={() => void loadData()}><UiText text="Retry" /></button></StatusMessage>}
             {notice && <StatusMessage tone="success" className={styles.message}>{notice}</StatusMessage>}
             {loading && !player && catalog.length === 0 ? <LoadingState title="Opening the market…" /> : <div className={styles.contentGrid}>
                 <section className={styles.catalogPanel} aria-label={tab === "buy" ? "Shop catalog" : "Available equipment for sale"}>
-                    <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>{tab === "buy" ? "BROWSE GOODS" : "YOUR INVENTORY"}</span><h2>{tab === "buy" ? CATEGORY_LABELS[category] : "Sell Equipment"}</h2></div><span>{tab === "buy" ? visibleCatalog.length : sellItems.length} items</span></div>
-                    {tab === "buy" && category === "scroll" && <div className={styles.categoryArt}><span>Scriptorium</span><small>Scrolls require a Library.</small></div>}
-                    {tab === "buy" && category === "preview" ? <div className={styles.previewSection}><div className={styles.previewArt}><span>Green Sets</span><strong>Coming Soon</strong></div><p>Equipment sets cannot be purchased yet.</p><div className={styles.previewNames}>{GREEN_SET_NAMES.map(name => <span key={name}>{name}</span>)}</div></div> : tab === "buy" ? visibleCatalog.length ? <div className={styles.productGrid}>{visibleCatalog.map(item => <ShopItemCard key={item.type} item={item} selected={selectedBuy?.type === item.type} onSelect={() => { setSelectedBuyId(item.type); showDetails(); }} />)}</div> : <EmptyState title="No goods in this category" description="The current server catalog has no items here." /> : !equipment.inventory ? <ErrorState title="Sell inventory unavailable" description="Refresh to load the server's free equipment list." action={<button type="button" className={styles.secondaryAction} onClick={() => void loadData()}>Retry</button>} /> : sellItems.length ? <div className={styles.productGrid}>{sellItems.map(item => <SellItemCard key={item.instanceId} item={item} selected={selectedSell?.instanceId === item.instanceId} onSelect={() => { setSelectedSellId(item.instanceId); showDetails(); }} />)}</div> : <EmptyState title="No unequipped equipment available" description="Equipped items must be removed in Inventory before they can be sold." />}
+                    <div className={styles.sectionHeading}><div><span className={styles.eyebrow}><UiText text={tab === "buy" ? "BROWSE GOODS" : "YOUR INVENTORY"} /></span><h2><UiText text={tab === "buy" ? CATEGORY_LABELS[category] : "Sell Equipment"} /></h2></div><span>{tab === "buy" ? visibleCatalog.length : sellItems.length} <UiText text="items" /></span></div>
+                    {tab === "buy" && category === "scroll" && <div className={styles.categoryArt}><span><UiText text="Scriptorium" /></span><small><UiText text="Scrolls require a Library." /></small></div>}
+                    {tab === "buy" && category === "preview" ? <div className={styles.previewSection}><div className={styles.previewArt}><span><UiText text="Green Sets" /></span><strong><UiText text="Coming Soon" /></strong></div><p><UiText text="Equipment sets cannot be purchased yet." /></p><div className={styles.previewNames}>{GREEN_SET_NAMES.map(name => <span key={name}>{name}</span>)}</div></div> : tab === "buy" ? visibleCatalog.length ? <div className={styles.productGrid}>{visibleCatalog.map(item => <ShopItemCard key={item.type} item={item} selected={selectedBuy?.type === item.type} onSelect={() => { setSelectedBuyId(item.type); showDetails(); }} />)}</div> : <EmptyState title="No goods in this category" description="The current server catalog has no items here." /> : !equipment.inventory ? <ErrorState title="Sell inventory unavailable" description="Refresh to load the server's free equipment list." action={<button type="button" className={styles.secondaryAction} onClick={() => void loadData()}><UiText text="Retry" /></button>} /> : sellItems.length ? <div className={styles.productGrid}>{sellItems.map(item => <SellItemCard key={item.instanceId} item={item} selected={selectedSell?.instanceId === item.instanceId} onSelect={() => { setSelectedSellId(item.instanceId); showDetails(); }} />)}</div> : <EmptyState title="No unequipped equipment available" description="Equipped items must be removed in Inventory before they can be sold." />}
                 </section>
                 <aside className={styles.detailsPanel} aria-label="Selected item details">
-                    <div className={styles.detailHeading}><span className={styles.eyebrow}>{tab === "buy" ? "MAKE A PURCHASE" : "SELL AN ITEM"}</span><h2>Item details</h2></div>
-                    {mobileDetailsOpen ? null : detail || <p className={styles.emptyDetail}>{category === "preview" ? "Green sets are coming soon." : "Select an item to view its details."}</p>}
+                    <div className={styles.detailHeading}><span className={styles.eyebrow}>{t(tab === "buy" ? "MAKE A PURCHASE" : "SELL AN ITEM")}</span><h2><UiText text="Item details" /></h2></div>
+                    {mobileDetailsOpen ? null : detail || <p className={styles.emptyDetail}><UiText text={category === "preview" ? "Green sets are coming soon." : "Select an item to view its details."} /></p>}
                 </aside>
             </div>}
         </div>
         <MobileDetails open={mobileDetailsOpen && Boolean(detail)} onClose={closeDetails}>{mobileDetailsOpen ? detail : null}</MobileDetails>
-        <ConfirmDialog open={Boolean(confirmItem)} title="Sell equipment?" description={confirmItem ? `Sell ${confirmItem.name} for ${formatGold(confirmItem.sellPrice!)}? This removes this exact item permanently.` : ""} confirmLabel="Confirm sale" tone="danger" busy={busy} onConfirm={() => void sell()} onCancel={() => { if (!busyRef.current) setConfirmSellId(null); }} />
+        <ConfirmDialog open={Boolean(confirmItem)} title="Sell equipment?" description={confirmItem ? `${t("Sell")} ${t(confirmItem.name)} ${t("for")} ${formatGold(confirmItem.sellPrice!)}? ${t("This removes this exact item permanently.")}` : ""} confirmLabel="Confirm sale" tone="danger" busy={busy} onConfirm={() => void sell()} onCancel={() => { if (!busyRef.current) setConfirmSellId(null); }} />
     </main>;
 }

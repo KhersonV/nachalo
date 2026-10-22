@@ -1,5 +1,7 @@
 "use client";
 
+import UiText from "@/components/UiText";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -9,6 +11,8 @@ import { getHeroPortrait } from "@/features/heroes/heroArtwork";
 import { matchesProfileView, ownedHeroes, performConfirmedSocialAction, profileViewId, relationActions, xpProgress, type Relation, type RelationAction, type SocialTab } from "@/features/profile/profileView";
 import { normalizeAvatarPath } from "@/utils/normalizeAvatarPath";
 import styles from "@/styles/ProfilePage.module.css";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 type Activity = "in_match" | "in_lobby" | "offline";
 type Player = {
@@ -62,8 +66,8 @@ function activityLabel(status: Activity): string {
 function PlayerRow({ player, children }: { player: SocialPlayer; children?: React.ReactNode }) {
     return <div className={styles.playerRow}>
         <img className={styles.rowAvatar} src={normalizeAvatarPath(player.image)} alt="" />
-        <div className={styles.playerMeta}><strong>{player.name}</strong><span>{activityLabel(player.activityStatus)} · {player.characterType} · Hero Lv. {player.level}</span></div>
-        <div className={styles.rowActions}><Link href={"/profile?view=" + player.userId}>View Profile</Link>{children}</div>
+        <div className={styles.playerMeta}><strong>{player.name}</strong><span><UiText text={activityLabel(player.activityStatus)} /> · <UiText text={player.characterType.charAt(0).toUpperCase() + player.characterType.slice(1)} /> <UiText text="· Hero Lv." /> {player.level}</span></div>
+        <div className={styles.rowActions}><Link href={"/profile?view=" + player.userId}><UiText text="View Profile" /></Link>{children}</div>
     </div>;
 }
 
@@ -73,20 +77,20 @@ function Identity({ player, own }: { player: Player; own: boolean }) {
         <div className={styles.accountIdentity}>
             <img className={styles.avatar} src={normalizeAvatarPath(player.image)} alt={player.name + " avatar"} />
             <div className={styles.accountCopy}>
-                <span className={styles.eyebrow}>{own ? "PLAYER IDENTITY" : "PLAYER PROFILE"}</span>
+                <span className={styles.eyebrow}><UiText text={own ? "PLAYER IDENTITY" : "PLAYER PROFILE"} /></span>
                 <h1>{player.name}</h1>
-                <span className={styles.activity} data-status={player.activityStatus}>{activityLabel(player.activityStatus)}</span>
-                {own && Number.isFinite(player.balance) && <span className={styles.accountBalance}>{player.balance!.toLocaleString()} Gold</span>}
+                <span className={styles.activity} data-status={player.activityStatus}><UiText text={activityLabel(player.activityStatus)} /></span>
+                {own && Number.isFinite(player.balance) && <span className={styles.accountBalance}>{player.balance!.toLocaleString()} <UiText text="Gold" /></span>}
             </div>
         </div>
         <div className={styles.heroProgress}>
-            <div className={styles.progressHeading}><span>Active hero progress</span><strong>Level {player.level}</strong></div>
-            <span className={styles.xpText}>{Number.isFinite(player.experience) ? player.experience.toLocaleString() : "—"}{Number.isFinite(player.maxExperience) && player.maxExperience > 0 ? " / " + player.maxExperience.toLocaleString() : ""} XP</span>
+            <div className={styles.progressHeading}><span><UiText text="Active hero progress" /></span><strong><UiText text="Level" /> {player.level}</strong></div>
+            <span className={styles.xpText}>{Number.isFinite(player.experience) ? player.experience.toLocaleString() : "—"}{Number.isFinite(player.maxExperience) && player.maxExperience > 0 ? " / " + player.maxExperience.toLocaleString() : ""} <UiText text="XP" /></span>
             {progress !== null && <div className={styles.expTrack} role="progressbar" aria-label="Active hero experience" aria-valuenow={player.experience} aria-valuemin={0} aria-valuemax={player.maxExperience}><div style={{ width: progress + "%" }} /></div>}
         </div>
         <div className={styles.activeHero}>
             <img src={getHeroPortrait(player.characterType)} alt="" />
-            <div><span className={styles.eyebrow}>ACTIVE HERO</span><strong>{player.characterType}</strong><small>Hero Level {player.level}</small></div>
+            <div><span className={styles.eyebrow}><UiText text="ACTIVE HERO" /></span><strong><UiText text={player.characterType.charAt(0).toUpperCase() + player.characterType.slice(1)} /></strong><small><UiText text="Hero Level" /> {player.level}</small></div>
         </div>
     </section>;
 }
@@ -96,12 +100,14 @@ function Overview({ progress, own }: { progress: Progress | null; own: boolean }
         ? [{ label: "Matches", value: progress.matchesPlayed }, { label: "Wins", value: progress.wins }, { label: "Losses", value: progress.losses }, { label: "Win Rate", value: progress.winRate + "%" }]
         : null;
     return <section className={styles.panel} aria-label="Player overview">
-        <div className={styles.sectionHead}><div><span className={styles.eyebrow}>PLAYER OVERVIEW</span><h2>Match record</h2></div>{own && <Link href="/matches">View Match History ↗</Link>}</div>
-        {values ? <div className={styles.stats}>{values.map(item => <div className={styles.stat} key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div> : <p className={styles.empty}>Match statistics are unavailable.</p>}
+        <div className={styles.sectionHead}><div><span className={styles.eyebrow}><UiText text="PLAYER OVERVIEW" /></span><h2><UiText text="Match record" /></h2></div>{own && <Link href="/matches"><UiText text="View Match History ↗" /></Link>}</div>
+        {values ? <div className={styles.stats}>{values.map(item => <div className={styles.stat} key={item.label}><span><UiText text={item.label} /></span><strong>{item.value}</strong></div>)}</div> : <p className={styles.empty}><UiText text="Match statistics are unavailable." /></p>}
     </section>;
 }
 
 export default function ProfilePage() {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const router = useRouter();
     const params = useSearchParams();
     const { user } = useAuth();
@@ -278,7 +284,7 @@ export default function ProfilePage() {
     const renderActions = (relation: Relation, targetId: number) => relationActions(relation, targetId, user?.id ?? -1).map(action =>
         <button className={action === "remove" || action === "decline" || action === "cancel" ? styles.dangerButton : styles.primaryButton}
             type="button" key={action} disabled={Boolean(actionKey)} onClick={() => void runRelationAction(action, targetId)}>
-            {actionKey === action + ":" + targetId ? "Working…" : action === "send" ? "Add Friend" : action === "remove" ? "Remove" : action === "accept" ? "Accept" : action === "decline" ? "Decline" : "Cancel"}
+            {t(actionKey === action + ":" + targetId ? "Working…" : action === "send" ? "Add Friend" : action === "remove" ? "Remove" : action === "accept" ? "Accept" : action === "decline" ? "Decline" : "Cancel")}
         </button>,
     );
 
@@ -292,45 +298,45 @@ export default function ProfilePage() {
     const backPath = fromGame && instanceId ? "/game?instance_id=" + encodeURIComponent(instanceId) : "/mode";
 
     return <main className={styles.page}>
-        <header className={styles.topRow}><div><span className={styles.eyebrow}>NACHALO · PLAYER</span><h2>{ownMode ? "Your Profile" : "Player Profile"}</h2></div><button className={styles.secondaryButton} type="button" onClick={() => router.push(backPath)}>{fromGame && !ownMode ? "Back to Game" : "To Modes"}</button></header>
-        {!activeData ? <section className={styles.panel} role={ownError || publicError ? "alert" : "status"}>{(ownMode ? ownError : publicError) || "Loading profile…"}{(ownMode ? ownError : publicError) && <button className={styles.secondaryButton} type="button" onClick={() => void (ownMode ? refreshOwn() : refreshPublic(viewId!)).catch(error => ownMode ? setOwnError(String(error)) : setPublicError(String(error)))}>Retry</button>}</section> : <>
+        <header className={styles.topRow}><div><span className={styles.eyebrow}><UiText text="NACHALO · PLAYER" /></span><h2>{t(ownMode ? "Your Profile" : "Player Profile")}</h2></div><button className={styles.secondaryButton} type="button" onClick={() => router.push(backPath)}>{t(fromGame && !ownMode ? "Back to Game" : "To Modes")}</button></header>
+        {!activeData ? <section className={styles.panel} role={ownError || publicError ? "alert" : "status"}>{t((ownMode ? ownError : publicError) || "Loading profile…")}{(ownMode ? ownError : publicError) && <button className={styles.secondaryButton} type="button" onClick={() => void (ownMode ? refreshOwn() : refreshPublic(viewId!)).catch(error => ownMode ? setOwnError(String(error)) : setPublicError(String(error)))}><UiText text="Retry" /></button>}</section> : <>
             <Identity player={activeData.player} own={ownMode} />
             {ownMode && <div className={styles.ownerTools}>
-                <button className={styles.secondaryButton} type="button" aria-expanded={editOpen} onClick={() => { setEditName(activeData.player.name); setEditImage(""); setEditError(""); setEditOpen(value => !value); }}>Edit identity</button>
-                <span className={styles.subtle}>Account avatar and nickname</span>
-                <Link href="/equipment">View Inventory ↗</Link><Link href="/base">View Base ↗</Link>
-                {editNotice && <span className={styles.success} role="status">{editNotice}</span>}
+                <button className={styles.secondaryButton} type="button" aria-expanded={editOpen} onClick={() => { setEditName(activeData.player.name); setEditImage(""); setEditError(""); setEditOpen(value => !value); }}><UiText text="Edit identity" /></button>
+                <span className={styles.subtle}><UiText text="Account avatar and nickname" /></span>
+                <Link href="/equipment"><UiText text="View Inventory ↗" /></Link><Link href="/base"><UiText text="View Base ↗" /></Link>
+                {editNotice && <span className={styles.success} role="status">{t(editNotice)}</span>}
             </div>}
             {ownMode && editOpen && <form className={styles.editor} onSubmit={event => void saveIdentity(event)}>
-                <label>Nickname<input value={editName} onChange={event => setEditName(event.target.value)} maxLength={32} /></label>
-                <label>New avatar URL (optional)<input value={editImage} onChange={event => setEditImage(event.target.value)} maxLength={512} placeholder="Leave blank to keep saved avatar" /></label>
-                <button className={styles.primaryButton} type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+                <label><UiText text="Nickname" /><input value={editName} onChange={event => setEditName(event.target.value)} maxLength={32} /></label>
+                <label><UiText text="New avatar URL (optional)" /><input value={editImage} onChange={event => setEditImage(event.target.value)} maxLength={512} placeholder={t("Leave blank to keep saved avatar")} /></label>
+                <button className={styles.primaryButton} type="submit" disabled={saving}>{t(saving ? "Saving…" : "Save")}</button>
                 {editError && <p className={styles.error} role="alert">{editError}</p>}
             </form>}
             <div className={styles.overviewGrid}>
                 <Overview progress={activeData.progress} own={ownMode} />
                 {ownMode && <section className={styles.panel} aria-label="Hero roster">
-                    <div className={styles.sectionHead}><div><span className={styles.eyebrow}>YOUR COMPANY</span><h2>Owned heroes</h2></div><Link href="/base">Manage in Tavern ↗</Link></div>
+                    <div className={styles.sectionHead}><div><span className={styles.eyebrow}><UiText text="YOUR COMPANY" /></span><h2><UiText text="Owned heroes" /></h2></div><Link href="/base"><UiText text="Manage in Tavern ↗" /></Link></div>
                     {heroesError && <p className={styles.error} role="alert">{heroesError}</p>}
-                    {!roster ? <p className={styles.empty}>{heroesError ? "Hero roster unavailable." : "Loading heroes…"}</p> : roster.length === 0 ? <p className={styles.empty}>No owned heroes returned by the server.</p> : <div className={styles.heroRoster}>{roster.map(hero => <div className={styles.heroTile} key={hero.id}><img src={getHeroPortrait(hero.id, hero.image)} alt="" /><strong>{hero.displayName}</strong>{hero.active && <span>ACTIVE</span>}</div>)}</div>}
+                    {!roster ? <p className={styles.empty}>{t(heroesError ? "Hero roster unavailable." : "Loading heroes…")}</p> : roster.length === 0 ? <p className={styles.empty}><UiText text="No owned heroes returned by the server." /></p> : <div className={styles.heroRoster}>{roster.map(hero => <div className={styles.heroTile} key={hero.id}><img src={getHeroPortrait(hero.id, hero.image)} alt="" /><strong>{hero.displayName}</strong>{hero.active && <span><UiText text="ACTIVE" /></span>}</div>)}</div>}
                 </section>}
             </div>
             {ownMode ? <section className={styles.panel} aria-label="Social">
-                <div className={styles.sectionHead}><div><span className={styles.eyebrow}>SOCIAL</span><h2>Players & friends</h2></div></div>
-                <div className={styles.socialTabs} role="group" aria-label="Social views">{TABS.map(item => <button key={item.key} type="button" aria-pressed={tab === item.key} onClick={() => setTab(item.key)}>{item.label}{socialData && item.key !== "search" ? " " + socialData[item.key].length : ""}</button>)}</div>
-                {socialError && <p className={styles.error} role="alert">{socialError} <button type="button" onClick={() => void refreshSocial().catch(error => setSocialError(String(error)))}>Retry</button></p>}
+                <div className={styles.sectionHead}><div><span className={styles.eyebrow}><UiText text="SOCIAL" /></span><h2><UiText text="Players & friends" /></h2></div></div>
+                <div className={styles.socialTabs} role="group" aria-label="Social views">{TABS.map(item => <button key={item.key} type="button" aria-pressed={tab === item.key} onClick={() => setTab(item.key)}>{t(item.label)}{socialData && item.key !== "search" ? " " + socialData[item.key].length : ""}</button>)}</div>
+                {socialError && <p className={styles.error} role="alert">{socialError} <button type="button" onClick={() => void refreshSocial().catch(error => setSocialError(String(error)))}><UiText text="Retry" /></button></p>}
                 {actionError && <p className={styles.error} role="alert">{actionError}</p>}
                 {actionNotice && <p className={styles.success} role="status">{actionNotice}</p>}
                 {tab === "search" ? <div className={styles.socialBody}>
-                    <form className={styles.searchForm} onSubmit={event => { event.preventDefault(); void runSearch(searchQuery); }}><label htmlFor="profile-search">Find players by name</label><div><input id="profile-search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="At least 2 characters" /><button className={styles.primaryButton} type="submit" disabled={searching}>{searching ? "Searching…" : "Search"}</button></div></form>
+                    <form className={styles.searchForm} onSubmit={event => { event.preventDefault(); void runSearch(searchQuery); }}><label htmlFor="profile-search"><UiText text="Find players by name" /></label><div><input id="profile-search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder={t("At least 2 characters")} /><button className={styles.primaryButton} type="submit" disabled={searching}>{t(searching ? "Searching…" : "Search")}</button></div></form>
                     {searchError && <p className={styles.error} role="alert">{searchError}</p>}
-                    {searching && <p className={styles.subtle} role="status">Searching players…</p>}
-                    {!searching && searchedQuery && searchResults.length === 0 && <p className={styles.empty}>No players found for “{searchedQuery}”.</p>}
+                    {searching && <p className={styles.subtle} role="status"><UiText text="Searching players…" /></p>}
+                    {!searching && searchedQuery && searchResults.length === 0 && <p className={styles.empty}><UiText text="No players found for “" />{searchedQuery}”.</p>}
                     {searchResults.length > 0 && <div className={styles.playerList}>{searchResults.map(player => <PlayerRow key={player.userId} player={player}>{renderActions(player.friendRelation, player.userId)}</PlayerRow>)}</div>}
-                </div> : !socialData ? <p className={styles.empty}>{socialError ? "Social data unavailable." : "Loading social data…"}</p> : socialData[tab].length === 0 ? <p className={styles.empty}>{tab === "friends" ? "Your friend list is empty." : tab === "incoming" ? "No incoming requests." : "No outgoing requests."}</p> : <div className={styles.playerList}>{socialData[tab].map(player => <PlayerRow key={player.userId} player={player}>
-                    {tab === "friends" ? <button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("remove", player.userId)}>{actionKey === "remove:" + player.userId ? "Removing…" : "Remove"}</button> : tab === "incoming" ? <><button className={styles.primaryButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("accept", player.userId)}>Accept</button><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("decline", player.userId)}>Decline</button></> : <><span className={styles.pending}>Pending</span><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("cancel", player.userId)}>Cancel</button></>}
+                </div> : !socialData ? <p className={styles.empty}>{t(socialError ? "Social data unavailable." : "Loading social data…")}</p> : socialData[tab].length === 0 ? <p className={styles.empty}>{t(tab === "friends" ? "Your friend list is empty." : tab === "incoming" ? "No incoming requests." : "No outgoing requests.")}</p> : <div className={styles.playerList}>{socialData[tab].map(player => <PlayerRow key={player.userId} player={player}>
+                    {tab === "friends" ? <button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("remove", player.userId)}>{t(actionKey === "remove:" + player.userId ? "Removing…" : "Remove")}</button> : tab === "incoming" ? <><button className={styles.primaryButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("accept", player.userId)}><UiText text="Accept" /></button><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("decline", player.userId)}><UiText text="Decline" /></button></> : <><span className={styles.pending}><UiText text="Pending" /></span><button className={styles.dangerButton} type="button" disabled={Boolean(actionKey)} onClick={() => void runRelationAction("cancel", player.userId)}><UiText text="Cancel" /></button></>}
                 </PlayerRow>)}</div>}
-            </section> : <section className={styles.panel} aria-label="Friend relation"><div className={styles.sectionHead}><div><span className={styles.eyebrow}>SOCIAL</span><h2>Connection</h2></div></div><p className={styles.subtle}>Status: {publicData?.friendRelation ?? "—"}</p>{actionError && <p className={styles.error} role="alert">{actionError}</p>}{actionNotice && <p className={styles.success} role="status">{actionNotice}</p>}<div className={styles.publicActions}>{publicData && renderActions(publicData.friendRelation, publicData.player.userId)}</div></section>}
+            </section> : <section className={styles.panel} aria-label="Friend relation"><div className={styles.sectionHead}><div><span className={styles.eyebrow}><UiText text="SOCIAL" /></span><h2><UiText text="Connection" /></h2></div></div><p className={styles.subtle}><UiText text="Status:" /> {publicData?.friendRelation ?? "—"}</p>{actionError && <p className={styles.error} role="alert">{actionError}</p>}{actionNotice && <p className={styles.success} role="status">{actionNotice}</p>}<div className={styles.publicActions}>{publicData && renderActions(publicData.friendRelation, publicData.player.userId)}</div></section>}
         </>}
     </main>;
 }

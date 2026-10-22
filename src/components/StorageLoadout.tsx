@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 import { API_BASE } from "@/utils/serviceUrls";
 import {
     eligibleItems,
@@ -45,7 +46,9 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
 ) {
     const { user } = useAuth();
     const { language } = useGameLanguage();
-    const t = copy[languageOverride ?? language];
+    const locale = languageOverride ?? language;
+    const t = copy[locale];
+    const translate = (source: string) => uiText(locale, source);
     const [storage, setStorage] = useState<StorageState | null>(null);
     const [selected, setSelected] = useState<Record<string, number>>({});
     const [status, setStatus] = useState<SaveStatus>("saving");
@@ -161,9 +164,9 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
     const totalSelected = Object.values(selected).reduce((sum, count) => sum + count, 0);
     const selectedEntries = entries.filter(([key]) => (selected[key] ?? 0) > 0);
     const summary = selectedEntries.slice(0, compact ? 3 : undefined)
-        .map(([key, item]) => `${item.name ?? item.item_name ?? key} ×${selected[key]}`)
+        .map(([key, item]) => `${translate(item.name ?? item.item_name ?? key)} ×${selected[key]}`)
         .join(", ");
-    const compactSummary = selectedEntries.length > 3 ? `${summary} +${selectedEntries.length - 3} more` : summary;
+    const compactSummary = selectedEntries.length > 3 ? `${summary} +${selectedEntries.length - 3} ${translate("more")}` : summary;
 
     const changeCount = (key: string, action: QuantityAction, total: number) => {
         if (locked || !allowSelection) return;
@@ -187,9 +190,9 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
             <div className={styles.heading}><h3>{t.inventory}</h3><span>{t.gold}: {storage?.balance ?? "…"}</span></div>
             {!storage && <p>{error || t.loading}</p>}
             {storage && <>
-                <div className={styles.list}>{Object.entries(storage.inventory ?? {}).map(([key, item]) => <div className={styles.item} key={key}><strong>{item.name ?? item.item_name ?? key}</strong><small>×{item.item_count ?? 0}</small></div>)}</div>
+                <div className={styles.list}>{Object.entries(storage.inventory ?? {}).map(([key, item]) => <div className={styles.item} key={key}><strong>{translate(item.name ?? item.item_name ?? key)}</strong><small>×{item.item_count ?? 0}</small></div>)}</div>
                 <h4>{t.equipment}</h4>
-                <div className={styles.list}>{(storage.equipment ?? []).map((item, index) => <div className={styles.item} key={`${item.name}-${index}`}><strong>{item.name}</strong><small>{item.type} · {item.status === "equipped" ? t.equipped : t.stored}</small></div>)}</div>
+                <div className={styles.list}>{(storage.equipment ?? []).map((item, index) => <div className={styles.item} key={`${item.name}-${index}`}><strong>{translate(item.name)}</strong><small>{translate(item.type)} · {item.status === "equipped" ? t.equipped : t.stored}</small></div>)}</div>
             </>}
         </section>;
     }
@@ -202,7 +205,7 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
         </>}
         {error && <div role="alert" className={styles.saveError}>{t.failed}: {error} <button type="button" onClick={retry}>{t.retry}</button></div>}
         <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="loadout-dialog-title" onCancel={(event) => { event.preventDefault(); setOpen(false); }}>
-            <div className={styles.dialogHeader}><div><span className={styles.dialogEyebrow}>STORAGE</span><h2 id="loadout-dialog-title">{t.title}</h2><p>{t.carried}</p></div><button ref={closeRef} type="button" className={styles.closeButton} onClick={() => setOpen(false)} aria-label={t.close}>×</button></div>
+            <div className={styles.dialogHeader}><div><span className={styles.dialogEyebrow}>{translate("STORAGE")}</span><h2 id="loadout-dialog-title">{t.title}</h2><p>{t.carried}</p></div><button ref={closeRef} type="button" className={styles.closeButton} onClick={() => setOpen(false)} aria-label={t.close}>×</button></div>
             <div className={styles.dialogBody}>
                 {entries.length === 0 && <p className={styles.empty}>{t.empty}</p>}
                 <div className={styles.eligibleGrid}>{entries.map(([key, item]) => {
@@ -211,12 +214,12 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
                     const available = remainingCount(total, taking);
                     const image = key.startsWith("resource_") ? resourceImage(item.name ?? item.item_name, item.image) ?? item.image : item.image;
                     return <article key={key} className={styles.eligibleCard}>
-                        <div className={styles.itemIdentity}>{image ? <img src={image} alt="" /> : <span className={styles.iconFallback} aria-hidden="true">◇</span>}<strong>{item.name ?? item.item_name ?? key}</strong></div>
+                        <div className={styles.itemIdentity}>{image ? <img src={image} alt="" /> : <span className={styles.iconFallback} aria-hidden="true">◇</span>}<strong>{translate(item.name ?? item.item_name ?? key)}</strong></div>
                         <div className={styles.balances}><span>{t.available} <strong>{available}</strong></span><span>{t.selected} <strong>{taking}</strong></span></div>
                         <div className={styles.quantityActions}>{ACTIONS.map((action) => {
-                            const label = action === "zero" ? "0" : action === "max" ? "Max" : action > 0 ? `+${action}` : String(action);
+                            const label = action === "zero" ? "0" : action === "max" ? translate("Max") : action > 0 ? `+${action}` : String(action);
                             const disabled = locked || !allowSelection || (action === "zero" || (typeof action === "number" && action < 0) ? taking === 0 : taking >= Math.min(9999, total));
-                            return <button type="button" key={String(action)} aria-label={`${label} ${item.name ?? item.item_name ?? key}`} disabled={disabled} onClick={() => changeCount(key, action, total)}>{label}</button>;
+                            return <button type="button" key={String(action)} aria-label={`${label} ${translate(item.name ?? item.item_name ?? key)}`} disabled={disabled} onClick={() => changeCount(key, action, total)}>{label}</button>;
                         })}</div>
                     </article>;
                 })}</div>

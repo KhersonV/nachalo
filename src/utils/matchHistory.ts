@@ -4,6 +4,8 @@ import type {
     MatchHistoryWinner,
     MatchPlayerResultSummary,
 } from "@/types";
+import type { GameLanguage } from "@/i18n/hexGame";
+import { uiText } from "@/i18n/uiText";
 
 function normalizeMode(mode: string): string {
     const normalized = mode.trim();
@@ -16,13 +18,13 @@ export function formatMatchMode(mode: string): string {
     return normalizeMode(mode);
 }
 
-export function formatMatchFinishedAt(value: string): string {
+export function formatMatchFinishedAt(value: string, language: GameLanguage = "en"): string {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) {
-        return value || "Unknown finish time";
+        return value || uiText(language, "Unknown finish time");
     }
 
-    return date.toLocaleString(undefined, {
+    return date.toLocaleString({ en: "en-US", ru: "ru-RU", de: "de-DE" }[language], {
         year: "numeric",
         month: "short",
         day: "2-digit",
@@ -88,9 +90,10 @@ export function formatParticipantsSummary(
 export function formatWinnerSummary(
     winner: MatchHistoryWinner,
     participants: MatchHistoryParticipant[],
+    language: GameLanguage = "en",
 ): string {
     if (!winner.id) {
-        return "Winner not determined";
+        return uiText(language, "Winner not determined");
     }
 
     if (winner.type === "group") {
@@ -98,9 +101,9 @@ export function formatWinnerSummary(
             (participant) => participant.groupId === winner.id,
         );
         if (teamMembers.length === 0) {
-            return `Winning team: ${winner.id}`;
+            return `${uiText(language, "Winning team")}: ${winner.id}`;
         }
-        return `Winning team: ${winner.id} (${teamMembers
+        return `${uiText(language, "Winning team")}: ${winner.id} (${teamMembers
             .map((participant) => participant.name)
             .join(", ")})`;
     }
@@ -109,7 +112,7 @@ export function formatWinnerSummary(
         (participant) => participant.userId === winner.id,
     );
     if (winnerById) {
-        return `Winner: ${winnerById.name}`;
+        return `${uiText(language, "Winner")}: ${winnerById.name}`;
     }
 
     if (winner.userIds?.length) {
@@ -119,11 +122,11 @@ export function formatWinnerSummary(
             )
             .filter((name): name is string => Boolean(name));
         if (names.length > 0) {
-            return `Winner: ${names.join(", ")}`;
+            return `${uiText(language, "Winner")}: ${names.join(", ")}`;
         }
     }
 
-    return `Winner: player ${winner.id}`;
+    return `${uiText(language, "Winner")}: ${uiText(language, "player")} ${winner.id}`;
 }
 
 export function formatResultStatus(

@@ -1,6 +1,8 @@
 import Image from "next/image";
 import type { GameMode } from "@/types";
 import styles from "@/styles/ModesPage.module.css";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 const MODE_ART: Record<GameMode, string> = {
     PVE: "/assets/ui/optimized/lone_hero_before_the_burning_fortress.webp",
@@ -23,15 +25,17 @@ type Props = {
 };
 
 export default function ModeCard({ mode, selected, disabled, matching, queuedPlayers, requiredPlayers, partySize, onSelect }: Props) {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const label = mode === "PVE" ? "PvE Solo" : `PvP ${mode.replace("x", "×")}`;
     return <button type="button" className={styles.modeCard} aria-pressed={selected} aria-disabled={disabled} onClick={() => { if (!disabled) onSelect(); }}>
         <Image src={MODE_ART[mode]} alt="" fill sizes="(max-width: 700px) 100vw, (max-width: 1200px) 50vw, 33vw" className={styles.modeImage} />
         <span className={styles.modeShade} aria-hidden="true" />
         <span className={styles.modeContent}>
-            <span className={styles.modeTopline}>{mode === "PVE" ? "SOLO EXPEDITION" : "PLAYER VERSUS PLAYER"}{matching && <span className={styles.matchingTag}>Searching</span>}</span>
+            <span className={styles.modeTopline}>{mode === "PVE" ? t("SOLO EXPEDITION") : t("PLAYER VERSUS PLAYER")}{matching && <span className={styles.matchingTag}>{t("Searching")}</span>}</span>
             <strong className={styles.modeName}>{label}</strong>
-            <span className={styles.modeMeta}>{queuedPlayers} in queue <span aria-hidden="true">·</span> {requiredPlayers} needed</span>
-            {disabled && <span className={styles.modeUnavailable}>Party of {partySize} exceeds team size</span>}
+            <span className={styles.modeMeta}>{queuedPlayers} {t("in queue")} <span aria-hidden="true">·</span> {requiredPlayers} {t("needed")}</span>
+            {disabled && <span className={styles.modeUnavailable}>{t("Party of")} {partySize} {t("exceeds team size")}</span>}
         </span>
     </button>;
 }

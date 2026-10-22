@@ -6,6 +6,9 @@ import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { rewardLabel } from "@/utils/matchHistory";
 import styles from "@/styles/GameStatsPage.module.css";
 import GameResultShell from "@/components/GameResultShell";
+import UiText from "@/components/UiText";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 type Reward = {
     type?: string;
@@ -635,6 +638,8 @@ function buildResultSummary(
 }
 
 export default function GameStatsPage() {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const router = useRouter();
     const [stats, setStats] = useState<PlayerStatsPayload | null>(null);
     const [lootItems, setLootItems] = useState<MatchLootItem[]>([]);
@@ -900,18 +905,17 @@ export default function GameStatsPage() {
         return (
             <GameResultShell>
                 <section className={styles.card}>
-                    <p className={styles.eyebrow}>Match Result</p>
+                    <p className={styles.eyebrow}><UiText text="Match Result" /></p>
                     <h1 className={`${styles.title} ${styles.titleLoss}`}>
-                        You Were Eliminated
+                        <UiText text="You Were Eliminated" />
                     </h1>
                     {matchEndedWithoutStats ? (
                         <p className={styles.subtitle}>
-                            Match ended. Detailed statistics for this player are
-                            unavailable.
+                            <UiText text="Match ended. Detailed statistics for this player are unavailable." />
                         </p>
                     ) : (
                         <p className={styles.subtitle}>
-                            Final statistics will appear after the match ends.
+                            <UiText text="Final statistics will appear after the match ends." />
                         </p>
                     )}
                     <div className={styles.actions}>
@@ -924,7 +928,7 @@ export default function GameStatsPage() {
                                     router.replace("/mode");
                                 }}
                             >
-                                Play Again
+                                <UiText text="Play Again" />
                             </button>
                         )}
                         <button
@@ -935,7 +939,7 @@ export default function GameStatsPage() {
                                 router.replace("/base");
                             }}
                         >
-                            Back to Lobby
+                            <UiText text="Back to Lobby" />
                         </button>
                     </div>
                 </section>
@@ -944,7 +948,7 @@ export default function GameStatsPage() {
     }
 
     if (!stats) {
-        return <div className={styles.loading}>Loading statistics...</div>;
+        return <div className={styles.loading}><UiText text="Loading statistics..." /></div>;
     }
 
     const winnerText = getWinnerText(stats);
@@ -959,19 +963,19 @@ export default function GameStatsPage() {
         <GameResultShell>
             <section className={styles.card}>
                 <header className={styles.resultHeader}>
-                    <p className={styles.eyebrow}>Match Result</p>
+                    <p className={styles.eyebrow}><UiText text="Match Result" /></p>
                     <h1 className={`${styles.title} ${titleToneClass}`}>
-                        {outcome?.title ?? "Match Complete"}
+                        {t(outcome?.title ?? "Match Complete")}
                     </h1>
-                    <p className={styles.subtitle}>{winnerText}</p>
+                    <p className={styles.subtitle}>{t(winnerText)}</p>
                     {replayPrompt && (
-                        <p className={styles.replayPrompt}>{replayPrompt}</p>
+                        <p className={styles.replayPrompt}>{t(replayPrompt)}</p>
                     )}
                 </header>
 
                 <section className={styles.replaySection}>
                     <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Match Highlights</h3>
+                        <h3 className={styles.sectionTitle}><UiText text="Match Highlights" /></h3>
                     </div>
                     <div className={styles.highlightsGrid}>
                         {highlights.map((item) => (
@@ -980,13 +984,13 @@ export default function GameStatsPage() {
                                 key={`${item.label}-${item.value}`}
                             >
                                 <span className={styles.highlightLabel}>
-                                    {item.label}
+                                    {t(item.label)}
                                 </span>
                                 <strong className={styles.highlightValue}>
-                                    {item.value}
+                                    {t(item.value)}
                                 </strong>
                                 <span className={styles.highlightDetail}>
-                                    {item.detail}
+                                    {t(item.detail)}
                                 </span>
                             </article>
                         ))}
@@ -995,9 +999,9 @@ export default function GameStatsPage() {
 
                 <section className={styles.replaySection}>
                     <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Run Badges</h3>
+                        <h3 className={styles.sectionTitle}><UiText text="Run Badges" /></h3>
                         <span className={styles.sectionMeta}>
-                            Local to this result
+                            <UiText text="Local to this result" />
                         </span>
                     </div>
                     {badges.length > 0 ? (
@@ -1008,19 +1012,17 @@ export default function GameStatsPage() {
                                     key={`${badge.name}-${badge.detail}`}
                                 >
                                     <strong className={styles.badgeName}>
-                                        {badge.name}
+                                        {t(badge.name)}
                                     </strong>
                                     <span className={styles.badgeDetail}>
-                                        {badge.detail}
+                                        {t(badge.detail)}
                                     </span>
                                 </article>
                             ))}
                         </div>
                     ) : (
                         <p className={styles.badgeEmpty}>
-                            No badges this match. One escape, one monster kill,
-                            or {BADGE_THRESHOLDS.HEAVY_HITTER_DAMAGE} damage can
-                            light up the next run.
+                            {t("No badges this match. One escape, one monster kill, or")} {BADGE_THRESHOLDS.HEAVY_HITTER_DAMAGE} {t("damage can light up the next run.")}
                         </p>
                     )}
                 </section>
@@ -1032,10 +1034,10 @@ export default function GameStatsPage() {
                             key={`${item.label}-${item.value}`}
                         >
                             <span className={styles.summaryLabel}>
-                                {item.label}
+                                {t(item.label)}
                             </span>
                             <span className={styles.summaryValue}>
-                                {item.value}
+                                {t(item.value)}
                             </span>
                         </div>
                     ))}
@@ -1043,19 +1045,19 @@ export default function GameStatsPage() {
 
                 <div className={styles.playerBlock}>
                     <h2 className={styles.playerName}>{stats.player.name}</h2>
-                    <p className={styles.instance}>Match: {stats.instanceId}</p>
+                    <p className={styles.instance}>{t("Match:")} {stats.instanceId}</p>
                 </div>
 
                 <div className={styles.grid}>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Experience</span>
+                        <span className={styles.label}><UiText text="Experience" /></span>
                         <span className={styles.value}>
                             +{formatStatNumber(statValue(stats.player.expGained))}
                         </span>
                     </div>
                     {isFiniteStat(stats.player.placement) && (
                         <div className={styles.statItem}>
-                            <span className={styles.label}>Placement</span>
+                            <span className={styles.label}><UiText text="Placement" /></span>
                             <span className={styles.value}>
                                 #{stats.player.placement}
                             </span>
@@ -1063,45 +1065,45 @@ export default function GameStatsPage() {
                     )}
                     {isFiniteStat(stats.player.deaths) && (
                         <div className={styles.statItem}>
-                            <span className={styles.label}>Deaths</span>
+                            <span className={styles.label}><UiText text="Deaths" /></span>
                             <span className={styles.value}>
                                 {formatStatNumber(stats.player.deaths)}
                             </span>
                         </div>
                     )}
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Player Kills</span>
+                        <span className={styles.label}><UiText text="Player Kills" /></span>
                         <span className={styles.value}>
                             {formatStatNumber(statValue(stats.player.playerKills))}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Monster Kills</span>
+                        <span className={styles.label}><UiText text="Monster Kills" /></span>
                         <span className={styles.value}>
                             {formatStatNumber(statValue(stats.player.monsterKills))}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Total Damage</span>
+                        <span className={styles.label}><UiText text="Total Damage" /></span>
                         <span className={styles.value}>
                             {formatStatNumber(statValue(stats.player.damageTotal))}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Damage to Players</span>
+                        <span className={styles.label}><UiText text="Damage to Players" /></span>
                         <span className={styles.value}>
                             {formatStatNumber(statValue(stats.player.damageToPlayers))}
                         </span>
                     </div>
                     <div className={styles.statItem}>
-                        <span className={styles.label}>Damage to Monsters</span>
+                        <span className={styles.label}><UiText text="Damage to Monsters" /></span>
                         <span className={styles.value}>
                             {formatStatNumber(statValue(stats.player.damageToMonsters))}
                         </span>
                     </div>
                     {isFiniteStat(stats.player.damageTaken) && (
                         <div className={styles.statItem}>
-                            <span className={styles.label}>Damage Taken</span>
+                            <span className={styles.label}><UiText text="Damage Taken" /></span>
                             <span className={styles.value}>
                                 {formatStatNumber(stats.player.damageTaken)}
                             </span>
@@ -1109,21 +1111,19 @@ export default function GameStatsPage() {
                     )}
                     {typeof stats.player.survived === "boolean" && (
                         <div className={styles.statItem}>
-                            <span className={styles.label}>Survival</span>
+                        <span className={styles.label}><UiText text="Survival" /></span>
                             <span className={styles.value}>
-                                {stats.player.survived
-                                    ? "Survived"
-                                    : "Eliminated"}
+                                {t(stats.player.survived ? "Survived" : "Eliminated")}
                             </span>
                         </div>
                     )}
                 </div>
 
                 <section className={styles.rewards}>
-                    <h3 className={styles.rewardsTitle}>Rewards</h3>
+                    <h3 className={styles.rewardsTitle}><UiText text="Rewards" /></h3>
                     {rewards.length === 0 ? (
                         <p className={styles.rewardsEmpty}>
-                            No rewards received
+                            <UiText text="No rewards received" />
                         </p>
                     ) : (
                         <ul className={styles.rewardsList}>
@@ -1132,7 +1132,7 @@ export default function GameStatsPage() {
                                     key={`${reward.type ?? "reward"}-${idx}`}
                                     className={styles.rewardItem}
                                 >
-                                    {formatReward(reward)}
+                                    {t(rewardLabel(reward.type ?? ""))}: {formatStatNumber(statValue(reward.amount))}
                                 </li>
                             ))}
                         </ul>
@@ -1141,23 +1141,23 @@ export default function GameStatsPage() {
 
                 <section className={styles.lootSection}>
                     <div className={styles.sectionHeader}>
-                        <h3 className={styles.sectionTitle}>Loot found</h3>
+                        <h3 className={styles.sectionTitle}><UiText text="Loot found" /></h3>
                         <button
                             type="button"
                             className={`${styles.button} ${styles.buttonSecondary}`}
                             onClick={() => router.replace("/equipment")}
                         >
-                            Open Equipment
+                            <UiText text="Open Equipment" />
                         </button>
                     </div>
 
                     {lootLoading ? (
-                        <p className={styles.rewardsEmpty}>Loading loot...</p>
+                        <p className={styles.rewardsEmpty}><UiText text="Loading loot..." /></p>
                     ) : lootError ? (
                         <p className={styles.rewardsEmpty}>{lootError}</p>
                     ) : lootItems.length === 0 ? (
                         <p className={styles.rewardsEmpty}>
-                            No equipment found this match.
+                            <UiText text="No equipment found this match." />
                         </p>
                     ) : (
                         <div className={styles.lootGrid}>
@@ -1181,21 +1181,24 @@ export default function GameStatsPage() {
                                     </div>
                                     <div className={styles.lootBody}>
                                         <div className={styles.lootTitleRow}>
-                                            <h4>{item.name}</h4>
+                                            <h4>{t(item.name)}</h4>
                                             {item.rarity ? (
                                                 <span className={styles.lootRarity}>
-                                                    {formatEnum(item.rarity)}
+                                                    {t(formatEnum(item.rarity))}
                                                 </span>
                                             ) : null}
                                         </div>
                                         <p className={styles.lootMeta}>
                                             {[item.classId, item.setName, item.slot]
-                                                .map(formatEnum)
+                                                .map(value => t(formatEnum(value)))
                                                 .filter(Boolean)
                                                 .join(" / ")}
                                         </p>
                                         <p className={styles.lootBonuses}>
-                                            {formatLootBonuses(item.bonuses)}
+                                            {formatLootBonuses(item.bonuses).split(", ").map(part => {
+                                                const match = /^(\+\d+) (.+)$/.exec(part);
+                                                return match ? `${match[1]} ${t(match[2])}` : t(part);
+                                            }).join(", ")}
                                         </p>
                                     </div>
                                 </article>
@@ -1213,14 +1216,14 @@ export default function GameStatsPage() {
                             router.replace("/mode");
                         }}
                     >
-                        Play Again
+                        <UiText text="Play Again" />
                     </button>
                     <button
                         type="button"
                         className={`${styles.button} ${styles.buttonSecondary}`}
                         onClick={() => router.replace("/matches")}
                     >
-                        Match History
+                        <UiText text="Match History" />
                     </button>
                     <button
                         type="button"
@@ -1230,7 +1233,7 @@ export default function GameStatsPage() {
                             router.replace("/base");
                         }}
                     >
-                        Back to Lobby
+                        <UiText text="Back to Lobby" />
                     </button>
                 </div>
             </section>

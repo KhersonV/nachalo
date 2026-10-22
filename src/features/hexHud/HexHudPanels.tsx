@@ -6,6 +6,7 @@ import { getHeroPortrait } from "@/features/heroes/heroArtwork";
 import type { HexHudView } from "./hexHudView";
 import type { HexQuestArtifact, HexAttackResult, HexRoute, HexSnapshot } from "@/types/HexGameTypes";
 import styles from "./HexBattleShell.module.css";
+import UiText from "@/components/UiText";
 
 export function HexBattleShell({ top, left, children, right, bottom }: { top: ReactNode; left: ReactNode; children: ReactNode; right: ReactNode; bottom: ReactNode }) {
   return <div className={styles.shell}>
@@ -21,7 +22,7 @@ export function HexTopBar({ snapshot, view, connection, language, onLanguage, la
   const turnLabel = snapshot.result ? snapshot.result.method === "defeat" ? t.defeatedWaiting : t.extraction : snapshot.finished ? t.finished : view.hero && view.hero.health <= 0 ? t.defeatedWaiting : view.isMyTurn ? t.yourTurn : t.waiting;
   const connectionLabel = connection === "live" ? { en: "Synchronized", ru: "Синхронизировано", de: "Synchronisiert" }[language] : connection === "connecting" ? { en: "Connecting", ru: "Подключение", de: "Verbinden" }[language] : connection === "unavailable" ? t.unavailable : { en: "Reconnecting", ru: "Переподключение", de: "Wiederverbinden" }[language];
   return <>
-    <div className={styles.brand}><span className={styles.brandName}>NACHALO</span><span className={styles.brandMark}>⬡</span><div><strong>HEX BATTLE</strong><small>{snapshot.mode || "HEX"}</small></div></div>
+    <div className={styles.brand}><span className={styles.brandName}>NACHALO</span><span className={styles.brandMark}>⬡</span><div><strong><UiText text="HEX BATTLE" /></strong><small>{snapshot.mode || "HEX"}</small></div></div>
     <div className={styles.turn}><span className={styles.overline}>{t.turn} {snapshot.turnNumber ?? "—"}</span><strong>{turnLabel}</strong><small>{t.activePlayer}: {snapshot.activePlayerName || snapshot.actors.find(actor => actor.userId === snapshot.activeUser)?.name || `${t.player} ${snapshot.activeUser ?? "—"}`}</small></div>
     {!snapshot.finished && <div className={styles.timer}><span>{t.turnTime}</span><strong aria-live="off">{String(Math.floor(view.remaining / 60)).padStart(2, "0")}:{String(view.remaining % 60).padStart(2, "0")}</strong><progress max={view.turnSeconds} value={Math.min(view.turnSeconds, view.remaining)} aria-label={t.turnTime} /></div>}
     <div className={styles.topTools}><span className={`${styles.connection} ${connection === "live" ? styles.connectionLive : styles.connectionPending}`} role="status">● {connectionLabel}</span><label className={styles.language}>{t.language}<select aria-label={t.language} value={language} onChange={event => onLanguage(event.target.value as GameLanguage)}><option value="en">EN</option><option value="ru">RU</option><option value="de">DE</option></select></label></div>
@@ -35,7 +36,7 @@ export function HexHeroPanel({ view, labels: t, language, logOpen, onLog }: { vi
   const energyRatio = hero.maxEnergy > 0 ? Math.max(0, Math.min(1, hero.energy / hero.maxEnergy)) : 0;
   const condition = hero.health <= 0 ? { en: "Fallen", ru: "Погиб", de: "Gefallen" }[language] : hpRatio <= .25 ? { en: "Critical", ru: "Критическое HP", de: "Kritisch" }[language] : hpRatio <= .6 ? { en: "Wounded", ru: "Ранен", de: "Verwundet" }[language] : { en: "Ready", ru: "В строю", de: "Bereit" }[language];
   return <section className={styles.card} aria-label={hero.name}>
-    <div className={styles.heroHead}><img src={getHeroPortrait(hero.characterType)} alt="" /><div><span className={styles.overline}>{hero.characterType}</span><h2>{hero.name}</h2><span className={styles.condition}>{condition}</span></div></div>
+    <div className={styles.heroHead}><img src={getHeroPortrait(hero.characterType)} alt="" /><div><span className={styles.overline}><UiText text={hero.characterType} /></span><h2>{hero.name}</h2><span className={styles.condition}>{condition}</span></div></div>
     <div className={styles.vital}><div><span>{t.hp}</span><strong>{hero.health} / {hero.maxHealth}</strong></div><div className={`${styles.track} ${styles.healthTrack}`}><i style={{ width: `${hpRatio * 100}%` }} /></div></div>
     <div className={styles.vital}><div><span>{t.energy}</span><strong>{hero.energy} / {hero.maxEnergy}</strong></div><div className={`${styles.track} ${styles.energyTrack}`}><i style={{ width: `${energyRatio * 100}%` }} /></div></div>
     <div className={styles.heroMeta}><span>{t.attackType}<strong>{hero.isRanged ? t.ranged : t.melee}</strong></span><span>{t.range}<strong>{hero.isRanged ? hero.attackRange : 1}</strong></span><span>{t.reflex}<strong>{hero.agility}</strong></span></div>
@@ -58,7 +59,7 @@ export function HexTargetPanel({ view, lastAttack, approach, onCloseTarget, labe
       {cell.structureType && <p className={styles.detail}>{cell.structureType} · HP {cell.structureHealth}/30 · {t.team} {cell.structureOwnerUserId}{cell.isUnderConstruction ? ` · ${cell.constructionTurnsLeft} ${t.turn}` : ""}</p>}
       {cell.structureType && !cell.isUnderConstruction && hero && (cell.structureOwnerUserId !== hero.userId || cell.structureType === "wall") && <p className={styles.hint}>{t.attack} · 6 {t.energy}</p>}
       {route && <p className={styles.detail}>{t.route}: {route.path.length} {t.steps} · {route.totalCost} {t.energy} · {route.affordable ? t.confirmRoute : t.insufficientEnergy}</p>}
-      {cell.resource && <p className={styles.detail}>{t.resource}: {cell.resource.type}{hero && (cell.position.q !== hero.position.q || cell.position.r !== hero.position.r) ? ` · ${t.standOnResource}` : ""}</p>}
+      {cell.resource && <p className={styles.detail}>{t.resource}: <UiText text={cell.resource.type} />{hero && (cell.position.q !== hero.position.q || cell.position.r !== hero.position.r) ? ` · ${t.standOnResource}` : ""}</p>}
       {cell.barrel && hero && (cell.position.q !== hero.position.q || cell.position.r !== hero.position.r) && <p className={styles.hint}>{t.barrel} · {t.standOnBarrel}</p>}
       {cell.isPortal && <p className={styles.hint}>{t.portal}</p>}
     </>}
@@ -67,7 +68,7 @@ export function HexTargetPanel({ view, lastAttack, approach, onCloseTarget, labe
 
 export function HexQuestPanel({ quest, status, labels: t }: { quest?: HexQuestArtifact; status: string; labels: HexGameMessages }) {
   if (!quest) return null;
-  return <section className={`${styles.card} ${styles.quest}`} aria-label={t.questArtifact}><div className={styles.questHead}>{quest.image ? <img src={quest.image} alt="" /> : <span aria-hidden="true">◆</span>}<div><span className={styles.overline}>{t.questArtifact}</span><strong>{quest.name}</strong></div></div><p>{status}</p><small>{t.questGoal}</small></section>;
+  return <section className={`${styles.card} ${styles.quest}`} aria-label={t.questArtifact}><div className={styles.questHead}>{quest.image ? <img src={quest.image} alt="" /> : <span aria-hidden="true">◆</span>}<div><span className={styles.overline}>{t.questArtifact}</span><strong><UiText text={quest.name} /></strong></div></div><p>{status}</p><small>{t.questGoal}</small></section>;
 }
 
 export function HexParticipantsPanel({ snapshot, labels: t }: { snapshot: HexSnapshot; labels: HexGameMessages }) {

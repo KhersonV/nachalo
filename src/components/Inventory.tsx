@@ -14,6 +14,8 @@ import { updatePlayer } from "../store/slices/gameSlice";
 import styles from "../styles/Inventory.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
 import { resourceImage } from "@/utils/resourceAssets";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 interface InventoryProps {
   className?: string;
@@ -54,6 +56,8 @@ const Inventory: React.FC<InventoryProps> = ({
   const { user } = useAuth();
   const instanceId = state.instanceId;
   const [feedback, setFeedback] = useState("");
+  const { language } = useGameLanguage();
+  const t = (source: string) => uiText(language, source);
 
   useEffect(() => {
     if (!feedback) return;
@@ -64,7 +68,7 @@ const Inventory: React.FC<InventoryProps> = ({
   }, [feedback]);
 
   const player = state.players.find((p) => p.user_id === user?.id);
-  if (!player && !hexInventory) return <div>Inventory unavailable</div>;
+  if (!player && !hexInventory) return <div>{t("Inventory unavailable")}</div>;
 
   // Images are provided by the server in inventory entries; use them directly.
 
@@ -184,7 +188,7 @@ const Inventory: React.FC<InventoryProps> = ({
     if (key.startsWith("blueprint_")) {
       onBlueprintPlacementStart?.(key);
       onRequestClose?.();
-      setFeedback("Build mode: select an adjacent free cell.");
+      setFeedback(t("Build mode: select an adjacent free cell."));
       return;
     }
 
@@ -202,7 +206,7 @@ const Inventory: React.FC<InventoryProps> = ({
       const stored = localStorage.getItem("user");
       const token = stored ? JSON.parse(stored).token : "";
       if (!token) {
-        setFeedback("Session not found. Please log in again.");
+        setFeedback(t("Session not found. Please log in again."));
         return;
       }
 
@@ -224,7 +228,7 @@ const Inventory: React.FC<InventoryProps> = ({
       );
       if (!res.ok) {
         const errorText = await res.text();
-        setFeedback(errorText || "Failed to use item");
+        setFeedback(errorText || t("Failed to use item"));
         return;
       }
       const data = await res.json();
@@ -234,7 +238,7 @@ const Inventory: React.FC<InventoryProps> = ({
         updatedPlayer = data.player as PlayerState;
         if (data.scroll_result) {
           setFeedback(
-            `Revealed ${String(data.scroll_result.axis).toUpperCase()}: ${data.scroll_result.value}`,
+            `${t("Revealed")} ${String(data.scroll_result.axis).toUpperCase()}: ${data.scroll_result.value}`,
           );
         }
       } else {
@@ -244,7 +248,7 @@ const Inventory: React.FC<InventoryProps> = ({
         dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
       }
     } catch (err) {
-      setFeedback("Network error while using item");
+      setFeedback(t("Network error while using item"));
     }
   };
 
@@ -275,10 +279,10 @@ const Inventory: React.FC<InventoryProps> = ({
               />
             );
           })()}
-          <div className={styles.itemName}>{item.name}</div>
+          <div className={styles.itemName}>{t(item.name)}</div>
           {section === "resources" && (
             <>
-              <div className={styles.itemCount}>{hexInventory ? hexLabels?.quantity ?? "Qty" : "Qty"}: {item.item_count}</div>
+              <div className={styles.itemCount}>{hexInventory ? hexLabels?.quantity ?? t("Qty") : t("Qty")}: {item.item_count}</div>
               {(hexInventory ? (isConsumableResource(item) || key.startsWith("scroll_") || key.startsWith("blueprint_")) : (isConsumableResource(item) ||
                 key.startsWith("blueprint_") ||
                 key.startsWith("scroll_") ||
@@ -288,7 +292,7 @@ const Inventory: React.FC<InventoryProps> = ({
                   disabled={!!hexInventory && (hexBusy || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem))}
                   onClick={() => handleUseItem(section, key, item)}
                 >
-                  {key.startsWith("blueprint_") ? "Place" : (hexInventory ? hexLabels?.use ?? "Use" : "Use")}
+                  {key.startsWith("blueprint_") ? t("Place") : (hexInventory ? hexLabels?.use ?? t("Use") : t("Use"))}
                 </button>
               )}
             </>
@@ -298,7 +302,7 @@ const Inventory: React.FC<InventoryProps> = ({
 
   return (
     <div className={`${styles.inventoryContainer} ${className ?? ""}`}>
-      <div className={styles.sheetHeader}><h2 className={styles.title}>{hexInventory ? hexLabels?.inventory ?? "Inventory" : "Inventory"}</h2>{hexInventory && onRequestClose && <button type="button" className={styles.sheetClose} onClick={onRequestClose} aria-label={hexLabels?.closeInventory ?? "Close inventory"}>×</button>}</div>
+      <div className={styles.sheetHeader}><h2 className={styles.title}>{hexInventory ? hexLabels?.inventory ?? t("Inventory") : t("Inventory")}</h2>{hexInventory && onRequestClose && <button type="button" className={styles.sheetClose} onClick={onRequestClose} aria-label={hexLabels?.closeInventory ?? t("Close inventory")}>×</button>}</div>
       {feedback && (
         <div className={styles.feedbackRow}>
           <p className={styles.feedbackError}>{feedback}</p>
@@ -306,8 +310,8 @@ const Inventory: React.FC<InventoryProps> = ({
             type="button"
             className={styles.feedbackCloseButton}
             onClick={() => setFeedback("")}
-            aria-label={hexInventory ? hexLabels?.closeMessage ?? "Close message" : "Close message"}
-            title={hexInventory ? hexLabels?.close ?? "Close" : "Close"}
+            aria-label={hexInventory ? hexLabels?.closeMessage ?? t("Close message") : t("Close message")}
+            title={hexInventory ? hexLabels?.close ?? t("Close") : t("Close")}
           >
             x
           </button>
@@ -315,16 +319,16 @@ const Inventory: React.FC<InventoryProps> = ({
       )}
       <div className={styles.sections}>
         <div className={styles.section}>
-          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.resources ?? "Resources" : "Resources"}</h3>
+          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.resources ?? t("Resources") : t("Resources")}</h3>
           <p className={styles.sectionHint}>
-            {hexInventory ? hexLabels?.useLimits ?? "Limits: food once per 2 turns, water up to 5 per 2 turns." : "Limits: food - 1 time per 2 turns, water - up to 5 per 2 turns."}
+            {hexInventory ? hexLabels?.useLimits ?? t("Limits: food once per 2 turns, water up to 5 per 2 turns.") : t("Limits: food - 1 time per 2 turns, water - up to 5 per 2 turns.")}
           </p>
           <div className={styles.itemsContainer}>
             {renderItems("resources", resources)}
           </div>
         </div>
         <div className={styles.section}>
-          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.artifacts ?? "Artifacts" : "Artifacts"}</h3>
+          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.artifacts ?? t("Artifacts") : t("Artifacts")}</h3>
           <div className={styles.itemsContainer}>
             {renderItems("artifacts", artifacts)}
           </div>

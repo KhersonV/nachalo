@@ -4,6 +4,7 @@
 
 "use client";
 
+import UiText from "@/components/UiText";
 import React from "react";
 import { useSelector } from "react-redux";
 import type { RootState } from "../store";
@@ -14,7 +15,7 @@ const TurnIndicator = () => {
 
     return (
         <div className={styles.turnIndicator}>
-            <p>Turn: {turnNumber}</p>
+            <p><UiText text="Turn:" /> {turnNumber}</p>
         </div>
     );
 };

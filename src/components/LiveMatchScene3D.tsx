@@ -1,5 +1,7 @@
 "use client";
 
+import UiText from "@/components/UiText";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import type { RootState } from "@/store";
@@ -108,7 +110,7 @@ export default function LiveMatchScene3D({ instanceId, grid, mapWidth, mapHeight
     catch { return null; }
   }, [grid, mapWidth, mapHeight, players, visible, known]);
 
-  if (!view || !terrainRef.current) return <p role="status">3D карта ожидает корректное состояние матча.</p>;
+  if (!view || !terrainRef.current) return <p role="status"><UiText text="3D карта ожидает корректное состояние матча." /></p>;
 
   return <div>
     {isRanger && <div role="group" aria-label="Модель Ranger" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: "white" }}>
@@ -118,7 +120,7 @@ export default function LiveMatchScene3D({ instanceId, grid, mapWidth, mapHeight
           background: model === choice ? "#245c73" : "#172334" }}>{choice === "animated" ? "Animated" : "Legacy"}</button>)}
       <output aria-label="Анимация Ranger" data-clip={status?.clip} data-clip-time={status?.clipTime}
         data-arrow-visible={status?.arrowVisible}>{status?.ready ? `${status.clip} · Walk ×${status.walkTimeScale.toFixed(2)}` : "Загрузка модели…"}</output>
-      {loadError && <span role="status">Animated недоступен — выбран Legacy.</span>}
+      {loadError && <span role="status"><UiText text="Animated недоступен — выбран Legacy." /></span>}
     </div>}
     <NachaloScene3D grid={terrainRef.current} mapWidth={mapWidth} mapHeight={mapHeight}
     objects={view.objects} renderAllTerrain materialSeed={seed} heroPosition={myPlayer.position}

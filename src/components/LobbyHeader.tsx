@@ -4,6 +4,9 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import styles from "../styles/LobbyHeader.module.css";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 type NavItem = {
     id: string;
@@ -35,6 +38,7 @@ function NavButton({ item }: { item: NavItem }) {
 
 export default function LobbyHeader() {
     const pathname = usePathname();
+    const { language } = useGameLanguage();
 
     const navItems: NavItem[] = [
         {
@@ -84,13 +88,14 @@ export default function LobbyHeader() {
     return (
         <header className={styles.header}>
             <div className={styles.headerTitleBlock}>
-                <h1 className={styles.headerTitle}>Lobby</h1>
+                <h1 className={styles.headerTitle}>{uiText(language, "Lobby")}</h1>
             </div>
             <nav className={styles.nav} aria-label="Lobby navigation">
                 {navItems.map((item) => (
-                    <NavButton key={item.id} item={item} />
+                    <NavButton key={item.id} item={{ ...item, label: uiText(language, item.label) }} />
                 ))}
             </nav>
+            <LanguageSwitcher />
         </header>
     );
 }

@@ -4,6 +4,8 @@
 
 "use client";
 
+import UiText from "@/components/UiText";
+
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -35,6 +37,8 @@ import { getHeroPortrait } from "@/features/heroes/heroArtwork";
 import ModeCard from "./ModeCard";
 import { Button, StatusMessage } from "./ui";
 import { normalizeAvatarPath } from "../utils/normalizeAvatarPath";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 import styles from "../styles/ModeSelectionPage.module.css";
 import modesStyles from "../styles/ModesPage.module.css";
@@ -302,6 +306,8 @@ export async function startMatchmaking(
 }
 
 export default function ModeSelectionPage() {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const [mode, setMode] = useState<GameMode>("PVE");
     useEffect(() => {
         const repeatMode = new URLSearchParams(window.location.search).get("repeatMode");
@@ -1086,33 +1092,33 @@ export default function ModeSelectionPage() {
         <div className={`${styles.pageRoot} ${modesStyles.workspace}`}>
             <header className={modesStyles.heroBanner}>
                 <div className={modesStyles.heroCopy}>
-                    <span className={modesStyles.eyebrow}>THE ROAD AHEAD</span>
-                    <h2>Choose a Mode</h2>
-                    <p>Gather your party, ready your supplies, and choose where the next battle begins.</p>
+                    <span className={modesStyles.eyebrow}><UiText text="THE ROAD AHEAD" /></span>
+                    <h2><UiText text="Choose a Mode" /></h2>
+                    <p><UiText text="Gather your party, ready your supplies, and choose where the next battle begins." /></p>
                 </div>
             </header>
             <section className={modesStyles.battleSetup} aria-label="Battle Setup and matchmaking">
                 <div className={modesStyles.setupHeading}>
-                    <div><span className={modesStyles.eyebrow}>BATTLE SETUP</span><h3>Ready your next battle</h3></div>
-                    <div className={modesStyles.selectedMode}>Mode <strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong></div>
+                    <div><span className={modesStyles.eyebrow}><UiText text="BATTLE SETUP" /></span><h3><UiText text="Ready your next battle" /></h3></div>
+                    <div className={modesStyles.selectedMode}><UiText text="Mode" /> <strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong></div>
                 </div>
                 <div className={modesStyles.setupRow}>
                     <button ref={heroOpenerRef} type="button" className={modesStyles.heroTrigger} onClick={() => setHeroDialogOpen(true)} disabled={activeHeroLoading || !heroRoster.length || !!heroBusyId || isMatching || startBusy}>
                         {activeHero && <img src={getHeroPortrait(activeHero.id, activeHero.image)} alt="" />}
-                        <span className={modesStyles.heroSummary}><span>ACTIVE HERO</span><strong>{activeHero?.displayName || (activeHeroLoading ? "Loading hero…" : "Hero unavailable")}</strong><small>{activeHeroClassId ? `Class: ${activeHeroClassId}` : "Choose a hero"}</small></span>
-                        <span className={modesStyles.editCue}>Change ↗</span>
+                        <span className={modesStyles.heroSummary}><span><UiText text="ACTIVE HERO" /></span><strong>{activeHero?.displayName || (activeHeroLoading ? t("Loading hero…") : t("Hero unavailable"))}</strong><small>{activeHeroClassId ? `${t("Class")}: ${activeHeroClassId}` : t("Choose a hero")}</small></span>
+                        <span className={modesStyles.editCue}><UiText text="Change ↗" /></span>
                     </button>
-                    <StorageLoadout ref={loadoutRef} compact allowSelection collapsible locked={startBusy || isMatching} forceClose={isMatching || !!pendingInstanceId} languageOverride="en" onAvailabilityChange={setLoadoutAvailable} onStatusChange={(status, error) => { setLoadoutStatus(status); setLoadoutError(error ?? ""); }} />
+                    <StorageLoadout ref={loadoutRef} compact allowSelection collapsible locked={startBusy || isMatching} forceClose={isMatching || !!pendingInstanceId} onAvailabilityChange={setLoadoutAvailable} onStatusChange={(status, error) => { setLoadoutStatus(status); setLoadoutError(error ?? ""); }} />
                     <div className={modesStyles.queueControl}>
-                        <div className={modesStyles.queueStatus}><span className={modesStyles.eyebrow}>MATCHMAKING</span><h3>{pendingInstanceId ? "Match found" : isMatching ? "Searching for a match" : startBusy ? "Preparing search" : "Ready to search"}</h3><p><strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong> · {queueSizes[mode]} in queue</p></div>
+                        <div className={modesStyles.queueStatus}><span className={modesStyles.eyebrow}><UiText text="MATCHMAKING" /></span><h3>{t(pendingInstanceId ? "Match found" : isMatching ? "Searching for a match" : startBusy ? "Preparing search" : "Ready to search")}</h3><p><strong>{mode === "PVE" ? "PvE Solo" : `PvP ${mode}`}</strong> · {queueSizes[mode]} <UiText text="in queue" /></p></div>
                         {isMatching && <span className={modesStyles.searchPulse} aria-hidden="true" />}
-                        <Button variant={isMatching ? "secondary" : "primary"} className={modesStyles.queueAction} onClick={isMatching ? handleCancel : handleStart} disabled={startBusy || pendingInstanceId !== null || (!isMatching && (activeHeroLoading || !!heroBusyId || !activeHeroClassId || !loadoutAvailable || loadoutStatus === "error" || (!!partyState?.inParty && !partyState.isLeader) || !canPlayMode(mode)))}>{pendingInstanceId ? "Match found" : isMatching ? "Cancel search" : startBusy ? "Preparing…" : "Start search"}</Button>
+                        <Button variant={isMatching ? "secondary" : "primary"} className={modesStyles.queueAction} onClick={isMatching ? handleCancel : handleStart} disabled={startBusy || pendingInstanceId !== null || (!isMatching && (activeHeroLoading || !!heroBusyId || !activeHeroClassId || !loadoutAvailable || loadoutStatus === "error" || (!!partyState?.inParty && !partyState.isLeader) || !canPlayMode(mode)))}>{t(pendingInstanceId ? "Match found" : isMatching ? "Cancel search" : startBusy ? "Preparing…" : "Start search")}</Button>
                     </div>
                 </div>
                 {(queueError || activeHeroError || (loadoutStatus === "error" && loadoutError)) && <div className={modesStyles.setupAlerts}>
-                    {queueError && <StatusMessage tone="error">{queueError}</StatusMessage>}
-                    {activeHeroError && <StatusMessage tone="error">Hero: {activeHeroError}</StatusMessage>}
-                    {loadoutStatus === "error" && <StatusMessage tone="error">Loadout: {loadoutError} <button type="button" onClick={() => { void loadoutRef.current?.retry().catch(() => undefined); }}>Retry loadout</button></StatusMessage>}
+                    {queueError && <StatusMessage tone="error">{t(queueError)}</StatusMessage>}
+                    {activeHeroError && <StatusMessage tone="error"><UiText text="Hero:" /> {activeHeroError}</StatusMessage>}
+                    {loadoutStatus === "error" && <StatusMessage tone="error"><UiText text="Loadout:" /> {loadoutError} <button type="button" onClick={() => { void loadoutRef.current?.retry().catch(() => undefined); }}><UiText text="Retry loadout" /></button></StatusMessage>}
                 </div>}
             </section>
             <div className={modesStyles.mainGrid}>
@@ -1120,19 +1126,18 @@ export default function ModeSelectionPage() {
             <section className={`${styles.partyPanel} ${modesStyles.partyPanel}`}>
                 <div className={styles.partyHeaderRow}>
                     <div>
-                        <h3 className={styles.partyTitle}>Party</h3>
+                        <h3 className={styles.partyTitle}><UiText text="Party" /></h3>
                         <p className={styles.partySubtitle}>
-                            The leader queues the whole group. Party members
-                            will be placed on the same team.
+                            <UiText text="The leader queues the whole group. Party members will be placed on the same team." />
                         </p>
                     </div>
                     <div className={styles.partyMeta}>
-                        {partyState?.partySize ?? 1} / {MAX_PARTY_SIZE} players
+                        {partyState?.partySize ?? 1} / {MAX_PARTY_SIZE} <UiText text="players" />
                         {partyState?.queueMode
                             ? ` • queue ${partyState.queueMode}`
                             : ""}
                     </div>
-                    <button type="button" className={modesStyles.partyToggle} aria-expanded={partyOpen} aria-controls="mode-party-body" onClick={() => setPartyOpen(open => !open)}>{partyOpen ? "Hide" : "Show"} party</button>
+                    <button type="button" className={modesStyles.partyToggle} aria-expanded={partyOpen} aria-controls="mode-party-body" onClick={() => setPartyOpen(open => !open)}>{t(partyOpen ? "Hide" : "Show")} <UiText text="party" /></button>
                 </div>
                 <div id="mode-party-body" className={modesStyles.partyBody} data-open={partyOpen}>
                 {partyError && (
@@ -1140,13 +1145,13 @@ export default function ModeSelectionPage() {
                 )}
                 {partyInfo && <p className={styles.partyInfo}>{partyInfo}</p>}
                 {partyLoading && (
-                    <p className={styles.partyMuted}>Loading party...</p>
+                    <p className={styles.partyMuted}><UiText text="Loading party..." /></p>
                 )}
 
                 {!partyState?.inParty && partyInvites.length > 0 && (
                     <div className={styles.partyInviteSection}>
                         <h4 className={styles.partyInviteTitle}>
-                            Incoming party invite
+                            <UiText text="Incoming party invite" />
                         </h4>
                         {partyInvites.map((invite) => (
                             <article
@@ -1157,9 +1162,9 @@ export default function ModeSelectionPage() {
                                 <div className={styles.partyInviteMeta}>
                                     <strong>{invite.leader.name}</strong>
                                     <span>
-                                        Class: {invite.leader.characterType}
+                                        <UiText text="Class:" /> {invite.leader.characterType}
                                     </span>
-                                    <span>Level: {invite.leader.level}</span>
+                                    <span><UiText text="Level:" /> {invite.leader.level}</span>
                                 </div>
                                 <div className={styles.partyActionsRow}>
                                     <button
@@ -1171,7 +1176,7 @@ export default function ModeSelectionPage() {
                                             )
                                         }
                                     >
-                                        Profile
+                                        <UiText text="Profile" />
                                     </button>
                                     <button
                                         type="button"
@@ -1181,7 +1186,7 @@ export default function ModeSelectionPage() {
                                             partyBusyAction === "acceptInvite"
                                         }
                                     >
-                                        Accept
+                                        <UiText text="Accept" />
                                     </button>
                                     <button
                                         type="button"
@@ -1191,7 +1196,7 @@ export default function ModeSelectionPage() {
                                             partyBusyAction === "rejectInvite"
                                         }
                                     >
-                                        Reject
+                                        <UiText text="Reject" />
                                     </button>
                                 </div>
                             </article>
@@ -1220,13 +1225,13 @@ export default function ModeSelectionPage() {
                                     <span>
                                         {member.characterType || "guardian"}
                                     </span>
-                                    <span>Level {member.level}</span>
+                                    <span><UiText text="Level" /> {member.level}</span>
                                     {member.user_id ===
                                         partyState?.leaderId && (
                                         <span
                                             className={styles.partyLeaderBadge}
                                         >
-                                            Leader
+                                            <UiText text="Leader" />
                                         </span>
                                     )}
                                 </div>
@@ -1237,7 +1242,7 @@ export default function ModeSelectionPage() {
                                         openPlayerProfile(member.user_id)
                                     }
                                 >
-                                    Profile
+                                    <UiText text="Profile" />
                                 </button>
                                 {canKick && (
                                     <button
@@ -1250,7 +1255,7 @@ export default function ModeSelectionPage() {
                                         }
                                         disabled={busy}
                                     >
-                                        Remove
+                                        <UiText text="Remove" />
                                     </button>
                                 )}
                             </article>
@@ -1270,7 +1275,7 @@ export default function ModeSelectionPage() {
                                     partyBusyAction === "disband"
                                 }
                             >
-                                Disband party
+                                <UiText text="Disband party" />
                             </button>
                         )}
                     {partyState?.inParty && !partyState.isLeader && (
@@ -1282,14 +1287,14 @@ export default function ModeSelectionPage() {
                                 !!isMatching || partyBusyAction === "leave"
                             }
                         >
-                            Leave party
+                            <UiText text="Leave party" />
                         </button>
                     )}
                 </div>
                 {partyState?.isLeader && !isMatching && (
                     <div className={styles.partyInviteSection}>
                         <h4 className={styles.partyInviteTitle}>
-                            Friends for party
+                            <UiText text="Friends for party" />
                         </h4>
                         <div className={styles.partyInviteGrid}>
                             {partyFriends
@@ -1310,7 +1315,7 @@ export default function ModeSelectionPage() {
                                         <div className={styles.partyInviteMeta}>
                                             <strong>{friend.name}</strong>
                                             <span>{friend.characterType}</span>
-                                            <span>Level {friend.level}</span>
+                                            <span><UiText text="Level" /> {friend.level}</span>
                                             <span>{friend.activityStatus}</span>
                                         </div>
                                         <button
@@ -1326,7 +1331,7 @@ export default function ModeSelectionPage() {
                                                 friend.userId
                                             }
                                         >
-                                            Profile
+                                            <UiText text="Profile" />
                                         </button>
                                         <button
                                             type="button"
@@ -1341,14 +1346,14 @@ export default function ModeSelectionPage() {
                                                     MAX_PARTY_SIZE
                                             }
                                         >
-                                            Invite
+                                            <UiText text="Invite" />
                                         </button>
                                     </article>
                                 ))}
                         </div>
                         {partyFriends.length === 0 && (
                             <p className={styles.partyMuted}>
-                                Add friends in your profile to build parties.
+                                <UiText text="Add friends in your profile to build parties." />
                             </p>
                         )}
                     </div>
@@ -1357,7 +1362,7 @@ export default function ModeSelectionPage() {
             </section>
             </aside>
             <section className={modesStyles.modeSection} aria-labelledby="mode-section-title">
-                <div className={modesStyles.sectionHeading}><div><span className={modesStyles.eyebrow}>BATTLEFIELDS</span><h3 id="mode-section-title">Select your path</h3></div><span>{currentPartySize} in your party</span></div>
+                <div className={modesStyles.sectionHeading}><div><span className={modesStyles.eyebrow}><UiText text="BATTLEFIELDS" /></span><h3 id="mode-section-title"><UiText text="Select your path" /></h3></div><span>{currentPartySize} <UiText text="in your party" /></span></div>
                 <div className={modesStyles.modeGrid}>
                     {(Object.keys(REQUIRED_SIZE) as GameMode[]).map((m) => <ModeCard key={m} mode={m} selected={mode === m} disabled={!canPlayMode(m)} matching={isMatching && partyState?.queueMode === m} queuedPlayers={queueSizes[m]} requiredPlayers={REQUIRED_SIZE[m]} partySize={currentPartySize} onSelect={() => setMode(m)} />)}
                 </div>
@@ -1365,14 +1370,14 @@ export default function ModeSelectionPage() {
             </div>
 
             <dialog ref={heroDialogRef} className={modesStyles.heroDialog} aria-labelledby="hero-dialog-title" onCancel={(event) => { event.preventDefault(); if (!heroBusyId) setHeroDialogOpen(false); }}>
-                <div className={modesStyles.heroDialogHeader}><div><span className={modesStyles.eyebrow}>BATTLE SETUP</span><h2 id="hero-dialog-title">Choose your hero</h2><p>Available heroes for this account</p></div><button type="button" onClick={() => setHeroDialogOpen(false)} disabled={!!heroBusyId} aria-label="Close hero selection">×</button></div>
+                <div className={modesStyles.heroDialogHeader}><div><span className={modesStyles.eyebrow}><UiText text="BATTLE SETUP" /></span><h2 id="hero-dialog-title"><UiText text="Choose your hero" /></h2><p><UiText text="Available heroes for this account" /></p></div><button type="button" onClick={() => setHeroDialogOpen(false)} disabled={!!heroBusyId} aria-label="Close hero selection">×</button></div>
                 <div className={modesStyles.heroChoices}>
                     {availableBattleHeroes(heroRoster).map(hero => <button type="button" key={hero.id} className={modesStyles.heroChoice} aria-current={hero.id === activeHeroClassId ? "true" : undefined} disabled={!!heroBusyId || isMatching || startBusy || hero.id === activeHeroClassId} onClick={() => changeHero(hero)}>
                         <img src={getHeroPortrait(hero.id, hero.image)} alt="" />
-                        <span><strong>{hero.displayName}</strong><small>Class: {hero.id}</small><small>{hero.description}</small></span>
-                        <em>{heroBusyId === hero.id ? "Activating…" : hero.id === activeHeroClassId ? "Active" : "Select"}</em>
+                        <span><strong>{hero.displayName}</strong><small><UiText text="Class:" /> {hero.id}</small><small>{hero.description}</small></span>
+                        <em>{t(heroBusyId === hero.id ? "Activating…" : hero.id === activeHeroClassId ? "Active" : "Select")}</em>
                     </button>)}
-                    {availableBattleHeroes(heroRoster).length === 0 && <p>No available heroes.</p>}
+                    {availableBattleHeroes(heroRoster).length === 0 && <p><UiText text="No available heroes." /></p>}
                 </div>
                 {activeHeroError && <p className={modesStyles.heroDialogError} role="alert">{activeHeroError}</p>}
             </dialog>

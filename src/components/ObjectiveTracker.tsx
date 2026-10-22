@@ -4,6 +4,9 @@
 
 "use client";
 
+import UiText from "@/components/UiText";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 import React from "react";
 import type { Cell, PlayerState, RawInventoryItem } from "../types";
 import styles from "../styles/ObjectiveTracker.module.css";
@@ -240,6 +243,7 @@ export default React.memo(function ObjectiveTracker({
     hasEscaped,
     isMatchFinished,
 }: ObjectiveTrackerProps) {
+    const { language } = useGameLanguage();
     const hasQuestArtifact = React.useMemo(
         () => playerHasQuestArtifact(player, questArtifactId),
         [player?.inventory, player?.user_id, questArtifactId],
@@ -291,12 +295,12 @@ export default React.memo(function ObjectiveTracker({
                     isMyTurn ? styles.turnChipActive : styles.turnChipWaiting
                 }`}
             >
-                {isMyTurn ? "YOUR TURN" : "WAITING"}
+                {uiText(language, isMyTurn ? "YOUR TURN" : "WAITING")}
             </span>
-            <div className={styles.kicker}>Objective</div>
-            <h2 className={styles.title}>{copy.title}</h2>
-            <p className={styles.detail}>{copy.detail}</p>
-            <p className={styles.winCondition}>{winCondition}</p>
+            <div className={styles.kicker}><UiText text="Objective" /></div>
+            <h2 className={styles.title}>{uiText(language, copy.title)}</h2>
+            <p className={styles.detail}>{uiText(language, copy.detail)}</p>
+            <p className={styles.winCondition}>{uiText(language, winCondition)}</p>
             <div className={styles.steps} aria-hidden="true">
                 <span
                     className={`${styles.step} ${getStepState(

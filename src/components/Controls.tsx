@@ -4,6 +4,7 @@
 
 "use client";
 
+import UiText from "@/components/UiText";
 import React from "react";
 import styles from "../styles/Controls.module.css";
 
@@ -48,7 +49,7 @@ export default function Controls({ onMove, onAction }: ControlsProps) {
                     className={styles.actionButton}
                     onClick={() => onAction("attack")}
                 >
-                    Space
+                    <UiText text="Space" />
                 </button>
             </div>
         </div>

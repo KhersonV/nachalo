@@ -4,6 +4,7 @@
 
 "use client";
 
+import UiText from "@/components/UiText";
 import React from "react";
 import {
     getClassReflexEffectDescription,
@@ -57,7 +58,7 @@ function HealthBar({
               : `${styles.progressFill} ${styles.progressFillHealth}`;
     return (
         <div className={styles.hudRow}>
-            <span>HP:</span>
+            <span><UiText text="HP:" /></span>
             <div className={styles.progressBar}>
                 <div className={fillClass} style={{ width: `${pct}%` }} />
             </div>
@@ -125,7 +126,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
             )}
             {health !== undefined && maxHealth === undefined && (
                 <div className={styles.statRow}>
-                    <span className={styles.statLabel}>HP</span>
+                    <span className={styles.statLabel}><UiText text="HP" /></span>
                     <div />
                     <span className={styles.statValue}>{health}</span>
                 </div>
@@ -133,7 +134,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
 
             {energy !== undefined && maxEnergy !== undefined && (
                 <div className={styles.statRow}>
-                    <span className={styles.statLabel}>Энергия</span>
+                    <span className={styles.statLabel}><UiText text="Энергия" /></span>
                     <div />
                     <span className={styles.statValue}>
                         {energy} / {maxEnergy}
@@ -145,7 +146,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
 
             {typeof groupId === "number" && (
                 <div className={styles.statRow}>
-                    <span className={styles.statLabel}>Группа</span>
+                    <span className={styles.statLabel}><UiText text="Группа" /></span>
                     <div />
                     <span className={styles.statValue}>{groupId}</span>
                 </div>
@@ -155,7 +156,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                 <div className={styles.smallStatGrid}>
                     {attack !== undefined && (
                         <div className={styles.smallStat}>
-                            <span className={styles.smallStatLabel}>Атака</span>
+                            <span className={styles.smallStatLabel}><UiText text="Атака" /></span>
                             <span className={styles.smallStatValue}>
                                 {attack}
                             </span>
@@ -164,7 +165,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                     {defense !== undefined && (
                         <div className={styles.smallStat}>
                             <span className={styles.smallStatLabel}>
-                                Защита
+                                <UiText text="Защита" />
                             </span>
                             <span className={styles.smallStatValue}>
                                 {defense}
@@ -175,7 +176,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
                         sightRange !== undefined && (
                             <div className={styles.smallStat}>
                                 <span className={styles.smallStatLabel}>
-                                    Обзор
+                                    <UiText text="Обзор" />
                                 </span>
                                 <span className={styles.smallStatValue}>
                                     {sightRange}
@@ -188,7 +189,7 @@ export const ObjectHUD: React.FC<ObjectHUDProps> = ({
 
             {onProfileClick && (
                 <button className={styles.profileBtn} onClick={onProfileClick}>
-                    К профилю
+                    <UiText text="К профилю" />
                 </button>
             )}
         </>

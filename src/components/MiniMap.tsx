@@ -1,5 +1,6 @@
 "use client";
 
+import UiText from "@/components/UiText";
 import React from "react";
 import type { Cell, PlayerState } from "@/types";
 import {
@@ -567,10 +568,10 @@ function MiniMap({
     >
       <div className={styles.header}>
         <div>
-          <div className={styles.title}>Minimap</div>
+          <div className={styles.title}><UiText text="Minimap" /></div>
           {!compact && (
             <div className={styles.subtitle}>
-              {mapWidth}x{mapHeight} · team vision {effectiveSightRange}
+              {mapWidth}×{mapHeight} <UiText text="· team vision" /> {effectiveSightRange}
             </div>
           )}
         </div>
@@ -586,7 +587,7 @@ function MiniMap({
                 onClick={() => setSize("small")}
                 aria-pressed={size === "small"}
               >
-                Small
+                <UiText text="Small" />
               </button>
               <button
                 type="button"
@@ -596,7 +597,7 @@ function MiniMap({
                 onClick={() => setSize("large")}
                 aria-pressed={size === "large"}
               >
-                Large
+                <UiText text="Large" />
               </button>
             </>
           )}
@@ -609,29 +610,29 @@ function MiniMap({
               aria-label="Hide minimap"
               title="Hide minimap"
             >
-              Hide
+              <UiText text="Hide" />
             </button>
           )}
         </div>
       </div>
 
       {!compact && (
-        <div className={styles.hint}>Click a known cell to focus and ping.</div>
+        <div className={styles.hint}><UiText text="Click a known cell to focus and ping." /></div>
       )}
 
       {!compact && (
         <div className={styles.legend}>
           <span className={styles.legendItem}>
             <span className={`${styles.legendSwatch} ${styles.youSwatch}`} />
-            You
+            <UiText text="You" />
           </span>
           <span className={styles.legendItem}>
             <span className={`${styles.legendSwatch} ${styles.activeSwatch}`} />
-            Turn
+            <UiText text="Turn" />
           </span>
           <span className={styles.legendItem}>
             <span className={`${styles.legendSwatch} ${styles.unknownSwatch}`} />
-            Fog
+            <UiText text="Fog" />
           </span>
         </div>
       )}

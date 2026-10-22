@@ -7,6 +7,8 @@
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import styles from "../styles/QuestArtifactAlert.module.css";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 
 interface QuestArtifactAlertProps {
     artifactId: number;
@@ -28,6 +30,8 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
     confirmLabel = "Got it",
     onClose,
 }) => {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     useEffect(() => {
         const handler = (e: KeyboardEvent) => e.key === "Escape" && onClose();
         document.addEventListener("keydown", handler);
@@ -55,11 +59,11 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
                 aria-labelledby="quest-alert-title"
             >
                 <div className={styles.header}>
-                    <span className={styles.badge}>{badgeText}</span>
+                    <span className={styles.badge}>{t(badgeText)}</span>
                     <button
                         className={styles.close}
                         onClick={onClose}
-                        aria-label="Close"
+                        aria-label={t("Close")}
                     >
                         ✕
                     </button>
@@ -74,17 +78,17 @@ const QuestArtifactAlert: React.FC<QuestArtifactAlertProps> = ({
                         />
                     )}
                     <h2 id="quest-alert-title" className={styles.title}>
-                        {name}
+                        {t(name)}
                     </h2>
                     {description && (
-                        <p className={styles.description}>{description}</p>
+                        <p className={styles.description}>{t(description)}</p>
                     )}
-                    <p className={styles.hint}>{hintText}</p>
+                    <p className={styles.hint}>{t(hintText)}</p>
                 </div>
 
                 <div className={styles.footer}>
                     <button className={styles.confirmButton} onClick={onClose}>
-                        {confirmLabel}
+                        {t(confirmLabel)}
                     </button>
                 </div>
             </div>

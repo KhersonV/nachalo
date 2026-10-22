@@ -1,5 +1,7 @@
 "use client";
 
+import UiText from "@/components/UiText";
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getHeroFullbody, getHeroPortrait } from "@/features/heroes/heroArtwork";
@@ -7,6 +9,8 @@ import { BONUS_FIELDS, compareItemBonuses, equipBlockReason, filterEquipmentItem
 import ItemBonusComparison from "./equipment/ItemBonusComparison";
 import styles from "../styles/EquipmentPage.module.css";
 import { API_BASE } from "../utils/serviceUrls";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 import type {
     ActiveSetBonus,
     CharacterEquipmentStats,
@@ -374,14 +378,14 @@ function ItemImage({ item }: { item: EquipmentItem }) {
 function BonusList({ bonuses }: { bonuses?: EquipmentBonuses }) {
     const entries = getBonusEntries(bonuses);
     if (entries.length === 0) {
-        return <div className={styles.emptyBonus}>No stat bonuses</div>;
+        return <div className={styles.emptyBonus}><UiText text="No stat bonuses" /></div>;
     }
 
     return (
         <div className={styles.bonusList}>
             {entries.map((entry) => (
                 <span key={entry.key} className={styles.bonusPill}>
-                    {entry.label} {formatBonusValue(entry.value)}
+                    <UiText text={entry.label} /> {formatBonusValue(entry.value)}
                 </span>
             ))}
         </div>
@@ -393,11 +397,11 @@ function ItemMeta({ item }: { item: EquipmentItem }) {
     const slotLabel = SLOT_LABELS[item.slot];
     return (
         <div className={styles.itemMeta}>
-            <span>{itemTypeLabel}</span>
-            {itemTypeLabel.toLowerCase() !== slotLabel.toLowerCase() && <span>{slotLabel}</span>}
-            {item.handedness !== "none" && <span>{formatEnum(item.handedness)}</span>}
-            {item.classRestriction ? <span>{formatEnum(item.classRestriction)}</span> : null}
-            {item.levelRequirement ? <span>Level {item.levelRequirement}</span> : null}
+            <span><UiText text={itemTypeLabel} /></span>
+            {itemTypeLabel.toLowerCase() !== slotLabel.toLowerCase() && <span><UiText text={slotLabel} /></span>}
+            {item.handedness !== "none" && <span><UiText text={formatEnum(item.handedness)} /></span>}
+            {item.classRestriction ? <span><UiText text={formatEnum(item.classRestriction)} /></span> : null}
+            {item.levelRequirement ? <span><UiText text="Level" /> {item.levelRequirement}</span> : null}
         </div>
     );
 }
@@ -428,12 +432,12 @@ function EquippedSlotCard({
             <button type="button" className={styles.slotPrimary} aria-pressed={selected} onClick={() => onSelect(slot)}>
                 {item ? <ItemImage item={item} /> : <span className={styles.slotGlyph}>{blocked ? "🔒" : SLOT_LABELS[slot].slice(0, 2).toUpperCase()}</span>}
                 <span className={styles.slotIdentity}>
-                    <span className={styles.slotLabel}>{SLOT_LABELS[slot]}</span>
-                    <strong title={item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : undefined)}>{item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : "Empty slot")}</strong>
-                    {item && <small>{formatEnum(item.rarity)}</small>}
+                    <span className={styles.slotLabel}><UiText text={SLOT_LABELS[slot]} /></span>
+                    <strong title={item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : undefined)}>{item?.name || (blocked ? <><UiText text="Blocked by" /> {blockedBy || <UiText text="two-handed weapon" />}</> : <UiText text="Empty slot" />)}</strong>
+                    {item && <small><UiText text={formatEnum(item.rarity)} /></small>}
                 </span>
             </button>
-            {item && <button type="button" className={styles.slotUnequip} onClick={() => onUnequip(slot)} disabled={busy}>{busy ? "Working…" : "Unequip"}</button>}
+            {item && <button type="button" className={styles.slotUnequip} onClick={() => onUnequip(slot)} disabled={busy}><UiText text={busy ? "Working…" : "Unequip"} /></button>}
             {error && <span className={styles.inlineError} role="alert">{error}</span>}
         </article>
     );
@@ -454,9 +458,9 @@ function InventoryCard({
         <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} title={item.name}>
             <ItemImage item={item} />
             <span className={styles.inventoryCardCopy}>
-                <strong>{item.name}</strong>
-                <small>{SLOT_LABELS[item.slot]} · {formatEnum(item.rarity)}</small>
-                {reason && <small className={styles.inventoryUnavailable}>{reason}</small>}
+                <strong><UiText text={item.name} /></strong>
+                <small><UiText text={SLOT_LABELS[item.slot]} /> · <UiText text={formatEnum(item.rarity)} /></small>
+                {reason && <small className={styles.inventoryUnavailable}><UiText text={reason} /></small>}
             </span>
         </button>
     );
@@ -478,7 +482,7 @@ function StatsComparison({
 
                 return (
                     <div key={row.key} className={styles.statRow}>
-                        <span>{row.label}</span>
+                        <span><UiText text={row.label} /></span>
                         <span className={styles.statNumbers}>
                             <span>{baseValue}</span>
                             <span className={styles.statArrow}>-&gt;</span>
@@ -495,7 +499,7 @@ function StatsComparison({
 
 function ActiveSetBonuses({ bonuses }: { bonuses: ActiveSetBonus[] }) {
     if (bonuses.length === 0) {
-        return <div className={styles.emptyState}>No active set bonuses.</div>;
+        return <div className={styles.emptyState}><UiText text="No active set bonuses." /></div>;
     }
 
     return (
@@ -506,15 +510,15 @@ function ActiveSetBonuses({ bonuses }: { bonuses: ActiveSetBonus[] }) {
                     key={`${bonus.setCode || bonus.setName || "set"}-${bonus.piecesRequired || index}`}
                 >
                     <div className={styles.setBonusTitle}>
-                        <span>{bonus.setName || bonus.setCode || "Equipment Set"}</span>
-                        {bonus.pieces ? <span>{bonus.pieces} pieces</span> : null}
+                        <span><UiText text={bonus.setName || bonus.setCode || "Equipment Set"} /></span>
+                        {bonus.pieces ? <span>{bonus.pieces} <UiText text="pieces" /></span> : null}
                     </div>
                     {bonus.piecesRequired ? (
                         <div className={styles.setBonusMeta}>
-                            {bonus.piecesRequired} piece bonus
+                            {bonus.piecesRequired} <UiText text="piece bonus" />
                         </div>
                     ) : null}
-                    <p>{bonus.description}</p>
+                    <p><UiText text={bonus.description} /></p>
                     <BonusList bonuses={bonus.bonuses} />
                 </article>
             ))}
@@ -523,6 +527,8 @@ function ActiveSetBonuses({ bonuses }: { bonuses: ActiveSetBonus[] }) {
 }
 
 export default function EquipmentPage() {
+    const { language } = useGameLanguage();
+    const t = (source: string) => uiText(language, source);
     const { user } = useAuth();
     const [equipment, setEquipment] = useState<EquipmentState | null>(null);
     const [loading, setLoading] = useState(true);
@@ -720,31 +726,31 @@ export default function EquipmentPage() {
             <div className={styles.container}>
                 <header className={styles.pageHeader}>
                     <div className={styles.headerCopy}>
-                        <span className={styles.eyebrow}>THE ARMORY</span>
-                        <h1>Inventory</h1>
-                        <p>Equip your heroes, inspect your gear, and prepare for the next battle.</p>
+                        <span className={styles.eyebrow}><UiText text="THE ARMORY" /></span>
+                        <h1><UiText text="Inventory" /></h1>
+                        <p><UiText text="Equip your heroes, inspect your gear, and prepare for the next battle." /></p>
                     </div>
                     <div className={styles.headerActions}>
-                        <span>{equipment?.characters.length ?? 0} owned heroes · {equipment?.ownedItems.length ?? 0} items</span>
-                        {equipmentDevGrantEnabled && <button type="button" className={styles.devButton} onClick={handleGrantClassSet} disabled={busyAction !== null}>{busyAction?.startsWith("grant-") ? "Granting…" : "Grant class set"}</button>}
+                        <span>{equipment?.characters.length ?? 0} <UiText text="owned heroes ·" /> {equipment?.ownedItems.length ?? 0} <UiText text="items" /></span>
+                        {equipmentDevGrantEnabled && <button type="button" className={styles.devButton} onClick={handleGrantClassSet} disabled={busyAction !== null}>{t(busyAction?.startsWith("grant-") ? "Granting…" : "Grant class set")}</button>}
                     </div>
                 </header>
 
-                {error && <div className={styles.errorPanel} role="alert"><span>{error}</span><button type="button" className={styles.secondaryButton} onClick={() => void loadEquipment()}>Retry</button></div>}
+                {error && <div className={styles.errorPanel} role="alert"><span>{error}</span><button type="button" className={styles.secondaryButton} onClick={() => void loadEquipment()}><UiText text="Retry" /></button></div>}
                 {actionError?.key.startsWith("grant-") && <div className={styles.errorPanel} role="alert">{actionError.message}</div>}
-                {loading && !equipment && <div className={styles.statePanel}>Loading equipment…</div>}
+                {loading && !equipment && <div className={styles.statePanel}><UiText text="Loading equipment…" /></div>}
 
                 {equipment && <>
                     <div className={styles.topGrid}>
                         <section className={styles.heroPanel} aria-label="Hero and equipment slots">
                             <div className={styles.panelHeader}>
-                                <div><span className={styles.eyebrow}>YOUR HERO</span><h2>{selectedCharacter?.name || "Hero"}</h2><p>{selectedCharacter ? `${formatEnum(selectedCharacter.heroClassId)} · Hero level ${selectedCharacter.level}` : "Choose a hero"}</p></div>
-                                <span className={styles.viewBadge}>{viewingActiveCharacter ? "Match hero" : "Viewing only"}</span>
+                                <div><span className={styles.eyebrow}><UiText text="YOUR HERO" /></span><h2>{selectedCharacter?.name || t("Hero")}</h2><p>{selectedCharacter ? `${t(formatEnum(selectedCharacter.heroClassId))} · ${t("Hero level")} ${selectedCharacter.level}` : t("Choose a hero")}</p></div>
+                                <span className={styles.viewBadge}>{t(viewingActiveCharacter ? "Match hero" : "Viewing only")}</span>
                             </div>
                             <div className={styles.characterTabs} role="group" aria-label="Choose hero to view">
                                 {equipment.characters.map(character => <button key={character.characterId} type="button" className={`${styles.characterTab} ${character.characterId === effectiveSelectedCharacterId ? styles.characterTabActive : ""}`} aria-pressed={character.characterId === effectiveSelectedCharacterId} disabled={busyAction !== null} onClick={() => { setSelectedCharacterId(character.characterId); setSelectedItemId(null); setSelectedSlot(null); setActionError(null); }}>
                                     <img src={getHeroPortrait(character.heroClassId)} alt="" />
-                                    <span><strong>{character.name}</strong><small>Lv. {character.level}</small></span>
+                                    <span><strong>{character.name}</strong><small><UiText text="Lv." /> {character.level}</small></span>
                                 </button>)}
                             </div>
                             <div className={styles.heroStage}>
@@ -753,7 +759,7 @@ export default function EquipmentPage() {
                                 </div>
                                 <div className={styles.heroFigure}>
                                     {selectedCharacter && <img src={getHeroFullbody(selectedCharacter.heroClassId)} alt={`${selectedCharacter.name}, full-length class artwork`} />}
-                                    <div className={styles.figureCaption}><span>GEAR</span><strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></div>
+                                    <div className={styles.figureCaption}><span><UiText text="GEAR" /></span><strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></div>
                                 </div>
                                 <div className={styles.slotRail}>
                                     {EQUIPMENT_SLOTS.slice(4).map(slot => <EquippedSlotCard key={slot} slot={slot} item={selectedEquipped[slot]} blocked={slot === "off_hand" && offHandBlocked} blockedBy={slot === "off_hand" ? selectedEquipped.main_hand?.name : undefined} busy={busyAction !== null} selected={selectedSlot === slot && !selectedItemId} error={actionError?.key === `unequip-${slot}` ? actionError.message : undefined} onSelect={(nextSlot) => { setSelectedSlot(nextSlot); setSelectedItemId(null); }} onUnequip={handleUnequip} />)}
@@ -762,26 +768,26 @@ export default function EquipmentPage() {
                         </section>
 
                         <aside className={styles.statsPanel} aria-label="Hero statistics and set bonuses">
-                            <div className={styles.panelHeader}><div><span className={styles.eyebrow}>CHARACTER SHEET</span><h2>Statistics</h2><p>Base → equipped, as confirmed by the server</p></div></div>
+                            <div className={styles.panelHeader}><div><span className={styles.eyebrow}><UiText text="CHARACTER SHEET" /></span><h2><UiText text="Statistics" /></h2><p><UiText text="Base → equipped, as confirmed by the server" /></p></div></div>
                             <StatsComparison baseStats={selectedBaseStats} effectiveStats={selectedEffectiveStats} />
-                            <div className={styles.gearSummary}><span>Occupied slots <strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></span><span>Main hand <strong>{selectedEquipped.main_hand?.name || "Empty"}</strong></span></div>
+                            <div className={styles.gearSummary}><span><UiText text="Occupied slots" /> <strong>{occupiedSlotsCount} / {EQUIPMENT_SLOTS.length}</strong></span><span><UiText text="Main hand" /> <strong>{selectedEquipped.main_hand?.name || t("Empty")}</strong></span></div>
                             <div className={styles.statsDivider} />
-                            <div className={styles.panelHeaderCompact}><h2>Set bonuses</h2><span>{selectedSetBonuses.length} active</span></div>
+                            <div className={styles.panelHeaderCompact}><h2><UiText text="Set bonuses" /></h2><span>{selectedSetBonuses.length} <UiText text="active" /></span></div>
                             <ActiveSetBonuses bonuses={selectedSetBonuses} />
                         </aside>
                     </div>
 
                     <section className={styles.inventoryPanel} aria-label="Available equipment">
-                        <div className={styles.panelHeader}><div><span className={styles.eyebrow}>YOUR COLLECTION</span><h2>Available Equipment</h2><p>Unequipped items ready to use.</p></div><span>{filteredItems.length} / {availableItems.length} items</span></div>
+                        <div className={styles.panelHeader}><div><span className={styles.eyebrow}><UiText text="YOUR COLLECTION" /></span><h2><UiText text="Available Equipment" /></h2><p><UiText text="Unequipped items ready to use." /></p></div><span>{filteredItems.length} / {availableItems.length} <UiText text="items" /></span></div>
                         <div className={styles.inventoryLayout}>
                             <div className={styles.inventoryCollection}>
                                 <div className={styles.filterBar}>
-                                    <div className={styles.filterToggle} role="group" aria-label="Hero compatibility"><button type="button" aria-pressed={!filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: false }))}>All</button><button type="button" aria-pressed={filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: true }))}>For hero</button></div>
-                                    <label>Slot <select value={filters.slot} onChange={event => setFilters(current => ({ ...current, slot: event.target.value as InventoryFilters["slot"] }))}><option value="all">All slots</option>{EQUIPMENT_SLOTS.filter(slot => availableSlots.includes(slot)).map(slot => <option key={slot} value={slot}>{SLOT_LABELS[slot]}</option>)}</select></label>
-                                    <label>Class <select value={filters.heroClass} onChange={event => setFilters(current => ({ ...current, heroClass: event.target.value }))}><option value="all">All classes</option>{availableClasses.map(heroClass => <option key={heroClass} value={heroClass}>{formatEnum(heroClass)}</option>)}</select></label>
-                                    <label>Rarity <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all">All rarities</option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{formatEnum(rarity)}</option>)}</select></label>
+                                    <div className={styles.filterToggle} role="group" aria-label="Hero compatibility"><button type="button" aria-pressed={!filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: false }))}><UiText text="All" /></button><button type="button" aria-pressed={filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: true }))}><UiText text="For hero" /></button></div>
+                                    <label><UiText text="Slot" /> <select value={filters.slot} onChange={event => setFilters(current => ({ ...current, slot: event.target.value as InventoryFilters["slot"] }))}><option value="all"><UiText text="All slots" /></option>{EQUIPMENT_SLOTS.filter(slot => availableSlots.includes(slot)).map(slot => <option key={slot} value={slot}>{t(SLOT_LABELS[slot])}</option>)}</select></label>
+                                    <label><UiText text="Class" /> <select value={filters.heroClass} onChange={event => setFilters(current => ({ ...current, heroClass: event.target.value }))}><option value="all"><UiText text="All classes" /></option>{availableClasses.map(heroClass => <option key={heroClass} value={heroClass}>{t(formatEnum(heroClass))}</option>)}</select></label>
+                                    <label><UiText text="Rarity" /> <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all"><UiText text="All rarities" /></option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{t(formatEnum(rarity))}</option>)}</select></label>
                                 </div>
-                                {!equipment.availableEquipmentKnown ? <div className={styles.emptyState}>Available equipment data is unavailable. Retry loading equipment.</div> : availableItems.length === 0 ? <div className={styles.emptyState}>No unequipped items available.</div> : filteredItems.length === 0 ? <div className={styles.emptyState}>No items match these filters.</div> : <div className={styles.inventoryGrid}>
+                                {!equipment.availableEquipmentKnown ? <div className={styles.emptyState}><UiText text="Available equipment data is unavailable. Retry loading equipment." /></div> : availableItems.length === 0 ? <div className={styles.emptyState}><UiText text="No unequipped items available." /></div> : filteredItems.length === 0 ? <div className={styles.emptyState}><UiText text="No items match these filters." /></div> : <div className={styles.inventoryGrid}>
                                     {filteredItems.map(item => {
                                         return <InventoryCard key={item.instanceId} item={item} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedSlot(null); setActionError(null); }} />;
                                     })}
@@ -789,21 +795,21 @@ export default function EquipmentPage() {
                             </div>
 
                             <aside className={styles.detailPanel} aria-label="Item details and comparison">
-                                <div className={styles.detailHeading}><span className={styles.eyebrow}>INSPECT</span><h3>{selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item"}</h3></div>
+                                <div className={styles.detailHeading}><span className={styles.eyebrow}><UiText text="INSPECT" /></span><h3>{t(selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item")}</h3></div>
                                 {selectedInventoryItem ? <>
                                     <div className={styles.compareCards}>
-                                        <div className={styles.compareCard}><span>NOW EQUIPPED</span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{formatEnum(comparedItem.rarity)} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small>Set: {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p>Empty {SLOT_LABELS[selectedInventoryItem.slot]} slot</p>}</div>
-                                        <div className={styles.compareCard}><span>SELECTED ITEM</span><ItemImage item={selectedInventoryItem} /><strong>{selectedInventoryItem.name}</strong><small>{formatEnum(selectedInventoryItem.rarity)} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small>Set: {selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")}</small>}</div>
+                                        <div className={styles.compareCard}><span><UiText text="NOW EQUIPPED" /></span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{formatEnum(comparedItem.rarity)} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small><UiText text="Set:" /> {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p><UiText text="Empty" /> {SLOT_LABELS[selectedInventoryItem.slot]} <UiText text="slot" /></p>}</div>
+                                        <div className={styles.compareCard}><span><UiText text="SELECTED ITEM" /></span><ItemImage item={selectedInventoryItem} /><strong><UiText text={selectedInventoryItem.name} /></strong><small>{formatEnum(selectedInventoryItem.rarity)} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small><UiText text="Set:" /> <UiText text={selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")} /></small>}</div>
                                     </div>
                                     <ItemBonusComparison rows={itemComparison} />
                                     <div className={styles.itemRestrictions}><ItemMeta item={selectedInventoryItem} /></div>
-                                    {selectedBlockReason && <p className={styles.restrictionMessage}>{selectedBlockReason}</p>}
+                                    {selectedBlockReason && <p className={styles.restrictionMessage}>{t(selectedBlockReason)}</p>}
                                     <div className={styles.detailAction}>
                                         {actionError?.key === `equip-${selectedInventoryItem.instanceId}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
                                         {actionError?.key === `unequip-${selectedInventoryItem.slot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
-                                        {selectedEquipped[selectedInventoryItem.slot]?.instanceId === selectedInventoryItem.instanceId ? <button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedInventoryItem.slot)}>{busyAction ? "Working…" : "Unequip"}</button> : <button type="button" className={styles.primaryButton} disabled={busyAction !== null || !!selectedBlockReason} onClick={() => handleEquip(selectedInventoryItem)}>{busyAction?.startsWith("equip-") ? "Equipping…" : "Equip item"}</button>}
+                                        {selectedEquipped[selectedInventoryItem.slot]?.instanceId === selectedInventoryItem.instanceId ? <button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedInventoryItem.slot)}>{t(busyAction ? "Working…" : "Unequip")}</button> : <button type="button" className={styles.primaryButton} disabled={busyAction !== null || !!selectedBlockReason} onClick={() => handleEquip(selectedInventoryItem)}>{t(busyAction?.startsWith("equip-") ? "Equipping…" : "Equip item")}</button>}
                                     </div>
-                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4>{inspectedItem.name}</h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} />{(inspectedItem.setName || inspectedItem.setCode) && <p>Set: {inspectedItem.setName || formatEnum(inspectedItem.setCode || "")}</p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{busyAction ? "Working…" : "Unequip"}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `Blocked by ${selectedEquipped.main_hand?.name}.` : "This slot is empty. Select a compatible item from Available Equipment."}</p> : <p className={styles.detailPrompt}>Choose an available item or an equipment slot to see its details here.</p>}
+                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4><UiText text={inspectedItem.name} /></h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} />{(inspectedItem.setName || inspectedItem.setCode) && <p><UiText text="Set:" /> <UiText text={inspectedItem.setName || formatEnum(inspectedItem.setCode || "")} /></p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{t(busyAction ? "Working…" : "Unequip")}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `${t("Blocked by")} ${selectedEquipped.main_hand?.name}.` : t("This slot is empty. Select a compatible item from Available Equipment.")}</p> : <p className={styles.detailPrompt}><UiText text="Choose an available item or an equipment slot to see its details here." /></p>}
                             </aside>
                         </div>
                     </section>

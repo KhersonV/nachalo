@@ -3,6 +3,10 @@
 //==================================
 
 import { API_BASE } from "@/utils/serviceUrls";
+import UiText from "@/components/UiText";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 import { useSelector, useDispatch } from "react-redux";
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -82,12 +86,14 @@ class Scene3DErrorBoundary extends React.Component<React.PropsWithChildren, { fa
 
   render() {
     return this.state.failed
-      ? <p role="alert">3D rendering is unavailable. Select Classic to continue the match.</p>
+      ? <p role="alert"><UiText text="3D rendering is unavailable. Select Classic to continue the match." /></p>
       : this.props.children;
   }
 }
 
 export default function GameController({ instanceId }: GameControllerProps) {
+  const { language } = useGameLanguage();
+  const t = (source: string) => uiText(language, source);
   const dispatch = useDispatch();
   const router = useRouter();
   const state = useSelector((state: RootState) => state.game);
@@ -1328,11 +1334,11 @@ export default function GameController({ instanceId }: GameControllerProps) {
                   borderRadius: 4,
                 }}
               >
-                Close
+                <UiText text="Close" />
               </button>
             </div>
 
-            {profileModalLoading && <div>Loading...</div>}
+            {profileModalLoading && <div><UiText text="Loading..." /></div>}
             {profileModalError && (
               <div style={{ color: "#f88" }}>{profileModalError}</div>
             )}
@@ -1354,10 +1360,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
                   />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div>Level: {profileModalData.player.level}</div>
-                  <div>Class: {profileModalData.player.characterType}</div>
+                  <div><UiText text="Level:" /> {profileModalData.player.level}</div>
+                  <div><UiText text="Class:" /> {profileModalData.player.characterType}</div>
                   <div>
-                    Experience: {profileModalData.player.experience} /{" "}
+                    <UiText text="Experience:" /> {profileModalData.player.experience} /{" "}
                     {profileModalData.player.maxExperience}
                   </div>
                   <hr
@@ -1366,8 +1372,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
                       margin: "8px 0",
                     }}
                   />
-                  <div>Attack: {profileModalData.player.attack}</div>
-                  <div>Defense: {profileModalData.player.defense}</div>
+                  <div><UiText text="Attack:" /> {profileModalData.player.attack}</div>
+                  <div><UiText text="Defense:" /> {profileModalData.player.defense}</div>
 
                   {user?.id !== profileModalUserId && (
                     <div style={{ marginTop: 12 }}>
@@ -1379,7 +1385,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                               color: "#9f9",
                             }}
                           >
-                            Friend request sent
+                            <UiText text="Friend request sent" />
                           </span>
                         ) : (
                           <button
@@ -1452,7 +1458,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                             color: "#9f9",
                           }}
                         >
-                          Friends
+                          <UiText text="Friends" />
                         </span>
                       )}
                     </div>
@@ -1479,11 +1485,10 @@ export default function GameController({ instanceId }: GameControllerProps) {
           >
             <div style={{ flex: 1 }}>
               <div className={styles.disconnectTitle}>
-                Player disconnected: 3:00 to reconnect
+                <UiText text="Player disconnected: 3:00 to reconnect" />
               </div>
               <div className={styles.disconnectHint}>
-                If the timer runs out, the player will die from a lightning
-                strike.
+                <UiText text="If the timer runs out, the player will die from a lightning strike." />
               </div>
             </div>
             <button
@@ -1517,14 +1522,15 @@ export default function GameController({ instanceId }: GameControllerProps) {
           type="button"
           className={styles.disconnectMinimized}
           onClick={() => setShowDisconnectPanel(true)}
-          aria-label="Show disconnect notification"
-          title="Show"
+          aria-label={t("Show disconnect notification")}
+          title={t("Show")}
         >
-          Player disconnects ▸
+          <UiText text="Player disconnects ▸" />
         </button>
       )}
       <div className={styles.matchShell}>
         <aside className={styles.leftHudColumn}>
+          <LanguageSwitcher />
           {myPlayer && (
             <PlayerHUD
               health={myPlayer.health}
@@ -1562,9 +1568,9 @@ export default function GameController({ instanceId }: GameControllerProps) {
               {isMyTurn ? (
                 <>
                   <div className={styles.turnPrompt}>
-                    <span className={styles.turnPromptBadge}>YOUR TURN</span>
+                    <span className={styles.turnPromptBadge}><UiText text="YOUR TURN" /></span>
                     <span className={styles.turnPromptText}>
-                      Choose an action and end your turn
+                      <UiText text="Choose an action and end your turn" />
                     </span>
                   </div>
                   <Controls
@@ -1606,7 +1612,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     <span
                       className={`${styles.turnPromptBadge} ${styles.turnPromptBadgeWaiting}`}
                     >
-                      WAITING FOR TURN
+                      <UiText text="WAITING FOR TURN" />
                     </span>
                     <span
                       className={`${styles.turnPromptText} ${styles.turnPromptTextWaiting}`}
@@ -1620,7 +1626,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                     <>
                       <div className={styles.waitingEta}>
                         <span className={styles.waitingEtaLabel}>
-                          Your turn in
+                          <UiText text="Your turn in" />
                         </span>
                         <span className={styles.waitingEtaValue}>
                           {waitingTurnInfo.etaText}
@@ -1691,22 +1697,21 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 : styles.turnStatusFloatingWaiting
             }`}
           >
-            {isMyTurn ? "YOUR TURN" : "WAITING FOR TURN"}
+            {t(isMyTurn ? "YOUR TURN" : "WAITING FOR TURN")}
           </div>
-          <div className={styles.rendererToggle} role="group" aria-label="Map renderer test mode">
+          <div className={styles.rendererToggle} role="group" aria-label={t("Map renderer test mode")}>
             <button type="button" aria-pressed={mapRenderer === "classic"}
-              onClick={() => setMapRenderer("classic")}>Classic</button>
+              onClick={() => setMapRenderer("classic")}><UiText text="Classic" /></button>
             <button type="button" aria-pressed={mapRenderer === "3d"}
-              onClick={() => setMapRenderer("3d")}>3D</button>
+              onClick={() => setMapRenderer("3d")}><UiText text="3D" /></button>
           </div>
           {placementMode && (
             <div className={styles.turnStatusFloating}>
-              Build mode: select an adjacent cell to
-              {placementMode.structureType === "scout_tower"
-                ? " tower"
+              {t(placementMode.structureType === "scout_tower"
+                ? "Build mode: select an adjacent cell for the scout tower."
                 : placementMode.structureType === "turret"
-                  ? " turret"
-                  : " wall"}
+                  ? "Build mode: select an adjacent cell for the turret."
+                  : "Build mode: select an adjacent cell for the wall.")}
             </div>
           )}
           {/* Battle/mode button moved to LobbyHeader (game menu) */}
@@ -1732,7 +1737,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                 onPlayerClick={handleMapPlayerClick}
               />
             ) : (
-              <p className={styles.mapLoading}>Loading map...</p>
+              <p className={styles.mapLoading}><UiText text="Loading map..." /></p>
             )}
           </div>
         </main>
@@ -1780,7 +1785,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
                   aria-label="Open minimap"
                   title="Open minimap"
                 >
-                  Minimap
+                  <UiText text="Minimap" />
                 </button>
               )}
             </>
@@ -1811,7 +1816,7 @@ export default function GameController({ instanceId }: GameControllerProps) {
               aria-label="Open minimap"
               title="Open minimap"
             >
-              Minimap
+              <UiText text="Minimap" />
             </button>
           )}
           {selectedObjectHud}
@@ -1888,8 +1893,8 @@ export default function GameController({ instanceId }: GameControllerProps) {
         >
           <div className={styles.turnModalCard}>
             <span className={styles.turnModalIcon}>⚔️</span>
-            <span className={styles.turnModalTitle}>YOUR TURN</span>
-            <span className={styles.turnModalSub}>Choose an action</span>
+            <span className={styles.turnModalTitle}><UiText text="YOUR TURN" /></span>
+            <span className={styles.turnModalSub}><UiText text="Choose an action" /></span>
           </div>
         </div>
       )}

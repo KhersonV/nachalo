@@ -2,6 +2,7 @@
 // src/components/EndTurnButton.tsx
 //==================================
 
+import UiText from "@/components/UiText";
 import React from "react";
 import { API_BASE } from "@/utils/serviceUrls";
 import { debugLog } from "../utils/log";
@@ -67,7 +68,7 @@ function EndTurnButton({
 
     return (
         <button className={styles.endTurnButton} onClick={handleEndTurn}>
-            End Turn
+            <UiText text="End Turn" />
         </button>
     );
 }
