@@ -14,6 +14,7 @@ import type { PlayerShopState, ShopItem } from "../types";
 import type { EquipmentItem, EquipmentSlot } from "../types/equipment";
 import styles from "../styles/LobbyShopPage.module.css";
 import { resourceImage } from "@/utils/resourceAssets";
+import { equipmentImage } from "@/utils/equipmentAssets";
 
 type ShopTab = "buy" | "sell";
 type EquipmentSnapshot = {
@@ -95,7 +96,7 @@ function ShopItemCard({ item, selected, onSelect }: { item: ShopItem; selected: 
 
 function SellItemCard({ item, selected, onSelect }: { item: EquipmentItem; selected: boolean; onSelect: () => void }) {
     return <button type="button" className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={onSelect}>
-        <ProductImage src={item.imageUrl} name={item.name} />
+        <ProductImage src={equipmentImage(item.imageUrl, item.code)} name={item.name} />
         <span className={styles.cardCopy}><span className={styles.cardType}><UiText text={formatEnum(item.slot)} /> · <UiText text={formatEnum(item.rarity)} /></span><strong><UiText text={item.name} /></strong><small><UiText text={item.setName || item.classRestriction || "Equipment"} /></small></span>
         <span className={styles.cardPrice}>{formatGold(item.sellPrice!)}</span>
     </button>;
@@ -134,7 +135,7 @@ function ShopItemDetails({ item, player, count, forgeBuilt, libraryBuilt, busy, 
 
 function SellItemDetails({ item, busy, onSell }: { item: EquipmentItem; busy: boolean; onSell: () => void }) {
     return <div className={styles.detailsBody}>
-        <div className={styles.detailsHero}><ProductImage src={item.imageUrl} name={item.name} large /><div><span className={styles.eyebrow}><UiText text={formatEnum(item.rarity)} /> · <UiText text={formatEnum(item.slot)} /></span><h2><UiText text={item.name} /></h2><p><UiText text={item.setName || item.classRestriction || "Available equipment"} /></p></div></div>
+        <div className={styles.detailsHero}><ProductImage src={equipmentImage(item.imageUrl, item.code)} name={item.name} large /><div><span className={styles.eyebrow}><UiText text={formatEnum(item.rarity)} /> · <UiText text={formatEnum(item.slot)} /></span><h2><UiText text={item.name} /></h2><p><UiText text={item.setName || item.classRestriction || "Available equipment"} /></p></div></div>
         <div className={styles.detailFacts}><span><UiText text="Item instance" /> <strong className={styles.instanceId}>{item.instanceId}</strong></span><span><UiText text="Sell value" /> <strong>{formatGold(item.sellPrice!)}</strong></span></div>
         <p className={styles.sellWarning}><UiText text="Selling permanently removes this item from your inventory." /></p>
         <button type="button" className={styles.primaryAction} disabled={busy} onClick={onSell}><UiText text={busy ? "Selling…" : "Sell for"} /> {!busy && formatGold(item.sellPrice!)}</button>

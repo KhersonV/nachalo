@@ -257,7 +257,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 	// Compute canonical sell price and two-handed flag based on template metadata
 	item.IsTwoHanded = item.Handedness == "two_hand"
 	// apply green-item sell price rules
-	if item.Rarity == "green" {
+	if item.Rarity == "gray" {
 		if item.IsTwoHanded {
 			item.SellPrice = 1200
 		} else {
@@ -837,7 +837,7 @@ func lockDispositionItemTx(tx *sql.Tx, itemInstanceID string) (*equipmentDisposi
 
 	// Recompute canonical sell price for green starter items if applicable
 	isTwoHand := strings.EqualFold(item.Handedness, "two_hand")
-	if strings.EqualFold(item.Rarity, "green") {
+	if strings.EqualFold(item.Rarity, "gray") {
 		if isTwoHand {
 			item.SellPrice = 1200
 		} else {

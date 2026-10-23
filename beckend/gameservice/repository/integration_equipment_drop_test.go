@@ -34,7 +34,7 @@ func TestGrantEquipmentDropToUserPersistsSourceEventAndUsesExistingTemplate(t *t
 	if item.Code != "sagecloth_staff" || item.Name != "Sagecloth Staff" || item.Rarity != "green" {
 		t.Fatalf("unexpected drop item DTO: %+v", item)
 	}
-	if item.ImageURL != "/equipment/mystic/sagecloth/staff.png" || item.Slot != "main_hand" || item.ItemType != "staff" {
+	if item.ImageURL != "/equipment/mystic/Elderbloom/Elderbloom Staff.png" || item.Slot != "main_hand" || item.ItemType != "staff" {
 		t.Fatalf("unexpected drop item display fields: %+v", item)
 	}
 

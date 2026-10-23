@@ -26,7 +26,7 @@ func CreateEquipmentTables() {
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		CONSTRAINT item_sets_class_restriction_check CHECK (class_restriction IN ('guardian', 'berserker', 'ranger', 'mystic')),
-		CONSTRAINT item_sets_rarity_check CHECK (rarity IN ('green', 'blue', 'purple', 'orange')),
+		CONSTRAINT item_sets_rarity_check CHECK (rarity IN ('gray', 'green', 'blue', 'purple', 'orange')),
 		CONSTRAINT item_sets_code_not_blank_check CHECK (btrim(code) <> ''),
 		CONSTRAINT item_sets_name_not_blank_check CHECK (btrim(name) <> '')
 	);
@@ -60,7 +60,7 @@ func CreateEquipmentTables() {
 		CONSTRAINT item_templates_slot_check CHECK (` + equipmentSlotsCheck + `),
 		CONSTRAINT item_templates_item_type_check CHECK (item_type IN ('sword', 'shield', 'staff', 'bow', 'axe', 'helmet', 'chest', 'pants', 'boots', 'gloves', 'ring', 'amulet')),
 		CONSTRAINT item_templates_handedness_check CHECK (handedness IN ('none', 'one_hand', 'two_hand')),
-		CONSTRAINT item_templates_rarity_check CHECK (rarity IN ('green', 'blue', 'purple', 'orange')),
+		CONSTRAINT item_templates_rarity_check CHECK (rarity IN ('gray', 'green', 'blue', 'purple', 'orange')),
 		CONSTRAINT item_templates_class_restriction_check CHECK (class_restriction IS NULL OR class_restriction IN ('guardian', 'berserker', 'ranger', 'mystic')),
 		CONSTRAINT item_templates_level_requirement_check CHECK (level_requirement > 0),
 		CONSTRAINT item_templates_prices_check CHECK (npc_price >= 0 AND sell_price >= 0),

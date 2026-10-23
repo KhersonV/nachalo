@@ -228,6 +228,7 @@ export default function LobbyBasePage() {
                 </div>
             </section>}
         </>}
+        <Link href="/market" className={styles.marketBuilding} aria-label="Открыть Аукционный дом"><img src="/ui-icons/market.svg" alt="" /><span><strong>Аукционный дом</strong><small>Аукцион и биржа игроков</small></span><span aria-hidden="true">→</span></Link>
         <aside className={styles.loadoutRow}><div className={styles.loadoutIntro}><span className={styles.eyebrow}><UiText text="MATCH PREPARATION" /></span><Link href="/mode"><UiText text="Edit in Modes ↗" /></Link></div><StorageLoadout compact collapsible /></aside>
     </div><ConfirmDialog open={Boolean(confirmBuild && pending)} title={confirmBuild ? `Build ${BUILDINGS[confirmBuild].name}?` : "Build?"} description={buildDescription} confirmLabel="Confirm build" busy={busyAction !== null} onConfirm={() => void build()} onCancel={() => { if (!busyRef.current) setConfirmBuild(null); }} /></main>;
 }

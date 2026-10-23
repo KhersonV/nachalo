@@ -17,6 +17,8 @@ interface UseGameKeyboardProps {
 export function useGameKeyboard({ onMove, onAction, onInventory }: UseGameKeyboardProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select, [contenteditable='true']"))) return;
       if (
         [
           "ArrowUp",

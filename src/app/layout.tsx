@@ -6,6 +6,7 @@ import "../styles/globals.css";
 import { AuthProvider } from "../contexts/AuthContext";
 import ReduxProvider from "@/providers/ReduxProvider";
 import GlobalMatchListener from "../components/GlobalMatchListener";
+import GameChat from "../components/GameChat";
 import { GameLanguageProvider } from "@/hooks/useGameLanguage";
 
 export default function RootLayout({
@@ -27,6 +28,7 @@ export default function RootLayout({
                 <AuthProvider>
                     <ReduxProvider>{children}</ReduxProvider>
                     <GlobalMatchListener />
+                    <GameChat />
                 </AuthProvider>
                 <div id="modal-root" />
               </GameLanguageProvider>

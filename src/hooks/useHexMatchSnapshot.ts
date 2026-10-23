@@ -51,12 +51,21 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
       url.searchParams.set("instanceId", instanceId);
       socket = new WebSocket(url.toString());
       socket.onopen = () => {
+        window.dispatchEvent(new Event("nachalo:chat-socket-open"));
         socket?.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
         void refresh().then(() => { if (!closed && socket?.readyState === WebSocket.OPEN) setConnection("live"); }).catch(report);
       };
       socket.onmessage = event => {
         try {
           const message = JSON.parse(event.data);
+          if (message?.type === "presence.join" || message?.type === "presence.leave") {
+            window.dispatchEvent(new CustomEvent("nachalo:presence-event", { detail: message }));
+            return;
+          }
+          if (message?.type === "chat.message" || message?.type === "chat.system") {
+            window.dispatchEvent(new CustomEvent("nachalo:chat-message", { detail: message.payload }));
+            return;
+          }
           const payload = message?.payload;
           if (payload?.instanceId !== instanceId || payload?.schemaVersion !== 2) return;
 		  if ((message.type === "PLAYER_DISCONNECTED" || message.type === "PLAYER_RECONNECTED") && Number.isSafeInteger(payload.userId)) {

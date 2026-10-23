@@ -195,6 +195,7 @@ export function useGameSocket(
                     ws.close(1000);
                     return;
                 }
+                window.dispatchEvent(new Event("nachalo:chat-socket-open"));
                 ws.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
                 requestSnapshot();
             };
@@ -204,6 +205,14 @@ export function useGameSocket(
                     msg = JSON.parse(e.data);
                 } catch {
                     console.error("WS parse error:", e.data);
+                    return;
+                }
+                if (msg.type === "presence.join" || msg.type === "presence.leave") {
+                    window.dispatchEvent(new CustomEvent("nachalo:presence-event", { detail: msg }));
+                    return;
+                }
+                if (msg.type === "chat.message" || msg.type === "chat.system") {
+                    window.dispatchEvent(new CustomEvent("nachalo:chat-message", { detail: msg.payload }));
                     return;
                 }
 

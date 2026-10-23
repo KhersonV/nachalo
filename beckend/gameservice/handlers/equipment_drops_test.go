@@ -66,7 +66,7 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 			TemplateCode: "sagecloth_staff",
 			Name:         "Sagecloth Staff",
 			Rarity:       "green",
-			ImageURL:     "/equipment/mystic/sagecloth/staff.png",
+			ImageURL:     "/equipment/mystic/Elderbloom/Elderbloom Staff.png",
 			Slot:         "main_hand",
 			ItemType:     "staff",
 			ClassID:      "mystic",
@@ -89,7 +89,7 @@ func TestMaybeGrantMonsterEquipmentDropReturnsDropDTO(t *testing.T) {
 	if drop.InstanceID != "drop-instance-id" || drop.TemplateCode != "sagecloth_staff" || drop.OwnerUserID != 77 {
 		t.Fatalf("unexpected drop payload ids: %+v", drop)
 	}
-	if drop.Name != "Sagecloth Staff" || drop.Rarity != "green" || drop.ImageURL != "/equipment/mystic/sagecloth/staff.png" {
+	if drop.Name != "Sagecloth Staff" || drop.Rarity != "green" || drop.ImageURL != "/equipment/mystic/Elderbloom/Elderbloom Staff.png" {
 		t.Fatalf("unexpected drop display payload: %+v", drop)
 	}
 	if drop.Item.ItemInstanceID != "drop-instance-id" || drop.Item.ClassID != "mystic" || drop.Item.SetCode != "sagecloth_set" {
@@ -241,7 +241,7 @@ func TestUniversalAttackMonsterKillAwardsDropWithUnknownCharacterType(t *testing
 			TemplateCode: "sagecloth_staff",
 			Name:         "Sagecloth Staff",
 			Rarity:       "green",
-			ImageURL:     "/equipment/mystic/sagecloth/staff.png",
+			ImageURL:     "/equipment/mystic/Elderbloom/Elderbloom Staff.png",
 			Slot:         "main_hand",
 			ItemType:     "staff",
 			ClassID:      "mystic",

@@ -210,7 +210,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID, ok := claims["user_id"].(float64)
-	if !ok {
+	if !ok || userID <= 0 || userID != float64(int(userID)) {
 		http.Error(w, "user_id not found in token", http.StatusUnauthorized)
 		return
 	}
@@ -230,11 +230,15 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientsMu.Lock()
+	firstSession := len(clients[client.userID]) == 0
 	if clients[client.userID] == nil {
 		clients[client.userID] = make(map[*Client]struct{})
 	}
 	clients[client.userID][client] = struct{}{}
 	clientsMu.Unlock()
+	if firstSession {
+		publishOnlineJoin(client.userID)
+	}
 	log.Printf("[WsHandler] Новый клиент userID=%d подключён.", client.userID)
 
 	// 4. Читаем сообщения клиента
@@ -343,12 +347,17 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	instanceID := client.instanceID
 	userIDInt := client.userID
 	clientsMu.Lock()
+	wasOnline := len(clients[client.userID]) > 0
 	delete(clients[client.userID], client)
 	shouldScheduleGrace = !hasMatchSocketLocked(client.userID, instanceID)
-	if len(clients[client.userID]) == 0 {
+	lastSession := wasOnline && len(clients[client.userID]) == 0
+	if lastSession {
 		delete(clients, client.userID)
 	}
 	clientsMu.Unlock()
+	if lastSession {
+		publishOnlineLeave(userIDInt)
+	}
 
 	if shouldScheduleGrace && instanceID != "" && isAliveMatchPlayer(instanceID, userIDInt) {
 		if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
@@ -435,12 +444,17 @@ var broadcastFn = func(message []byte) {
 			log.Printf("[Broadcast] write error user=%d err=%v", client.userID, err)
 			// Если ошибка — безопасно удалить клиента (требуется ещё один lock)
 			clientsMu.Lock()
+			wasOnline := len(clients[client.userID]) > 0
 			client.Conn.Close()
 			delete(clients[client.userID], client)
-			if len(clients[client.userID]) == 0 {
+			lastSession := wasOnline && len(clients[client.userID]) == 0
+			if lastSession {
 				delete(clients, client.userID)
 			}
 			clientsMu.Unlock()
+			if lastSession {
+				publishOnlineLeave(client.userID)
+			}
 		} else {
 			// Log successful send for critical turn events to aid debugging
 			if msgType == "SET_ACTIVE_USER" || msgType == "TURN_PASSED" {

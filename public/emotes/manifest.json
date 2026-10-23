@@ -1,0 +1,8 @@
+{
+  "status": "planned; no artwork is registered until the files exist",
+  "emotes": [
+    { "id": "laugh", "code": ":laugh:", "category": "classic", "animated": "classic/laugh.webp", "static": "classic/laugh.png" },
+    { "id": "wave", "code": ":wave:", "category": "classic", "animated": "classic/wave.webp", "static": "classic/wave.png" },
+    { "id": "victory", "code": ":victory:", "category": "fantasy", "animated": "fantasy/victory.webp", "static": "fantasy/victory.png" }
+  ]
+}

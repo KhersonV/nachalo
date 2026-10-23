@@ -28,6 +28,7 @@ type blueprintCatalogItem struct {
 	Price         int
 	InventoryKey  string
 	RequiresForge bool
+ Untradable bool
 }
 
 var blueprintCatalog = map[string]blueprintCatalogItem{

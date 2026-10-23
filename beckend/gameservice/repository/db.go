@@ -85,6 +85,7 @@ func RunMigrations() {
 	CreatePersistedArtifactsTable()
 	CreateEquipmentTables()
 	EnsureStaticGameData()
+	if err := EnsureMarketSchema(); err != nil { log.Fatal(err) }
 	EnsureEquipmentSeedData()
 	CreateMatchStatsTable()
 	EnsureMatchStatsWinnerUsersColumn()
@@ -94,6 +95,9 @@ func RunMigrations() {
 	EnsureMatchStatsHistoryColumns()
 	CreatePlayerFriendsTable()
 	CreatePlayerFriendRequestsTable()
+	if err := EnsureChatSchema(); err != nil {
+		log.Fatal(err)
+	}
 	EnsurePlayerBaseBuildingsTable()
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
@@ -178,6 +182,8 @@ func SchemaReady() (bool, error) {
 	}
 
 	requiredColumns := map[string][]string{
+		"chat_messages": {"id", "channel", "sender_user_id", "sender_character_id", "sender_nickname", "body", "party_id", "recipient_user_id", "created_at"},
+		"chat_mutes": {"viewer_user_id", "muted_user_id", "created_at"},
 		"player_profiles": {
 			"user_id",
 			"name",

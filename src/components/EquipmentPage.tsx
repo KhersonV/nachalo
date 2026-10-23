@@ -7,6 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { getHeroFullbody, getHeroPortrait } from "@/features/heroes/heroArtwork";
 import { BONUS_FIELDS, compareItemBonuses, equipBlockReason, filterEquipmentItems, getAvailableEquipment, getGearCount, isTwoHanded, type InventoryFilters } from "@/features/equipment/equipmentView";
 import ItemBonusComparison from "./equipment/ItemBonusComparison";
+import { equipmentImage } from "@/utils/equipmentAssets";
 import styles from "../styles/EquipmentPage.module.css";
 import { API_BASE } from "../utils/serviceUrls";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
@@ -167,7 +168,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         rarity: normalizeRarity(value.rarity),
         classRestriction,
         levelRequirement: numberOrUndefined(value.levelRequirement),
-        imageUrl: stringOrEmpty(value.imageUrl),
+        imageUrl: equipmentImage(stringOrEmpty(value.imageUrl), code),
         bonuses: normalizeBonuses(value.bonuses),
         sellPrice: numberOrUndefined(value.sellPrice),
         status: stringOrEmpty(value.status) || undefined,
@@ -350,16 +351,8 @@ function readableApiError(payload: EquipmentApiResponse, status: number): string
 }
 
 function ItemImage({ item }: { item: EquipmentItem }) {
-    const initials = item.name
-        .split(" ")
-        .map((part) => part[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase();
-
     return (
         <div className={styles.itemImageWrap} aria-hidden="true">
-            <span className={styles.itemImageFallback}>{initials || "EQ"}</span>
             {item.imageUrl ? (
                 <img
                     src={item.imageUrl}

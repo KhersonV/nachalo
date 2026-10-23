@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE } from "@/utils/serviceUrls";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import styles from "../styles/LobbyHeader.module.css";
@@ -16,7 +18,7 @@ type NavItem = {
     isActive?: boolean;
 };
 
-function NavButton({ item }: { item: NavItem }) {
+function NavButton({ item, unread }: { item: NavItem; unread?: number }) {
     return (
         <div className={styles.navItemWrap}>
             <Link
@@ -30,7 +32,7 @@ function NavButton({ item }: { item: NavItem }) {
                     className={styles.navIcon}
                     draggable={false}
                 />
-                <span className={styles.navHint}>{item.label}</span>
+                <span className={styles.navHint}>{item.label}</span>{item.id === "market" && Boolean(unread) && <span className={styles.marketUnread} aria-label={`${unread} непрочитанных уведомлений`}>{unread}</span>}
             </Link>
         </div>
     );
@@ -39,6 +41,9 @@ function NavButton({ item }: { item: NavItem }) {
 export default function LobbyHeader() {
     const pathname = usePathname();
     const { language } = useGameLanguage();
+    const { user } = useAuth();
+    const [marketUnread, setMarketUnread] = React.useState(0);
+    React.useEffect(() => { if (!user?.token) return; let active = true; const refresh = () => { void fetch(`${API_BASE}/game/market/notifications-count`, { headers: { Authorization: `Bearer ${user.token}` }, cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => { if (active && typeof data?.unread === "number") setMarketUnread(data.unread); }).catch(() => {}); }; refresh(); const timer = window.setInterval(refresh, 60000); return () => { active = false; window.clearInterval(timer); }; }, [user?.token, pathname]);
 
     const navItems: NavItem[] = [
         {
@@ -61,6 +66,13 @@ export default function LobbyHeader() {
             iconSrc: "/ui-icons/shop.png",
             isActive: pathname === "/shop",
             href: "/shop",
+        },
+        {
+            id: "market",
+            label: "Аукционный дом",
+            iconSrc: "/ui-icons/market.svg",
+            isActive: pathname === "/market",
+            href: "/market",
         },
         {
             id: "base",
@@ -92,7 +104,7 @@ export default function LobbyHeader() {
             </div>
             <nav className={styles.nav} aria-label="Lobby navigation">
                 {navItems.map((item) => (
-                    <NavButton key={item.id} item={{ ...item, label: uiText(language, item.label) }} />
+                    <NavButton key={item.id} item={{ ...item, label: uiText(language, item.label) }} unread={marketUnread} />
                 ))}
             </nav>
             <LanguageSwitcher />

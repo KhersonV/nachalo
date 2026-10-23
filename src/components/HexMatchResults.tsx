@@ -7,6 +7,7 @@ import styles from "@/styles/GameStatsPage.module.css";
 import hexStyles from "@/styles/HexGameController.module.css";
 import hudStyles from "@/features/hexHud/HexBattleShell.module.css";
 import { resourceImage } from "@/utils/resourceAssets";
+import { equipmentImage } from "@/utils/equipmentAssets";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 
@@ -16,7 +17,7 @@ function LootList({ items, empty, resources = false }: { items: Array<{ key: str
   const { language } = useGameLanguage();
   if (!items.length) return <p className={styles.rewardsEmpty}>{empty}</p>;
   return <div className={styles.lootGrid}>{items.map(({ key, item }) => {
-    const image = resources && key.startsWith("resource_") ? resourceImage(item.item_name ?? item.name, item.image) ?? item.image : item.image;
+    const image = resources && key.startsWith("resource_") ? resourceImage(item.item_name ?? item.name, item.image) ?? item.image : equipmentImage(item.image);
     return <div className={styles.lootCard} key={key}>
     <div className={styles.lootImageFrame}>{image ? <img className={styles.lootImage} src={image} alt="" /> : <span className={styles.lootImageFallback}>◆</span>}</div>
     <div className={styles.lootBody}><strong>{uiText(language, item.name || item.item_name || key)}</strong> ×{item.item_count ?? 1}</div>

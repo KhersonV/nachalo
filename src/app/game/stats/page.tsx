@@ -6,6 +6,7 @@ import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { rewardLabel } from "@/utils/matchHistory";
 import styles from "@/styles/GameStatsPage.module.css";
 import GameResultShell from "@/components/GameResultShell";
+import { equipmentImage } from "@/utils/equipmentAssets";
 import UiText from "@/components/UiText";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
@@ -232,7 +233,7 @@ function normalizeLootItems(value: unknown): MatchLootItem[] {
                 setName: typeof raw.setName === "string" ? raw.setName : undefined,
                 slot: typeof raw.slot === "string" ? raw.slot : undefined,
                 rarity: typeof raw.rarity === "string" ? raw.rarity : undefined,
-                image: typeof raw.image === "string" ? raw.image : undefined,
+                image: equipmentImage(typeof raw.image === "string" ? raw.image : undefined),
                 bonuses: normalizeLootBonuses(raw.bonuses),
             };
         })

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"gameservice/handlers"
 	"gameservice/middleware"
@@ -21,7 +22,7 @@ func enableCors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -40,6 +41,7 @@ func main() {
 
 	// Инициализация БД
 	repository.InitDB()
+	if err := handlers.RegisterMarketShopCatalog(context.Background()); err != nil { log.Fatalf("market catalog: %v", err) }
 	defer repository.DB.Close()
 	if err := repository.MarkHexPresenceUnknownOnStart(context.Background()); err != nil {
 		log.Fatalf("HEX presence initialization: %v", err)
@@ -48,6 +50,27 @@ func main() {
 	defer stopHexWorker()
 	handlers.StartHexTurnWorker(hexWorkerContext)
 	handlers.StartSocketHeartbeat(hexWorkerContext)
+	repository.StartMarketExpiryWorker(hexWorkerContext)
+	go func() {
+		prune := func() {
+			ctx, cancel := context.WithTimeout(hexWorkerContext, 30*time.Second)
+			defer cancel()
+			if err := (repository.ChatStore{DB: repository.DB}).PruneExpired(ctx); err != nil {
+				log.Printf("chat retention cleanup failed: %v", err)
+			}
+		}
+		prune()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-hexWorkerContext.Done():
+				return
+			case <-ticker.C:
+				prune()
+			}
+		}
+	}()
 
 	// Настраиваем маршруты
 	router := mux.NewRouter()
@@ -104,6 +127,20 @@ func main() {
 	}
 	// === websocket ===
 	router.HandleFunc("/ws", handlers.WsHandler)
+	router.Handle("/game/chat/messages", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatSendHandler))).Methods("POST")
+	router.Handle("/game/chat/messages", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatHistoryHandler))).Methods("GET")
+	router.Handle("/game/chat/conversations", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatConversationsHandler))).Methods("GET", "POST")
+	router.Handle("/game/chat/conversations/{id}/messages", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatConversationMessagesHandler))).Methods("GET")
+	router.Handle("/game/chat/conversations/{id}/read", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatConversationReadHandler))).Methods("POST")
+	router.Handle("/game/chat/conversations/{id}/leave", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatConversationLeaveHandler))).Methods("POST")
+	router.Handle("/game/chat/players", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatPlayerSearchHandler))).Methods("GET")
+	router.Handle("/game/chat/online", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatOnlinePlayersHandler))).Methods("GET")
+	router.Handle("/game/chat/mutes", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatMutesHandler))).Methods("GET")
+	router.Handle("/game/chat/mutes/{id}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatMuteTargetHandler))).Methods("PUT", "DELETE")
+
+	router.Handle("/game/market/{kind}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketReadHandler))).Methods("GET")
+    router.Handle("/game/market/{kind}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
+    router.Handle("/game/market/{kind}/{id}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
 
 	// === Эндпоинты для игроков ===
 	router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")
