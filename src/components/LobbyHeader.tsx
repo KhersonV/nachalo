@@ -89,6 +89,13 @@ export default function LobbyHeader() {
             href: "/equipment",
         },
         {
+            id: "professions",
+            label: "Professions",
+            iconSrc: "/ui-icons/professions.svg",
+            isActive: pathname === "/professions",
+            href: "/professions",
+        },
+        {
             id: "modes",
             label: "Modes",
             iconSrc: "/ui-icons/battle.png",

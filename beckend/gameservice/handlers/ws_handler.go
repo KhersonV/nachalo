@@ -7,17 +7,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"gameservice/internal/hexmap"
-	"gameservice/models"
 	"gameservice/repository"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -34,9 +31,6 @@ var (
 
 	httpPresenceMu sync.Mutex
 	httpPresence   = make(map[int]time.Time)
-
-	disconnectGraceMu sync.Mutex
-	disconnectGrace   = make(map[string]*time.Timer)
 )
 
 const reconnectGracePeriod = 3 * time.Minute
@@ -108,81 +102,13 @@ type broadcastEnvelope struct {
 	} `json:"payload"`
 }
 
-func graceKey(instanceID string, userID int) string {
-	return instanceID + ":" + strconv.Itoa(userID)
-}
-
-func cancelReconnectGrace(instanceID string, userID int) bool {
-	key := graceKey(instanceID, userID)
-	disconnectGraceMu.Lock()
-	timer, ok := disconnectGrace[key]
-	if ok {
-		delete(disconnectGrace, key)
-	}
-	disconnectGraceMu.Unlock()
-	if !ok {
-		return false
-	}
-	return timer.Stop()
-}
-
-func scheduleReconnectGrace(instanceID string, userID int) {
-	if instanceID == "" || userID == 0 {
-		return
-	}
-	// Square retains its legacy process-local grace timer. HEX uses the
-	// persisted disconnect timestamp and the shared deadline worker.
-	if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
-		return
-	}
-
-	key := graceKey(instanceID, userID)
-
-	disconnectGraceMu.Lock()
-	if oldTimer, exists := disconnectGrace[key]; exists {
-		oldTimer.Stop()
-	}
-	var timer *time.Timer
-	timer = time.AfterFunc(reconnectGracePeriod, func() {
-		disconnectGraceMu.Lock()
-		current, ok := disconnectGrace[key]
-		if !ok || current != timer {
-			disconnectGraceMu.Unlock()
-			return
-		}
-		delete(disconnectGrace, key)
-		disconnectGraceMu.Unlock()
-
-		// Если за 3 минуты не переподключился — "молния" = смертельный урон.
-		p, err := repository.GetMatchPlayerByID(instanceID, userID)
-		if err != nil || p == nil {
-			return
-		}
-		if p.Health <= 0 {
-			return
-		}
-
-		log.Printf("[WsHandler] reconnect grace expired: userID=%d instance=%s -> lightning death", userID, instanceID)
-		handlePlayerDeath(instanceID, p, 0, false)
-	})
-	disconnectGrace[key] = timer
-	disconnectGraceMu.Unlock()
-}
-
 func isAliveMatchPlayer(instanceID string, userID int) bool {
 	if instanceID == "" || userID == 0 {
 		return false
 	}
-	if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
-		var alive bool
-		err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND p.health>0 AND m.finished_at IS NULL AND m.turn_order @> to_jsonb($2::integer))`, instanceID, userID).Scan(&alive)
-		return err == nil && alive
-	}
-	p, err := repository.GetMatchPlayerByID(instanceID, userID)
-	if err != nil || p == nil {
-		return false
-	}
-	return p.Health > 0
+	var alive bool
+	err := repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players p JOIN matches m ON m.instance_id=p.instance_id WHERE p.instance_id=$1 AND p.user_id=$2 AND p.health>0 AND m.finished_at IS NULL AND m.geometry->>'kind'='hex')`, instanceID, userID).Scan(&alive)
+	return err == nil && alive
 }
 
 func WsHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +151,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	client := &Client{Conn: ws, userID: int(userID)}
 	// Pre-fill instanceID from query param to avoid race where server
 	// broadcasts match events before client sends JOIN_MATCH message.
-	if qInstance := r.URL.Query().Get("instanceId"); qInstance != "" {
+	if qInstance := r.URL.Query().Get("instanceId"); isAliveMatchPlayer(qInstance, client.userID) {
 		client.instanceID = qInstance
 	}
 
@@ -254,88 +180,38 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.Unmarshal(message, &envelope); err == nil {
 			if envelope.Type == "JOIN_MATCH" {
-				// Always update instanceID from client message and reply with MATCH_UPDATE.
+				instanceID := envelope.InstanceID
+				if instanceID == "" {
+					continue
+				}
+				hex, err := repository.IsHexMatch(instanceID)
+				if err != nil || !hex {
+					b, _ := json.Marshal(map[string]any{"type": "MATCH_ERROR", "payload": map[string]string{"instanceId": instanceID, "error": "Match unavailable or uses a retired map"}})
+					_ = client.write(b)
+					continue
+				}
+				loadCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				snapshot, loadErr := repository.LoadHexTestMatch(loadCtx, instanceID, client.userID)
+				cancel()
+				if loadErr != nil {
+					b, _ := json.Marshal(map[string]any{"type": "MATCH_ERROR", "payload": map[string]string{"instanceId": instanceID, "error": "HEX match unavailable"}})
+					_ = client.write(b)
+					continue
+				}
 				clientsMu.Lock()
-				prevInstance := client.instanceID
-				if envelope.InstanceID != "" {
-					client.instanceID = envelope.InstanceID
-				}
+				client.instanceID = instanceID
 				clientsMu.Unlock()
-				if client.instanceID != "" {
-					if hex, err := repository.IsHexMatch(client.instanceID); err == nil && hex {
-						presenceOpsMu.Lock()
-						changed, err := repository.SetHexPresence(r.Context(), client.instanceID, client.userID, true)
-						presenceOpsMu.Unlock()
-						if err != nil {
-							log.Printf("HEX reconnect %s user %d: %v", client.instanceID, client.userID, err)
-						}
-						if changed {
-							broadcastPresence("PLAYER_RECONNECTED", client.instanceID, client.userID)
-						}
-					} else if cancelReconnectGrace(client.instanceID, client.userID) {
-						broadcastPresence("PLAYER_RECONNECTED", client.instanceID, client.userID)
-					}
+				presenceOpsMu.Lock()
+				changed, presenceErr := repository.SetHexPresence(r.Context(), instanceID, client.userID, true)
+				presenceOpsMu.Unlock()
+				if presenceErr != nil {
+					log.Printf("HEX reconnect %s user %d: %v", instanceID, client.userID, presenceErr)
 				}
-				log.Printf("[WsHandler] client %d joined match %s (prev=%s)", client.userID, envelope.InstanceID, prevInstance)
-
-				// >>> Отправить MATCH_UPDATE <<<
-				matchResp, err := BuildMatchResponse(client.instanceID)
-				if err == nil {
-					wsMsg := struct {
-						Type    string         `json:"type"`
-						Payload *MatchResponse `json:"payload"`
-					}{
-						Type:    "MATCH_UPDATE",
-						Payload: matchResp,
-					}
-					if b, err := json.Marshal(wsMsg); err == nil {
-						client.write(b)
-					}
-				} else {
-					log.Printf("[WsHandler] Не удалось собрать матч для %d: %v", client.userID, err)
-					if errors.Is(err, models.ErrUnsupportedGeometry) {
-						if os.Getenv("HEX_TEST_MATCH_ENABLED") == "true" || os.Getenv("HEX_MATCH_ENABLED") == "true" {
-							loadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-							snapshot, hexErr := repository.LoadHexTestMatch(loadCtx, client.instanceID, client.userID)
-							cancel()
-							if hexErr == nil {
-								if b, marshalErr := json.Marshal(map[string]interface{}{"type": "MATCH_UPDATE", "payload": snapshot}); marshalErr == nil {
-									_ = client.write(b)
-								}
-								continue
-							}
-						}
-						b, _ := json.Marshal(map[string]interface{}{
-							"type":    "MATCH_ERROR",
-							"payload": map[string]string{"instanceId": client.instanceID, "error": err.Error()},
-						})
-						_ = client.write(b)
-						continue
-					}
-					if allStats, winnerType, winnerID, serr := buildAllPlayersGameStatsFromStored(client.instanceID); serr == nil {
-						endedMsg := matchEndedBroadcastResponse{
-							Type: "MATCH_ENDED",
-							Payload: matchEndedBroadcastResult{
-								InstanceID: client.instanceID,
-								WinnerType: winnerType,
-								WinnerID:   winnerID,
-								Stats:      allStats,
-							},
-						}
-						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
-							_ = client.write(b)
-						}
-					} else {
-						endedMsg := map[string]interface{}{
-							"type": "MATCH_ENDED",
-							"payload": map[string]interface{}{
-								"instanceId": client.instanceID,
-							},
-						}
-						if b, marshalErr := json.Marshal(endedMsg); marshalErr == nil {
-							_ = client.write(b)
-						}
-					}
+				if changed {
+					broadcastPresence("PLAYER_RECONNECTED", instanceID, client.userID)
+				}
+				if b, marshalErr := json.Marshal(map[string]any{"type": "MATCH_UPDATE", "payload": snapshot}); marshalErr == nil {
+					_ = client.write(b)
 				}
 				continue
 			}
@@ -360,25 +236,21 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if shouldScheduleGrace && instanceID != "" && isAliveMatchPlayer(instanceID, userIDInt) {
-		if hex, err := repository.IsHexMatch(instanceID); err == nil && hex {
-			presenceOpsMu.Lock()
-			clientsMu.Lock()
-			stillDisconnected := !hasMatchSocketLocked(userIDInt, instanceID)
-			clientsMu.Unlock()
-			changed := false
-			if stillDisconnected {
-				changed, err = repository.SetHexPresence(context.Background(), instanceID, userIDInt, false)
-			}
-			presenceOpsMu.Unlock()
-			if err != nil {
-				log.Printf("HEX disconnect %s user %d: %v", instanceID, userIDInt, err)
-			}
-			if changed {
-				broadcastPresence("PLAYER_DISCONNECTED", instanceID, userIDInt)
-			}
-		} else {
+		presenceOpsMu.Lock()
+		clientsMu.Lock()
+		stillDisconnected := !hasMatchSocketLocked(userIDInt, instanceID)
+		clientsMu.Unlock()
+		changed := false
+		var err error
+		if stillDisconnected {
+			changed, err = repository.SetHexPresence(context.Background(), instanceID, userIDInt, false)
+		}
+		presenceOpsMu.Unlock()
+		if err != nil {
+			log.Printf("HEX disconnect %s user %d: %v", instanceID, userIDInt, err)
+		}
+		if changed {
 			broadcastPresence("PLAYER_DISCONNECTED", instanceID, userIDInt)
-			scheduleReconnectGrace(instanceID, userIDInt)
 		}
 	}
 }
@@ -417,7 +289,8 @@ var broadcastFn = func(message []byte) {
 			// client.instanceID is empty — as a fallback, if message targets a
 			// specific instance, include the client when the user belongs to that match.
 			if env.Payload.InstanceID != "" {
-				if p, err := repository.GetMatchPlayerByID(env.Payload.InstanceID, client.userID); err == nil && p != nil {
+				var member bool
+				if repository.DB != nil && repository.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM match_players WHERE instance_id=$1 AND user_id=$2)`, env.Payload.InstanceID, client.userID).Scan(&member) == nil && member {
 					targets = append(targets, client)
 					continue
 				}

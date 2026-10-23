@@ -1,20 +1,15 @@
 package handlers
 
 import (
-	"math/rand"
-	"os"
-	"strconv"
-	"strings"
+	"database/sql"
 
 	"gameservice/repository"
 )
 
-const defaultEquipmentDropChancePercent = 10
+const defaultEquipmentDropChancePercent = repository.DefaultEquipmentDropChancePercent
 
 var (
-	rollEquipmentDrop = func(chancePercent int) bool {
-		return chancePercent > 0 && rand.Intn(100) < chancePercent
-	}
+	rollEquipmentDrop = repository.RollEquipmentDropChancePercent
 	grantEquipmentDropItem            = repository.GrantRandomEquipmentDropForMatch
 	equipmentDropPersistenceAvailable = func() bool {
 		return repository.DB != nil
@@ -50,20 +45,24 @@ type EquipmentDropPayload struct {
 }
 
 func resolveEquipmentDropChancePercent() int {
-	raw := strings.TrimSpace(os.Getenv("EQUIPMENT_DROP_CHANCE_OVERRIDE"))
-	if raw == "" {
-		return defaultEquipmentDropChancePercent
-	}
-
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < 0 || value > 100 {
-		return defaultEquipmentDropChancePercent
-	}
-	return value
+	return repository.EquipmentDropChancePercent()
 }
 
 func RollEquipmentDropChance() bool {
 	return rollEquipmentDrop(resolveEquipmentDropChancePercent())
+}
+
+// grantHexMonsterEquipmentDropTx keeps the roll and item creation in the
+// command that removes the monster, so replay cannot create another item.
+func grantHexMonsterEquipmentDropTx(tx *sql.Tx, userID int, instanceID string) ([]EquipmentDropPayload, error) {
+	if userID <= 0 || !equipmentDropPersistenceAvailable() || !RollEquipmentDropChance() {
+		return nil, nil
+	}
+	item, err := repository.GrantRandomEquipmentDropForMatchTx(tx, userID, instanceID)
+	if err != nil || item == nil {
+		return nil, err
+	}
+	return []EquipmentDropPayload{equipmentDropPayloadFromItem(userID, item)}, nil
 }
 
 func equipmentDropPayloadFromItem(ownerUserID int, item *repository.DroppedEquipment) EquipmentDropPayload {

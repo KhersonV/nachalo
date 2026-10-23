@@ -206,6 +206,9 @@ func CreatePlayerCharacterTx(tx *sql.Tx, userID int, heroClassID string, source 
 	if err != nil {
 		return nil, fmt.Errorf("CreatePlayerCharacterTx insert: %w", err)
 	}
+	if err := ensureCharacterProfessionTx(tx, character.ID, heroClassID); err != nil {
+		return nil, fmt.Errorf("CreatePlayerCharacterTx profession: %w", err)
+	}
 	return character, nil
 }
 

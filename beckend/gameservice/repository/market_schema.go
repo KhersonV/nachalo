@@ -4,12 +4,17 @@ import "fmt"
 
 // EnsureMarketSchema is safe to rerun at startup. Escrow and delivery records are
 // durable so a process restart cannot lose an item or a reserved balance.
+// New catalog rows start as map objects until explicitly classified as resources.
 func EnsureMarketSchema() error {
 	if DB == nil {
 		return fmt.Errorf("market schema: database is not initialized")
 	}
 	_, err := DB.Exec(`
  ALTER TABLE resources ADD COLUMN IF NOT EXISTS tradable BOOLEAN NOT NULL DEFAULT true;
+ ALTER TABLE resources ADD COLUMN IF NOT EXISTS resource_kind TEXT NOT NULL DEFAULT 'resource';
+ ALTER TABLE resources ALTER COLUMN resource_kind SET DEFAULT 'map_object';
+ UPDATE resources SET resource_kind='resource' WHERE type IN ('food','water','wood','stone','iron');
+ UPDATE resources SET resource_kind='map_object',tradable=false WHERE type IN ('barrel','barbel');
  ALTER TABLE resources ADD COLUMN IF NOT EXISTS market_category TEXT;
  ALTER TABLE resources ADD COLUMN IF NOT EXISTS market_subcategory TEXT;
  ALTER TABLE item_templates DROP CONSTRAINT IF EXISTS item_templates_rarity_check;

@@ -1,6 +1,7 @@
 import type { GameLanguage } from "./hexGame";
 
 const translations: Record<string, { en?: string; ru: string; de: string }> = {
+  "Professions": { ru: "Профессии", de: "Berufe" },
   "Counter": { ru: "Контратака", de: "Konter" },
   "Artifact": { ru: "Артефакт", de: "Artefakt" },
   "Loot": { ru: "Добыча", de: "Beute" },

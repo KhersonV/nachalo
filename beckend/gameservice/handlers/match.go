@@ -5,45 +5,16 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/fnv"
 	"log"
 	"net/http"
-	"os"
 
-	"gameservice/game"
 	"gameservice/internal/hexmap"
 	"gameservice/models"
 	"gameservice/repository"
 )
-
-// DTO для ответа на создание и получение матча
-type MatchResponse struct {
-	SchemaVersion            int                     `json:"schemaVersion"`
-	Geometry                 models.Geometry         `json:"geometry"`
-	MapRevision              int64                   `json:"mapRevision"`
-	StateRevision            int64                   `json:"stateRevision"`
-	InstanceID               string                  `json:"instance_id"`
-	Mode                     string                  `json:"mode"`
-	TeamsCount               int                     `json:"teams_count"`
-	TotalPlayers             int                     `json:"total_players"`
-	MapWidth                 int                     `json:"map_width"`
-	MapHeight                int                     `json:"map_height"`
-	Map                      []game.FullCell         `json:"map"`
-	Players                  []models.PlayerResponse `json:"players"`
-	ActiveUser               int                     `json:"active_user"`
-	TurnNumber               int                     `json:"turn_number"`
-	StartPositions           [][2]int                `json:"start_positions"`
-	PortalPosition           [2]int                  `json:"portal_position"`
-	Winner                   *models.WinnerInfo      `json:"winner,omitempty"`
-	QuestArtifactID          int                     `json:"quest_artifact_id"`
-	QuestArtifactName        string                  `json:"quest_artifact_name"`
-	QuestArtifactImage       string                  `json:"quest_artifact_image"`
-	QuestArtifactDescription string                  `json:"quest_artifact_description"`
-}
 
 type RequestMatchTeam struct {
 	TeamID    int   `json:"team_id"`
@@ -71,28 +42,6 @@ type normalizedMatchPlan struct {
 func handleError(w http.ResponseWriter, context string, err error) {
 	log.Printf("%s: %v", context, err)
 	http.Error(w, "Internal server error", http.StatusInternalServerError)
-}
-
-func toJSON(v interface{}) []byte {
-	b, _ := json.Marshal(v)
-	return b
-}
-
-func decodeSquarePair(raw json.RawMessage) ([2]int, error) {
-	var pair [2]int
-	var values []json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil || len(values) != 2 {
-		return pair, fmt.Errorf("incomplete square position")
-	}
-	for i, value := range values {
-		if string(value) == "null" {
-			return pair, fmt.Errorf("incomplete square position")
-		}
-		if err := json.Unmarshal(value, &pair[i]); err != nil {
-			return pair, fmt.Errorf("invalid square position: %w", err)
-		}
-	}
-	return pair, nil
 }
 
 func copyInts(ids []int) []int {
@@ -356,241 +305,6 @@ func normalizeMatchPlan(req RequestMatch) (*normalizedMatchPlan, error) {
 	}, nil
 }
 
-func mapStartPositionsToPlayers(teams []RequestMatchTeam, starts [][2]int) (map[int][2]int, error) {
-	playerCount := len(flattenRequestTeams(teams))
-	if len(starts) != playerCount {
-		return nil, fmt.Errorf("expected %d start positions, got %d", playerCount, len(starts))
-	}
-
-	startByPlayer := make(map[int][2]int, playerCount)
-	startIdx := 0
-	for _, team := range teams {
-		if startIdx+len(team.MemberIDs) > len(starts) {
-			return nil, fmt.Errorf("not enough start positions for team %d", team.TeamID)
-		}
-		for _, memberID := range team.MemberIDs {
-			startByPlayer[memberID] = starts[startIdx]
-			startIdx++
-		}
-	}
-
-	return startByPlayer, nil
-}
-
-// insertMatchMonsters сохраняет всех монстров на карте в БД.
-func insertMatchMonsters(instanceID string, cells []game.FullCell) error {
-	for _, cell := range cells {
-		if cell.Monster == nil {
-			continue
-		}
-		md := cell.Monster
-		mm := repository.MatchMonster{
-			InstanceID:      instanceID,
-			RefID:           md.ID / 1_000_000,
-			X:               cell.X,
-			Y:               cell.Y,
-			Health:          md.Health,
-			MaxHealth:       md.MaxHealth,
-			Attack:          md.Attack,
-			Defense:         md.Defense,
-			Speed:           md.Speed,
-			Maneuverability: md.Maneuverability,
-			Vision:          md.Vision,
-			Image:           md.Image,
-		}
-		dbID, err := repository.InsertMatchMonsterReturningID(mm)
-		if err != nil {
-			return fmt.Errorf("insert monster at (%d,%d): %w", cell.X, cell.Y, err)
-		}
-		cell.Monster.DBInstanceID = dbID // <- запишем id в клетку!
-	}
-	return nil
-}
-
-// Сборка полного MatchResponse по instanceID. Возвращает структуру и ошибку.
-func BuildMatchResponse(instanceID string) (*MatchResponse, error) {
-	match, err := repository.GetMatchByID(instanceID)
-	if err != nil {
-		return nil, err
-	}
-	if match.Geometry != models.SquareV1 {
-		return nil, fmt.Errorf("%w: %s-v%d cannot be loaded by the square runtime", models.ErrUnsupportedGeometry, match.Geometry.Kind, match.Geometry.Version)
-	}
-
-	// Safety-net: старые/конфликтные матчи могли сохраниться без quest_artifact_id.
-	if match.QuestArtifactID <= 0 {
-		if qa, qerr := repository.GetRandomArtifactFromCatalog(); qerr == nil {
-			if _, uerr := repository.DB.Exec(
-				`UPDATE matches SET quest_artifact_id = $1 WHERE instance_id = $2`,
-				qa.ID,
-				instanceID,
-			); uerr != nil {
-				log.Printf("[BuildMatchResponse] failed to backfill quest_artifact_id for %s: %v", instanceID, uerr)
-			} else {
-				match.QuestArtifactID = qa.ID
-			}
-		} else {
-			log.Printf("[BuildMatchResponse] failed to get random quest artifact for %s: %v", instanceID, qerr)
-		}
-	}
-
-	players, err := repository.GetPlayersInMatch(instanceID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Поправим порядок игроков по серверному turn_order (если он задан),
-	// чтобы фронтенд видел игроков в той же последовательности, что и сервер.
-	if len(match.TurnOrder) > 0 {
-		var turnOrderIDs []int
-		if err := json.Unmarshal(match.TurnOrder, &turnOrderIDs); err == nil {
-			byID := make(map[int]models.PlayerResponse, len(players))
-			for _, p := range players {
-				byID[p.UserID] = p
-			}
-			ordered := make([]models.PlayerResponse, 0, len(players))
-			used := make(map[int]bool)
-			for _, uid := range turnOrderIDs {
-				if pl, ok := byID[uid]; ok {
-					ordered = append(ordered, pl)
-					used[uid] = true
-				}
-			}
-			for _, p := range players {
-				if !used[p.UserID] {
-					ordered = append(ordered, p)
-				}
-			}
-			players = ordered
-		} else {
-			log.Printf("[BuildMatchResponse] failed to parse turn_order for %s: %v", instanceID, err)
-		}
-	}
-
-	fullMap, err := repository.LoadMapCells(instanceID)
-	if err != nil {
-		return nil, err
-	}
-	var encodedStarts []json.RawMessage
-	if err := json.Unmarshal(match.StartPositions, &encodedStarts); err != nil || encodedStarts == nil {
-		return nil, fmt.Errorf("invalid square start positions")
-	}
-	startPositions := make([][2]int, 0, len(encodedStarts))
-	for _, encoded := range encodedStarts {
-		pair, err := decodeSquarePair(encoded)
-		if err != nil {
-			return nil, err
-		}
-		startPositions = append(startPositions, pair)
-	}
-	portalPos, err := decodeSquarePair(match.PortalPosition)
-	if err != nil {
-		return nil, err
-	}
-	activeUser := match.ActiveUserID
-	if activeUser == 0 && len(players) > 0 {
-		activeUser = players[0].UserID
-	}
-	resp := &MatchResponse{
-		SchemaVersion:  match.SchemaVersion,
-		Geometry:       match.Geometry,
-		MapRevision:    match.MapRevision,
-		StateRevision:  match.StateRevision,
-		InstanceID:     match.InstanceID,
-		Mode:           match.Mode,
-		TeamsCount:     match.TeamsCount,
-		TotalPlayers:   match.TotalPlayers,
-		MapWidth:       match.MapWidth,
-		MapHeight:      match.MapHeight,
-		Map:            fullMap,
-		Players:        players,
-		ActiveUser:     activeUser,
-		TurnNumber:     match.TurnNumber,
-		StartPositions: startPositions,
-		PortalPosition: portalPos,
-	}
-	if match.QuestArtifactID > 0 {
-		if qa, err := repository.GetArtifactFromCatalogByID(match.QuestArtifactID); err == nil {
-			resp.QuestArtifactID = qa.ID
-			resp.QuestArtifactName = qa.Name
-			resp.QuestArtifactImage = qa.Image
-			resp.QuestArtifactDescription = qa.Description
-		}
-	}
-	return resp, nil
-}
-
-// assignMatchPlayers создаёт копии игроков в матче, используя явные команды
-// и уже рассчитанные стартовые позиции для каждого игрока.
-func assignMatchPlayers(
-	instanceID string,
-	teams []RequestMatchTeam,
-	startByPlayer map[int][2]int,
-) error {
-	for _, team := range teams {
-		for _, uid := range team.MemberIDs {
-			p, err := repository.GetPlayerByUserID(uid)
-			if err != nil {
-				return fmt.Errorf("player %d profile not found: %w", uid, err)
-			}
-
-			start, ok := startByPlayer[uid]
-			if !ok {
-				return fmt.Errorf("missing start position for player %d", uid)
-			}
-
-			if err := repository.CreateMatchPlayerCopy(instanceID, p, start[0], start[1], team.TeamID); err != nil {
-				return fmt.Errorf("failed to insert player %d: %w", uid, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func ConvertToMonsterState(md *game.MonsterData, id int) *game.MonsterState {
-	return &game.MonsterState{
-		ID:                md.ID,
-		MonsterInstanceID: id,
-		Health:            md.Health,
-		MaxHealth:         md.MaxHealth,
-		Attack:            md.Attack,
-		Defense:           md.Defense,
-		Speed:             md.Speed,
-		Maneuverability:   md.Maneuverability,
-		Vision:            md.Vision,
-		Image:             md.Image,
-	}
-}
-
-func GetMatchHandler(w http.ResponseWriter, r *http.Request) {
-	instanceID := r.URL.Query().Get("instance_id")
-	if instanceID == "" {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "instance_id обязателен"})
-		return
-	}
-	resp, err := BuildMatchResponse(instanceID)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "match_not_found"})
-			return
-		}
-		if errors.Is(err, models.ErrUnsupportedGeometry) {
-			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return
-		}
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
 func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Only POST allowed", http.StatusMethodNotAllowed)
@@ -625,167 +339,22 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamsCount := len(plan.Teams)
-	totalPlayers := len(plan.PlayerIDs)
 	activeUserID := 0
 	if len(plan.TurnOrder) > 0 {
 		activeUserID = plan.TurnOrder[0]
 	}
-	if os.Getenv("HEX_MATCH_ENABLED") == "true" {
-		teams := make([]hexmap.Team, 0, len(plan.Teams))
-		for _, team := range plan.Teams {
-			teams = append(teams, hexmap.Team{ID: team.TeamID, PlayerIDs: copyInts(team.MemberIDs)})
-		}
-		hash := fnv.New64a()
-		_, _ = hash.Write([]byte(req.InstanceID))
-		_, err := repository.CreateHexMatch(r.Context(), repository.HexMatchPlan{InstanceID: req.InstanceID, Mode: req.Mode, Teams: teams, TurnOrder: plan.TurnOrder, Seed: int64(hash.Sum64())})
-		if err != nil {
-			handleError(w, "[CreateMatch] HEX materialization failed", err)
-			return
-		}
-		scheduleHexTurn(req.InstanceID, activeUserID, 1)
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]any{"instance_id": req.InstanceID, "schemaVersion": 2, "geometry": models.HexV1})
-		return
+	teams := make([]hexmap.Team, 0, len(plan.Teams))
+	for _, team := range plan.Teams {
+		teams = append(teams, hexmap.Team{ID: team.TeamID, PlayerIDs: copyInts(team.MemberIDs)})
 	}
-
-	cfg := game.MapConfig{
-		TotalPlayers: totalPlayers,
-		TeamsCount:   teamsCount,
-		WalkableProb: 0.8,
-		BarbelProb:   0.1,
-		ResourceProb: 0.1,
-		MonsterProb:  0.05,
-	}
-
-	// 3. Получаем ресурсы и монстров из БД
-	resourcesFromDB, err := repository.GetResourcesData()
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(req.InstanceID))
+	_, err = repository.CreateHexMatch(r.Context(), repository.HexMatchPlan{InstanceID: req.InstanceID, Mode: req.Mode, Teams: teams, TurnOrder: plan.TurnOrder, Seed: int64(hash.Sum64())})
 	if err != nil {
-		handleError(w, "[CreateMatch] Ошибка загрузки ресурсов", err)
+		handleError(w, "[CreateMatch] HEX materialization failed", err)
 		return
 	}
-	monstersFromDB, err := repository.GetMonstersData()
-	if err != nil {
-		handleError(w, "[CreateMatch] GetMonstersData failed", err)
-		return
-	}
-
-	// 4. Генерируем полную карту
-	fullMap, mapWidth, mapHeight, startPositions, portalPos, err := game.GenerateFullMap(cfg, resourcesFromDB, monstersFromDB)
-	if err != nil {
-		handleError(w, "[CreateMatch] Ошибка генерации карты", err)
-		return
-	}
-
-	// 5. В matches больше не храним runtime-карту целиком:
-	// source of truth переехал в match_map_cells.
-	mapJSON := []byte("[]")
-	turnOrderJSON := toJSON(plan.TurnOrder)
-	startPosJSON := toJSON(startPositions)
-	portalPosJSON := toJSON(portalPos)
-
-	// 5.5. Выбираем случайный артефакт-квест
-	questArtifact, err := repository.GetRandomArtifactFromCatalog()
-	if err != nil {
-		handleError(w, "[CreateMatch] GetRandomArtifactFromCatalog failed", err)
-		return
-	}
-
-	// 6. Сначала вставляем матч — он нужен для внешнего ключа монстров!
-	_, err = repository.DB.Exec(`
-		INSERT INTO matches (
-			instance_id, mode, teams_count, total_players,
-			map_width, map_height, map, active_user_id,
-			turn_order, turn_number, start_positions, portal_position,
-			quest_artifact_id
-		) VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7, $8,
-			$9, 1, $10, $11, $12
-		)
-		ON CONFLICT (instance_id) DO NOTHING
-	`,
-		req.InstanceID,
-		req.Mode,
-		teamsCount,
-		totalPlayers,
-		mapWidth,
-		mapHeight,
-		mapJSON, // Пока без db_instance_id
-		activeUserID,
-		turnOrderJSON,
-		startPosJSON,
-		portalPosJSON,
-		questArtifact.ID,
-	)
-	if err != nil {
-		handleError(w, "[CreateMatch] Insert match failed", err)
-		return
-	}
-
-	// 7. Теперь можем вставить монстров и уже записать db_instance_id для каждого в fullMap!
-	if err := insertMatchMonsters(req.InstanceID, fullMap); err != nil {
-		handleError(w, "[CreateMatch] failed to insert match_monsters", err)
-		return
-	}
-
-	// 8. Сохраняем runtime-карту в специализированную таблицу клеток
-	if err := repository.InsertMatchMapCells(req.InstanceID, fullMap); err != nil {
-		handleError(w, "[CreateMatch] failed to persist match map cells", err)
-		return
-	}
-
-	startByPlayer, err := mapStartPositionsToPlayers(plan.Teams, startPositions)
-	if err != nil {
-		_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
-		handleError(w, "[CreateMatch] failed to map start positions", err)
-		return
-	}
-
-	// 9. Копируем игроков в матч
-	if err := assignMatchPlayers(req.InstanceID, plan.Teams, startByPlayer); err != nil {
-		_, _ = repository.DB.Exec(`DELETE FROM matches WHERE instance_id = $1`, req.InstanceID)
-		handleError(w, "[CreateMatch] failed to assign players", err)
-		return
-	}
-
-	game.CreateMatchState(req.InstanceID, plan.TurnOrder)
-
-	// 10. Обновляем состояние матча: активный игрок – первый, turn_number = 1.
-	if err := repository.UpdateMatchTurn(req.InstanceID, activeUserID, 1); err != nil {
-		log.Printf("[CreateMatch] UpdateMatchTurn failed: %v", err)
-	}
-	// Запускаем таймер хода для первого игрока
-	startTurnTimer(req.InstanceID, activeUserID)
-
-	// 11. Теперь получаем список игроков для ответа (они уже точно есть!)
-	playersInMatch, err := repository.GetPlayersInMatch(req.InstanceID)
-	if err != nil {
-		handleError(w, "[CreateMatch] GetPlayersInMatch failed", err)
-		return
-	}
-
-	// 12. Собираем и отдаём JSON-ответ
-	resp := MatchResponse{
-		InstanceID:               req.InstanceID,
-		Mode:                     req.Mode,
-		TeamsCount:               teamsCount,
-		TotalPlayers:             totalPlayers,
-		MapWidth:                 mapWidth,
-		MapHeight:                mapHeight,
-		Map:                      fullMap,
-		Players:                  playersInMatch,
-		ActiveUser:               activeUserID,
-		TurnNumber:               1,
-		StartPositions:           startPositions,
-		PortalPosition:           portalPos,
-		QuestArtifactID:          questArtifact.ID,
-		QuestArtifactName:        questArtifact.Name,
-		QuestArtifactImage:       questArtifact.Image,
-		QuestArtifactDescription: questArtifact.Description,
-	}
+	scheduleHexTurn(req.InstanceID, activeUserID, 1)
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("[CreateMatch] Encode response failed: %v", err)
-	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"instance_id": req.InstanceID, "schemaVersion": 2, "geometry": models.HexV1})
 }

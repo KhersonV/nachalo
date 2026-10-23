@@ -60,7 +60,7 @@ var (
 
 func getResourceIDByTypeTx(tx *sql.Tx, resourceType string) (int, error) {
 	var id int
-	if err := tx.QueryRow(`SELECT id FROM resources WHERE type = $1 LIMIT 1`, resourceType).Scan(&id); err != nil {
+	if err := tx.QueryRow(`SELECT id FROM resources WHERE type = $1 AND resource_kind='resource' LIMIT 1`, resourceType).Scan(&id); err != nil {
 		return 0, fmt.Errorf("getResourceIDByTypeTx(%s): %w", resourceType, err)
 	}
 	return id, nil

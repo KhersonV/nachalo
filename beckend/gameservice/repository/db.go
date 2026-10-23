@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"gameservice/game"
-	"gameservice/models"
 	"log"
 	"os"
 	"sort"
@@ -36,11 +35,6 @@ func InitDB() {
 	}
 	if !ready {
 		log.Fatal("PostgreSQL base schema is not ready for match commands")
-	}
-
-	// Восстанавливаем state матчей
-	if err := RestoreRuntimeState(); err != nil {
-		log.Fatalf("Ошибка восстановления матчей: %v", err)
 	}
 }
 
@@ -76,16 +70,24 @@ func RunMigrations() {
 
 	CreatePlayerProfilesTable()
 	CreatePlayerCharactersTable()
+	if err := EnsureProfessionsSchema(); err != nil {
+		log.Fatalf("profession schema: %v", err)
+	}
 	CreateMatchesTable()
 	CreateMatchMapCellsTable()
 	CreateMatchPlayersTable()
+	if err := EnsureMatchProfessionXPTable(); err != nil {
+		log.Fatalf("match profession XP schema: %v", err)
+	}
 	EnsureHexGuardianAuraColumns()
 	CreateInventoryTable()
 	CreateMatchMonstersTable()
 	CreatePersistedArtifactsTable()
 	CreateEquipmentTables()
 	EnsureStaticGameData()
-	if err := EnsureMarketSchema(); err != nil { log.Fatal(err) }
+	if err := EnsureMarketSchema(); err != nil {
+		log.Fatal(err)
+	}
 	EnsureEquipmentSeedData()
 	CreateMatchStatsTable()
 	EnsureMatchStatsWinnerUsersColumn()
@@ -103,10 +105,6 @@ func RunMigrations() {
 	EnsureQuestArtifactColumn()
 
 	CreateMatchPlayerStructuresTable()
-}
-
-func RestoreRuntimeState() error {
-	return RestoreMatchStates()
 }
 
 func EnsureSchemaReady() error {
@@ -151,7 +149,11 @@ func SchemaReady() (bool, error) {
 		"artifacts",
 		"player_profiles",
 		"player_characters",
+		"profession_categories",
+		"profession_catalog",
+		"character_professions",
 		"matches",
+		"match_profession_xp",
 		"match_map_cells",
 		"match_players",
 		"inventory_items",
@@ -183,7 +185,7 @@ func SchemaReady() (bool, error) {
 
 	requiredColumns := map[string][]string{
 		"chat_messages": {"id", "channel", "sender_user_id", "sender_character_id", "sender_nickname", "body", "party_id", "recipient_user_id", "created_at"},
-		"chat_mutes": {"viewer_user_id", "muted_user_id", "created_at"},
+		"chat_mutes":    {"viewer_user_id", "muted_user_id", "created_at"},
 		"player_profiles": {
 			"user_id",
 			"name",
@@ -411,6 +413,7 @@ func CreateResourcesTable() {
 	CREATE TABLE IF NOT EXISTS resources (
 		id SERIAL PRIMARY KEY,
 		type TEXT NOT NULL,
+		resource_kind TEXT NOT NULL DEFAULT 'map_object',
 		description TEXT,
 		effect TEXT,
 		image TEXT
@@ -1048,72 +1051,6 @@ func EnsureMatchStatsRetentionSchema() {
 	}
 }
 
-func RestoreMatchStates() error {
-	rows, err := DB.Query(`SELECT instance_id, active_user_id, turn_order, turn_number,
-		COALESCE((to_jsonb(matches)->>'schema_version')::integer, 1),
-		to_jsonb(matches)->'geometry',
-		COALESCE(to_jsonb(matches)->'combat_result_events','{"damageEvents":[],"killEvents":[],"defeatedUsers":[]}'::jsonb)
-		FROM matches WHERE COALESCE(to_jsonb(matches)->>'finished_at','')=''`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var instanceID string
-		var activeUserID int
-		var turnOrderJSON []byte
-		var turnNumber int
-		var schemaVersion int
-		var geometryRaw []byte
-		var resultEventsRaw []byte
-		if err := rows.Scan(&instanceID, &activeUserID, &turnOrderJSON, &turnNumber, &schemaVersion, &geometryRaw, &resultEventsRaw); err != nil {
-			return err
-		}
-		geometry, err := models.ParseGeometry(schemaVersion, geometryRaw)
-		if err != nil {
-			return fmt.Errorf("restore match %s: %w", instanceID, err)
-		}
-		if geometry != models.SquareV1 {
-			log.Printf("Skipping unsupported runtime geometry for match %s: %s-v%d", instanceID, geometry.Kind, geometry.Version)
-			continue
-		}
-
-		var turnOrder []int
-		if err := json.Unmarshal(turnOrderJSON, &turnOrder); err != nil {
-			log.Printf("Ошибка восстановления состояния матча %s: %v", instanceID, err)
-			continue
-		}
-
-		if activeUserID == 0 && len(turnOrder) > 0 {
-			activeUserID = turnOrder[0]
-		}
-		if turnNumber <= 0 {
-			turnNumber = 1
-		}
-		var resultEvents game.ResultEvents
-		if err := json.Unmarshal(resultEventsRaw, &resultEvents); err != nil {
-			return fmt.Errorf("restore combat events for match %s: %w", instanceID, err)
-		}
-
-		matchState := &game.MatchState{
-			InstanceID:    instanceID,
-			ActiveUserID:  activeUserID,
-			TurnOrder:     turnOrder,
-			TurnNumber:    turnNumber,
-			DamageEvents:  resultEvents.DamageEvents,
-			KillEvents:    resultEvents.KillEvents,
-			DefeatedUsers: resultEvents.DefeatedUsers,
-		}
-		game.MatchStatesMu.Lock()
-		game.MatchStates[instanceID] = matchState
-		game.MatchStatesMu.Unlock()
-
-		log.Printf("Состояние матча %s восстановлено", instanceID)
-	}
-	return nil
-}
-
 func placementLess(a, b game.PlayerResult, defeatRank map[int]int) bool {
 	if a.IsWinner != b.IsWinner {
 		return a.IsWinner
@@ -1263,123 +1200,7 @@ func assignPlacements(results []game.PlayerResult, defeatedUsers []int) {
 	applySoloPlacements(results, defeatedUsers)
 }
 
-// GetMatchResults читает из БД и игровой логики всё, что нужно для финализации матча.
-func GetMatchResults(instanceID string) (*game.MatchResults, error) {
-	log.Printf("[GetMatchResults] fetching for match %s", instanceID)
-
-	var mr game.MatchResults
-	var defeatedUsers []int
-	if ms, ok := game.GetMatchState(instanceID); ok {
-		defeatedUsers = ms.SnapshotDefeatedUsers()
-	}
-
-	// 1) Победители из таблицы matches, NULL → 0 (не определён)
-	if err := DB.QueryRow(
-		`SELECT
-            COALESCE(winner_id, 0),
-            COALESCE(winner_group_id, 0)
-         FROM matches
-        WHERE instance_id = $1`,
-		instanceID,
-	).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
-		return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
-	}
-
-	// // 1) Победители из таблицы matches
-	// if err := DB.QueryRow(
-	//     `SELECT winner_id, winner_group_id
-	//        FROM matches
-	//       WHERE instance_id = $1`,
-	//     instanceID,
-	// ).Scan(&mr.WinnerID, &mr.WinnerGroupID); err != nil {
-	//     return nil, fmt.Errorf("GetMatchResults: не удалось прочитать победителей: %w", err)
-	// }
-
-	// 2) Список участников
-	rows, err := DB.Query(
-		`SELECT
-			mp.user_id,
-			COALESCE(mp.name, ''),
-			mp.character_id,
-			COALESCE(NULLIF(mp.character_type, ''), 'guardian'),
-			COALESCE(mp.group_id, 0),
-			COALESCE(mp.health, 0),
-			COALESCE(mp.inventory, '{}'::jsonb)
-		   FROM match_players mp
-		  WHERE mp.instance_id = $1`,
-		instanceID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("GetMatchResults: не удалось получить игроков: %w", err)
-	}
-	defer rows.Close()
-
-	groupByUser := make(map[int]int)
-
-	// 3) Для каждого игрока — игровая логика CalculateResults
-	for rows.Next() {
-		var userID, groupID, health int
-		var playerName string
-		var characterType string
-		var inventorySnapshot []byte
-		var characterID sql.NullInt64
-		if err := rows.Scan(&userID, &playerName, &characterID, &characterType, &groupID, &health, &inventorySnapshot); err != nil {
-			log.Printf("GetMatchResults: пропускаем игрока из-за Scan: %v", err)
-			continue
-		}
-		groupByUser[userID] = groupID
-		survived := health > 0
-
-		exp, rewards, killsP, killsM, dmgTotal, dmgPlayers, dmgMonsters, dmgTaken, err :=
-			game.CalculateResults(instanceID, userID, survived)
-		if err != nil {
-			log.Printf("GetMatchResults: CalculateResults для user %d вернул ошибку: %v", userID, err)
-			continue
-		}
-
-		// Сериализуем награды
-		rewardsJSON, err := json.Marshal(rewards)
-		if err != nil {
-			log.Printf("GetMatchResults: ошибка JSON.Marshal для user %d: %v", userID, err)
-			continue
-		}
-
-		pr := game.PlayerResult{
-			UserID:            userID,
-			PlayerName:        playerName,
-			GroupID:           groupID,
-			CharacterType:     characterType,
-			IsWinner:          false,
-			Survived:          survived,
-			Deaths:            boolToInt(!survived),
-			ExpGained:         exp,
-			RewardsData:       rewardsJSON,
-			PlayerKills:       killsP,
-			MonsterKills:      killsM,
-			DamageTotal:       dmgTotal,
-			DamageToPlayers:   dmgPlayers,
-			DamageToMonsters:  dmgMonsters,
-			DamageTaken:       dmgTaken,
-			InventorySnapshot: append([]byte(nil), inventorySnapshot...),
-		}
-		if characterID.Valid {
-			pr.CharacterID = int(characterID.Int64)
-		}
-		mr.PlayerResults = append(mr.PlayerResults, pr)
-	}
-
-	applyWinnerBonusesAndPlacements(&mr, groupByUser, defeatedUsers)
-
-	log.Printf("[GetMatchResults] found %d players for match %s", len(mr.PlayerResults), instanceID)
-	if len(mr.PlayerResults) == 0 {
-		return nil, fmt.Errorf("GetMatchResults: не найдено ни одного игрока для матча %s", instanceID)
-	}
-
-	return &mr, nil
-}
-
-// Shared by legacy and transaction-based result calculation so the XP, reward
-// and placement rules remain identical.
+// applyWinnerBonusesAndPlacements preserves the reward and placement rules for HEX results.
 func applyWinnerBonusesAndPlacements(mr *game.MatchResults, groupByUser map[int]int, defeatedUsers []int) {
 	// 3.1) Победный бонус: +XP и +деньги победителю (или его команде).
 	const winnerExpBonus = 120

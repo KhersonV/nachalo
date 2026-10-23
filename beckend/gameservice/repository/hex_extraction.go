@@ -346,6 +346,14 @@ func mergeHexExtractionStorage(storage, backpack map[string]map[string]any, ques
 		if storageCount(current) > 1_000_000_000-count {
 			return nil, ErrCommandRejected
 		}
+		if strings.HasPrefix(key, "artifact_") {
+			// Refresh metadata on an existing stack from the authoritative catalog.
+			for _, field := range []string{"item_type", "item_id", "name", "item_name", "image", "description"} {
+				if value, ok := copyItem[field]; ok {
+					current[field] = value
+				}
+			}
+		}
 		current["item_count"] = storageCount(current) + count
 	}
 	return transferred, nil
@@ -364,11 +372,15 @@ func enrichHexResultItemsTx(ctx context.Context, tx *sql.Tx, items map[string]ma
 			return ErrCommandRejected
 		}
 		var name, image, description string
-		query := `SELECT type,COALESCE(image,''),COALESCE(description,'') FROM resources WHERE id=$1`
-		if parts[0] == "artifact" {
-			query = `SELECT name,COALESCE(image,''),COALESCE(description,'') FROM artifacts WHERE id=$1`
+		if parts[0] == "resource" {
+			var resourceKind string
+			err = tx.QueryRowContext(ctx, `SELECT type,COALESCE(image,''),COALESCE(description,''),resource_kind FROM resources WHERE id=$1`, id).Scan(&name, &image, &description, &resourceKind)
+			if err == nil && resourceKind != "resource" {
+				return ErrCommandRejected
+			}
+		} else {
+			err = tx.QueryRowContext(ctx, `SELECT name,COALESCE(image,''),COALESCE(description,'') FROM artifacts WHERE id=$1`, id).Scan(&name, &image, &description)
 		}
-		err = tx.QueryRowContext(ctx, query, id).Scan(&name, &image, &description)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}

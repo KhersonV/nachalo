@@ -41,7 +41,9 @@ func main() {
 
 	// Инициализация БД
 	repository.InitDB()
-	if err := handlers.RegisterMarketShopCatalog(context.Background()); err != nil { log.Fatalf("market catalog: %v", err) }
+	if err := handlers.RegisterMarketShopCatalog(context.Background()); err != nil {
+		log.Fatalf("market catalog: %v", err)
+	}
 	defer repository.DB.Close()
 	if err := repository.MarkHexPresenceUnknownOnStart(context.Background()); err != nil {
 		log.Fatalf("HEX presence initialization: %v", err)
@@ -111,20 +113,18 @@ func main() {
 		router.Handle("/game/hex-test/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
 	}
-	if os.Getenv("HEX_MATCH_ENABLED") == "true" {
-		router.Handle("/game/hex/{instance_id}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetHexTestMatchHandler))).Methods("GET")
-		router.Handle("/game/hex/{instance_id}/route", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexRouteHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/move", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHexTestMatchHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/collect", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectHexResourceHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/open-barrel", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenHexBarrelHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/use-item", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseHexItemHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/place-blueprint", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceHexBlueprintHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/attack-structure", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexStructureHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
-		router.Handle("/game/hex/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
-	}
+	router.Handle("/game/hex/{instance_id}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetHexTestMatchHandler))).Methods("GET")
+	router.Handle("/game/hex/{instance_id}/route", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexRouteHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/move", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveHexTestMatchHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/collect", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectHexResourceHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/open-barrel", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenHexBarrelHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/use-item", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseHexItemHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/place-blueprint", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceHexBlueprintHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/attack-structure", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexStructureHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
 	// === websocket ===
 	router.HandleFunc("/ws", handlers.WsHandler)
 	router.Handle("/game/chat/messages", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatSendHandler))).Methods("POST")
@@ -139,15 +139,13 @@ func main() {
 	router.Handle("/game/chat/mutes/{id}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChatMuteTargetHandler))).Methods("PUT", "DELETE")
 
 	router.Handle("/game/market/{kind}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketReadHandler))).Methods("GET")
-    router.Handle("/game/market/{kind}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
-    router.Handle("/game/market/{kind}/{id}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
+	router.Handle("/game/market/{kind}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
+	router.Handle("/game/market/{kind}/{id}/{action}", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MarketActionHandler))).Methods("POST")
 
 	// === Эндпоинты для игроков ===
 	router.HandleFunc("/create/player", handlers.CreatePlayerHandler).Methods("POST")
 
 	router.HandleFunc("/game/player/{id}", handlers.GetPlayerHandler).Methods("GET")
-
-	router.HandleFunc("/game/matches/{instance_id}/players/{id}", handlers.GetMatchPlayerHandler).Methods("GET")
 
 	router.HandleFunc("/game/player/{id}/gain_experience", handlers.GainExperienceHandler).Methods("POST")
 	router.HandleFunc("/game/shop/items", handlers.GetShopItemsHandler).Methods("GET")
@@ -159,6 +157,8 @@ func main() {
 		"/game/storage",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.HexStorageHandler)),
 	).Methods("GET", "PUT")
+	router.Handle("/game/professions", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfessionsHandler))).Methods("GET")
+	router.Handle("/game/professions/choose", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChooseProfessionHandler))).Methods("POST")
 	router.Handle(
 		"/game/base/state",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetBaseStateHandler)),
@@ -268,30 +268,8 @@ func main() {
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CancelOutgoingFriendRequestHandler)),
 	).Methods("DELETE")
 
-	// === Эндпоинты для инвентаря ===
-	router.Handle(
-		"/game/player/{id}/inventory/use",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseInventoryHandler)),
-	).Methods("POST")
-	router.Handle(
-		"/game/blueprint/place",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceBlueprintHandler)),
-	).Methods("POST")
-
 	// === Эндпоинты для матчей ===
 	router.HandleFunc("/game/createMatch", handlers.CreateMatchHandler).Methods("POST")
-	router.Handle(
-		"/game/match",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMatchHandler)),
-	).Methods("GET")
-	router.Handle(
-		"/game/match/{instance_id}/my-stats",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchStatsHandler)),
-	).Methods("GET")
-	router.Handle(
-		"/game/match/{instance_id}/my-loot",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetMyMatchLootHandler)),
-	).Methods("GET")
 	router.Handle(
 		"/game/matches/history",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ListCompletedMatchesHandler)),
@@ -300,43 +278,6 @@ func main() {
 		"/game/matches/history/{instance_id}",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetCompletedMatchDetailsHandler)),
 	).Methods("GET")
-
-	router.Handle(
-		"/game/match/{instance_id}/use-scroll",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UseScrollHandler)),
-	).Methods("POST")
-
-	// Эндпоинт для финализации матча
-	router.Handle("/game/finishMatch",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.FinishMatchHandler)),
-	).Methods("POST")
-
-	// === Эндпоинты для перемещения и атаки (используют JWT middleware) ===
-	router.Handle("/game/{instance_id}/player/{id}/move",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.MoveOrAttackHandler))).
-		Methods("POST")
-
-	router.Handle("/game/attack",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.UniversalAttackHandler))).
-		Methods("POST")
-
-	router.Handle("/game/endTurn",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndTurnHandler)),
-	).Methods("POST")
-
-	// === Эндпоинты для ресурсов и монстров ===
-	// В файле gameservice/cmd/main.go, внутри настройки маршрутов:
-	router.Handle(
-		"/game/collectResource",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CollectResourceHandler)),
-	).Methods("POST")
-	router.Handle(
-		"/game/openBarrel",
-		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.OpenBarrelHandler)),
-	).Methods("POST")
-
-	router.HandleFunc("/api/resources", handlers.GetResourcesHandler).Methods("GET")
-	router.HandleFunc("/api/monsters", handlers.GetMonstersHandler).Methods("GET")
 
 	router.HandleFunc("/game/user/{id}/artifacts", handlers.GetUserArtifactsHandler).Methods("GET")
 	router.HandleFunc("/game/artifact/{id}", handlers.GetArtifactHandler).Methods("GET")

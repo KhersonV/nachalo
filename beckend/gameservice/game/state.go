@@ -4,10 +4,7 @@
 
 package game
 
-import (
-	"encoding/json"
-	"sync"
-)
+import "encoding/json"
 
 // PlayerResult — результат одного игрока
 type PlayerResult struct {
@@ -37,19 +34,6 @@ type MatchResults struct {
 	WinnerID      int
 	WinnerGroupID int
 	WinnerUserIDs []int
-}
-
-type MonsterState struct {
-	ID                int
-	MonsterInstanceID int
-	Health            int
-	MaxHealth         int
-	Attack            int
-	Defense           int
-	Speed             int
-	Maneuverability   int
-	Vision            int
-	Image             string
 }
 
 // Reward — пример структуры для награды
@@ -86,44 +70,9 @@ func ValidResultSourceType(sourceType string) bool {
 	return sourceType == ResultSourcePlayer || sourceType == ResultSourceMonster || sourceType == ResultSourceEnvironment
 }
 
-// ResultEvents are the MatchState fields needed by CalculateResults and
-// placement calculation. They can be persisted with a match command.
+// ResultEvents are persisted combat facts used for HEX rewards and placement.
 type ResultEvents struct {
 	DamageEvents  []DamageEvent `json:"damageEvents"`
 	KillEvents    []KillEvent   `json:"killEvents"`
 	DefeatedUsers []int         `json:"defeatedUsers"`
 }
-
-type ArmorBreakState struct {
-	Stacks         int
-	RemainingTurns int
-}
-
-type GuardianAuraPressureState struct {
-	AccumulatedExtraMoveCost int
-	LastSourceUserID         int
-}
-
-// MatchState инкапсулирует состояние конкретного матча.
-type MatchState struct {
-	InstanceID           string
-	ActiveUserID         int   // ID игрока, чей сейчас ход
-	TurnOrder            []int // Очередность ходов (список ID игроков)
-	TurnNumber           int   // Номер текущего круга
-	KillEvents           []KillEvent
-	DamageEvents         []DamageEvent
-	Monsters             map[int]*MonsterState
-	ArmorBreak           map[string]ArmorBreakState
-	BerserkerFury        map[int]int
-	MysticDrains         map[string]int
-	GuardianAuraPressure map[int]GuardianAuraPressureState
-	DefeatedUsers        []int
-	CombatSequence       uint64
-	mu                   sync.Mutex
-}
-
-// глобальная ма́па: instanceID → MatchState
-var (
-	MatchStates   = make(map[string]*MatchState)
-	MatchStatesMu sync.RWMutex
-)

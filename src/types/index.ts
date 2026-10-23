@@ -39,38 +39,7 @@ export type {
     MatchHistoryDetailResponse,
 } from "./MatchHistoryTypes";
 
-export type {
-    BonusAttributes,
-    RawInventoryItem,
-    Inventory,
-    PlayerState,
-    MonsterType,
-    ResourceType,
-    Cell,
-    ActionLogCategory,
-    ActionLogTone,
-    ActionLogEntry,
-    ActionLogEntryInput,
-    GameState,
-    Dir,
-    HexSnapshot,
-    HexPlayer,
-    HexCell,
-    HexActor,
-} from "./GameTypes";
+export type { RawInventoryItem } from "./InventoryTypes";
+export type { ActionLogCategory, ActionLogTone, ActionLogEntry } from "./ActionLogTypes";
+export type { HexSnapshot, HexPlayer, HexCell, HexActor } from "./HexGameTypes";
 
-export type {
-    AttackStyle,
-    CombatActorType,
-    CombatTargetRef,
-    CombatPoint,
-    CombatActorSnapshot,
-    CombatStep,
-    CombatEffect,
-    EquipmentDrop,
-    CombatExchangePayload,
-    QueuedCombatExchange,
-    ActiveAttackMotion,
-    ActiveEffect,
-    CombatPresentationState,
-} from "./combat";

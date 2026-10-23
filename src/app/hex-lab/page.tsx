@@ -72,7 +72,7 @@ export default function HexLabPage() {
             // A snapshot handles duplicates, gaps and out-of-order delivery.
             loadLive(liveInstanceId, user.token).then(() => setRoute(null)).catch(reason => setError(String(reason)));
           }
-        } catch { /* Other protocol messages belong to the square client. */ }
+        } catch { /* Ignore unrelated protocol messages. */ }
       };
       socket.onclose = () => { if (!closed) reconnectTimer = setTimeout(connect, 1500); };
     };

@@ -13,7 +13,8 @@
 .headerCopy h1 { margin: var(--ui-space-1) 0; font: 400 clamp(2rem, 3vw, 2.7rem)/1 var(--ui-display-font); }
 .headerCopy p { margin: 0; color: var(--ui-text-muted); }
 .headerActions { display: grid; justify-items: end; gap: var(--ui-space-2); color: var(--ui-text-muted); font-size: var(--ui-text-sm); white-space: nowrap; }
-.topGrid { display: grid; grid-template-columns: minmax(0, 1.58fr) minmax(320px, .9fr); gap: var(--ui-space-4); align-items: stretch; }
+.topGrid { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(440px, 1.25fr); gap: var(--ui-space-4); align-items: start; }
+.characterColumn { display: grid; gap: var(--ui-space-4); min-width: 0; }
 .heroPanel, .statsPanel, .inventoryPanel { padding: var(--ui-space-4); background: linear-gradient(150deg, rgb(22 34 49 / 97%), rgb(12 21 34 / 97%)); }
 .heroPanel { position: relative; overflow: hidden; }
 .heroPanel::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 50%, rgb(83 117 148 / 20%), transparent 55%); }
@@ -86,7 +87,18 @@
 .itemMeta span { padding: .12rem .35rem; border: 1px solid var(--ui-border); border-radius: 999px; color: var(--ui-text-muted); font-size: .71rem; }
 .inventoryPanel { min-width: 0; }
 .inventoryPanel > .panelHeader { align-items: end; }
-.inventoryLayout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, .9fr); gap: var(--ui-space-4); align-items: stretch; }
+.inventoryLayout { display: grid; grid-template-columns: 1fr; gap: var(--ui-space-4); align-items: stretch; }
+.categoryBar { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: var(--ui-space-3); }
+.categoryBar button { padding: .35rem .55rem; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); color: var(--ui-text); background: var(--ui-surface-raised); cursor: pointer; }
+.categoryBar button[aria-pressed='true'] { border-color: var(--ui-gold); color: var(--ui-gold); }
+.collectionControls { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin-bottom: var(--ui-space-3); }
+.collectionControls label { display: grid; gap: .2rem; color: var(--ui-text-muted); font-size: .72rem; }
+.collectionControls input[type='search'], .collectionControls select { min-height: 38px; padding: 0 .5rem; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface-raised); color: var(--ui-text); }
+.collectionControls .battleFilter { display: flex; align-items: center; gap: .4rem; cursor: pointer; }
+.storedDetail { display: grid; justify-items: start; gap: var(--ui-space-2); }
+.storedDetail h4, .storedDetail p { margin: 0; }
+.storedDetail .itemImageWrap { width: 88px; height: 88px; }
+.storedDetail .secondaryButton { text-decoration: none; }
 .inventoryCollection { min-width: 0; }
 .filterBar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--ui-space-2); margin-bottom: var(--ui-space-3); }
 .filterBar label { display: grid; gap: .2rem; color: var(--ui-text-muted); font-size: .72rem; font-weight: 700; }
@@ -141,7 +153,7 @@
     .heroStage { grid-template-columns: minmax(105px, 1fr) minmax(140px, 1.45fr) minmax(105px, 1fr); }
     .slotPrimary { gap: .2rem; }
     .slotCard .itemImageWrap { width: 42px; height: 42px; }
-    .inventoryLayout { grid-template-columns: minmax(0, 1.2fr) minmax(300px, .85fr); }
+    .inventoryLayout { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
     .topGrid { grid-template-columns: 1fr; }

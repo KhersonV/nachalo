@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { axialToWorld, canonicalHexEdge, hexDistance, hexKey, hexNeighbor, type HexCoord } from "@/utils/hexGrid";
 import { AnimatedRanger, type RangerCue } from "./AnimatedRanger";
-import { AnimatedMonster, monsterModelConfig } from "./hex3d/AnimatedMonster";
 import { animateFire, disposeAtmosphere, makeAtmosphereContext, makeColumn, makeFloorBrazier, makeRubble, makeWallTorch, type FireProp } from "./catacombsAtmosphere";
 import type { HexActor, HexCell, HexCombatIndicator, HexPlayer, HexRoute, HexSnapshot, HexVisualMove, HexVisualNotice } from "@/types/HexGameTypes";
 import type { HexGameMessages } from "@/i18n/hexGame";
@@ -72,7 +71,6 @@ type Runtime = {
   atmosphere: ReturnType<typeof makeAtmosphereContext> | null;
   fires: FireProp[];
   ranger: AnimatedRanger | null;
-  monsters: Map<string, { visual: AnimatedMonster; position: HexCoord; marker: THREE.Mesh }>;
   rangerUserId: number | null;
   rangerPosition: HexCoord | null;
   movement: { commandId: string; position: HexCoord; points: THREE.Vector3[]; index: number } | null;
@@ -115,11 +113,6 @@ function clearMarks(rt: Runtime) {
 }
 
 function populateWorld(rt: Runtime, snapshot: Props["snapshot"], visualMove?: HexVisualMove | null, connection?: string) {
-  const sameInstance = rt.instanceId === null || rt.instanceId === snapshot.instanceId;
-  if (!sameInstance) {
-    for (const entry of rt.monsters.values()) entry.visual.dispose();
-    rt.monsters.clear();
-  }
   rt.world.clear();
   rt.floorGeometries.forEach(geometry => geometry.dispose());
   rt.floorGeometries = [];
@@ -352,46 +345,19 @@ function populateWorld(rt: Runtime, snapshot: Props["snapshot"], visualMove?: He
   if (snapshot.player && !actors.some(actor => actor.kind === "player" && actor.userId === snapshot.player?.userId)) {
     actors.push({ id: `player-${snapshot.player.userId}`, kind: "player", userId: snapshot.player.userId, position: snapshot.player.position });
   }
-  const visibleMonsters = new Set<string>();
   for (const actor of actors) {
     const self = actor.kind === "player" && actor.userId === snapshot.player?.userId;
     const cell = cellsByKey.get(hexKey(actor.position));
     if (!cell || !self && cell.visibility !== "visible" && cell.visibility !== undefined) continue;
     const { x, z } = hexWorld(actor.position);
     const rangerSelf = self && snapshot.player?.characterType?.toLowerCase() === "ranger";
-    const config = monsterModelConfig(actor);
-    if (config) visibleMonsters.add(actor.id);
-    let monster = config && rt.monsters.get(actor.id);
-    const marker = new THREE.Mesh(rt.markerGeometry, rt.materials[rangerSelf || monster?.visual.isReady ? "invisibleHit" : self ? "self" : actor.kind === "monster" ? "monster" : "ally"]);
-    if (config) {
-      if (!monster) {
-        const visual = new AnimatedMonster(config, x, z);
-        monster = { visual, position: actor.position, marker };
-        rt.monsters.set(actor.id, monster);
-        rt.scene.add(visual.root);
-        visual.onReady = () => {
-          if (rt.disposed) return;
-          const current = rt.monsters.get(actor.id);
-          if (current?.visual === visual && visual.isReady) current.marker.material = rt.materials.invisibleHit;
-          rt.invalidate();
-        };
-      } else {
-        // A snapshot confirms the position, but does not contain a monster route.
-        if (hexKey(monster.position) !== hexKey(actor.position)) monster.visual.snapTo(x, z);
-        monster.position = actor.position;
-        monster.marker = marker;
-      }
-    }
+    const marker = new THREE.Mesh(rt.markerGeometry, rt.materials[rangerSelf ? "invisibleHit" : self ? "self" : actor.kind === "monster" ? "monster" : "ally"]);
     marker.position.set(x, tileTop(cell) + .52, z);
     marker.userData.actor = actor;
     rt.actorHits.push(marker); rt.world.add(marker);
     const base = new THREE.Mesh(rt.ringGeometry, rt.materials[self ? "selfRing" : "actorRing"]);
     base.rotation.x = -Math.PI / 2; base.position.set(x, tileTop(cell) + .04, z);
     rt.world.add(base);
-  }
-  for (const [id, entry] of rt.monsters) if (!visibleMonsters.has(id)) {
-    entry.visual.dispose();
-    rt.monsters.delete(id);
   }
 
   const player = snapshot.player;
@@ -596,7 +562,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       rockGeometries: [new THREE.IcosahedronGeometry(.73, 0), new THREE.DodecahedronGeometry(.7, 0), new THREE.ConeGeometry(.44, .96, 5)],
       structureGeometry: new THREE.BoxGeometry(.48, .58, .48), discGeometry: new THREE.CylinderGeometry(.78, .78, .025, 6),
       materials, tileHits: [], tileLookup: new Map(), floorGeometries: [], textures, atmosphere: null, fires: [],
-      ranger: null, monsters: new Map(), rangerUserId: null, rangerPosition: null, movement: null, lastMoveId: null,
+      ranger: null, rangerUserId: null, rangerPosition: null, movement: null, lastMoveId: null,
       instanceId: null, heroFill, heroRim, hover, objectHits: [], actorHits: [],
       bounds: { minX: -10, maxX: 10, minZ: -10, maxZ: 10 }, focus: new THREE.Vector3(), distance: 24, yaw: .7, pitch: Math.PI / 4,
       frame: null, lastFrame: 0, invalidate: () => {},
@@ -627,7 +593,6 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
         if (next) rt.ranger.setSpec({ position: { x: next.x, y: next.z } }, seconds);
       }
       rt.ranger?.update(delta, seconds);
-      for (const entry of rt.monsters.values()) entry.visual.update(delta, seconds);
       const movement = rt.movement;
       if (rt.ranger && movement) {
         let next = movement.points[movement.index];
@@ -652,7 +617,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
         fire.light.visible = lit.has(index);
       }
       renderer.render(scene, camera);
-      if (rt.ranger || [...rt.monsters.values()].some(entry => entry.visual.isReady) || rt.fires.length || rt.barrelAnimation || rt.portalModels.size || rt.artifactModels.size) rt.frame = window.requestAnimationFrame(render);
+      if (rt.ranger || rt.fires.length || rt.barrelAnimation || rt.portalModels.size || rt.artifactModels.size) rt.frame = window.requestAnimationFrame(render);
     };
     rt.invalidate = () => { if (rt.frame === null) rt.frame = window.requestAnimationFrame(render); };
     invalidateTexture = rt.invalidate;
@@ -740,8 +705,6 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       if (rt.frame !== null) window.cancelAnimationFrame(rt.frame);
       if (rt.barrelAnimation) rt.scene.remove(rt.barrelAnimation.barrel.group);
       rt.ranger?.dispose();
-      for (const entry of rt.monsters.values()) entry.visual.dispose();
-      rt.monsters.clear();
       clearMarks(rt); rt.world.clear();
       rt.floorGeometries.forEach(geometry => geometry.dispose());
       if (rt.atmosphere) disposeAtmosphere(rt.atmosphere);
@@ -855,28 +818,6 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       rt.invalidate();
     }
   }, [visualNotices, snapshot.player]);
-  useEffect(() => {
-    const rt = runtime.current;
-    if (!rt || connection !== "live") return;
-    const now = performance.now() * .001;
-    for (const notice of visualNotices) {
-      if (notice.instanceId !== snapshot.instanceId || notice.kind !== "attack") continue;
-      const attacked = new Set<number>();
-      for (const [index, step] of (notice.steps ?? []).entries()) {
-        if (step.source?.type === "monster" && !attacked.has(step.source.id)) {
-          attacked.add(step.source.id);
-          const target = notice.targetPosition && hexWorld(notice.targetPosition);
-          rt.monsters.get(`monster-${step.source.id}`)?.visual.cue(`${notice.commandId}:attack:${step.source.id}`, "Attack", now, target);
-        }
-        if (step.target.type !== "monster") continue;
-        const clip = step.kind === "death" || step.targetHpAfter === 0 ? "Death" : (step.damage ?? 0) > 0 ? "Hit" : null;
-        if (!clip) continue;
-        const source = notice.attackerPosition && hexWorld(notice.attackerPosition);
-        rt.monsters.get(`monster-${step.target.id}`)?.visual.cue(`${notice.commandId}:${clip}:${index}`, clip, now, source);
-      }
-    }
-    rt.invalidate();
-  }, [visualNotices, snapshot.instanceId, connection]);
   const initialized = useRef(false);
   useEffect(() => {
     const rt = runtime.current;

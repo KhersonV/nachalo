@@ -17,6 +17,7 @@ export type HexPlayer = {
   health: number; maxHealth: number; mobility: number; agility: number;
   characterType: string; isRanged: boolean; attackRange: number;
   inventory?: Record<string, { item_count?: number; item_name?: string }>;
+  equipmentLoot?: Array<{ itemInstanceId: string; name: string; rarity: string; image: string }>;
   balance?: number;
 };
 export type HexResultItem = { name: string; image?: string; status?: string };
@@ -28,7 +29,7 @@ export type HexAttackPreview = { targetId: number; distance: number; cost: numbe
 export type HexCombatRef = { id: number; type: "player" | "monster" };
 export type HexCombatStep = { kind: string; source?: HexCombatRef; target: HexCombatRef; damage?: number; targetHpAfter?: number };
 export type HexCombatEffect = { kind: string; source?: HexCombatRef; target?: HexCombatRef; succeeded?: boolean; amount?: number; bonusDamage?: number; energyGranted?: number; energyDrained?: number; stacks?: number; durationTurns?: number; positionAfter?: { x: number; y: number } };
-export type HexAttackResult = HexAttackPreview & { damage: number; counterDamage: number; newTargetHP: number; newAttackerHP: number; monsterDied: boolean; playerDied?: boolean; effects: HexCombatEffect[]; steps: HexCombatStep[]; drops: Array<{ name: string }>; stateRevision: number; mapRevision: number; attackerPosition?: HexCoord; targetPosition?: HexCoord; attackerHPBefore?: number };
+export type HexAttackResult = HexAttackPreview & { damage: number; counterDamage: number; newTargetHP: number; newAttackerHP: number; monsterDied: boolean; playerDied?: boolean; effects: HexCombatEffect[]; steps: HexCombatStep[]; drops: Array<{ name: string; ownerUserId: number }>; stateRevision: number; mapRevision: number; attackerPosition?: HexCoord; targetPosition?: HexCoord; attackerHPBefore?: number };
 export type HexCombatIndicator = { id: string; position: HexCoord; text: string; tone: "damage" | "critical" | "heal" | "energyLoss" | "energyGain" | "aura" | "status" | "push"; lane: number };
 export type HexVisualNotice = { instanceId: string; schemaVersion: 2; commandId: string; stateRevision: number; kind: "attack" | "move"; attackerPosition?: HexCoord; targetPosition?: HexCoord; attackerHPBefore?: number; targetHP?: number; steps?: HexCombatStep[]; effects?: HexCombatEffect[]; position?: HexCoord; auraEnergyCost?: number; auraHits?: Array<{ position: HexCoord; damage: number; sourceId: number }>; auraEnded?: boolean };
 export type HexSnapshot = {

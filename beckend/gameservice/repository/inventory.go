@@ -105,6 +105,15 @@ func AddInventoryItem(
 // AddInventoryItemTx joins the caller's match transaction and returns the
 // updated JSON inventory for a post-commit response.
 func AddInventoryItemTx(tx *sql.Tx, instanceID string, playerID int, itemType string, itemID int, itemName string, imageURL string, description string, count int) (string, error) {
+	if itemType == "resource" {
+		var collectable bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND resource_kind='resource')`, itemID).Scan(&collectable); err != nil {
+			return "", err
+		}
+		if !collectable {
+			return "", ErrCommandRejected
+		}
+	}
 
 	// 1) Получаем текущий JSON-инвентарь и matchInstanceID
 	var inventoryJSON, matchInstanceID string

@@ -8,6 +8,8 @@ import { getHeroFullbody, getHeroPortrait } from "@/features/heroes/heroArtwork"
 import { BONUS_FIELDS, compareItemBonuses, equipBlockReason, filterEquipmentItems, getAvailableEquipment, getGearCount, isTwoHanded, type InventoryFilters } from "@/features/equipment/equipmentView";
 import ItemBonusComparison from "./equipment/ItemBonusComparison";
 import { equipmentImage } from "@/utils/equipmentAssets";
+import { resourceImage } from "@/utils/resourceAssets";
+import type { StorageState, StoredItem } from "@/features/storage/loadoutModel";
 import styles from "../styles/EquipmentPage.module.css";
 import { API_BASE } from "../utils/serviceUrls";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
@@ -81,6 +83,28 @@ const HANDEDNESS_SET = new Set<ItemHandedness>(["none", "one_hand", "two_hand"])
 
 const equipmentDevGrantEnabled =
     process.env.NEXT_PUBLIC_EQUIPMENT_DEV_GRANT_ENABLED === "true";
+
+type CollectionCategory = "all" | "equipment" | "artifact" | "consumable" | "resource" | "scroll" | "blueprint" | "quest";
+const collectionCategories: { key: CollectionCategory; label: string }[] = [
+    { key: "all", label: "Все" }, { key: "equipment", label: "Экипировка" },
+    { key: "artifact", label: "Артефакты" }, { key: "consumable", label: "Расходники" },
+    { key: "resource", label: "Ресурсы" }, { key: "scroll", label: "Свитки" },
+    { key: "blueprint", label: "Чертежи" }, { key: "quest", label: "Квестовые" },
+];
+function storedCategory(key: string, item: StoredItem): CollectionCategory {
+    if (item.item_type === "quest") return "quest";
+    if (key.startsWith("artifact_")) return "artifact";
+    if (key.startsWith("scroll_")) return "scroll";
+    if (key.startsWith("blueprint_")) return "blueprint";
+    if (key.startsWith("quest_")) return "quest";
+    if (key.startsWith("resource_")) return ["food", "water", "elixir", "potion"].includes((item.name || item.item_name || "").toLowerCase()) ? "consumable" : "resource";
+    return "resource";
+}
+function storedImage(key: string, item: StoredItem): string {
+    if (key.startsWith("resource_")) return resourceImage(item.name || item.item_name || "", item.image || "") || item.image || "";
+    if (key.startsWith("blueprint_")) return item.image || `/Forge-items/${key.slice("blueprint_".length)}.png`;
+    return item.image || "";
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
@@ -524,6 +548,14 @@ export default function EquipmentPage() {
     const t = (source: string) => uiText(language, source);
     const { user } = useAuth();
     const [equipment, setEquipment] = useState<EquipmentState | null>(null);
+    const [storage, setStorage] = useState<StorageState | null>(null);
+    const [storageError, setStorageError] = useState("");
+    const [collectionCategory, setCollectionCategory] = useState<CollectionCategory>("all");
+    const [collectionSearch, setCollectionSearch] = useState("");
+    const [collectionSort, setCollectionSort] = useState<"name" | "type" | "rarity">("name");
+    const [collectionRarity, setCollectionRarity] = useState("all");
+    const [battleOnly, setBattleOnly] = useState(false);
+    const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -594,6 +626,22 @@ export default function EquipmentPage() {
     useEffect(() => {
         void loadEquipment();
     }, [loadEquipment]);
+
+    const loadStorage = useCallback(async () => {
+        if (!user?.token) return;
+        try {
+            const response = await fetch(`${API_BASE}/game/storage`, { headers: authHeaders, cache: "no-store" });
+            if (!response.ok) throw new Error(`Storage: HTTP ${response.status}`);
+            const payload = await response.json();
+            const next = payload?.data ?? payload;
+            if (!next || typeof next.inventory !== "object" || !Array.isArray(next.eligibleKeys)) throw new Error("Storage response is incomplete");
+            setStorage(next as StorageState);
+            setStorageError("");
+        } catch (reason) {
+            setStorageError(reason instanceof Error ? reason.message : "Не удалось загрузить хранилище");
+        }
+    }, [authHeaders, user?.token]);
+    useEffect(() => { void loadStorage(); }, [loadStorage]);
 
     const postEquipmentAction = useCallback(
         async (path: string, body: unknown, actionKey: string) => {
@@ -692,6 +740,18 @@ export default function EquipmentPage() {
         () => filterEquipmentItems(availableItems, filters, selectedCharacter, selectedEquipped),
         [availableItems, filters, selectedCharacter, selectedEquipped],
     );
+    const storageItems = useMemo(() => Object.entries(storage?.inventory ?? {})
+        .filter(([, item]) => Number(item.item_count ?? 0) > 0)
+        .map(([key, item]) => ({ key, item, category: storedCategory(key, item), name: item.name || item.item_name || key })), [storage]);
+    const visibleStorage = useMemo(() => storageItems.filter(entry =>
+        (collectionCategory === "all" || entry.category === collectionCategory) &&
+        (!battleOnly || storage?.eligibleKeys?.includes(entry.key)) &&
+        (!collectionSearch || entry.name.toLocaleLowerCase().includes(collectionSearch.toLocaleLowerCase())) &&
+        (collectionRarity === "all" || (entry.item.rarity || "gray") === collectionRarity),
+    ).sort((a, b) => collectionSort === "type" ? a.category.localeCompare(b.category) || a.name.localeCompare(b.name) : collectionSort === "rarity" ? (a.item.rarity || "gray").localeCompare(b.item.rarity || "gray") || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)), [storageItems, collectionCategory, battleOnly, storage, collectionSearch, collectionRarity, collectionSort]);
+    const visibleEquipment = (collectionCategory === "all" || collectionCategory === "equipment") && !battleOnly
+        ? filteredItems.filter(item => (!collectionSearch || item.name.toLocaleLowerCase().includes(collectionSearch.toLocaleLowerCase())) && (collectionRarity === "all" || item.rarity === collectionRarity)).sort((a, b) => collectionSort === "type" ? a.itemType.localeCompare(b.itemType) || a.name.localeCompare(b.name) : collectionSort === "rarity" ? a.rarity.localeCompare(b.rarity) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)) : [];
+    const selectedStored = selectedStorageKey ? storageItems.find(entry => entry.key === selectedStorageKey) : undefined;
     const selectedInventoryItem = availableItems.find(item => item.instanceId === selectedItemId) ?? null;
     const inspectedItem = selectedInventoryItem ?? (selectedSlot ? selectedEquipped[selectedSlot] ?? null : null);
     const comparedItem = selectedInventoryItem ? selectedEquipped[selectedInventoryItem.slot] : undefined;
@@ -724,7 +784,7 @@ export default function EquipmentPage() {
                         <p><UiText text="Equip your heroes, inspect your gear, and prepare for the next battle." /></p>
                     </div>
                     <div className={styles.headerActions}>
-                        <span>{equipment?.characters.length ?? 0} <UiText text="owned heroes ·" /> {equipment?.ownedItems.length ?? 0} <UiText text="items" /></span>
+                        <span>{equipment?.characters.length ?? 0} героев · {storageItems.length} стеков · {availableItems.length} свободных предметов экипировки</span>
                         {equipmentDevGrantEnabled && <button type="button" className={styles.devButton} onClick={handleGrantClassSet} disabled={busyAction !== null}>{t(busyAction?.startsWith("grant-") ? "Granting…" : "Grant class set")}</button>}
                     </div>
                 </header>
@@ -735,6 +795,7 @@ export default function EquipmentPage() {
 
                 {equipment && <>
                     <div className={styles.topGrid}>
+                        <div className={styles.characterColumn}>
                         <section className={styles.heroPanel} aria-label="Hero and equipment slots">
                             <div className={styles.panelHeader}>
                                 <div><span className={styles.eyebrow}><UiText text="YOUR HERO" /></span><h2>{selectedCharacter?.name || t("Hero")}</h2><p>{selectedCharacter ? `${t(formatEnum(selectedCharacter.heroClassId))} · ${t("Hero level")} ${selectedCharacter.level}` : t("Choose a hero")}</p></div>
@@ -768,28 +829,39 @@ export default function EquipmentPage() {
                             <div className={styles.panelHeaderCompact}><h2><UiText text="Set bonuses" /></h2><span>{selectedSetBonuses.length} <UiText text="active" /></span></div>
                             <ActiveSetBonuses bonuses={selectedSetBonuses} />
                         </aside>
-                    </div>
+                        </div>
 
-                    <section className={styles.inventoryPanel} aria-label="Available equipment">
-                        <div className={styles.panelHeader}><div><span className={styles.eyebrow}><UiText text="YOUR COLLECTION" /></span><h2><UiText text="Available Equipment" /></h2><p><UiText text="Unequipped items ready to use." /></p></div><span>{filteredItems.length} / {availableItems.length} <UiText text="items" /></span></div>
+                    <section className={styles.inventoryPanel} aria-label="Account inventory">
+                        <div className={styles.panelHeader}><div><span className={styles.eyebrow}><UiText text="YOUR COLLECTION" /></span><h2>Имущество аккаунта</h2><p>Экипировка и предметы общего хранилища</p></div><span>{visibleEquipment.length + visibleStorage.length} предметов</span></div>
                         <div className={styles.inventoryLayout}>
                             <div className={styles.inventoryCollection}>
-                                <div className={styles.filterBar}>
+                                <div className={styles.categoryBar} role="group" aria-label="Категории предметов">{collectionCategories.filter(category => category.key !== "quest" || storageItems.some(item => item.category === "quest")).map(category => <button key={category.key} type="button" aria-pressed={collectionCategory === category.key} onClick={() => { setCollectionCategory(category.key); setSelectedItemId(null); setSelectedStorageKey(null); setSelectedSlot(null); }}>{category.label}</button>)}</div>
+                                <div className={styles.collectionControls}>
+                                    <label>Поиск<input type="search" value={collectionSearch} onChange={event => setCollectionSearch(event.target.value)} placeholder="Название предмета" /></label>
+                                    <label>Сортировка<select value={collectionSort} onChange={event => setCollectionSort(event.target.value as "name" | "type" | "rarity")}><option value="name">Название</option><option value="type">Тип</option><option value="rarity">Редкость</option></select></label>
+                                    <label>Редкость<select value={collectionRarity} onChange={event => setCollectionRarity(event.target.value)}><option value="all">Любая</option>{["gray", "green", "blue", "purple", "orange"].map(rarity => <option key={rarity} value={rarity}>{t(formatEnum(rarity))}</option>)}</select></label>
+                                    <label className={styles.battleFilter}><input type="checkbox" checked={battleOnly} onChange={event => setBattleOnly(event.target.checked)} />Можно взять в бой</label>
+                                </div>
+                                {(collectionCategory === "all" || collectionCategory === "equipment") && !battleOnly && <div className={styles.filterBar}>
                                     <div className={styles.filterToggle} role="group" aria-label="Hero compatibility"><button type="button" aria-pressed={!filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: false }))}><UiText text="All" /></button><button type="button" aria-pressed={filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: true }))}><UiText text="For hero" /></button></div>
                                     <label><UiText text="Slot" /> <select value={filters.slot} onChange={event => setFilters(current => ({ ...current, slot: event.target.value as InventoryFilters["slot"] }))}><option value="all"><UiText text="All slots" /></option>{EQUIPMENT_SLOTS.filter(slot => availableSlots.includes(slot)).map(slot => <option key={slot} value={slot}>{t(SLOT_LABELS[slot])}</option>)}</select></label>
                                     <label><UiText text="Class" /> <select value={filters.heroClass} onChange={event => setFilters(current => ({ ...current, heroClass: event.target.value }))}><option value="all"><UiText text="All classes" /></option>{availableClasses.map(heroClass => <option key={heroClass} value={heroClass}>{t(formatEnum(heroClass))}</option>)}</select></label>
                                     <label><UiText text="Rarity" /> <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all"><UiText text="All rarities" /></option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{t(formatEnum(rarity))}</option>)}</select></label>
-                                </div>
-                                {!equipment.availableEquipmentKnown ? <div className={styles.emptyState}><UiText text="Available equipment data is unavailable. Retry loading equipment." /></div> : availableItems.length === 0 ? <div className={styles.emptyState}><UiText text="No unequipped items available." /></div> : filteredItems.length === 0 ? <div className={styles.emptyState}><UiText text="No items match these filters." /></div> : <div className={styles.inventoryGrid}>
-                                    {filteredItems.map(item => {
-                                        return <InventoryCard key={item.instanceId} item={item} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedSlot(null); setActionError(null); }} />;
+                                </div>}
+                                {storageError && <p className={styles.inlineError} role="alert">{storageError} <button type="button" onClick={() => void loadStorage()}>Повторить</button></p>}
+                                {!storage && !storageError && <p className={styles.emptyState}>Загрузка хранилища…</p>}
+                                {(visibleEquipment.length + visibleStorage.length) === 0 && storage && <div className={styles.emptyState}>В этой категории нет предметов.</div>}
+                                {(visibleEquipment.length + visibleStorage.length) > 0 && <div className={styles.inventoryGrid}>
+                                    {visibleEquipment.map(item => {
+                                        return <InventoryCard key={item.instanceId} item={item} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedStorageKey(null); setSelectedSlot(null); setActionError(null); }} />;
                                     })}
+                                    {visibleStorage.map(({ key, item, name, category }) => <button key={key} type="button" className={`${styles.inventoryCard} ${selectedStorageKey === key ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity || "gray"} onClick={() => { setSelectedStorageKey(key); setSelectedItemId(null); setSelectedSlot(null); }}><span className={styles.itemImageWrap}>{storedImage(key, item) && <img className={styles.itemImage} src={storedImage(key, item)} alt="" />}</span><span className={styles.inventoryCardCopy}><strong>{t(name)}</strong><small>{collectionCategories.find(value => value.key === category)?.label} · ×{item.item_count}</small></span></button>)}
                                 </div>}
                             </div>
 
                             <aside className={styles.detailPanel} aria-label="Item details and comparison">
-                                <div className={styles.detailHeading}><span className={styles.eyebrow}><UiText text="INSPECT" /></span><h3>{t(selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item")}</h3></div>
-                                {selectedInventoryItem ? <>
+                                <div className={styles.detailHeading}><span className={styles.eyebrow}><UiText text="INSPECT" /></span><h3>{selectedStored ? t(selectedStored.name) : t(selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item")}</h3></div>
+                                {selectedStored ? <div className={styles.storedDetail}><span className={styles.itemImageWrap}>{storedImage(selectedStored.key, selectedStored.item) && <img className={styles.itemImage} src={storedImage(selectedStored.key, selectedStored.item)} alt="" />}</span><h4>{t(selectedStored.name)}</h4><p>{t(selectedStored.item.description || "Описание отсутствует")}</p><p>{collectionCategories.find(value => value.key === selectedStored.category)?.label} · ×{selectedStored.item.item_count}</p><p>{storage?.eligibleKeys?.includes(selectedStored.key) ? "Можно взять в HEX-матч" : "Нельзя взять в HEX-матч"}</p>{selectedStored.category === "artifact" && <a className={styles.secondaryButton} href={`/market?sell=${encodeURIComponent(selectedStored.key)}`}>Перейти к продаже</a>}</div> : selectedInventoryItem ? <>
                                     <div className={styles.compareCards}>
                                         <div className={styles.compareCard}><span><UiText text="NOW EQUIPPED" /></span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{formatEnum(comparedItem.rarity)} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small><UiText text="Set:" /> {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p><UiText text="Empty" /> {SLOT_LABELS[selectedInventoryItem.slot]} <UiText text="slot" /></p>}</div>
                                         <div className={styles.compareCard}><span><UiText text="SELECTED ITEM" /></span><ItemImage item={selectedInventoryItem} /><strong><UiText text={selectedInventoryItem.name} /></strong><small>{formatEnum(selectedInventoryItem.rarity)} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small><UiText text="Set:" /> <UiText text={selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")} /></small>}</div>
@@ -806,6 +878,7 @@ export default function EquipmentPage() {
                             </aside>
                         </div>
                     </section>
+                    </div>
                 </>}
             </div>
         </main>

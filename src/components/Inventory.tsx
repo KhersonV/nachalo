@@ -5,27 +5,24 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { API_BASE } from "@/utils/serviceUrls";
-import { useDispatch, useSelector } from "react-redux";
-import { useAuth } from "../contexts/AuthContext";
-import type { RootState } from "../store";
-import type { RawInventoryItem, PlayerState } from "../types";
-import { updatePlayer } from "../store/slices/gameSlice";
+import type { RawInventoryItem } from "../types";
 import styles from "../styles/Inventory.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
 import { resourceImage } from "@/utils/resourceAssets";
+import { equipmentImage } from "@/utils/equipmentAssets";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 
 interface InventoryProps {
   className?: string;
-  onBlueprintPlacementStart?: (inventoryKey: string) => void;
   onRequestClose?: () => void;
-  hexInventory?: Record<string, { item_count?: number; item_name?: string }>;
+  hexInventory: Record<string, { item_count?: number; item_name?: string }>;
+  equipmentLoot?: Array<{ itemInstanceId: string; name: string; rarity: string; image: string }>;
   onHexUseItem?: (itemType: "resource" | "scroll", itemId: number) => Promise<string>;
   onHexBlueprintPlacementStart?: (inventoryKey: string) => void;
   hexBusy?: boolean;
   hexLabels?: HexGameMessages;
+  questArtifactId?: number;
 }
 
 const isConsumableResource = (item: RawInventoryItem): boolean => {
@@ -43,18 +40,15 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
 
 const Inventory: React.FC<InventoryProps> = ({
   className,
-  onBlueprintPlacementStart,
   onRequestClose,
   hexInventory,
+  equipmentLoot = [],
   onHexUseItem,
   onHexBlueprintPlacementStart,
   hexBusy,
   hexLabels,
+  questArtifactId,
 }) => {
-  const dispatch = useDispatch();
-  const state = useSelector((state: RootState) => state.game);
-  const { user } = useAuth();
-  const instanceId = state.instanceId;
   const [feedback, setFeedback] = useState("");
   const { language } = useGameLanguage();
   const t = (source: string) => uiText(language, source);
@@ -67,8 +61,6 @@ const Inventory: React.FC<InventoryProps> = ({
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  const player = state.players.find((p) => p.user_id === user?.id);
-  if (!player && !hexInventory) return <div>{t("Inventory unavailable")}</div>;
 
   // Images are provided by the server in inventory entries; use them directly.
 
@@ -120,9 +112,7 @@ const Inventory: React.FC<InventoryProps> = ({
   const rawItems: RawInventoryItem[] = useMemo(() => {
     let parsed: any;
     try {
-      parsed = hexInventory ?? (typeof player?.inventory === "string"
-        ? JSON.parse(player.inventory)
-        : player?.inventory ?? {});
+      parsed = hexInventory;
     } catch {
       return [];
     }
@@ -146,7 +136,7 @@ const Inventory: React.FC<InventoryProps> = ({
         return normalize(entry);
       }
     });
-  }, [hexInventory, player?.inventory]);
+  }, [hexInventory]);
 
   const { resources, artifacts } = useMemo(() => {
     return rawItems.reduce<{
@@ -164,92 +154,18 @@ const Inventory: React.FC<InventoryProps> = ({
     );
   }, [rawItems]);
 
-  const handleUseItem = async (
-    section: "resources" | "artifacts",
-    key: string,
-    item: RawInventoryItem,
-  ) => {
-    if (item.item_count <= 0 || !user) return;
-
-    if (hexInventory) {
-      if (key.startsWith("blueprint_")) {
-        onHexBlueprintPlacementStart?.(key);
-        onRequestClose?.();
-        return;
-      }
-      const isScroll = key.startsWith("scroll_");
-      if (!onHexUseItem || (!isScroll && !isConsumableResource(item))) return;
-      try {
-        setFeedback(await onHexUseItem(isScroll ? "scroll" : "resource", item.item_id));
-      } catch (reason) { setFeedback(String(reason)); }
-      return;
-    }
-
+  const handleUseItem = async (key: string, item: RawInventoryItem) => {
+    if (item.item_count <= 0) return;
     if (key.startsWith("blueprint_")) {
-      onBlueprintPlacementStart?.(key);
+      onHexBlueprintPlacementStart?.(key);
       onRequestClose?.();
-      setFeedback(t("Build mode: select an adjacent free cell."));
       return;
     }
-
-    // Scrolls: call inventory use endpoint with item_type = "scroll" and show scroll result (if any)
-    if (key.startsWith("scroll_")) {
-      // continue to use the generic inventory use endpoint; backend will return scroll_result
-    }
-
-    setFeedback("");
-
-    const [item_type, idStr] = key.split("_");
-    const item_id = parseInt(idStr, 10);
-
+    const isScroll = key.startsWith("scroll_");
+    if (!onHexUseItem || (!isScroll && !isConsumableResource(item))) return;
     try {
-      const stored = localStorage.getItem("user");
-      const token = stored ? JSON.parse(stored).token : "";
-      if (!token) {
-        setFeedback(t("Session not found. Please log in again."));
-        return;
-      }
-
-      const res = await fetch(
-        `${API_BASE}/game/player/${user.id}/inventory/use`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            instance_id: instanceId,
-            item_type,
-            item_id,
-            count: 1,
-          }),
-        },
-      );
-      if (!res.ok) {
-        const errorText = await res.text();
-        setFeedback(errorText || t("Failed to use item"));
-        return;
-      }
-      const data = await res.json();
-      // backend may return either PlayerState or { player: PlayerState, scroll_result: { axis, value } }
-      let updatedPlayer: PlayerState | null = null;
-      if (data && data.player) {
-        updatedPlayer = data.player as PlayerState;
-        if (data.scroll_result) {
-          setFeedback(
-            `${t("Revealed")} ${String(data.scroll_result.axis).toUpperCase()}: ${data.scroll_result.value}`,
-          );
-        }
-      } else {
-        updatedPlayer = data as PlayerState;
-      }
-      if (updatedPlayer) {
-        dispatch(updatePlayer({ instanceId, player: updatedPlayer }));
-      }
-    } catch (err) {
-      setFeedback(t("Network error while using item"));
-    }
+      setFeedback(await onHexUseItem(isScroll ? "scroll" : "resource", item.item_id));
+    } catch (reason) { setFeedback(String(reason)); }
   };
 
   const renderItems = (
@@ -280,19 +196,17 @@ const Inventory: React.FC<InventoryProps> = ({
             );
           })()}
           <div className={styles.itemName}>{t(item.name)}</div>
+          {section === "artifacts" && item.item_id === questArtifactId && <div className={styles.itemCount}>{hexLabels?.questArtifact ?? t("Quest artifact")}</div>}
           {section === "resources" && (
             <>
-              <div className={styles.itemCount}>{hexInventory ? hexLabels?.quantity ?? t("Qty") : t("Qty")}: {item.item_count}</div>
-              {(hexInventory ? (isConsumableResource(item) || key.startsWith("scroll_") || key.startsWith("blueprint_")) : (isConsumableResource(item) ||
-                key.startsWith("blueprint_") ||
-                key.startsWith("scroll_") ||
-                item.item_type === "scroll")) && (
+              <div className={styles.itemCount}>{hexLabels?.quantity ?? t("Qty")}: {item.item_count}</div>
+              {(isConsumableResource(item) || key.startsWith("scroll_") || key.startsWith("blueprint_")) && (
                 <button
                   className={styles.useButton}
-                  disabled={!!hexInventory && (hexBusy || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem))}
-                  onClick={() => handleUseItem(section, key, item)}
+                  disabled={hexBusy || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem)}
+                  onClick={() => handleUseItem(key, item)}
                 >
-                  {key.startsWith("blueprint_") ? t("Place") : (hexInventory ? hexLabels?.use ?? t("Use") : t("Use"))}
+                  {key.startsWith("blueprint_") ? t("Place") : (hexLabels?.use ?? t("Use"))}
                 </button>
               )}
             </>
@@ -302,7 +216,7 @@ const Inventory: React.FC<InventoryProps> = ({
 
   return (
     <div className={`${styles.inventoryContainer} ${className ?? ""}`}>
-      <div className={styles.sheetHeader}><h2 className={styles.title}>{hexInventory ? hexLabels?.inventory ?? t("Inventory") : t("Inventory")}</h2>{hexInventory && onRequestClose && <button type="button" className={styles.sheetClose} onClick={onRequestClose} aria-label={hexLabels?.closeInventory ?? t("Close inventory")}>×</button>}</div>
+      <div className={styles.sheetHeader}><h2 className={styles.title}>{hexLabels?.inventory ?? t("Inventory")}</h2>{onRequestClose && <button type="button" className={styles.sheetClose} onClick={onRequestClose} aria-label={hexLabels?.closeInventory ?? t("Close inventory")}>×</button>}</div>
       {feedback && (
         <div className={styles.feedbackRow}>
           <p className={styles.feedbackError}>{feedback}</p>
@@ -310,8 +224,8 @@ const Inventory: React.FC<InventoryProps> = ({
             type="button"
             className={styles.feedbackCloseButton}
             onClick={() => setFeedback("")}
-            aria-label={hexInventory ? hexLabels?.closeMessage ?? t("Close message") : t("Close message")}
-            title={hexInventory ? hexLabels?.close ?? t("Close") : t("Close")}
+            aria-label={hexLabels?.closeMessage ?? t("Close message")}
+            title={hexLabels?.close ?? t("Close")}
           >
             x
           </button>
@@ -319,18 +233,28 @@ const Inventory: React.FC<InventoryProps> = ({
       )}
       <div className={styles.sections}>
         <div className={styles.section}>
-          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.resources ?? t("Resources") : t("Resources")}</h3>
+          <h3 className={styles.sectionTitle}>{hexLabels?.resources ?? t("Resources")}</h3>
           <p className={styles.sectionHint}>
-            {hexInventory ? hexLabels?.useLimits ?? t("Limits: food once per 2 turns, water up to 5 per 2 turns.") : t("Limits: food - 1 time per 2 turns, water - up to 5 per 2 turns.")}
+            {hexLabels?.useLimits ?? t("Limits: food once per 2 turns, water up to 5 per 2 turns.")}
           </p>
           <div className={styles.itemsContainer}>
             {renderItems("resources", resources)}
           </div>
         </div>
         <div className={styles.section}>
-          <h3 className={styles.sectionTitle}>{hexInventory ? hexLabels?.artifacts ?? t("Artifacts") : t("Artifacts")}</h3>
+          <h3 className={styles.sectionTitle}>{hexLabels?.artifacts ?? t("Artifacts")}</h3>
           <div className={styles.itemsContainer}>
             {renderItems("artifacts", artifacts)}
+          </div>
+        </div>
+        <div className={styles.section}>
+          <h3 className={styles.sectionTitle}>{hexLabels?.categories.equipment ?? t("Equipment")}</h3>
+          <div className={styles.itemsContainer}>
+            {equipmentLoot.map(item => <div key={item.itemInstanceId} className={styles.item}>
+              <img src={equipmentImage(item.image)} alt={item.name} className={styles.itemImage} loading="lazy" />
+              <div className={styles.itemName}>{t(item.name)}</div>
+              <div className={styles.itemCount}>{item.rarity}</div>
+            </div>)}
           </div>
         </div>
       </div>

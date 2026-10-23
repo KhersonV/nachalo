@@ -74,7 +74,15 @@ type Player struct {
 	IsRanged      bool           `json:"isRanged"`
 	AttackRange   int            `json:"attackRange"`
 	Inventory     map[string]any `json:"inventory,omitempty"`
+	EquipmentLoot []EquipmentLoot `json:"equipmentLoot,omitempty"`
 	Balance       int            `json:"balance"`
+}
+
+type EquipmentLoot struct {
+	ItemInstanceID string `json:"itemInstanceId"`
+	Name           string `json:"name"`
+	Rarity         string `json:"rarity"`
+	Image          string `json:"image"`
 }
 type QuestArtifact struct {
 	ID            int            `json:"id"`

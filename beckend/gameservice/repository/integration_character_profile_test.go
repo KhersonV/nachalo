@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"gameservice/game"
 	"gameservice/repository"
-	"gameservice/service"
 )
 
 func openCharacterProfileTestDB(t *testing.T) *sql.DB {
@@ -259,7 +257,7 @@ func TestHireAndActiveSelectionUsePlayerCharacters(t *testing.T) {
 	}
 }
 
-func TestProfileReadMatchSnapshotAndFinalizeUseCharacterData(t *testing.T) {
+func TestProfileReadMatchSnapshotUsesCharacterData(t *testing.T) {
 	db := openCharacterProfileTestDB(t)
 	defer db.Close()
 
@@ -314,27 +312,6 @@ func TestProfileReadMatchSnapshotAndFinalizeUseCharacterData(t *testing.T) {
 		t.Fatalf("match snapshot did not copy profile inventory: inv=%s err=%v", string(mpInventory), err)
 	}
 
-	game.MatchStatesMu.Lock()
-	game.MatchStates[matchID] = &game.MatchState{
-		InstanceID:   matchID,
-		DamageEvents: []game.DamageEvent{{SourceType: game.ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 50}},
-	}
-	game.MatchStatesMu.Unlock()
-
-	if err := service.FinalizeMatch(matchID); err != nil {
-		t.Fatalf("FinalizeMatch: %v", err)
-	}
-
-	var expAfter int
-	if err := db.QueryRow(`SELECT exp FROM player_characters WHERE id = $1`, characterID).Scan(&expAfter); err != nil {
-		t.Fatalf("select character exp after finalize: %v", err)
-	}
-	if expAfter <= 125 {
-		t.Fatalf("expected character exp to increase, before=125 after=%d", expAfter)
-	}
-	if columnExistsForTest(t, db, "player_profiles", "experience") {
-		t.Fatalf("profile EXP column should not exist")
-	}
 }
 
 func TestSwitchingCharactersKeepsIndependentExperience(t *testing.T) {

@@ -1,10 +1,11 @@
 package repository
 
 import (
- "context"
- "database/sql"
- "encoding/json"
- "strings"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
 )
 
 type MarketStackDefinition struct {
@@ -19,6 +20,22 @@ type MarketStackDefinition struct {
  Tradable bool
  Stackable bool
  RequiredForgeLevel int
+}
+
+// Quest status belongs to a match; extracted copies of other artifact kinds
+// are ordinary account stacks and can use the existing stack market.
+func MarketArtifactDefinitions(ctx context.Context) ([]MarketStackDefinition, error) {
+ rows, err := DB.QueryContext(ctx, `SELECT id,name,COALESCE(image,'') FROM artifacts ORDER BY id`)
+ if err != nil { return nil, err }
+ defer rows.Close()
+ definitions := []MarketStackDefinition{}
+ for rows.Next() {
+  var id int
+  var name, image string
+  if err := rows.Scan(&id, &name, &image); err != nil { return nil, err }
+  definitions = append(definitions, MarketStackDefinition{InventoryKey: fmt.Sprintf("artifact_%d", id), ID: id, Code: name, Name: name, Category: "artifact", Subcategory: "artifact", Rarity: "gray", ImageURL: image, Tradable: true, Stackable: true})
+ }
+ return definitions, rows.Err()
 }
 
 // Shop catalog maps remain authoritative. Sync keeps the searchable database
@@ -65,6 +82,7 @@ func marketAddStack(ctx context.Context,tx *sql.Tx,userID int,key string,quantit
  items,err:=parseStorage(raw);if err!=nil{return err};entry:=items[key]
  if entry==nil{if err=json.Unmarshal(data,&entry);err!=nil{return err};entry["item_count"]=0;items[key]=entry}
  if marketStackEntryRestricted(entry)||marketStackVariantUnsupported(entry)||storageCount(entry)+quantity>1_000_000_000{return ErrMarketLimit}
+ if strings.HasPrefix(key,"artifact_") {var incoming map[string]any;if err=json.Unmarshal(data,&incoming);err!=nil{return err};for _,field:=range []string{"item_type","item_id","name","item_name","image","description"}{if value,ok:=incoming[field];ok{entry[field]=value}}}
  entry["item_count"]=storageCount(entry)+quantity;updated,err:=json.Marshal(items);if err!=nil{return err}
  _,err=tx.ExecContext(ctx,`UPDATE player_profiles SET inventory=$2::jsonb,updated_at=now() WHERE user_id=$1`,userID,string(updated));return err
 }

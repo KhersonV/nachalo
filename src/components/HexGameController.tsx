@@ -20,6 +20,9 @@ import { attackApproachCells } from "@/features/hexHud/approach";
 import { HexBattleShell, HexTopBar, HexHeroPanel, HexTargetPanel, HexQuestPanel, HexParticipantsPanel, HexActionBar } from "@/features/hexHud/HexHudPanels";
 import hudStyles from "@/features/hexHud/HexBattleShell.module.css";
 
+const equipmentDropNotice = (result: HexAttackResult, ownerUserId: number | undefined, label: string) =>
+  result.drops?.filter(drop => !ownerUserId || drop.ownerUserId === ownerUserId).map(drop => `${label}: ${drop.name}`).join(", ") ?? "";
+
 const HexMap3D = dynamic(() => import("./HexMap3D"), { ssr: false });
 
 type Pending = { key: string; commandId: string };
@@ -289,6 +292,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       setLastAttack(result);
       await refresh();
       record(`${kind === "player" ? t.player : t.monsterHit} ${id}: ${t.damage} ${result.damage}`, "attack", "success");
+      const dropNotice = equipmentDropNotice(result, fresh.player?.userId, t.categories.equipment);
+      if (dropNotice) record(dropNotice, "equipment", "success");
     } catch (reason) { if (!routeConfirmed) setVisualMove(null); setError(`Attack stopped: ${String(reason)}`); }
     finally { actionInFlight.current = false; setBusy(false); }
   };
@@ -310,6 +315,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       }
       await refresh();
       record(`${targetKind === "player" ? t.player : t.monsterHit} ${id}: ${t.damage} ${result.damage}, ${t.counterattack} ${result.counterDamage}${result.monsterDied || result.playerDied ? `, ${t.killed}` : ""}`, "attack", "success");
+      const dropNotice = equipmentDropNotice(result, snapshot.player?.userId, t.categories.equipment);
+      if (dropNotice) record(dropNotice, "equipment", "success");
     } catch (reason) { setError(String(reason)); } finally { actionInFlight.current = false; setBusy(false); }
   };
   const attackStructure = async () => {
@@ -425,7 +432,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       {snapshot.disconnectedPlayers?.map(player => <p role="status" className={hudStyles.notice} key={player.userId}>{formatHexMessage(t.reconnectDeadline, { userId: player.userId, seconds: Math.max(0, Math.ceil((Date.parse(player.deadline) - clockNow) / 1000)) })}</p>)}
     </div>
     {error && <p role="alert" className={`${hudStyles.feedback} ${hudStyles.error}`}>{error}</p>}
-    {inventoryOpen && <Inventory className={hudStyles.inventorySheet} onRequestClose={() => setInventoryOpen(false)} hexInventory={snapshot.player?.inventory ?? {}} onHexUseItem={useItem} onHexBlueprintPlacementStart={key => { setBlueprintKey(key); setInventoryOpen(false); setRoute(null); }} hexBusy={busy || !myTurn} hexLabels={t} />}
+    {inventoryOpen && <Inventory className={hudStyles.inventorySheet} onRequestClose={() => setInventoryOpen(false)} hexInventory={snapshot.player?.inventory ?? {}} equipmentLoot={snapshot.player?.equipmentLoot ?? []} questArtifactId={snapshot.questArtifactId} onHexUseItem={useItem} onHexBlueprintPlacementStart={key => { setBlueprintKey(key); setInventoryOpen(false); setRoute(null); }} hexBusy={busy || !myTurn} hexLabels={t} />}
     {(defeated || extracted) && <HexMatchResults snapshot={snapshot} labels={t} />}
   </div>;
 }

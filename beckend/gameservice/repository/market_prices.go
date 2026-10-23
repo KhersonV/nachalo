@@ -21,6 +21,7 @@ type MarketPriceDay struct {Day string `json:"day"`;Average float64 `json:"avera
 type MarketPriceSummaryData struct {LowestBuyout *int64 `json:"lowestBuyout"`;HighestOrder *int64 `json:"highestOrder"`;Latest *float64 `json:"latest"`;Average7 *float64 `json:"average7"`;Average30 *float64 `json:"average30"`;Units7 int64 `json:"units7"`;Units30 int64 `json:"units30"`;Days []MarketPriceDay `json:"days"`}
 func MarketPriceSummary(ctx context.Context,params url.Values)(MarketPriceSummaryData,error){result:=MarketPriceSummaryData{Days:[]MarketPriceDay{}};kind:=params.Get("kind");key:=params.Get("key");if len(key)<1||len(key)>100{return result,ErrMarketInvalid};var id int64;var err error
  if kind=="equipment"||kind=="resource"{id,err=strconv.ParseInt(key,10,64);if err!=nil||id<1{return result,ErrMarketInvalid}}else if kind!="stack"{return result,ErrMarketInvalid}
+ if kind=="resource"{var allowed bool;err=DB.QueryRowContext(ctx,`SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND tradable AND resource_kind='resource')`,id).Scan(&allowed);if err!=nil{return result,err};if !allowed{return result,ErrMarketInvalid}}
  durability,maxDurability:=-1,-1
  if params.Get("durability")!=""{durability,err=strconv.Atoi(params.Get("durability"));if err!=nil||durability<0||durability>100000{return result,ErrMarketInvalid}}
  if params.Get("maxDurability")!=""{maxDurability,err=strconv.Atoi(params.Get("maxDurability"));if err!=nil||maxDurability<0||maxDurability>100000{return result,ErrMarketInvalid}}

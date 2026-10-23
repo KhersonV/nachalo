@@ -72,7 +72,7 @@ func (r *HexAttackResult) SetCommandRevisions(state, mapRevision int64) {
 }
 
 // readHexAttackTx is the geometry adapter. All damage/class formulas remain
-// the same helpers used by square combat.go. Preview runs it read-only; the
+// the shared combat formulas. Preview runs it read-only; the
 // command calls it again after locking the matches row.
 func readHexAttackTx(ctx context.Context, tx *sql.Tx, instanceID string, userID, targetID int, requireEnergy bool, targetKind ...string) (hexAttackState, error) {
 	var out hexAttackState
@@ -494,13 +494,10 @@ func ApplyHexAttack(ctx context.Context, instanceID string, userID, targetID int
 		}
 	}
 	var drops []EquipmentDropPayload
-	if monsterDied && equipmentDropPersistenceAvailable() && RollEquipmentDropChance() {
-		item, err := repository.GrantRandomEquipmentDropForMatchTx(c.Tx, userID, instanceID)
+	if monsterDied {
+		drops, err = grantHexMonsterEquipmentDropTx(c.Tx, userID, instanceID)
 		if err != nil {
 			return out, err
-		}
-		if item != nil {
-			drops = []EquipmentDropPayload{equipmentDropPayloadFromItem(userID, item)}
 		}
 	}
 	for _, event := range hexDamageEventsFromSteps(steps, effects, map[CombatTargetRef]int{attackerRef: state.Player.Stats.Health, targetRef: state.Monster.Stats.Health}) {
@@ -605,6 +602,7 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		}
 	}
 	monsterDied := counter.Triggered && counter.NewHealth <= 0
+	var drops []EquipmentDropPayload
 	if monsterDied {
 		result, err := c.Tx.ExecContext(ctx, `DELETE FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2 AND health>0`, instanceID, monsterID)
 		if err != nil {
@@ -616,6 +614,10 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		mapChanged = true
 		steps = append(steps, CombatStep{Kind: "death", Target: monsterRef})
 		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET monster=NULL WHERE instance_id=$1 AND q=$2 AND r=$3`, instanceID, state.Monster.Position.Q, state.Monster.Position.R); err != nil {
+			return out, err
+		}
+		drops, err = grantHexMonsterEquipmentDropTx(c.Tx, playerID, instanceID)
+		if err != nil {
 			return out, err
 		}
 	} else if counter.Triggered {
@@ -643,7 +645,7 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: playerID, Distance: state.Distance, Mode: attackModeMelee, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: hit.NewHealth, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, attackModeMelee), Effects: effects, Steps: steps, AttackerPosition: state.Monster.Position, TargetPosition: state.Player.Position, AttackerHPBefore: a.Health}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: playerID, Distance: state.Distance, Mode: attackModeMelee, Energy: energy, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: hit.NewHealth, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, attackModeMelee), Effects: effects, Steps: steps, Drops: drops, AttackerPosition: state.Monster.Position, TargetPosition: state.Player.Position, AttackerHPBefore: a.Health}
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, mapChanged)
 	if err != nil {
 		return HexAttackResult{}, err

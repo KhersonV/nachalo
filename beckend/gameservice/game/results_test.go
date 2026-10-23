@@ -20,12 +20,9 @@ func TestCalculateResults_LegacyUntypedEventsDoNotGuessActorFromID(t *testing.T)
 }
 
 func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
-	const instanceID = "test-instance-results"
 	const userID = 42
 
-	MatchStatesMu.Lock()
-	MatchStates[instanceID] = &MatchState{
-		InstanceID: instanceID,
+	events := ResultEvents{
 		KillEvents: []KillEvent{
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", Damage: 99},
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", Damage: 77},
@@ -37,15 +34,8 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 			{SourceType: ResultSourceMonster, DealerID: 99, TargetType: "monster", TargetID: 2, Amount: 1000},
 		},
 	}
-	MatchStatesMu.Unlock()
 
-	t.Cleanup(func() {
-		MatchStatesMu.Lock()
-		delete(MatchStates, instanceID)
-		MatchStatesMu.Unlock()
-	})
-
-	exp, rewards, playerKills, monsterKills, dmgTotal, dmgPlayers, dmgMonsters, dmgTaken, err := CalculateResults(instanceID, userID, true)
+	exp, rewards, playerKills, monsterKills, dmgTotal, dmgPlayers, dmgMonsters, dmgTaken, err := CalculateResultsFromEvents(events, userID, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,12 +78,9 @@ func TestCalculateResults_DamageAndExpFormula(t *testing.T) {
 }
 
 func TestCalculateResults_DeduplicatesRepeatedKillEvents(t *testing.T) {
-	const instanceID = "test-instance-results-duplicate-kills"
 	const userID = 42
 
-	MatchStatesMu.Lock()
-	MatchStates[instanceID] = &MatchState{
-		InstanceID: instanceID,
+	events := ResultEvents{
 		KillEvents: []KillEvent{
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "player", VictimID: 11, Damage: 12},
@@ -103,15 +90,8 @@ func TestCalculateResults_DeduplicatesRepeatedKillEvents(t *testing.T) {
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", VictimID: 100, Damage: 20},
 		},
 	}
-	MatchStatesMu.Unlock()
 
-	t.Cleanup(func() {
-		MatchStatesMu.Lock()
-		delete(MatchStates, instanceID)
-		MatchStatesMu.Unlock()
-	})
-
-	_, _, playerKills, monsterKills, _, _, _, _, err := CalculateResults(instanceID, userID, true)
+	_, _, playerKills, monsterKills, _, _, _, _, err := CalculateResultsFromEvents(events, userID, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,12 +105,9 @@ func TestCalculateResults_DeduplicatesRepeatedKillEvents(t *testing.T) {
 }
 
 func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
-	const instanceID = "test-instance-results-dead"
 	const userID = 7
 
-	MatchStatesMu.Lock()
-	MatchStates[instanceID] = &MatchState{
-		InstanceID: instanceID,
+	events := ResultEvents{
 		KillEvents: []KillEvent{
 			{SourceType: ResultSourcePlayer, KillerID: userID, VictimType: "monster", Damage: 10},
 		},
@@ -138,15 +115,8 @@ func TestCalculateResults_NoBaseCoinsForDeadPlayer(t *testing.T) {
 			{SourceType: ResultSourcePlayer, DealerID: userID, TargetType: "monster", TargetID: 1, Amount: 10},
 		},
 	}
-	MatchStatesMu.Unlock()
 
-	t.Cleanup(func() {
-		MatchStatesMu.Lock()
-		delete(MatchStates, instanceID)
-		MatchStatesMu.Unlock()
-	})
-
-	_, rewards, _, _, _, _, _, _, err := CalculateResults(instanceID, userID, false)
+	_, rewards, _, _, _, _, _, _, err := CalculateResultsFromEvents(events, userID, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

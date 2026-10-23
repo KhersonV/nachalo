@@ -13,9 +13,6 @@ import {
     MATCHMAKING_BASE as API_MATCH,
 } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
-import { useDispatch } from "react-redux";
-import { resetState } from "../store/slices/gameSlice";
-import { clearCombatPresentation } from "../store/slices/combatPresentationSlice";
 import type {
     FriendSummary,
     GameMode,
@@ -359,7 +356,6 @@ export default function ModeSelectionPage() {
     const heroDialogRef = useRef<HTMLDialogElement>(null);
     const heroOpenerRef = useRef<HTMLButtonElement>(null);
     const heroSaveRef = useRef<Promise<void> | null>(null);
-    const dispatch = useDispatch();
     const currentPartySize = partyState?.partySize ?? 1;
     const partyRefreshInFlightRef = useRef(false);
 
@@ -644,13 +640,6 @@ export default function ModeSelectionPage() {
             setPartyBusyAction(null);
         }
     }, [mutateParty, user]);
-
-    useEffect(() => {
-        if (window.location.pathname === "/mode") {
-            dispatch(resetState());
-            dispatch(clearCombatPresentation());
-        }
-    }, [dispatch]);
 
     useEffect(() => {
         let mounted = true;

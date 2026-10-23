@@ -8,35 +8,7 @@ import (
 	"fmt"
 )
 
-// CalculateResults рассчитывает все метрики для пользователя в матче
-func CalculateResults(
-	instanceID string,
-	userID int,
-	survived bool,
-) (
-	exp int,
-	rewards []Reward,
-	playerKills int,
-	monsterKills int,
-	dmgTotal int,
-	dmgPlayers int,
-	dmgMonsters int,
-	dmgTaken int,
-	err error,
-) {
-	// 1) Достаём состояние матча
-	MatchStatesMu.RLock()
-	state, ok := MatchStates[instanceID]
-	MatchStatesMu.RUnlock()
-	if !ok {
-		return 0, nil, 0, 0, 0, 0, 0, 0, fmt.Errorf("no state for match %s", instanceID)
-	}
-
-	return CalculateResultsFromEvents(state.SnapshotResultEvents(), userID, survived)
-}
-
-// CalculateResultsFromEvents uses the same rules as CalculateResults but accepts
-// a consistent persisted snapshot instead of process-local MatchState.
+// CalculateResultsFromEvents calculates rewards from persisted match events.
 func CalculateResultsFromEvents(events ResultEvents, userID int, survived bool) (
 	exp int, rewards []Reward, playerKills int, monsterKills int,
 	dmgTotal int, dmgPlayers int, dmgMonsters int, dmgTaken int, err error,

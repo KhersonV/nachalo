@@ -82,19 +82,6 @@ func hexUser(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return userID, true
 }
 
-func rejectLegacyHexAction(w http.ResponseWriter, instanceID string) bool {
-	hex, err := repository.IsHexMatch(instanceID)
-	if err != nil {
-		http.Error(w, "match unavailable", http.StatusNotFound)
-		return true
-	}
-	if hex {
-		http.Error(w, "This Square action is unavailable in HEX; use the HEX match action", http.StatusBadRequest)
-		return true
-	}
-	return false
-}
-
 func CreateHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := hexUser(w, r)
 	if !ok {
@@ -123,8 +110,13 @@ func GetHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	snapshot, err := repository.LoadHexTestMatch(r.Context(), mux.Vars(r)["instance_id"], userID)
+	instanceID := mux.Vars(r)["instance_id"]
+	snapshot, err := repository.LoadHexTestMatch(r.Context(), instanceID, userID)
 	if err != nil {
+		if isHex, geometryErr := repository.IsHexMatch(instanceID); geometryErr == nil && !isHex {
+			http.Error(w, "This match uses a retired map and cannot be resumed", http.StatusGone)
+			return
+		}
 		http.Error(w, "HEX match unavailable", 404)
 		return
 	}

@@ -157,6 +157,23 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 			return snapshot, err
 		}
 	}
+	lootRows, err := tx.QueryContext(ctx, `SELECT ii.id::text,it.name,it.rarity,it.image_url FROM item_instances ii JOIN item_templates it ON it.id=ii.template_id WHERE ii.match_instance_id=$1 AND ii.owner_user_id=$2 AND ii.source='drop' AND ii.status='inventory' ORDER BY ii.acquired_at,ii.id`, instanceID, userID)
+	if err != nil {
+		return snapshot, err
+	}
+	for lootRows.Next() {
+		var item hexmap.EquipmentLoot
+		if err := lootRows.Scan(&item.ItemInstanceID, &item.Name, &item.Rarity, &item.Image); err != nil {
+			lootRows.Close()
+			return snapshot, err
+		}
+		player.EquipmentLoot = append(player.EquipmentLoot, item)
+	}
+	if err := lootRows.Err(); err != nil {
+		lootRows.Close()
+		return snapshot, err
+	}
+	lootRows.Close()
 	player.UserID = userID
 	snapshot.Player = &player
 	disconnectedRows, err := tx.QueryContext(ctx, `SELECT p.user_id,p.hex_disconnected_at + $2 * interval '1 second' FROM match_players p WHERE p.instance_id=$1 AND p.health>0 AND p.hex_disconnected_at IS NOT NULL AND p.user_id IN (SELECT jsonb_array_elements_text(m.turn_order)::integer FROM matches m WHERE m.instance_id=$1) ORDER BY p.user_id`, instanceID, int(HexReconnectGrace.Seconds()))

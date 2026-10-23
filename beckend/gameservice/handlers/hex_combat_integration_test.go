@@ -1,14 +1,11 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -16,43 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"auth/common"
 	"gameservice/game"
 	"gameservice/internal/hexgrid"
 	"gameservice/internal/hexmap"
 	"gameservice/repository"
-	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 )
-
-func TestHexLegacyHTTPRejectedPostgres(t *testing.T) {
-	db, _ := hexCombatDatabase(t)
-	snapshot, _ := hexCombatFixture(t, db, "guardian", 1, 20)
-	id := snapshot.InstanceID
-	for _, tc := range []struct {
-		name, body string
-		handler    http.HandlerFunc
-		vars       map[string]string
-	}{
-		{"move", `{"commandId":"legacy-move","new_pos_x":0,"new_pos_y":0}`, MoveOrAttackHandler, map[string]string{"instance_id": id, "id": "781"}},
-		{"attack", fmt.Sprintf(`{"commandId":"legacy-attack","attacker_type":"player","attacker_id":781,"target_type":"monster","target_id":1,"instance_id":%q}`, id), UniversalAttackHandler, nil},
-		{"collect", fmt.Sprintf(`{"commandId":"legacy-collect","instance_id":%q,"user_id":781,"cell_x":0,"cell_y":0}`, id), CollectResourceHandler, nil},
-		{"end-turn", fmt.Sprintf(`{"instance_id":%q,"user_id":781}`, id), EndTurnHandler, nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/legacy", bytes.NewBufferString(tc.body))
-			req = req.WithContext(context.WithValue(req.Context(), common.UserIDKey, 781))
-			if tc.vars != nil {
-				req = mux.SetURLVars(req, tc.vars)
-			}
-			response := httptest.NewRecorder()
-			tc.handler(response, req)
-			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "HEX command API") {
-				t.Fatalf("legacy status=%d body=%s", response.Code, response.Body.String())
-			}
-		})
-	}
-}
 
 func hexCombatDatabase(t *testing.T) (*sql.DB, string) {
 	t.Helper()

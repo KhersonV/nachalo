@@ -3,8 +3,6 @@ export type HeroClass = "guardian" | "ranger" | "berserker" | "mystic";
 export type HeroArtwork = {
     portrait: string;
     fullbody: string;
-    portraitPng: string;
-    fullbodyPng: string;
     gameImage: string;
     legacyUiImage: string;
 };
@@ -14,34 +12,26 @@ export const HERO_ARTWORK_FALLBACK = "/assets/ui/heroes/hero-fallback.svg";
 const ROOT = "/assets/ui/heroes";
 const artwork: Record<HeroClass, HeroArtwork> = {
     guardian: {
-        portrait: `${ROOT}/optimized/portraits/guardian.webp`,
-        fullbody: `${ROOT}/optimized/fullbody/guardian.webp`,
-        portraitPng: `${ROOT}/portraits/guardian.png`,
-        fullbodyPng: `${ROOT}/fullbody/guardian.png`,
+        portrait: `${ROOT}/portraits/guardian.webp`,
+        fullbody: `${ROOT}/fullbody/guardian.webp`,
         gameImage: "/guardian/guardian.webp",
         legacyUiImage: `${ROOT}/guardian.webp`,
     },
     ranger: {
-        portrait: `${ROOT}/optimized/portraits/ranger.webp`,
-        fullbody: `${ROOT}/optimized/fullbody/ranger.webp`,
-        portraitPng: `${ROOT}/portraits/ranger.png`,
-        fullbodyPng: `${ROOT}/fullbody/ranger.png`,
+        portrait: `${ROOT}/portraits/ranger.webp`,
+        fullbody: `${ROOT}/fullbody/ranger.webp`,
         gameImage: "/ranger/ranger.webp",
         legacyUiImage: `${ROOT}/ranger.webp`,
     },
     berserker: {
-        portrait: `${ROOT}/optimized/portraits/berserker.webp`,
-        fullbody: `${ROOT}/optimized/fullbody/berserker.webp`,
-        portraitPng: `${ROOT}/portraits/berserker.png`,
-        fullbodyPng: `${ROOT}/fullbody/berserker.png`,
+        portrait: `${ROOT}/portraits/berserker.webp`,
+        fullbody: `${ROOT}/fullbody/berserker.webp`,
         gameImage: "/berserk/berserk.webp",
         legacyUiImage: `${ROOT}/berserker.webp`,
     },
     mystic: {
-        portrait: `${ROOT}/optimized/portraits/mystic.webp`,
-        fullbody: `${ROOT}/optimized/fullbody/mystic.webp`,
-        portraitPng: `${ROOT}/portraits/mystic.png`,
-        fullbodyPng: `${ROOT}/fullbody/mystic.png`,
+        portrait: `${ROOT}/portraits/mystic.webp`,
+        fullbody: `${ROOT}/fullbody/mystic.webp`,
         gameImage: "/mag/mag.webp",
         legacyUiImage: `${ROOT}/mystic.webp`,
     },

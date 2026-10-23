@@ -3,6 +3,9 @@ export type StoredItem = {
     item_name?: string;
     item_count?: number;
     image?: string;
+    description?: string;
+    item_type?: string;
+    rarity?: string;
 };
 
 export type StorageState = {

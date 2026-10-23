@@ -165,7 +165,7 @@ func MarketCatalog(ctx context.Context,f MarketFilter)([]MarketItem,error){
  if f.MaxLevel>0{where=append(where,"level_requirement <= "+marketSQLArg(&args,f.MaxLevel))}
  q:=`SELECT kind,id,stack_key,code,name,category,subcategory,rarity,image_url,level_requirement,class_restriction,stackable,required_forge_level,attributes FROM (
  SELECT 'equipment'::text kind,id,''::text stack_key,code,name,`+marketEquipmentCategorySQL+` category,item_type subcategory,rarity,image_url,level_requirement,class_restriction,stackable,0 required_forge_level,`+marketAttributesSQL+` attributes FROM item_templates it WHERE tradable=true
- UNION ALL SELECT 'resource',id::bigint,'','resource_'||id,type,`+marketResourceCategorySQL+`,COALESCE(NULLIF(r.market_subcategory,''),r.type),'gray',COALESCE(image,''),1,NULL::text,true,0,'{}'::jsonb FROM resources r WHERE r.tradable
+ UNION ALL SELECT 'resource',id::bigint,'','resource_'||id,type,`+marketResourceCategorySQL+`,COALESCE(NULLIF(r.market_subcategory,''),r.type),'gray',COALESCE(image,''),1,NULL::text,true,0,'{}'::jsonb FROM resources r WHERE r.tradable AND r.resource_kind='resource'
  UNION ALL SELECT 'stack',catalog_id::bigint,inventory_key,code,name,category,subcategory,rarity,image_url,1,NULL::text,stackable,required_forge_level,'{}'::jsonb FROM market_stack_catalog WHERE tradable=true
  ) catalog WHERE `+strings.Join(where," AND ")+` ORDER BY name,kind,id,stack_key LIMIT `+marketSQLArg(&args,f.Limit)+` OFFSET `+marketSQLArg(&args,(f.Page-1)*f.Limit)
  rows,e:=DB.QueryContext(ctx,q,args...);if e!=nil{return nil,e};defer rows.Close();out:=[]MarketItem{}
@@ -220,7 +220,7 @@ func MarketInventory(ctx context.Context, userID int) ([]MarketItem, error) {
 			continue
 		}
 		var name, image, category, subcategory string
-        if e = DB.QueryRowContext(ctx, `SELECT type,COALESCE(image,''),COALESCE(market_category,''),COALESCE(market_subcategory,type) FROM resources WHERE id=$1 AND tradable`, id).Scan(&name, &image, &category, &subcategory); e != nil {
+        if e = DB.QueryRowContext(ctx, `SELECT type,COALESCE(image,''),COALESCE(market_category,''),COALESCE(market_subcategory,type) FROM resources WHERE id=$1 AND tradable AND resource_kind='resource'`, id).Scan(&name, &image, &category, &subcategory); e != nil {
 			continue
 		}
 		if category==""{category=marketResourceCategory(name)}
@@ -239,6 +239,8 @@ const marketAuctionCategorySQL = "CASE WHEN a.item_kind='stack' THEN sc.category
 const marketOrderCategorySQL = "CASE WHEN o.item_kind='stack' THEN sc.category WHEN o.item_kind='resource' THEN "+marketResourceCategorySQL+" ELSE "+marketEquipmentCategorySQL+" END"
 func MarketAuctions(ctx context.Context,userID int,scope string,f MarketFilter)([]MarketAuction,error){
  if err:=f.Validate();err!=nil{return nil,err};args:=[]any{};where:=[]string{"true"}
+ // Keep legacy escrow visible to its owner for cancellation; hide it from public listings.
+ if scope=="all"{where=append(where,"(a.item_kind<>'resource' OR EXISTS(SELECT 1 FROM resources eligible WHERE eligible.id=a.resource_id AND eligible.tradable AND eligible.resource_kind='resource'))")}
  if f.ItemKind!=""{where=append(where,"a.item_kind="+marketSQLArg(&args,f.ItemKind));if f.ItemKind=="stack"{where=append(where,"a.stack_key="+marketSQLArg(&args,f.ItemKey))}else if f.ItemKind=="resource"{where=append(where,"a.resource_id::text="+marketSQLArg(&args,f.ItemKey))}else{where=append(where,"ii.template_id::text="+marketSQLArg(&args,f.ItemKey))}}
  if scope=="related"{if f.TargetID<=0{return nil,ErrMarketInvalid};where=append(where,"a.id="+marketSQLArg(&args,f.TargetID),"(a.seller_user_id="+marketSQLArg(&args,userID)+" OR a.highest_bidder_user_id="+marketSQLArg(&args,userID)+" OR EXISTS(SELECT 1 FROM market_bids mb WHERE mb.auction_id=a.id AND mb.bidder_user_id="+marketSQLArg(&args,userID)+") OR EXISTS(SELECT 1 FROM market_transactions t WHERE t.auction_id=a.id AND t.buyer_user_id="+marketSQLArg(&args,userID)+"))")}else if scope=="mine"{where=append(where,"a.seller_user_id="+marketSQLArg(&args,userID))}else if scope=="bids"{where=append(where,"EXISTS(SELECT 1 FROM market_bids b WHERE b.auction_id=a.id AND b.bidder_user_id="+marketSQLArg(&args,userID)+")")}else{where=append(where,"a.status='active' AND a.expires_at>clock_timestamp()")}
  if f.Status!=""{if scope=="all"||f.Status!="active"&&f.Status!="sold"&&f.Status!="expired"&&f.Status!="cancelled"{return nil,ErrMarketInvalid};where=append(where,"a.status="+marketSQLArg(&args,f.Status))}
@@ -259,6 +261,8 @@ func MarketAuctions(ctx context.Context,userID int,scope string,f MarketFilter)(
 }
 func MarketOrders(ctx context.Context,userID int,scope string,f MarketFilter)([]MarketOrder,error){
  if err:=f.Validate();err!=nil{return nil,err};args:=[]any{};where:=[]string{"true"}
+ // Owners can still see and cancel legacy orders to recover their reserved gold.
+ if scope=="all"{where=append(where,"(o.item_kind<>'resource' OR EXISTS(SELECT 1 FROM resources eligible WHERE eligible.id=o.resource_id AND eligible.tradable AND eligible.resource_kind='resource'))")}
  if f.ItemKind!=""{where=append(where,"o.item_kind="+marketSQLArg(&args,f.ItemKind));if f.ItemKind=="stack"{where=append(where,"o.stack_key="+marketSQLArg(&args,f.ItemKey))}else if f.ItemKind=="resource"{where=append(where,"o.resource_id::text="+marketSQLArg(&args,f.ItemKey))}else{where=append(where,"o.template_id::text="+marketSQLArg(&args,f.ItemKey))}}
  if scope=="related"{if f.TargetID<=0{return nil,ErrMarketInvalid};where=append(where,"o.id="+marketSQLArg(&args,f.TargetID),"(o.buyer_user_id="+marketSQLArg(&args,userID)+" OR EXISTS(SELECT 1 FROM market_fills mf WHERE mf.order_id=o.id AND mf.seller_user_id="+marketSQLArg(&args,userID)+"))")}else if scope=="mine"{where=append(where,"o.buyer_user_id="+marketSQLArg(&args,userID))}else{where=append(where,"o.status IN ('open','partially_filled') AND o.expires_at>clock_timestamp()")}
  if f.Status!=""{if scope=="all"||f.Status!="open"&&f.Status!="partially_filled"&&f.Status!="filled"&&f.Status!="expired"&&f.Status!="cancelled"{return nil,ErrMarketInvalid};where=append(where,"o.status="+marketSQLArg(&args,f.Status))}
@@ -309,7 +313,7 @@ type MarketCategoryOption struct {Category string `json:"category"`;Subcategory 
 func MarketCategories(ctx context.Context)([]MarketCategoryOption,error){
  q:=`SELECT DISTINCT category,subcategory FROM (
  SELECT `+marketEquipmentCategorySQL+` category,it.item_type subcategory FROM item_templates it WHERE it.tradable
- UNION ALL SELECT `+marketResourceCategorySQL+`,COALESCE(NULLIF(r.market_subcategory,''),r.type) FROM resources r WHERE r.tradable
+ UNION ALL SELECT `+marketResourceCategorySQL+`,COALESCE(NULLIF(r.market_subcategory,''),r.type) FROM resources r WHERE r.tradable AND r.resource_kind='resource'
  UNION ALL SELECT category,subcategory FROM market_stack_catalog WHERE tradable
  ) c ORDER BY category,subcategory`
  rows,e:=DB.QueryContext(ctx,q);if e!=nil{return nil,e};defer rows.Close();options:=[]MarketCategoryOption{}

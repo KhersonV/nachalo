@@ -32,7 +32,7 @@ func GetResourceByType(resourceType string) (*game.ResourceData, error) {
 	var rd game.ResourceData
 	var effectValue any
 	err := DB.QueryRow(
-		`SELECT id, type, description, effect, image FROM resources WHERE type = $1 LIMIT 1`,
+		`SELECT id, type, description, effect, image FROM resources WHERE type = $1 AND resource_kind='resource' LIMIT 1`,
 		resourceType,
 	).Scan(&rd.ID, &rd.Type, &rd.Description, &effectValue, &rd.Image)
 	if err != nil {
@@ -52,7 +52,7 @@ func GetResourceByType(resourceType string) (*game.ResourceData, error) {
 // GetResourceTypeByID returns canonical resource type (food, water, wood, etc.) by resource ID.
 func GetResourceTypeByID(resourceID int) (string, error) {
 	var resourceType string
-	err := DB.QueryRow(`SELECT type FROM resources WHERE id = $1 LIMIT 1`, resourceID).Scan(&resourceType)
+	err := DB.QueryRow(`SELECT type FROM resources WHERE id = $1 AND resource_kind='resource' LIMIT 1`, resourceID).Scan(&resourceType)
 	if err != nil {
 		return "", fmt.Errorf("GetResourceTypeByID: %w", err)
 	}
@@ -63,7 +63,8 @@ func GetResourceTypeByID(resourceID int) (string, error) {
 // и возвращает срез game.ResourceData.
 func GetResourcesData() ([]game.ResourceData, error) {
 	var resources []game.ResourceData
-	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources`)
+	// The HEX generator still needs the barrel record as a map object.
+	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources WHERE resource_kind='resource' OR type IN ('barrel','barbel')`)
 	if err != nil {
 		return nil, err
 	}
@@ -132,4 +133,3 @@ func GetArtifactsData() ([]game.ResourceData, error) {
     }
     return arts, nil
 }
-

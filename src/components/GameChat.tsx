@@ -74,7 +74,7 @@ export default function GameChat() {
     const text = labels[language];
     const emoteText = emoteLabels[language];
     const match = pathname === "/game";
-    const visible = Boolean(user && (match || ["/mode", "/base", "/equipment", "/shop", "/market", "/profile", "/matches"].some(path => pathname === path || pathname.startsWith(path + "/"))));
+    const visible = Boolean(user && (match || ["/mode", "/base", "/equipment", "/professions", "/shop", "/market", "/profile", "/matches"].some(path => pathname === path || pathname.startsWith(path + "/"))));
     const [expanded, setExpanded] = useState(false);
     const [channel, setChannel] = useState<Channel>("MAIN");
     const [privateView, setPrivateView] = useState<ChatConversation | null>(null);

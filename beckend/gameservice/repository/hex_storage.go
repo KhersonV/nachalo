@@ -151,7 +151,7 @@ func allowedHexLoadoutKeyTx(ctx context.Context, tx storageQuerier, key string) 
 		return false
 	}
 	var resourceType, effect string
-	if err := tx.QueryRowContext(ctx, `SELECT type,COALESCE(effect,'{}') FROM resources WHERE id=$1`, id).Scan(&resourceType, &effect); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT type,COALESCE(effect,'{}') FROM resources WHERE id=$1 AND resource_kind='resource'`, id).Scan(&resourceType, &effect); err != nil {
 		return false
 	}
 	resourceType = strings.ToLower(strings.TrimSpace(resourceType))
@@ -315,6 +315,13 @@ func PurchaseStorageItem(ctx context.Context, userID int, key string, count, tot
 		return err
 	}
 	defer tx.Rollback()
+	if strings.HasPrefix(key, "resource_") {
+		id, parseErr := strconv.Atoi(strings.TrimPrefix(key, "resource_"))
+		if parseErr != nil || id <= 0 { return ErrLoadoutInvalid }
+		var allowed bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND resource_kind='resource')`, id).Scan(&allowed); err != nil { return err }
+		if !allowed { return ErrLoadoutInvalid }
+	}
 	var inventoryRaw []byte
 	var balance int
 	if err := tx.QueryRowContext(ctx, `SELECT inventory,balance FROM player_profiles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&inventoryRaw, &balance); err != nil {

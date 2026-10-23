@@ -85,6 +85,13 @@ func progressHexTurretsTx(ctx context.Context, c *MatchCommand) (bool, error) {
 	rows.Close()
 	changed := false
 	for _, t := range all {
+		var matchFinished bool
+		if err := c.Tx.QueryRowContext(ctx, `SELECT finished_at IS NOT NULL FROM matches WHERE instance_id=$1`, c.InstanceID).Scan(&matchFinished); err != nil {
+			return false, err
+		}
+		if matchFinished {
+			break
+		}
 		if t.attack == 0 {
 			t.attack = 15
 		}
@@ -96,6 +103,12 @@ func progressHexTurretsTx(ctx context.Context, c *MatchCommand) (bool, error) {
 		}
 		var ownerGroup int
 		if err := c.Tx.QueryRowContext(ctx, `SELECT group_id FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, t.owner).Scan(&ownerGroup); err != nil {
+			return false, err
+		}
+		// Turrets may keep firing after their owner dies or extracts. Such shots
+		// cannot add rewards to a result that has already been finalized.
+		var ownerEligible bool
+		if err := c.Tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM match_players p WHERE p.instance_id=$1 AND p.user_id=$2 AND p.health>0 AND NOT EXISTS(SELECT 1 FROM hex_player_results r WHERE r.instance_id=p.instance_id AND r.user_id=p.user_id))`, c.InstanceID, t.owner).Scan(&ownerEligible); err != nil {
 			return false, err
 		}
 		targetFound := false
@@ -172,19 +185,37 @@ func progressHexTurretsTx(ctx context.Context, c *MatchCommand) (bool, error) {
 			if monsterTarget {
 				targetType = "monster"
 			}
-			if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: t.owner, TargetType: targetType, TargetID: selected.id, Amount: selected.health - newHealth}); err != nil {
+			damageSource, damageDealer := game.ResultSourcePlayer, t.owner
+			if monsterTarget && !ownerEligible {
+				damageSource, damageDealer = game.ResultSourceEnvironment, 0
+			}
+			if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: damageSource, DealerID: damageDealer, TargetType: targetType, TargetID: selected.id, Amount: selected.health - newHealth}); err != nil {
 				return false, err
 			}
 			if monsterTarget {
 				if newHealth == 0 {
-					if _, err := c.RecordKillEventTx(ctx, game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: t.owner, VictimType: "monster", VictimID: selected.id, Damage: damage}); err != nil {
+					recorded, err := c.RecordKillEventTx(ctx, game.KillEvent{SourceType: damageSource, KillerID: damageDealer, VictimType: "monster", VictimID: selected.id, Damage: damage})
+					if err != nil {
 						return false, err
 					}
-					if _, err := c.Tx.ExecContext(ctx, `DELETE FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2`, c.InstanceID, selected.id); err != nil {
+					removed, err := c.Tx.ExecContext(ctx, `DELETE FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2 AND health>0`, c.InstanceID, selected.id)
+					if err != nil {
 						return false, err
+					}
+					count, err := removed.RowsAffected()
+					if err != nil {
+						return false, err
+					}
+					if count != 1 {
+						return false, ErrCommandRejected
 					}
 					if _, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET monster=NULL WHERE instance_id=$1 AND q=$2 AND r=$3`, c.InstanceID, selected.pos.Q, selected.pos.R); err != nil {
 						return false, err
+					}
+					if recorded && ownerEligible && RollEquipmentDropChance() {
+						if _, err := GrantRandomEquipmentDropForMatchTx(c.Tx, t.owner, c.InstanceID); err != nil {
+							return false, err
+						}
 					}
 				} else {
 					if _, err := c.Tx.ExecContext(ctx, `UPDATE match_monsters SET health=$3 WHERE instance_id=$1 AND monster_instance_id=$2`, c.InstanceID, selected.id, newHealth); err != nil {

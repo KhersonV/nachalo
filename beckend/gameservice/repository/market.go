@@ -110,7 +110,15 @@ func marketCredit(ctx context.Context, tx *sql.Tx, id int, amount int64) error {
     return nil
 }
 func marketResourceKey(id int) string { return "resource_" + strconv.Itoa(id) }
+func marketResourceAllowed(ctx context.Context, tx *sql.Tx, resourceID int) (bool, error) {
+	var allowed bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND tradable AND resource_kind='resource')`, resourceID).Scan(&allowed)
+	return allowed, err
+}
 func marketTakeResource(ctx context.Context, tx *sql.Tx, userID, resourceID, quantity int) ([]byte, error) {
+	allowed, err := marketResourceAllowed(ctx, tx, resourceID)
+	if err != nil { return nil, err }
+	if !allowed { return nil, ErrMarketInvalid }
 	var raw []byte
 	if err := tx.QueryRowContext(ctx, `SELECT inventory FROM player_profiles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&raw); err != nil {
 		return nil, err
@@ -123,13 +131,6 @@ func marketTakeResource(ctx context.Context, tx *sql.Tx, userID, resourceID, qua
 	entry := items[key]
 	if storageCount(entry) < quantity || marketStackEntryRestricted(entry) {
 		return nil, ErrMarketInventory
-	}
-	var exists bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND tradable)`, resourceID).Scan(&exists); err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, ErrMarketInvalid
 	}
 	copyEntry := map[string]any{}
 	for k, v := range entry {
@@ -154,6 +155,10 @@ func marketTakeResource(ctx context.Context, tx *sql.Tx, userID, resourceID, qua
 	return asset, err
 }
 func marketAddResource(ctx context.Context, tx *sql.Tx, userID, resourceID, quantity int, asset []byte) error {
+	// Keep legacy map-object deliveries in escrow instead of adding them to Storage.
+	allowed, err := marketResourceAllowed(ctx, tx, resourceID)
+	if err != nil { return err }
+	if !allowed { return ErrMarketInvalid }
 	var raw []byte
 	if err := tx.QueryRowContext(ctx, `SELECT inventory FROM player_profiles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&raw); err != nil {
 		return err
@@ -328,6 +333,11 @@ func marketAuctionReturn(ctx context.Context, tx *sql.Tx, a marketAuctionLock) e
 	return marketDelivery(ctx, tx, a.Seller, a.Kind, a.Instance, a.StackKey, a.ResourceID, a.Quantity, a.Asset)
 }
 func marketSettleAuction(ctx context.Context, tx *sql.Tx, a marketAuctionLock, recipient int, gross int64, refundBid bool) error {
+	if a.Kind == "resource" {
+		allowed, err := marketResourceAllowed(ctx, tx, a.ResourceID)
+		if err != nil { return err }
+		if !allowed { return ErrMarketUnavailable }
+	}
 	if recipient == a.Seller {
 		return ErrMarketForbidden
 	}
@@ -390,6 +400,11 @@ func MarketBid(ctx context.Context, userID int, key string, id, amount int64) (r
 	if e != nil {
 		return 0, e
 	}
+	if a.Kind == "resource" {
+		allowed, checkErr := marketResourceAllowed(ctx, tx, a.ResourceID)
+		if checkErr != nil { return 0, checkErr }
+		if !allowed { return 0, ErrMarketUnavailable }
+	}
 	if a.Status != "active" || a.Expired {
 		return 0, ErrMarketUnavailable
 	}
@@ -451,6 +466,11 @@ func MarketBuyout(ctx context.Context, userID int, key string, id int64) (result
 	a, e := lockAuction(ctx, tx, id)
 	if e != nil {
 		return 0, e
+	}
+	if a.Kind == "resource" {
+		allowed, checkErr := marketResourceAllowed(ctx, tx, a.ResourceID)
+		if checkErr != nil { return 0, checkErr }
+		if !allowed { return 0, ErrMarketUnavailable }
 	}
 	if a.Status != "active" || a.Expired || !a.Buyout.Valid {return 0,ErrMarketUnavailable};if !validMarketAmount(a.Buyout.Int64,1){return 0,ErrMarketInvalid}
 	if a.Seller == userID {
@@ -541,6 +561,12 @@ func marketExpireAuction(ctx context.Context, id int64) error {
 	if a.Status != "active" || !a.Expired {
 		return tx.Commit()
 	}
+	invalidResource := false
+	if a.Kind == "resource" {
+		allowed, checkErr := marketResourceAllowed(ctx, tx, a.ResourceID)
+		if checkErr != nil { return checkErr }
+		invalidResource = !allowed
+	}
 	if a.Kind == "equipment" {
 		var status string
 		if e = tx.QueryRowContext(ctx, `SELECT status FROM item_instances WHERE id=$1::uuid FOR UPDATE`, a.Instance).Scan(&status); e != nil {
@@ -551,10 +577,11 @@ func marketExpireAuction(ctx context.Context, id int64) error {
 		}
 	}
 	if a.Bidder.Valid {
-        eligibilityErr:=marketPurchaseEligible(ctx,tx,int(a.Bidder.Int64),a.Kind,a.StackKey)
-        if eligibilityErr!=nil || a.Highest.Int64<=marketFee(a.Highest.Int64) {
+        var eligibilityErr error
+        if !invalidResource { eligibilityErr=marketPurchaseEligible(ctx,tx,int(a.Bidder.Int64),a.Kind,a.StackKey) }
+        if invalidResource || eligibilityErr!=nil || a.Highest.Int64<=marketFee(a.Highest.Int64) {
             var requirement *MarketPurchaseRequirementError
-            if eligibilityErr!=nil&&!errors.As(eligibilityErr,&requirement){return eligibilityErr}
+			if eligibilityErr!=nil&&!errors.As(eligibilityErr,&requirement){return eligibilityErr}
             if _,e=marketProfiles(ctx,tx,a.Seller,int(a.Bidder.Int64));e!=nil{return e}
             if e=marketCredit(ctx,tx,int(a.Bidder.Int64),a.Highest.Int64);e!=nil{return e}
             if e=marketNotice(ctx,tx,int(a.Bidder.Int64),fmt.Sprintf("auction:%d:bid_refunded",a.ID),"Аукцион завершён без продажи. Ваша ставка возвращена.","auction",a.ID);e!=nil{return e}
@@ -594,7 +621,7 @@ func MarketCreateOrder(ctx context.Context, userID int, key string, resourceID, 
 	}
 	var count int
 	var exists bool
-	if e = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND tradable)`, resourceID).Scan(&exists); e != nil {
+	if exists, e = marketResourceAllowed(ctx, tx, resourceID); e != nil {
 		return 0, e
 	}
 	if !exists {
@@ -657,6 +684,11 @@ func MarketFulfillOrder(ctx context.Context, userID int, key string, id int64, q
 	o, e := lockOrder(ctx, tx, id)
 	if e != nil {
 		return 0, e
+	}
+	if o.Kind == "resource" {
+		allowed, checkErr := marketResourceAllowed(ctx, tx, o.ResourceID)
+		if checkErr != nil { return 0, checkErr }
+		if !allowed { return 0, ErrMarketUnavailable }
 	}
 	if o.Buyer == userID {
 		return 0, ErrMarketForbidden

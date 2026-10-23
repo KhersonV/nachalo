@@ -5,12 +5,12 @@ import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 
 const MODE_ART: Record<GameMode, string> = {
-    PVE: "/assets/ui/optimized/lone_hero_before_the_burning_fortress.webp",
-    "1x1": "/assets/ui/optimized/moonlit_duel_arena_of_twin_fortresses.webp",
-    "1x2": "/assets/ui/optimized/a_hero_against_two_dark_lords.webp",
-    "2x2": "/assets/ui/optimized/cinematic_2v2_duel_on_a_ruined_bridge.webp",
-    "3x3": "/assets/ui/optimized/siege_of_the_moonlit_fortress.webp",
-    "5x5": "/assets/ui/optimized/citadel_siege_beneath_stormy_skies.webp",
+    PVE: "/assets/ui/marketing/lone_hero_before_the_burning_fortress.webp",
+    "1x1": "/assets/ui/marketing/moonlit_duel_arena_of_twin_fortresses.webp",
+    "1x2": "/assets/ui/marketing/a_hero_against_two_dark_lords.webp",
+    "2x2": "/assets/ui/marketing/cinematic_2v2_duel_on_a_ruined_bridge.webp",
+    "3x3": "/assets/ui/marketing/siege_of_the_moonlit_fortress.webp",
+    "5x5": "/assets/ui/marketing/citadel_siege_beneath_stormy_skies.webp",
 };
 
 type Props = {

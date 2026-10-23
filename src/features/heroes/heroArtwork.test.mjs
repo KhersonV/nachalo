@@ -14,21 +14,18 @@ import {
 const classes = ['guardian', 'ranger', 'berserker', 'mystic'];
 const assetFile = (url) => join(process.cwd(), 'public', url.slice(1));
 
-test('every class resolves distinct portrait, fullbody, originals, and game image', () => {
+test('every class resolves distinct portrait, fullbody, and game image', () => {
     for (const heroClass of classes) {
         const entry = getHeroArtwork(heroClass);
         assert.equal(getHeroPortrait(heroClass), entry.portrait);
         assert.equal(getHeroFullbody(heroClass), entry.fullbody);
         assert.equal(getHeroGameImage(heroClass), entry.gameImage);
-        for (const key of ['portrait', 'fullbody', 'portraitPng', 'fullbodyPng']) {
+        for (const key of ['portrait', 'fullbody']) {
             const path = assetFile(entry[key]);
             assert.ok(statSync(path).size > 0, `${heroClass} ${key} exists`);
-            if (key === 'portrait' || key === 'fullbody') {
-                const header = readFileSync(path).subarray(0, 12);
-                assert.equal(header.toString('ascii', 0, 4), 'RIFF');
-                assert.equal(header.toString('ascii', 8, 12), 'WEBP');
-                assert.ok(statSync(path).size < statSync(assetFile(entry[`${key}Png`])).size);
-            }
+            const header = readFileSync(path).subarray(0, 12);
+            assert.equal(header.toString('ascii', 0, 4), 'RIFF');
+            assert.equal(header.toString('ascii', 8, 12), 'WEBP');
         }
     }
     assert.equal(new Set(classes.map(heroClass => getHeroPortrait(heroClass))).size, 4);

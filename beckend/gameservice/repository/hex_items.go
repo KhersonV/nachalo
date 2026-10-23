@@ -156,10 +156,14 @@ func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandI
 		}
 		out.ItemID, out.ItemName, out.Health = value.ID, value.Type, health
 		if out.ItemType == "artifact" && value.ID == questID && !questSpawned {
-			out.QuestFound = true
-			if _, err := c.Tx.ExecContext(ctx, `UPDATE matches SET hex_quest_spawned=true WHERE instance_id=$1 AND hex_quest_spawned=false`, instanceID); err != nil {
+			claimed, err := c.Tx.ExecContext(ctx, `UPDATE matches SET hex_quest_spawned=true WHERE instance_id=$1 AND hex_quest_spawned=false`, instanceID)
+			if err != nil {
 				return out, err
 			}
+			if n, _ := claimed.RowsAffected(); n != 1 {
+				return out, ErrCommandRejected
+			}
+			out.QuestFound = true
 		}
 		inventory, err := AddInventoryItemTx(c.Tx, instanceID, userID, out.ItemType, value.ID, value.Type, value.Image, value.Description, 1)
 		if err != nil {
@@ -197,9 +201,8 @@ func rollHexQuestBarrel(barrel game.ResourceData, resources, artifacts []game.Re
 	for _, artifact := range artifacts {
 		if artifact.ID == questID {
 			quest = artifact
-			if spawned {
-				continue
-			}
+			// The chosen kind is reserved for the single guaranteed quest drop.
+			continue
 		}
 		filtered = append(filtered, artifact)
 	}
@@ -213,7 +216,7 @@ func rollHexQuestBarrel(barrel game.ResourceData, resources, artifacts []game.Re
 }
 
 func getHexResourcesTx(ctx context.Context, tx *sql.Tx) ([]game.ResourceData, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id,type,description,effect,image FROM resources`)
+	rows, err := tx.QueryContext(ctx, `SELECT id,type,description,effect,image FROM resources WHERE resource_kind='resource'`)
 	if err != nil {
 		return nil, err
 	}
