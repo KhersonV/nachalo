@@ -17,7 +17,7 @@ import (
 
 var ErrHexUnavailable = errors.New("HEX test match unavailable")
 var ErrHexBlocked = errors.New("HEX cell or route is blocked")
-var ErrHexEnergy = errors.New("not enough energy")
+var ErrHexEnergy = errors.New("insufficient action budget")
 
 // CreateHexTestMatch uses the existing account, selected hero and equipment
 // calculations. The entire match/map/player/monster materialization is one Tx.
@@ -144,8 +144,8 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	cellRows.Close()
 	var player hexmap.Player
 	var inventoryRaw []byte
-	err = tx.QueryRowContext(ctx, `SELECT p.name,p.position_q,p.position_r,p.energy,p.max_energy,p.health,p.max_health,p.mobility,p.agility,p.character_type,p.is_ranged,p.attack_range,p.inventory,p.group_id,profile.balance FROM match_players p JOIN player_profiles profile ON profile.user_id=p.user_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).
-		Scan(&player.Name, &player.Position.Q, &player.Position.R, &player.Energy, &player.MaxEnergy, &player.Health, &player.MaxHealth, &player.Mobility, &player.Agility, &player.CharacterType, &player.IsRanged, &player.AttackRange, &inventoryRaw, &player.TeamID, &player.Balance)
+	err = tx.QueryRowContext(ctx, `SELECT p.name,p.position_q,p.position_r,p.health,p.max_health,p.mobility,p.agility,p.character_type,p.is_ranged,p.attack_range,p.inventory,p.group_id,profile.balance FROM match_players p JOIN player_profiles profile ON profile.user_id=p.user_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).
+		Scan(&player.Name, &player.Position.Q, &player.Position.R, &player.Health, &player.MaxHealth, &player.Mobility, &player.Agility, &player.CharacterType, &player.IsRanged, &player.AttackRange, &inventoryRaw, &player.TeamID, &player.Balance)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return snapshot, ErrHexUnavailable
@@ -157,13 +157,38 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 			return snapshot, err
 		}
 	}
-	lootRows, err := tx.QueryContext(ctx, `SELECT ii.id::text,it.name,it.rarity,it.image_url FROM item_instances ii JOIN item_templates it ON it.id=ii.template_id WHERE ii.match_instance_id=$1 AND ii.owner_user_id=$2 AND ii.source='drop' AND ii.status='inventory' ORDER BY ii.acquired_at,ii.id`, instanceID, userID)
+	_, player.PocketCapacity, player.PocketsUsed, err = matchPocketStateTx(ctx, tx, instanceID, userID)
+	if err != nil {
+		return snapshot, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT craft_status FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&player.ConsumableStatus); err != nil {
+		return snapshot, err
+	}
+	player.ProfessionGatherLimit = ProfessionGatherLimit
+	if err := tx.QueryRowContext(ctx, `SELECT p.profession_unlocked,p.profession_gather_count,COALESCE(cp.gathering_level,1) FROM match_players p LEFT JOIN character_professions cp ON cp.character_id=p.character_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).Scan(&player.ProfessionUnlocked, &player.ProfessionGatherCount, &player.ProfessionLevel); err != nil {
+		return snapshot, err
+	}
+	budget, err := ReadHexBudgetsTx(ctx, tx, instanceID, userID)
+	if err != nil {
+		return snapshot, err
+	}
+	player.AP, player.MaxAP, player.MP, player.MaxMP = budget.AP, budget.MaxAP, budget.MP, budget.MaxMP
+	player.Reactions, player.MaxReactions = budget.Reactions, budget.MaxReactions
+	player.PersonalTurn, player.WaterAvailableTurn = budget.PersonalTurn, budget.WaterAvailableTurn
+	player.MPDrain, player.OverloadCount, player.OverloadTarget = budget.MPDrain, budget.OverloadCount, budget.OverloadTarget
+	player.AuraSlowUsed = budget.AuraSlowUsed
+	player.InGuardianAura = budget.InGuardianAura
+	player.MysticReflexUsed = budget.MysticReflexUsed
+	if err := tx.QueryRowContext(ctx, `SELECT sight_range FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&player.SightRange); err != nil {
+		return snapshot, err
+	}
+	lootRows, err := tx.QueryContext(ctx, `SELECT ii.id::text,it.name,it.rarity,it.image_url,`+equipmentPocketBonusSQL+` FROM item_instances ii JOIN item_templates it ON it.id=ii.template_id WHERE ii.match_instance_id=$1 AND ii.owner_user_id=$2 AND ii.source='drop' AND ii.status='inventory' ORDER BY ii.acquired_at,ii.id`, instanceID, userID)
 	if err != nil {
 		return snapshot, err
 	}
 	for lootRows.Next() {
 		var item hexmap.EquipmentLoot
-		if err := lootRows.Scan(&item.ItemInstanceID, &item.Name, &item.Rarity, &item.Image); err != nil {
+		if err := lootRows.Scan(&item.ItemInstanceID, &item.Name, &item.Rarity, &item.Image, &item.PocketBonus); err != nil {
 			lootRows.Close()
 			return snapshot, err
 		}
@@ -207,13 +232,13 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		snapshot.Starts = []hexmap.Start{{UserID: userID, TeamID: 1, Position: startPositions[0]}}
 	}
 	snapshot.Actors = []hexmap.Actor{}
-	playerRows, err := tx.QueryContext(ctx, `SELECT user_id,name,group_id,position_q,position_r,health,max_health FROM match_players WHERE instance_id=$1 AND health>0 ORDER BY user_id`, instanceID)
+	playerRows, err := tx.QueryContext(ctx, `SELECT user_id,name,group_id,position_q,position_r,health,max_health,hex_armor_break_owner,hex_armor_break_stacks,hex_mp_drain FROM match_players WHERE instance_id=$1 AND health>0 ORDER BY user_id`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
 	for playerRows.Next() {
 		var actor hexmap.Actor
-		if err := playerRows.Scan(&actor.UserID, &actor.Name, &actor.TeamID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth); err != nil {
+		if err := playerRows.Scan(&actor.UserID, &actor.Name, &actor.TeamID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.ArmorBreakOwner, &actor.ArmorBreakStacks, &actor.MPDrain); err != nil {
 			playerRows.Close()
 			return snapshot, err
 		}
@@ -225,14 +250,14 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		return snapshot, err
 	}
 	playerRows.Close()
-	rows, err := tx.QueryContext(ctx, `SELECT mm.monster_instance_id,mm.monster_ref_id,mm.pos_q,mm.pos_r,mm.health,mm.max_health,mm.attack,mm.defense,mm.speed,mm.maneuverability,mm.vision,mm.image,COALESCE(m.name,''),COALESCE(m.type,'') FROM match_monsters mm LEFT JOIN monsters m ON m.id=mm.monster_ref_id WHERE mm.instance_id=$1 AND mm.health>0 ORDER BY mm.monster_instance_id`, instanceID)
+	rows, err := tx.QueryContext(ctx, `SELECT mm.monster_instance_id,mm.monster_ref_id,mm.pos_q,mm.pos_r,mm.health,mm.max_health,mm.attack,mm.defense,mm.speed,mm.maneuverability,mm.vision,mm.image,COALESCE(m.name,''),COALESCE(m.type,''),mm.hex_armor_break_owner,mm.hex_armor_break_stacks FROM match_monsters mm LEFT JOIN monsters m ON m.id=mm.monster_ref_id WHERE mm.instance_id=$1 AND mm.health>0 ORDER BY mm.monster_instance_id`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
 	for rows.Next() {
 		var actor hexmap.Actor
 		var id int
-		if err := rows.Scan(&id, &actor.MonsterRefID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.Attack, &actor.Defense, &actor.Speed, &actor.Maneuverability, &actor.Vision, &actor.Image, &actor.Name, &actor.Type); err != nil {
+		if err := rows.Scan(&id, &actor.MonsterRefID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.Attack, &actor.Defense, &actor.Speed, &actor.Maneuverability, &actor.Vision, &actor.Image, &actor.Name, &actor.Type, &actor.ArmorBreakOwner, &actor.ArmorBreakStacks); err != nil {
 			rows.Close()
 			return snapshot, err
 		}
@@ -260,7 +285,7 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	}
 	// The generator seed is enough to reconstruct the undiscovered dungeon.
 	snapshot.Seed = 0
-	rows, err := tx.QueryContext(ctx, `SELECT p.position_q,p.position_r,p.hex_explored,COALESCE(s.has_scout_tower_bonus,false) FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.group_id=$2 AND p.health>0 ORDER BY p.user_id`, snapshot.InstanceID, snapshot.Player.TeamID)
+	rows, err := tx.QueryContext(ctx, `SELECT p.position_q,p.position_r,p.hex_explored,p.sight_range FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.group_id=$2 AND p.health>0 ORDER BY p.user_id`, snapshot.InstanceID, snapshot.Player.TeamID)
 	if err != nil {
 		return err
 	}
@@ -270,13 +295,13 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	for rows.Next() {
 		var pos hexgrid.Coord
 		var raw []byte
-		var bonus bool
-		if err := rows.Scan(&pos.Q, &pos.R, &raw, &bonus); err != nil {
+		var sight int
+		if err := rows.Scan(&pos.Q, &pos.R, &raw, &sight); err != nil {
 			rows.Close()
 			return err
 		}
 		positions = append(positions, pos)
-		radii[pos] = hexSightRadius(bonus)
+		radii[pos] = sight
 		var saved []hexgrid.Coord
 		if err := json.Unmarshal(raw, &saved); err != nil {
 			rows.Close()
@@ -293,7 +318,7 @@ func filterHexSnapshotTx(ctx context.Context, tx *sql.Tx, snapshot *hexmap.Snaps
 	rows.Close()
 	if len(positions) == 0 {
 		positions = append(positions, snapshot.Player.Position)
-		radii[snapshot.Player.Position] = hexVisionRadius()
+		radii[snapshot.Player.Position] = snapshot.Player.SightRange
 	}
 	visible := hexVisibleWithRadii(positions, radii, snapshot.Cells, snapshot.Edges)
 	discoveredRock := hexDiscoveredRock(positions, radii, snapshot.Cells, visible)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,6 +9,7 @@ import { API_BASE, MATCHMAKING_BASE, WS_URL } from "@/utils/serviceUrls";
 import OnlinePlayersPanel, { type OnlinePlayer } from "@/components/OnlinePlayersPanel";
 import ChatEmoteMessage, { EmoteImage } from "@/components/ChatEmoteMessage";
 import { chatEmotes, type ChatEmoteCategory } from "@/utils/chatEmotes";
+import DraggableHudPanel, { useHudPanel, useDesktopHud } from "@/features/hexHud/DraggableHudPanel";
 import styles from "@/styles/GameChat.module.css";
 
 type Channel = "MAIN" | "GROUP" | "TRADE";
@@ -74,8 +75,16 @@ export default function GameChat() {
     const text = labels[language];
     const emoteText = emoteLabels[language];
     const match = pathname === "/game";
-    const visible = Boolean(user && (match || ["/mode", "/base", "/equipment", "/professions", "/shop", "/market", "/profile", "/matches"].some(path => pathname === path || pathname.startsWith(path + "/"))));
-    const [expanded, setExpanded] = useState(false);
+    const visible = Boolean(user && (match || ["/mode", "/base", "/equipment", "/professions", "/drop-guide", "/shop", "/market", "/profile", "/matches"].some(path => pathname === path || pathname.startsWith(path + "/"))));
+    const chatPanel = useHudPanel("chat");
+    const desktopHud = useDesktopHud() && match;
+    const [lobbyExpanded, setLobbyExpanded] = useState(false);
+    const expanded = desktopHud ? chatPanel.layout.mode === "expanded" : lobbyExpanded;
+    const setChatLayout = chatPanel.setLayout;
+    const setExpanded = useCallback((next: SetStateAction<boolean>) => {
+        if (desktopHud) setChatLayout(current => ({ ...current, mode: (typeof next === "function" ? next(current.mode === "expanded") : next) ? "expanded" : "collapsed" }));
+        else setLobbyExpanded(next);
+    }, [desktopHud, setChatLayout]);
     const [channel, setChannel] = useState<Channel>("MAIN");
     const [privateView, setPrivateView] = useState<ChatConversation | null>(null);
     const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -200,7 +209,7 @@ export default function GameChat() {
         stickToBottom.current = true;
         void markRead(conversation.id);
         window.setTimeout(() => inputRef.current?.focus(), 0);
-    }, [markRead]);
+    }, [markRead, setExpanded]);
 
     const createConversation = useCallback(async (players: OnlinePlayer[]) => {
         if (!user?.token || !players.length) return;
@@ -221,7 +230,7 @@ export default function GameChat() {
         setCreating(true);
         setSelectedPlayers(current => current.some(item => item.userId === player.userId) ? current : [...current, player]);
         setExpanded(true);
-    }, [user?.id]);
+    }, [user?.id, setExpanded]);
 
     useEffect(() => { if (!visible) setEmojiOpen(false); }, [visible]);
 
@@ -634,8 +643,8 @@ export default function GameChat() {
         } catch { setError(text.failure); }
     };
     const canSend = Boolean(user?.token && draft.trim() && Array.from(draft.trim()).length <= 1000 && !sending && (privateView || channel !== "GROUP" || partyId));
-    return <section className={`${styles.chat} ${match ? styles.match : ""} ${expanded ? styles.open : ""}`} aria-label={text.title}>
-        <button type="button" className={styles.header} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setEmojiOpen(false); if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; }}>
+    return <DraggableHudPanel panel={chatPanel} title={`${text.title}${totalUnread > 0 ? ` · ${totalUnread}` : ""}`} anchor="chat" width={410} enabled={desktopHud} onModeChange={mode => { setEmojiOpen(false); if (mode === "expanded") { if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; } }}><section className={`${styles.chat} ${match ? styles.match : ""} ${expanded ? styles.open : ""} ${desktopHud ? styles.floatingHud : ""}`} aria-label={text.title} onKeyDown={event => event.stopPropagation()}>
+        <button hidden={desktopHud} type="button" className={styles.header} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setEmojiOpen(false); if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; }}>
             <span>{text.title}</span><span className={styles.headerRight}>{totalUnread > 0 && <span className={styles.badge}>{totalUnread}</span>}{expanded ? "−" : "+"}</span>
         </button>
         {expanded && <div className={styles.content}>
@@ -694,5 +703,5 @@ export default function GameChat() {
             </div>}
             <label className={styles.animationSetting}><input type="checkbox" checked={animateEmotes === true} onChange={event => changeAnimation(event.target.checked)} />{emoteText.animation}</label>
         </div>, document.body)}
-    </section>;
+    </section></DraggableHudPanel>;
 }

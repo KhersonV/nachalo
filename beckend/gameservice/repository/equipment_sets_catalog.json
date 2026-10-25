@@ -1,0 +1,924 @@
+[
+  {
+    "code": "aegiswarden_set_uncommon",
+    "name": "Aegiswarden",
+    "heroClass": "guardian",
+    "rarity": "green",
+    "source": "monster",
+    "items": [
+      {
+        "code": "aegiswarden_sword_uncommon",
+        "name": "Aegiswarden Sword",
+        "slot": "main_hand",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Sword.png",
+        "baseTemplate": "aegiswarden_sword",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 4,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "aegiswarden_shield_uncommon",
+        "name": "Aegiswarden Shield",
+        "slot": "off_hand",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Shield.png",
+        "baseTemplate": "aegiswarden_shield",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "aegiswarden_helm_uncommon",
+        "name": "Aegiswarden Helm",
+        "slot": "helmet",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Helm.png",
+        "baseTemplate": "aegiswarden_helm",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "aegiswarden_vest_uncommon",
+        "name": "Aegiswarden Vest",
+        "slot": "chest",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Vest.png",
+        "baseTemplate": "aegiswarden_vest",
+        "bonuses": {
+          "maxHealth": 8,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "aegiswarden_pants_uncommon",
+        "name": "Aegiswarden Pants",
+        "slot": "pants",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Pants.png",
+        "baseTemplate": "aegiswarden_pants",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "aegiswarden_gloves_uncommon",
+        "name": "Aegiswarden Gloves",
+        "slot": "gloves",
+        "image": "/equipment/guardian/Aegiswarden/Aegiswarden Gloves.png",
+        "baseTemplate": "aegiswarden_gloves",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "aegiswarden_boots_uncommon",
+        "name": "Aegiswarden Boots",
+        "slot": "boots",
+        "image": "/equipment/guardian/Aegiswarden/boots.png",
+        "baseTemplate": "aegiswarden_boots",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 1,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "stonewarden_set",
+    "name": "Stonewarden",
+    "heroClass": "guardian",
+    "rarity": "blue",
+    "source": "craft",
+    "items": [
+      {
+        "code": "crafted_guardian_main_hand",
+        "name": "Stonewarden Sword",
+        "slot": "main_hand",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_sword.png",
+        "baseTemplate": "aegiswarden_sword",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 7,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_guardian_off_hand",
+        "name": "Stonewarden Shield",
+        "slot": "off_hand",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_shield.png",
+        "baseTemplate": "aegiswarden_shield",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 2,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_guardian_helmet",
+        "name": "Stonewarden Helm",
+        "slot": "helmet",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_helm.png",
+        "baseTemplate": "aegiswarden_helm",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_guardian_chest",
+        "name": "Stonewarden Cuirass",
+        "slot": "chest",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_cuirass.png",
+        "baseTemplate": "aegiswarden_vest",
+        "bonuses": {
+          "maxHealth": 14,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_guardian_pants",
+        "name": "Stonewarden Legguards",
+        "slot": "pants",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_legguards.png",
+        "baseTemplate": "aegiswarden_pants",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_guardian_gloves",
+        "name": "Stonewarden Gauntlets",
+        "slot": "gloves",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_gauntlets.png",
+        "baseTemplate": "aegiswarden_gloves",
+        "bonuses": {
+          "maxHealth": 2,
+          "attack": 0,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_guardian_boots",
+        "name": "Stonewarden Sabatons",
+        "slot": "boots",
+        "image": "/equipment/guardian/Stonewarden/stonewarden_sabatons.png",
+        "baseTemplate": "aegiswarden_boots",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 1,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "bloodroot_set_uncommon",
+    "name": "Bloodroot",
+    "heroClass": "berserker",
+    "rarity": "green",
+    "source": "monster",
+    "items": [
+      {
+        "code": "bloodroot_axe_uncommon",
+        "name": "Bloodroot Axe",
+        "slot": "main_hand",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot Axe.png",
+        "baseTemplate": "bloodroot_axe",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 3,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "bloodroot_horned_helm_uncommon",
+        "name": "Bloodroot Horned Helm",
+        "slot": "helmet",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot Horned Helm.png",
+        "baseTemplate": "bloodroot_horned_helm",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "bloodroot_war_vest_uncommon",
+        "name": "Bloodroot War Vest",
+        "slot": "chest",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot War Vest.png",
+        "baseTemplate": "bloodroot_war_vest",
+        "bonuses": {
+          "maxHealth": 10,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "bloodroot_raider_pants_uncommon",
+        "name": "Bloodroot Raider Pants",
+        "slot": "pants",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot Raider Pants.png",
+        "baseTemplate": "bloodroot_raider_pants",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "bloodroot_grips_uncommon",
+        "name": "Bloodroot Grips",
+        "slot": "gloves",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot Grips.png",
+        "baseTemplate": "bloodroot_grips",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "bloodroot_stompers_uncommon",
+        "name": "Bloodroot Stompers",
+        "slot": "boots",
+        "image": "/equipment/berserker/Bloodroot/Bloodroot Stompers.png",
+        "baseTemplate": "bloodroot_stompers",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "emberfang_set",
+    "name": "Emberfang",
+    "heroClass": "berserker",
+    "rarity": "blue",
+    "source": "craft",
+    "items": [
+      {
+        "code": "crafted_berserker_main_hand",
+        "name": "Emberfang Ravager Axe",
+        "slot": "main_hand",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Axe.png",
+        "baseTemplate": "bloodroot_axe",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 5,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_berserker_helmet",
+        "name": "Emberfang Ravager Helm",
+        "slot": "helmet",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Helm.png",
+        "baseTemplate": "bloodroot_horned_helm",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_berserker_chest",
+        "name": "Emberfang Ravager Chest",
+        "slot": "chest",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Chest.png",
+        "baseTemplate": "bloodroot_war_vest",
+        "bonuses": {
+          "maxHealth": 16,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_berserker_pants",
+        "name": "Emberfang Ravager Pants",
+        "slot": "pants",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Pants.png",
+        "baseTemplate": "bloodroot_raider_pants",
+        "bonuses": {
+          "maxHealth": 8,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_berserker_gloves",
+        "name": "Emberfang Ravager Gloves",
+        "slot": "gloves",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Gloves.png",
+        "baseTemplate": "bloodroot_grips",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 1,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_berserker_boots",
+        "name": "Emberfang Ravager Boots",
+        "slot": "boots",
+        "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Boots.png",
+        "baseTemplate": "bloodroot_stompers",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "greenwisp_set_uncommon",
+    "name": "Greenwisp",
+    "heroClass": "ranger",
+    "rarity": "green",
+    "source": "monster",
+    "items": [
+      {
+        "code": "greenwisp_bow_uncommon",
+        "name": "Greenwisp Bow",
+        "slot": "main_hand",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Bow.png",
+        "baseTemplate": "greenwisp_bow",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 3,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "greenwisp_hood_uncommon",
+        "name": "Greenwisp Hood",
+        "slot": "helmet",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Hood.png",
+        "baseTemplate": "greenwisp_hood",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "greenwisp_vest_uncommon",
+        "name": "Greenwisp Vest",
+        "slot": "chest",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Vest.png",
+        "baseTemplate": "greenwisp_vest",
+        "bonuses": {
+          "maxHealth": 10,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "greenwisp_ranger_pants_uncommon",
+        "name": "Greenwisp Ranger Pants",
+        "slot": "pants",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Ranger Pants.png",
+        "baseTemplate": "greenwisp_ranger_pants",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "greenwisp_gloves_uncommon",
+        "name": "Greenwisp Gloves",
+        "slot": "gloves",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Gloves.png",
+        "baseTemplate": "greenwisp_gloves",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "greenwisp_boots_uncommon",
+        "name": "Greenwisp Boots",
+        "slot": "boots",
+        "image": "/equipment/ranger/Greenwisp/Greenwisp Boots.png",
+        "baseTemplate": "greenwisp_boots",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "amberveil_set",
+    "name": "Amberveil",
+    "heroClass": "ranger",
+    "rarity": "blue",
+    "source": "craft",
+    "items": [
+      {
+        "code": "crafted_ranger_main_hand",
+        "name": "Amberveil Bow",
+        "slot": "main_hand",
+        "image": "/equipment/ranger/Amberveil/06_Amberveil_Bow.png",
+        "baseTemplate": "greenwisp_bow",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 5,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_ranger_helmet",
+        "name": "Amberveil Helm",
+        "slot": "helmet",
+        "image": "/equipment/ranger/Amberveil/01_Amberveil_Helm.png",
+        "baseTemplate": "greenwisp_hood",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_ranger_chest",
+        "name": "Amberveil Chest",
+        "slot": "chest",
+        "image": "/equipment/ranger/Amberveil/02_Amberveil_Chest.png",
+        "baseTemplate": "greenwisp_vest",
+        "bonuses": {
+          "maxHealth": 16,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_ranger_pants",
+        "name": "Amberveil Pants",
+        "slot": "pants",
+        "image": "/equipment/ranger/Amberveil/04_Amberveil_Pants.png",
+        "baseTemplate": "greenwisp_ranger_pants",
+        "bonuses": {
+          "maxHealth": 8,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_ranger_gloves",
+        "name": "Amberveil Gloves",
+        "slot": "gloves",
+        "image": "/equipment/ranger/Amberveil/03_Amberveil_Gloves.png",
+        "baseTemplate": "greenwisp_gloves",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 1,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_ranger_boots",
+        "name": "Amberveil Boots",
+        "slot": "boots",
+        "image": "/equipment/ranger/Amberveil/05_Amberveil_Boots.png",
+        "baseTemplate": "greenwisp_boots",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 1,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "sagecloth_set_uncommon",
+    "name": "Elderbloom",
+    "heroClass": "mystic",
+    "rarity": "green",
+    "source": "monster",
+    "items": [
+      {
+        "code": "sagecloth_staff_uncommon",
+        "name": "Elderbloom Staff",
+        "slot": "main_hand",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Staff.png",
+        "baseTemplate": "sagecloth_staff",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 3,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "sagecloth_jacket_uncommon",
+        "name": "Elderbloom Vest",
+        "slot": "chest",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Vest.png",
+        "baseTemplate": "sagecloth_jacket",
+        "bonuses": {
+          "maxHealth": 8,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "sagecloth_pants_uncommon",
+        "name": "Elderbloom Pants",
+        "slot": "pants",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Pants.png",
+        "baseTemplate": "sagecloth_pants",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 1
+        }
+      },
+      {
+        "code": "sagecloth_boots_uncommon",
+        "name": "Elderbloom Boots",
+        "slot": "boots",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Boots.png",
+        "baseTemplate": "sagecloth_boots",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "sagecloth_gloves_uncommon",
+        "name": "Elderbloom Gloves",
+        "slot": "gloves",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Gloves.png",
+        "baseTemplate": "sagecloth_gloves",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "sagecloth_hood_uncommon",
+        "name": "Elderbloom Hood",
+        "slot": "helmet",
+        "image": "/equipment/mystic/Elderbloom/Elderbloom Hood.png",
+        "baseTemplate": "sagecloth_hood",
+        "bonuses": {
+          "maxHealth": 4,
+          "attack": 0,
+          "defense": 0,
+          "agility": 1,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  },
+  {
+    "code": "mooncrystal_set",
+    "name": "Mooncrystal",
+    "heroClass": "mystic",
+    "rarity": "blue",
+    "source": "craft",
+    "items": [
+      {
+        "code": "crafted_mystic_main_hand",
+        "name": "Mooncrystal Staff",
+        "slot": "main_hand",
+        "image": "/equipment/mystic/Mooncrystal/07_mooncrystal_staff.png",
+        "baseTemplate": "sagecloth_staff",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 5,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_mystic_chest",
+        "name": "Mooncrystal Chest",
+        "slot": "chest",
+        "image": "/equipment/mystic/Mooncrystal/01_mooncrystal_chest.png",
+        "baseTemplate": "sagecloth_jacket",
+        "bonuses": {
+          "maxHealth": 16,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_mystic_pants",
+        "name": "Mooncrystal Pants",
+        "slot": "pants",
+        "image": "/equipment/mystic/Mooncrystal/05_mooncrystal_pants.png",
+        "baseTemplate": "sagecloth_pants",
+        "bonuses": {
+          "maxHealth": 8,
+          "attack": 0,
+          "defense": 1,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 2
+        }
+      },
+      {
+        "code": "crafted_mystic_boots",
+        "name": "Mooncrystal Boots",
+        "slot": "boots",
+        "image": "/equipment/mystic/Mooncrystal/06_mooncrystal_boots.png",
+        "baseTemplate": "sagecloth_boots",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 0,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_mystic_gloves",
+        "name": "Mooncrystal Gloves",
+        "slot": "gloves",
+        "image": "/equipment/mystic/Mooncrystal/04_mooncrystal_gloves.png",
+        "baseTemplate": "sagecloth_gloves",
+        "bonuses": {
+          "maxHealth": 0,
+          "attack": 1,
+          "defense": 0,
+          "agility": 3,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      },
+      {
+        "code": "crafted_mystic_helmet",
+        "name": "Mooncrystal Helmet",
+        "slot": "helmet",
+        "image": "/equipment/mystic/Mooncrystal/02_mooncrystal_helmet.png",
+        "baseTemplate": "sagecloth_hood",
+        "bonuses": {
+          "maxHealth": 6,
+          "attack": 0,
+          "defense": 0,
+          "agility": 2,
+          "mobility": 0,
+          "sightRange": 0,
+          "attackRange": 0,
+          "pocketBonus": 0
+        }
+      }
+    ]
+  }
+]

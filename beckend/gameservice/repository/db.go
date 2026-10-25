@@ -88,7 +88,13 @@ func RunMigrations() {
 	if err := EnsureMarketSchema(); err != nil {
 		log.Fatal(err)
 	}
+	if err := EnsureProfessionMonsterLootSchema(); err != nil {
+		log.Fatal(err)
+	}
 	EnsureEquipmentSeedData()
+	if err := EnsureCraftingSchema(); err != nil {
+		log.Fatal(err)
+	}
 	CreateMatchStatsTable()
 	EnsureMatchStatsWinnerUsersColumn()
 	CreateMatchPlayerStatsTable()
@@ -103,6 +109,9 @@ func RunMigrations() {
 	EnsurePlayerBaseBuildingsTable()
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
+	if err := EnsureHexActionSchema(); err != nil {
+		log.Fatal(err)
+	}
 
 	CreateMatchPlayerStructuresTable()
 }
@@ -154,11 +163,12 @@ func SchemaReady() (bool, error) {
 		"character_professions",
 		"matches",
 		"match_profession_xp",
+		"match_profession_monster_drops",
 		"match_map_cells",
 		"match_players",
 		"inventory_items",
 		"match_monsters",
-		"persisted_artifacts",
+		"persisted_artifacts", "profession_craft_operations",
 		"item_sets",
 		"item_templates",
 		"item_set_bonuses",
@@ -218,6 +228,9 @@ func SchemaReady() (bool, error) {
 			"updated_at",
 		},
 		"match_players": {
+			"profession_unlocked", "profession_gather_count", "craft_status",
+			"ap", "max_ap", "mp", "max_mp", "reactions", "max_reactions",
+			"personal_turn_counter", "water_available_turn", "hex_armor_break_owner",
 			"character_id",
 			"character_type",
 			"mobility",
@@ -247,6 +260,7 @@ func SchemaReady() (bool, error) {
 		},
 		"player_base_buildings": {
 			"tavern_level",
+			"guild_level",
 		},
 		"item_sets": {
 			"code",
@@ -758,7 +772,7 @@ func EnsureStaticGameData() {
 		WHERE NOT EXISTS (SELECT 1 FROM resources WHERE type = 'food');
 
 		INSERT INTO resources (type, description, effect, image)
-		SELECT 'water', 'Water restores 5 energy (not above max)', '{"energy":5}', '/main_resources/water.webp'
+		SELECT 'water', 'Восстанавливает 1 AP, не выше Max AP. Перезарядка: два личных хода.', '{"ap_half":2}', '/main_resources/water.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM resources WHERE type = 'water');
 
 		INSERT INTO resources (type, description, effect, image)
@@ -775,7 +789,7 @@ func EnsureStaticGameData() {
 
 		UPDATE resources SET description = 'Barrel loot container', effect = '{}', image = '/main_resources/barrel.webp' WHERE type = 'barrel';
 		UPDATE resources SET description = 'Food restores 20 HP (not above max)', effect = '{"health":20}', image = '/main_resources/food.webp' WHERE type = 'food';
-		UPDATE resources SET description = 'Water restores 5 energy (not above max)', effect = '{"energy":5}', image = '/main_resources/water.webp' WHERE type = 'water';
+		UPDATE resources SET description = 'Восстанавливает 1 AP, не выше Max AP. Перезарядка: два личных хода.', effect = '{"ap_half":2}', image = '/main_resources/water.webp' WHERE type = 'water';
 		UPDATE resources SET description = 'Wood for early base construction', effect = '{"material_wood":1}', image = '/main_resources/wood.webp' WHERE type = 'wood';
 		UPDATE resources SET description = 'Stone for early base construction', effect = '{"material_stone":1}', image = '/main_resources/stone.webp' WHERE type = 'stone';
 		UPDATE resources SET description = 'Iron for early base construction', effect = '{"material_iron":1}', image = '/main_resources/iron.webp' WHERE type = 'iron';
@@ -801,11 +815,11 @@ func EnsureStaticGameData() {
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'berserker_axe');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'boots_of_stealth', 'First move each turn costs 1 less Energy. Energy regeneration -3.', '{"first_move_cost":-1,"energy_regen":-3}'::jsonb, '/artifacts/boots_of_stealth.webp'
+		SELECT 'boots_of_stealth', 'Первый HEX-шаг в личном ходу не расходует MP.', '{"first_step_free":1}'::jsonb, '/artifacts/boots_of_stealth.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'boots_of_stealth');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'crown_of_enlightenment', '+5 Max Energy. -15 Max HP. Attacks cost 1 more Energy.', '{"max_energy":5,"max_health":-15,"attack_cost":1}'::jsonb, '/artifacts/crown-of-enlightenment.webp'
+		SELECT 'crown_of_enlightenment', '+3 Attack. −15 Max Health.', '{"attack":3,"max_health":-15}'::jsonb, '/artifacts/crown-of-enlightenment.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'crown_of_enlightenment');
 
 		INSERT INTO artifacts (name, description, bonus, image)
@@ -821,7 +835,7 @@ func EnsureStaticGameData() {
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'gloves_of_precision');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'guardian_shield', '+2 Defense. Energy regeneration -3. Attacks cost 1 more Energy.', '{"defense":2,"energy_regen":-3,"attack_cost":1}'::jsonb, '/artifacts/guardian-shield.webp'
+		SELECT 'guardian_shield', '+2 Defense. −0.5 Max MP.', '{"defense":2,"max_mp_half":-1}'::jsonb, '/artifacts/guardian-shield.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'guardian_shield');
 
 		INSERT INTO artifacts (name, description, bonus, image)
@@ -829,23 +843,23 @@ func EnsureStaticGameData() {
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'knight_sword');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'ring_of_wisdom', 'Energy regeneration +1. -25 Max Energy.', '{"energy_regen":1,"max_energy":-25}'::jsonb, '/artifacts/ring-of-wisdom.webp'
+		SELECT 'ring_of_wisdom', '+1 Reflex. −0.5 Max MP.', '{"agility":1,"max_mp_half":-1}'::jsonb, '/artifacts/ring-of-wisdom.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'ring_of_wisdom');
 
 		INSERT INTO artifacts (name, description, bonus, image)
-		SELECT 'titan_breastplate', '+2 Defense. -3 Attack. Movement costs 2 more Energy.', '{"defense":2,"attack":-3,"move_cost":2}'::jsonb, '/artifacts/titan-breastplate.webp'
+		SELECT 'titan_breastplate', '+2 Defense. −3 Attack. Каждый HEX-шаг дороже на 0.5 MP.', '{"defense":2,"attack":-3,"step_mp_half":1}'::jsonb, '/artifacts/titan-breastplate.webp'
 		WHERE NOT EXISTS (SELECT 1 FROM artifacts WHERE name = 'titan_breastplate');
 
 		UPDATE artifacts SET description = '+2 Attack. -4 Defense while carrying the quest artifact.', bonus = '{"attack":2,"defense":-4}'::jsonb, image = '/artifacts/berserker-axe.webp' WHERE name = 'berserker_axe';
-		UPDATE artifacts SET description = 'First move each turn costs 1 less Energy. Energy regeneration -3.', bonus = '{"first_move_cost":-1,"energy_regen":-3}'::jsonb, image = '/artifacts/boots_of_stealth.webp' WHERE name = 'boots_of_stealth';
-		UPDATE artifacts SET description = '+5 Max Energy. -15 Max HP. Attacks cost 1 more Energy.', bonus = '{"max_energy":5,"max_health":-15,"attack_cost":1}'::jsonb, image = '/artifacts/crown-of-enlightenment.webp' WHERE name = 'crown_of_enlightenment';
+		UPDATE artifacts SET description = 'Первый HEX-шаг в личном ходу не расходует MP.', bonus = '{"first_step_free":1}'::jsonb, image = '/artifacts/boots_of_stealth.webp' WHERE name = 'boots_of_stealth';
+		UPDATE artifacts SET description = '+3 Attack. −15 Max Health.', bonus = '{"attack":3,"max_health":-15}'::jsonb, image = '/artifacts/crown-of-enlightenment.webp' WHERE name = 'crown_of_enlightenment';
 		UPDATE artifacts SET description = 'Attacks ignore 1 Defense. Lose 3 HP at the end of each turn (cannot reduce HP below 1).', bonus = '{"defense_ignore":1,"health_per_turn":-3}'::jsonb, image = '/artifacts/dragon-eye.webp' WHERE name = 'dragon_eye';
 		UPDATE artifacts SET description = 'Successful attacks deal +2 damage, but the carrier takes 3 damage (cannot reduce HP below 1).', bonus = '{"bonus_damage":2,"self_damage":3}'::jsonb, image = '/artifacts/fire-amulet.webp' WHERE name = 'fire_amulet';
 		UPDATE artifacts SET description = '+1 Attack. -3 Defense. -10 Max HP.', bonus = '{"attack":1,"defense":-3,"max_health":-10}'::jsonb, image = '/artifacts/gloves-of-precision.webp' WHERE name = 'gloves_of_precision';
-		UPDATE artifacts SET description = '+2 Defense. Energy regeneration -3. Attacks cost 1 more Energy.', bonus = '{"defense":2,"energy_regen":-3,"attack_cost":1}'::jsonb, image = '/artifacts/guardian-shield.webp' WHERE name = 'guardian_shield';
+		UPDATE artifacts SET description = '+2 Defense. −0.5 Max MP.', bonus = '{"defense":2,"max_mp_half":-1}'::jsonb, image = '/artifacts/guardian-shield.webp' WHERE name = 'guardian_shield';
 		UPDATE artifacts SET description = '+1 Attack and +1 Defense. -20 Max HP.', bonus = '{"attack":1,"defense":1,"max_health":-20}'::jsonb, image = '/artifacts/knight-sword.webp' WHERE name = 'knight_sword';
-		UPDATE artifacts SET description = 'Energy regeneration +1. -25 Max Energy.', bonus = '{"energy_regen":1,"max_energy":-25}'::jsonb, image = '/artifacts/ring-of-wisdom.webp' WHERE name = 'ring_of_wisdom';
-		UPDATE artifacts SET description = '+2 Defense. -3 Attack. Movement costs 2 more Energy.', bonus = '{"defense":2,"attack":-3,"move_cost":2}'::jsonb, image = '/artifacts/titan-breastplate.webp' WHERE name = 'titan_breastplate';
+		UPDATE artifacts SET description = '+1 Reflex. −0.5 Max MP.', bonus = '{"agility":1,"max_mp_half":-1}'::jsonb, image = '/artifacts/ring-of-wisdom.webp' WHERE name = 'ring_of_wisdom';
+		UPDATE artifacts SET description = '+2 Defense. −3 Attack. Каждый HEX-шаг дороже на 0.5 MP.', bonus = '{"defense":2,"attack":-3,"step_mp_half":1}'::jsonb, image = '/artifacts/titan-breastplate.webp' WHERE name = 'titan_breastplate';
 	`); err != nil {
 		log.Fatalf("Ошибка сидирования artifacts: %v", err)
 	}

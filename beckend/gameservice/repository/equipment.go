@@ -52,29 +52,34 @@ var validEquipmentSources = map[string]struct{}{
 }
 
 type EquipmentBonuses struct {
+	PocketBonus int `json:"pocketBonus,omitempty"`
 	Attack      int `json:"attack"`
 	Defense     int `json:"defense"`
 	Mobility    int `json:"mobility"`
 	Agility     int `json:"agility"`
 	MaxHealth   int `json:"maxHealth"`
-	MaxEnergy   int `json:"maxEnergy"`
+	MaxEnergy   int `json:"-"`
 	SightRange  int `json:"sightRange"`
 	AttackRange int `json:"attackRange"`
 }
 
 type EquipmentStats struct {
-	MaxHealth   int  `json:"maxHealth"`
-	MaxEnergy   int  `json:"maxEnergy"`
-	Attack      int  `json:"attack"`
-	Defense     int  `json:"defense"`
-	Mobility    int  `json:"mobility"`
-	Agility     int  `json:"agility"`
-	SightRange  int  `json:"sightRange"`
-	IsRanged    bool `json:"isRanged"`
-	AttackRange int  `json:"attackRange"`
+	MaxAP        int  `json:"maxAP"`
+	MaxMP        int  `json:"maxMP"`
+	MaxReactions int  `json:"maxReactions"`
+	MaxHealth    int  `json:"maxHealth"`
+	MaxEnergy    int  `json:"-"`
+	Attack       int  `json:"attack"`
+	Defense      int  `json:"defense"`
+	Mobility     int  `json:"mobility"`
+	Agility      int  `json:"agility"`
+	SightRange   int  `json:"sightRange"`
+	IsRanged     bool `json:"isRanged"`
+	AttackRange  int  `json:"attackRange"`
 }
 
 type EquipmentItem struct {
+ JewelrySet *JewelryPair `json:"jewelrySet,omitempty"`
 	InstanceID          string           `json:"instanceId"`
 	TemplateID          int64            `json:"templateId"`
 	Code                string           `json:"code"`
@@ -174,7 +179,11 @@ func normalizeEquipmentCode(code string) string {
 }
 
 func equipmentStatsFromCharacter(character *PlayerCharacter) EquipmentStats {
-	return EquipmentStats{
+	reactions := 1
+	if character.HeroClassID == "guardian" {
+		reactions = 2
+	}
+	return EquipmentStats{MaxAP: 6, MaxMP: character.Mobility * 2, MaxReactions: reactions,
 		MaxHealth:   character.MaxHealth,
 		MaxEnergy:   character.MaxEnergy,
 		Attack:      character.Attack,
@@ -188,12 +197,14 @@ func equipmentStatsFromCharacter(character *PlayerCharacter) EquipmentStats {
 }
 
 func addEquipmentBonuses(stats *EquipmentStats, bonuses EquipmentBonuses) {
+	// PocketBonus is evaluated from equipped chest/pants by pocketCapacityTx,
+	// never through combat stats or item_set_bonuses.
 	stats.Attack += bonuses.Attack
 	stats.Defense += bonuses.Defense
 	stats.Mobility += bonuses.Mobility
 	stats.Agility += bonuses.Agility
 	stats.MaxHealth += bonuses.MaxHealth
-	stats.MaxEnergy += bonuses.MaxEnergy
+	// Energy bonuses are retired; catalog entries are explicitly converted in Stage 9.
 	stats.SightRange += bonuses.SightRange
 	stats.AttackRange += bonuses.AttackRange
 }
@@ -228,6 +239,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 		&item.Bonuses.MaxEnergy,
 		&item.Bonuses.SightRange,
 		&item.Bonuses.AttackRange,
+		&item.Bonuses.PocketBonus,
 		&item.SellPrice,
 		&item.Status,
 		&item.Version,
@@ -254,7 +266,8 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 		item.EquippedCharacterID = &v
 	}
 
-	// Compute canonical sell price and two-handed flag based on template metadata
+	if _,set,ok := jewelryItem(item.Code); ok { item.JewelrySet = &JewelryPair{Name:set.Name,Bonus:set.PairBonus,Required:2} }
+ 	// Compute canonical sell price and two-handed flag based on template metadata
 	item.IsTwoHanded = item.Handedness == "two_hand"
 	// apply green-item sell price rules
 	if item.Rarity == "gray" {
@@ -268,7 +281,7 @@ func scanEquipmentItem(scan func(dest ...interface{}) error) (*EquipmentItem, er
 }
 
 func equipmentItemSelectClause() string {
-	return `
+	return equipmentInstanceColumnsSQL(`
 		ii.id::text,
 		ii.template_id,
 		it.code,
@@ -291,11 +304,12 @@ func equipmentItemSelectClause() string {
 		it.max_energy_bonus,
 		it.sight_range_bonus,
 		it.attack_range_bonus,
+        ` + equipmentPocketBonusSQL + `,
 		it.sell_price,
 		ii.status,
 		ii.version,
 		ii.current_character_id
-	`
+	`)
 }
 
 func GetEquipmentInventoryForUser(userID int) ([]EquipmentItem, error) {
@@ -964,6 +978,15 @@ func GrantItemInstanceToUser(userID int, templateCode string, source string) (*E
 		return nil, ErrEquipmentInvalidTemplate
 	}
 	source = normalizeEquipmentSource(source)
+	if _,_,jewelry := jewelryItem(templateCode); jewelry && source != "craft" { return nil, ErrEquipmentInvalidTemplate }
+	dropSet := ""
+	if source == "drop" {
+		_, set, ok := equipmentCatalogItem(templateCode)
+		if !ok || set.Source != "monster" || set.Rarity != "green" {
+			return nil, ErrEquipmentInvalidTemplate
+		}
+		dropSet = set.Code
+	}
 
 	tx, err := DB.Begin()
 	if err != nil {
@@ -984,9 +1007,9 @@ func GrantItemInstanceToUser(userID int, templateCode string, source string) (*E
 		INSERT INTO item_instances (template_id, owner_user_id, source)
 		SELECT id, $1, $2
 		FROM item_templates
-		WHERE code = $3
+		WHERE code = $3 AND ($4<>'drop' OR (rarity='green' AND set_id=(SELECT id FROM item_sets WHERE code=$5 AND rarity='green')))
 		RETURNING id::text
-	`, userID, source, templateCode).Scan(&itemInstanceID); err != nil {
+	`, userID, source, templateCode, source, dropSet).Scan(&itemInstanceID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrEquipmentInvalidTemplate
 		}
@@ -1019,7 +1042,11 @@ func GrantEquipmentSetToUser(userID int, heroClassID string, setCode string, sou
 		}
 	}
 	source = normalizeEquipmentSource(source)
+	if source == "drop" {
+		return ErrEquipmentInvalidTemplate
+	} // Random drops grant individual whitelisted items only.
 
+	if strings.HasPrefix(setCode,"jewelry_") && source != "craft" { return ErrEquipmentInvalidTemplate }
 	tx, err := DB.Begin()
 	if err != nil {
 		return fmt.Errorf("GrantEquipmentSetToUser begin tx: %w", err)
@@ -1154,6 +1181,7 @@ func GetCharacterEffectiveStats(characterID int) (*CharacterEffectiveStats, erro
 	setCodeByID := map[int64]string{}
 	setNameByID := map[int64]string{}
 	for _, item := range equipped {
+ if item.JewelrySet != nil && item.ClassRestriction != character.HeroClassID { continue }
 		addEquipmentBonuses(&effectiveStats, item.Bonuses)
 		if item.SetID != nil {
 			setID := *item.SetID
@@ -1171,6 +1199,10 @@ func GetCharacterEffectiveStats(characterID int) (*CharacterEffectiveStats, erro
 		addEquipmentBonuses(&effectiveStats, bonus.Bonuses)
 	}
 
+	effectiveStats.MaxMP = effectiveStats.Mobility * 2
+	if effectiveStats.MaxMP > 16 {
+		effectiveStats.MaxMP = 16
+	}
 	return &CharacterEffectiveStats{
 		CharacterID:      character.ID,
 		HeroClassID:      character.HeroClassID,

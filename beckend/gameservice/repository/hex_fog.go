@@ -4,19 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
-	"strconv"
 
 	"gameservice/internal/hexgrid"
 	"gameservice/internal/hexmap"
 )
 
-func hexVisionRadius() int {
-	if n, err := strconv.Atoi(os.Getenv("HEX_VISION_RADIUS")); err == nil && n >= 1 && n <= 12 {
-		return n
-	}
-	return 3
-}
+// Fallback for the standalone illustrative preview only. Playable matches use p.sight_range.
+func hexVisionRadius() int { return 2 }
 
 func RecordHexExploredForPush(ctx context.Context, tx *sql.Tx, instanceID string, userID int, positions ...hexgrid.Coord) error {
 	return recordHexExploredTx(ctx, tx, instanceID, userID, positions...)
@@ -30,7 +24,15 @@ func HexPositionVisibleTx(ctx context.Context, tx *sql.Tx, instanceID string, us
 }
 
 func HexVisibleCellsTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int) (map[hexgrid.Coord]bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT p.position_q,p.position_r,COALESCE(s.has_scout_tower_bonus,false) FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.group_id=(SELECT group_id FROM match_players WHERE instance_id=$1 AND user_id=$2) AND p.health>0`, instanceID, userID)
+	return hexVisibleCellsFromTx(ctx, tx, instanceID, userID, nil)
+}
+
+func HexVisibleCellsFromTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, origin hexgrid.Coord) (map[hexgrid.Coord]bool, error) {
+	return hexVisibleCellsFromTx(ctx, tx, instanceID, userID, &origin)
+}
+
+func hexVisibleCellsFromTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, origin *hexgrid.Coord) (map[hexgrid.Coord]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT p.user_id,p.position_q,p.position_r,p.sight_range FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.group_id=(SELECT group_id FROM match_players WHERE instance_id=$1 AND user_id=$2) AND p.health>0`, instanceID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -38,13 +40,16 @@ func HexVisibleCellsTx(ctx context.Context, tx *sql.Tx, instanceID string, userI
 	radii := map[hexgrid.Coord]int{}
 	for rows.Next() {
 		var p hexgrid.Coord
-		var bonus bool
-		if err := rows.Scan(&p.Q, &p.R, &bonus); err != nil {
+		var sight, id int
+		if err := rows.Scan(&id, &p.Q, &p.R, &sight); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		if origin != nil && id == userID {
+			p = *origin
+		}
 		positions = append(positions, p)
-		radii[p] = hexSightRadius(bonus)
+		radii[p] = sight
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -166,8 +171,8 @@ func hexDiscoveredRock(positions []hexgrid.Coord, radii map[hexgrid.Coord]int, c
 // a discovery history; currently visible cells are always recomputed.
 func recordHexExploredTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, positions ...hexgrid.Coord) error {
 	var saved []byte
-	var bonus bool
-	if err := tx.QueryRowContext(ctx, `SELECT p.hex_explored,COALESCE(s.has_scout_tower_bonus,false) FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).Scan(&saved, &bonus); err != nil {
+	var sight int
+	if err := tx.QueryRowContext(ctx, `SELECT p.hex_explored,p.sight_range FROM match_players p LEFT JOIN match_player_structures s ON s.instance_id=p.instance_id AND s.user_id=p.user_id WHERE p.instance_id=$1 AND p.user_id=$2`, instanceID, userID).Scan(&saved, &sight); err != nil {
 		return err
 	}
 	var prior []hexgrid.Coord
@@ -208,7 +213,7 @@ func recordHexExploredTx(ctx context.Context, tx *sql.Tx, instanceID string, use
 	}
 	radii := map[hexgrid.Coord]int{}
 	for _, pos := range positions {
-		radii[pos] = hexSightRadius(bonus)
+		radii[pos] = sight
 	}
 	visible := hexVisibleWithRadii(positions, radii, cells, edges)
 	for pos := range visible {

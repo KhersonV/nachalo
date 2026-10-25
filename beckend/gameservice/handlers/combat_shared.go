@@ -8,8 +8,8 @@ import (
 var rollReflexProc = defaultRollReflexProc
 
 const (
-	meleeAttackEnergyCost            = 6
-	rangedAttackEnergyCost           = 8
+	meleeAttackEnergyCost            = 2
+	rangedAttackEnergyCost           = 2
 	standardCounterAttackEnergyCost  = 2
 	guardianZoneControlRange         = 2
 	guardianZoneControlMovePenalty   = 1
@@ -61,6 +61,7 @@ type CombatEffect struct {
 	Succeeded         bool             `json:"succeeded"`
 	PositionAfter     *CombatPoint     `json:"positionAfter,omitempty"`
 	BonusDamage       int              `json:"bonusDamage,omitempty"`
+	MPGranted int `json:"mpGranted,omitempty"`
 	EnergyGranted     int              `json:"energyGranted,omitempty"`
 	EnergyDrained     int              `json:"energyDrained,omitempty"`
 	Amount            int              `json:"amount,omitempty"`

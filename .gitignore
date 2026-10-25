@@ -42,3 +42,8 @@ deploy/gcp/.env.*
 next-env.d.ts
 
 project-tree.txt
+
+# Local database backups and manual test-data reset scripts
+*.dump
+/beckend/auth/reset_test_user_data.sql
+/beckend/gameservice/sql/reset_test_user_data.sql

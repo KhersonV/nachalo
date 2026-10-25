@@ -1,0 +1,20 @@
+.panel, .reopen { position: fixed; box-sizing: border-box; z-index: 30; max-width: calc(100vw - 16px); color: #eee5d5; border: 1px solid #80633e; border-radius: 9px; background: linear-gradient(145deg, #182330f5, #0b131ef5); box-shadow: 0 10px 28px #0008; pointer-events: auto; font: 12px/1.4 var(--ui-font, Arial, sans-serif); }
+.panel:focus-within { z-index: 31; }
+.hero { top: 80px; left: 12px; }
+.target { top: 130px; right: 12px; }
+.quest { top: 80px; right: 12px; }
+.participants { top: 80px; left: 300px; }
+.chat { bottom: 82px; left: 12px; }
+.header { display: flex; align-items: center; gap: 5px; min-height: 36px; padding: 3px 7px 3px 11px; box-sizing: border-box; cursor: grab; touch-action: none; user-select: none; }
+.header:active { cursor: grabbing; }
+.title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #edc780; font-weight: 700; }
+.header button { flex: none; width: 25px; height: 26px; padding: 0; border: 1px solid #68563e; border-radius: 4px; background: #24303d; color: #eee0c5; cursor: pointer; }
+.body { max-height: calc(100dvh - 195px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; border-top: 1px solid #68563e80; }
+.body[hidden] { display: none; }
+.compact { padding: 0 10px 9px; }
+.reopen { padding: 8px 11px; cursor: pointer; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.reopen:hover, .header button:hover { background: #344456; }
+.header button:focus-visible, .reopen:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
+.target .body { max-height: min(420px, calc(100dvh - 255px)); }
+.quest .body { max-height: min(380px, calc(100dvh - 205px)); }
+.chat .body { max-height: min(324px, calc(100dvh - 205px)); }

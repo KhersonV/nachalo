@@ -47,7 +47,7 @@ const defaultCharacterType = "guardian"
 var characterTemplates = map[string]characterTemplate{
 	defaultCharacterType: {
 		CharacterType: defaultCharacterType,
-		Energy:        90, EnergyRegen: 10, MaxEnergy: 90,
+		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 130, MaxHealth: 130,
 		Attack: 9, Defense: 8,
 		Mobility: 2, Agility: 5,
@@ -56,7 +56,7 @@ var characterTemplates = map[string]characterTemplate{
 	},
 	"berserker": {
 		CharacterType: "berserker",
-		Energy:        100, EnergyRegen: 10, MaxEnergy: 100,
+		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 100, MaxHealth: 100,
 		Attack: 14, Defense: 3,
 		Mobility: 3, Agility: 5,
@@ -65,7 +65,7 @@ var characterTemplates = map[string]characterTemplate{
 	},
 	"ranger": {
 		CharacterType: "ranger",
-		Energy:        105, EnergyRegen: 11, MaxEnergy: 105,
+		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 92, MaxHealth: 92,
 		Attack: 11, Defense: 4,
 		Mobility: 4, Agility: 5,
@@ -74,11 +74,11 @@ var characterTemplates = map[string]characterTemplate{
 	},
 	"mystic": {
 		CharacterType: "mystic",
-		Energy:        125, EnergyRegen: 13, MaxEnergy: 125,
+		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 95, MaxHealth: 95,
 		Attack: 10, Defense: 4,
 		Mobility: 3, Agility: 5,
-		SightRange: 2,
+		SightRange: 3,
 		IsRanged:   true, AttackRange: 3,
 	},
 }

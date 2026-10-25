@@ -25,13 +25,20 @@ const (
 )
 
 // ResourceData – структура для хранения данных ресурса.
+type ProfessionNode struct {
+	ProfessionName string `json:"professionName"`
+	Category       string `json:"category"`
+	Class          string `json:"class"`
+	Profession     string `json:"profession"`
+}
 type ResourceData struct {
-	ID          int            `json:"id"`
-	Type        string         `json:"type"`                // тип ресурса (например, "wood", "food")
-	Description string         `json:"description"`         // описание ресурса
-	Effect      map[string]int `json:"effect"`              // эффекты или бонусы (например, {"energy": 10})
-	Image       string         `json:"image"`               // путь к изображению ресурса
-	ItemType    string         `json:"item_type,omitempty"` // "resource" или "artifact" (для дропа на клетку)
+	ProfessionNode *ProfessionNode `json:"professionNode,omitempty"`
+	ID             int             `json:"id"`
+	Type           string          `json:"type"`                // тип ресурса (например, "wood", "food")
+	Description    string          `json:"description"`         // описание ресурса
+	Effect         map[string]int  `json:"effect"`              // эффекты или бонусы (например, {"energy": 10})
+	Image          string          `json:"image"`               // путь к изображению ресурса
+	ItemType       string          `json:"item_type,omitempty"` // "resource" или "artifact" (для дропа на клетку)
 }
 
 // MonsterData – структура для хранения данных монстра.

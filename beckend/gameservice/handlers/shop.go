@@ -164,9 +164,11 @@ type buyShopItemRequest struct {
 	PlayerID int    `json:"player_id"`
 	ItemType string `json:"item_type"`
 	Count    int    `json:"count"`
+ CommandID string `json:"commandId"`
 }
 
 func resourceDisplayName(resourceType string) string {
+ if r,ok:=repository.JewelryResourceByCode(resourceType);ok {return r.Name}
 	switch resourceType {
 	case "food":
 		return "Food"
@@ -178,6 +180,7 @@ func resourceDisplayName(resourceType string) string {
 }
 
 func shopPrice(resourceType string) (int, bool) {
+ if r,ok:=repository.JewelryResourceByCode(resourceType);ok && r.Price>0 {return r.Price,true}
 	switch resourceType {
 	case "food":
 		return foodUnitPrice, true
@@ -274,7 +277,7 @@ func getScrollItemByID(id int) (*shopItem, bool) {
 // GetShopItemsHandler returns available preparatory shop items.
 func GetShopItemsHandler(w http.ResponseWriter, r *http.Request) {
 	items := make([]shopItem, 0, 5)
-	for _, resourceType := range []string{"food", "water"} {
+	for _, resourceType := range append([]string{"food", "water"}, repository.JewelryShopTypes()...) {
 		item, err := getShopItem(resourceType)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to load shop item %s: %v", resourceType, err), http.StatusInternalServerError)
@@ -373,6 +376,7 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+ if material,ok:=repository.JewelryResourceByCode(itemType);ok && material.Price>0 && (len(req.CommandID)<8 || len(req.CommandID)>128) {http.Error(w,"commandId required",400);return}
 	totalCost := unitPrice * req.Count
 	key := item.InventoryKey
 	if key == "" {
@@ -380,7 +384,8 @@ func BuyShopItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := repository.PurchaseStorageItem(r.Context(), req.PlayerID, key, req.Count, totalCost, map[string]any{
 		"name": item.Name, "image": item.Image, "description": item.Description, "effect": item.Effect,
-	}); err != nil {
+	}, req.CommandID); err != nil {
+        if errors.Is(err, repository.ErrCommandConflict) { http.Error(w,"shop_purchase_request_conflict",http.StatusConflict);return }
 		if errors.Is(err, repository.ErrStorageInsufficientGold) {
 			http.Error(w, "insufficient balance", http.StatusBadRequest)
 			return

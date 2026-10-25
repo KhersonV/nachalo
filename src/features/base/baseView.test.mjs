@@ -5,10 +5,11 @@ import { BUILDING_KEYS, buildActionAllowed, buildingStatus, confirmedHeroAction,
 const forge = { level: 0, built: false, canBuild: false, costs: { wood: 10, stone: 8, iron: 2 }, resources: { wood: 7, stone: 8, iron: 0 }, unlockables: [] };
 
 test('selected building and level come from server state', () => {
-    const state = { forge, library: { ...forge, level: 1, built: true }, tavern: { ...forge, level: 0 } };
-    assert.deepEqual(BUILDING_KEYS, ['forge', 'library', 'tavern']);
+    const state = { forge, library: { ...forge, level: 1, built: true }, tavern: { ...forge, level: 0 }, guild: { ...forge, level: 1, built: true } };
+    assert.deepEqual(BUILDING_KEYS, ['forge', 'library', 'tavern', 'guild']);
     assert.equal(selectedBuilding(state, 'library').level, 1);
     assert.equal(selectedBuilding(state, 'tavern').level, 0);
+    assert.equal(selectedBuilding(state, 'guild').built, true);
 });
 
 test('missing resources are display-only derivatives of server cost and balance', () => {

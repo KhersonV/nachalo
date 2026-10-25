@@ -16,11 +16,14 @@ var ErrLoadoutInvalid = errors.New("invalid HEX loadout")
 var ErrStorageInsufficientGold = errors.New("insufficient balance")
 
 type StorageState struct {
-	Inventory map[string]map[string]any `json:"inventory"`
-	Loadout   map[string]int            `json:"loadout"`
-	Balance   int                       `json:"balance"`
-	Eligible  []string                  `json:"eligibleKeys"`
-	Equipment []StorageEquipment        `json:"equipment"`
+	PocketCapacity int                       `json:"pocketCapacity"`
+	PocketsUsed    int                       `json:"pocketsUsed"`
+	PocketStacks   map[string]int            `json:"pocketStacks"`
+	Inventory      map[string]map[string]any `json:"inventory"`
+	Loadout        map[string]int            `json:"loadout"`
+	Balance        int                       `json:"balance"`
+	Eligible       []string                  `json:"eligibleKeys"`
+	Equipment      []StorageEquipment        `json:"equipment"`
 }
 
 type StorageEquipment struct {
@@ -158,6 +161,9 @@ func allowedHexLoadoutKeyTx(ctx context.Context, tx storageQuerier, key string) 
 	if resourceType == "wood" || resourceType == "stone" || resourceType == "iron" {
 		return false
 	}
+	if recipe, ok := craftRecipe(resourceType); ok {
+		return recipe.Effect != ""
+	}
 	if resourceType == "food" || resourceType == "water" || resourceType == "elixir" {
 		return true
 	}
@@ -167,7 +173,8 @@ func allowedHexLoadoutKeyTx(ctx context.Context, tx storageQuerier, key string) 
 	}
 	_, heals := effects["health"]
 	_, energizes := effects["energy"]
-	return heals || energizes
+	_, restoresAP := effects["ap_half"]
+	return heals || energizes || restoresAP
 }
 
 func eligibleStorageKeys(ctx context.Context, query storageQuerier, storage map[string]map[string]any) []string {
@@ -204,10 +211,16 @@ func GetHexStorage(ctx context.Context, userID int) (StorageState, error) {
 	if err != nil {
 		return state, err
 	}
+	if err := enrichProfessionStorageItems(ctx, DB, state.Inventory); err != nil {
+		return state, err
+	}
 	state.Loadout, err = parseLoadout(loadoutRaw)
 	if err == nil {
 		state.Eligible = eligibleStorageKeys(ctx, DB, state.Inventory)
 		state.Equipment, err = listPermanentEquipment(ctx, DB, userID)
+	}
+	if err == nil {
+		err = enrichStoragePockets(ctx, DB, userID, &state)
 	}
 	return state, err
 }
@@ -234,6 +247,9 @@ func SaveHexLoadout(ctx context.Context, userID int, selected map[string]int) (S
 	if err = validateLoadoutTx(ctx, tx, state.Inventory, selected); err != nil {
 		return state, err
 	}
+	if err = validatePocketsTx(ctx, tx, userID, 0, selected); err != nil {
+		return state, err
+	}
 	raw, err := json.Marshal(selected)
 	if err != nil {
 		return state, err
@@ -245,6 +261,9 @@ func SaveHexLoadout(ctx context.Context, userID int, selected map[string]int) (S
 	state.Eligible = eligibleStorageKeys(ctx, tx, state.Inventory)
 	state.Equipment, err = listPermanentEquipment(ctx, tx, userID)
 	if err != nil {
+		return state, err
+	}
+	if err = enrichStoragePockets(ctx, tx, userID, &state); err != nil {
 		return state, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -259,7 +278,7 @@ type hexMatchLoadout struct {
 }
 
 // Called only within CreateHexMatch. Sorting profile locks prevents team order deadlocks.
-func takeHexLoadoutsTx(ctx context.Context, tx *sql.Tx, playerIDs []int) (map[int]hexMatchLoadout, error) {
+func takeHexLoadoutsTx(ctx context.Context, tx *sql.Tx, playerIDs []int, characterMaps ...map[int]int) (map[int]hexMatchLoadout, error) {
 	ids := append([]int(nil), playerIDs...)
 	sort.Ints(ids)
 	result := make(map[int]hexMatchLoadout, len(ids))
@@ -289,6 +308,13 @@ func takeHexLoadoutsTx(ctx context.Context, tx *sql.Tx, playerIDs []int) (map[in
 		if err := validateLoadoutTx(ctx, tx, storage, selected); err != nil {
 			return nil, err
 		}
+		character := 0
+		if len(characterMaps) > 0 {
+			character = characterMaps[0][id]
+		}
+		if err := validatePocketsTx(ctx, tx, id, character, selected); err != nil {
+			return nil, err
+		}
 		match, err := transferLoadout(storage, selected)
 		if err != nil {
 			return nil, err
@@ -306,7 +332,7 @@ func takeHexLoadoutsTx(ctx context.Context, tx *sql.Tx, playerIDs []int) (map[in
 }
 
 // Shop purchases serialize with loadout transfer and base construction on the profile row.
-func PurchaseStorageItem(ctx context.Context, userID int, key string, count, totalCost int, item map[string]any) error {
+func PurchaseStorageItem(ctx context.Context, userID int, key string, count, totalCost int, item map[string]any, commandIDs ...string) error {
 	if userID <= 0 || key == "" || count <= 0 || totalCost < 0 {
 		return ErrLoadoutInvalid
 	}
@@ -317,16 +343,31 @@ func PurchaseStorageItem(ctx context.Context, userID int, key string, count, tot
 	defer tx.Rollback()
 	if strings.HasPrefix(key, "resource_") {
 		id, parseErr := strconv.Atoi(strings.TrimPrefix(key, "resource_"))
-		if parseErr != nil || id <= 0 { return ErrLoadoutInvalid }
+		if parseErr != nil || id <= 0 {
+			return ErrLoadoutInvalid
+		}
 		var allowed bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND resource_kind='resource')`, id).Scan(&allowed); err != nil { return err }
-		if !allowed { return ErrLoadoutInvalid }
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM resources WHERE id=$1 AND resource_kind='resource')`, id).Scan(&allowed); err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrLoadoutInvalid
+		}
 	}
 	var inventoryRaw []byte
 	var balance int
 	if err := tx.QueryRowContext(ctx, `SELECT inventory,balance FROM player_profiles WHERE user_id=$1 FOR UPDATE`, userID).Scan(&inventoryRaw, &balance); err != nil {
 		return err
 	}
+ command := ""
+ if len(commandIDs)>0 { command=commandIDs[0] }
+ if command!="" {
+  if len(command)<8 || len(command)>128 { return ErrLoadoutInvalid }
+  var previousKey string;var previousCount,previousCost int
+  e:=tx.QueryRowContext(ctx,`SELECT item_key,quantity,total_cost FROM storage_purchase_operations WHERE user_id=$1 AND command_id=$2`,userID,command).Scan(&previousKey,&previousCount,&previousCost)
+  if e==nil { if previousKey!=key || previousCount!=count || previousCost!=totalCost { return ErrCommandConflict }; return nil }
+  if e!=sql.ErrNoRows {return e}
+ }
 	if balance < totalCost {
 		return ErrStorageInsufficientGold
 	}
@@ -341,6 +382,7 @@ func PurchaseStorageItem(ctx context.Context, userID int, key string, count, tot
 	for field, value := range item {
 		entry[field] = value
 	}
+ if marketStackEntryRestricted(entry) || storageCount(entry)>1_000_000_000-count {return ErrLoadoutInvalid}
 	entry["item_count"] = storageCount(entry) + count
 	storage[key] = entry
 	updated, err := json.Marshal(storage)
@@ -350,5 +392,6 @@ func PurchaseStorageItem(ctx context.Context, userID int, key string, count, tot
 	if _, err := tx.ExecContext(ctx, `UPDATE player_profiles SET balance=balance-$2,inventory=$3,updated_at=now() WHERE user_id=$1`, userID, totalCost, updated); err != nil {
 		return err
 	}
+ if command!="" { if _,err:=tx.ExecContext(ctx,`INSERT INTO storage_purchase_operations(user_id,command_id,item_key,quantity,total_cost) VALUES($1,$2,$3,$4,$5)`,userID,command,key,count,totalCost);err!=nil{return err} }
 	return tx.Commit()
 }

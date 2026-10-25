@@ -64,7 +64,7 @@ func GetResourceTypeByID(resourceID int) (string, error) {
 func GetResourcesData() ([]game.ResourceData, error) {
 	var resources []game.ResourceData
 	// The HEX generator still needs the barrel record as a map object.
-	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources WHERE resource_kind='resource' OR type IN ('barrel','barbel')`)
+	rows, err := DB.Query(`SELECT id, type, description, effect, image FROM resources WHERE (resource_kind='resource' AND type NOT IN (`+professionMaterialTypesSQL+`)) OR type IN ('barrel','barbel')`)
 	if err != nil {
 		return nil, err
 	}

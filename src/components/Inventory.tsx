@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { RawInventoryItem } from "../types";
 import styles from "../styles/Inventory.module.css";
+import type { CraftConsumableStatus } from "@/types/HexGameTypes";
 import type { HexGameMessages } from "@/i18n/hexGame";
 import { resourceImage } from "@/utils/resourceAssets";
 import { equipmentImage } from "@/utils/equipmentAssets";
@@ -14,11 +15,19 @@ import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 
 interface InventoryProps {
+  pocketCapacity?: number;
+  pocketsUsed?: number;
+  craftStatus?: CraftConsumableStatus;
+  hexTargets?: { id: number; name: string; ally: boolean }[];
+  currentAP?: number;
+  maxAP?: number;
+  personalTurn?: number;
+  waterAvailableTurn?: number;
   className?: string;
   onRequestClose?: () => void;
   hexInventory: Record<string, { item_count?: number; item_name?: string }>;
-  equipmentLoot?: Array<{ itemInstanceId: string; name: string; rarity: string; image: string }>;
-  onHexUseItem?: (itemType: "resource" | "scroll", itemId: number) => Promise<string>;
+  equipmentLoot?: Array<{ itemInstanceId: string; name: string; rarity: string; image: string; pocketBonus?: number }>;
+  onHexUseItem?: (itemType: "resource" | "scroll", itemId: number, targetUserId?: number) => Promise<string>;
   onHexBlueprintPlacementStart?: (inventoryKey: string) => void;
   hexBusy?: boolean;
   hexLabels?: HexGameMessages;
@@ -28,6 +37,7 @@ interface InventoryProps {
 const isConsumableResource = (item: RawInventoryItem): boolean => {
   if (item.item_type !== "resource") return false;
   const effect = item.effect || {};
+  if (effect.craft_consumable === 1) return true;
   if (typeof effect.health === "number" || typeof effect.energy === "number") {
     return true;
   }
@@ -39,6 +49,8 @@ const isConsumableResource = (item: RawInventoryItem): boolean => {
 };
 
 const Inventory: React.FC<InventoryProps> = ({
+  hexTargets = [], craftStatus, pocketCapacity = 6, pocketsUsed = 0,
+  currentAP = 0, maxAP = 6, personalTurn = 0, waterAvailableTurn = 0,
   className,
   onRequestClose,
   hexInventory,
@@ -49,6 +61,8 @@ const Inventory: React.FC<InventoryProps> = ({
   hexLabels,
   questArtifactId,
 }) => {
+  const pocketOverflow = pocketsUsed > pocketCapacity;
+  const [itemTargets, setItemTargets] = useState<Record<string, number>>({});
   const [feedback, setFeedback] = useState("");
   const { language } = useGameLanguage();
   const t = (source: string) => uiText(language, source);
@@ -103,6 +117,9 @@ const Inventory: React.FC<InventoryProps> = ({
       item_count,
       image,
       description,
+      consumable_effect: typeof it.consumable_effect === "string" ? it.consumable_effect : undefined,
+      resource_code: typeof it.resource_code === "string" ? it.resource_code : undefined,
+      origin: typeof it.origin === "string" ? it.origin : undefined,
       bonus: it.bonus,
       effect: it.effect,
       inventory_key: canonicalInventoryKey,
@@ -164,8 +181,20 @@ const Inventory: React.FC<InventoryProps> = ({
     const isScroll = key.startsWith("scroll_");
     if (!onHexUseItem || (!isScroll && !isConsumableResource(item))) return;
     try {
-      setFeedback(await onHexUseItem(isScroll ? "scroll" : "resource", item.item_id));
+      const poison = item.resource_code === "toxic_elixir" || item.resource_code === "poison_scroll";
+      if (poison && !itemTargets[key]) { setFeedback(t("Select an enemy player within 1 HEX.")); return; }
+      setFeedback(await onHexUseItem(isScroll ? "scroll" : "resource", item.item_id, itemTargets[key]));
     } catch (reason) { setFeedback(String(reason)); }
+  };
+
+  const craftedReason = (item: RawInventoryItem) => {
+    const category = item.consumable_effect;
+    if (!category) return "";
+    if ((craftStatus?.cooldowns?.[category] ?? 0) > personalTurn) return t("Consumable category is on cooldown.");
+    if (item.resource_code === "alchemical_antidote" && (craftStatus?.immuneUntil ?? 0) > personalTurn) return t("An equivalent effect is already active.");
+    const active = category === "critical" ? craftStatus?.critical : category === "vampirism" ? craftStatus?.vampirism : category === "speed" ? craftStatus?.speed : undefined;
+    if ((active?.until ?? 0) > personalTurn || (category === "critical" && (craftStatus?.critical?.charges ?? 0) > 0)) return t("An equivalent effect is already active.");
+    return "";
   };
 
   const renderItems = (
@@ -200,10 +229,23 @@ const Inventory: React.FC<InventoryProps> = ({
           {section === "resources" && (
             <>
               <div className={styles.itemCount}>{hexLabels?.quantity ?? t("Qty")}: {item.item_count}</div>
+              {item.item_type === "resource" && item.origin && (
+                <details>
+                  <summary>{t("About this material")}</summary>
+                  <p>{t(item.description)}</p>
+                  <p>{t("Source")}: {t(item.origin)}</p>
+                </details>
+              )}
+              {craftedReason(item) && <small>{craftedReason(item)}</small>}
+              {(item.resource_code === "healing_scroll" || item.resource_code === "poison_scroll" || item.resource_code === "toxic_elixir") && <select aria-label={t("Target")} value={itemTargets[key] ?? 0} onChange={event => setItemTargets(current => ({ ...current, [key]: Number(event.target.value) }))}>
+                <option value={0}>{item.resource_code === "healing_scroll" ? t("Self") : t("Select an enemy player within 1 HEX.")}</option>
+                {hexTargets.filter(target => item.resource_code === "healing_scroll" ? target.ally : !target.ally).map(target => <option value={target.id} key={target.id}>{target.name}</option>)}
+              </select>}
               {(isConsumableResource(item) || key.startsWith("scroll_") || key.startsWith("blueprint_")) && (
                 <button
                   className={styles.useButton}
-                  disabled={hexBusy || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem)}
+                  disabled={hexBusy || (pocketOverflow && !key.startsWith("blueprint_")) || !!craftedReason(item) || ((key.startsWith("blueprint_") || key.startsWith("scroll_")) && currentAP < 2) || (String(item.name).toLowerCase() === "water" && (currentAP >= maxAP || personalTurn < waterAvailableTurn)) || (key.startsWith("blueprint_") ? !onHexBlueprintPlacementStart : !onHexUseItem)}
+                  title={(pocketOverflow && !key.startsWith("blueprint_") ? t("Restore pocket capacity to use consumables. Items remain in inventory.") : "") || craftedReason(item) || (String(item.name).toLowerCase() === "water" ? `+1 AP; доступна с личного хода ${waterAvailableTurn}` : key.startsWith("scroll_") || key.startsWith("blueprint_") ? "1 AP" : "0 AP")}
                   onClick={() => handleUseItem(key, item)}
                 >
                   {key.startsWith("blueprint_") ? t("Place") : (hexLabels?.use ?? t("Use"))}
@@ -231,6 +273,8 @@ const Inventory: React.FC<InventoryProps> = ({
           </button>
         </div>
       )}
+      {onHexUseItem && <p>{t("Pockets")}: {pocketsUsed}/{pocketCapacity}</p>}
+      {pocketOverflow && <p role="alert">{t("Restore pocket capacity to use consumables. Items remain in inventory.")}</p>}
       <div className={styles.sections}>
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>{hexLabels?.resources ?? t("Resources")}</h3>
@@ -250,10 +294,11 @@ const Inventory: React.FC<InventoryProps> = ({
         <div className={styles.section}>
           <h3 className={styles.sectionTitle}>{hexLabels?.categories.equipment ?? t("Equipment")}</h3>
           <div className={styles.itemsContainer}>
-            {equipmentLoot.map(item => <div key={item.itemInstanceId} className={styles.item}>
+            {equipmentLoot.map(item => <div key={item.itemInstanceId} className={styles.item} title={(item.pocketBonus ?? 0) > 0 ? `${t("Additional pockets")}: +${item.pocketBonus}` : undefined}>
               <img src={equipmentImage(item.image)} alt={item.name} className={styles.itemImage} loading="lazy" />
               <div className={styles.itemName}>{t(item.name)}</div>
               <div className={styles.itemCount}>{item.rarity}</div>
+              {(item.pocketBonus ?? 0) > 0 && <div className={styles.itemCount}>{t("Additional pockets")}: +{item.pocketBonus}</div>}
             </div>)}
           </div>
         </div>

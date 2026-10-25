@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useGameLanguage } from "@/hooks/useGameLanguage";
+import { uiText } from "@/i18n/uiText";
 import { axialToWorld, HEX_DIRECTIONS, hexKey, type HexCoord } from "@/utils/hexGrid";
 import { heroArt, monsterArt, resourceArt } from "@/utils/hexArt";
 import { useHexCamera } from "@/hooks/useHexCamera";
@@ -49,9 +51,12 @@ type Props = {
 };
 
 export default function HexMap({ snapshot, selected, route, selectedTargetId, selectedTargetKind, attackableTargets, indicators = [], busy, onCellClick, onMonsterClick, labels }: Props) {
+  const { language } = useGameLanguage();
   const hero = useMemo(() => center(snapshot.player?.position ?? { q: 0, r: 0 }), [snapshot.player?.position.q, snapshot.player?.position.r]);
   const camera = useHexCamera(hero);
   const routeCells = useMemo(() => new Set(route?.path.map(hexKey) ?? []), [route]);
+  const availableSteps = route?.affordableSteps ?? (route?.affordable ? route.path.length : 0);
+  const availableCells = useMemo(() => new Set(route?.path.slice(0, availableSteps).map(hexKey) ?? []), [route, availableSteps]);
   const boundaryPath = useMemo(() => {
     const positions = new Set(snapshot.cells.map(cell => hexKey(cell.position)));
     return snapshot.cells.flatMap(cell => {
@@ -92,14 +97,16 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
             {visibility === "explored" && <polygon points={vertices(cell.position)} className={styles.exploredFog} pointerEvents="none" />}
             {interactive && visibility === "visible" && <polygon points={vertices(cell.position)} className={styles.interactiveCell} pointerEvents="none" />}
             {ownPosition === key && <polygon points={vertices(cell.position)} className={styles.heroCell} pointerEvents="none" />}
-            {routeCells.has(key) && <polygon points={vertices(cell.position)} className={route?.affordable ? styles.routeCell : styles.routeBlocked} pointerEvents="none" />}
+            {routeCells.has(key) && <polygon points={vertices(cell.position)} className={availableCells.has(key) ? styles.routeCell : styles.routeBlocked} pointerEvents="none" />}
+            {route?.reachablePosition && availableSteps > 0 && hexKey(route.reachablePosition) === key && <polygon points={vertices(cell.position)} className={styles.routeEnd} pointerEvents="none" />}
             {active && <polygon points={vertices(cell.position)} className={styles.selectedCell} pointerEvents="none" />}
           </g>;
         })}
       </g>
       {route && snapshot.player && <g pointerEvents="none">
         <polyline className={styles.routeLineShadow} points={[snapshot.player.position, ...route.path].map(p => { const c = center(p); return `${c.x},${c.y}`; }).join(" ")} />
-        <polyline className={route.affordable ? styles.routeLine : styles.routeLineBlocked} points={[snapshot.player.position, ...route.path].map(p => { const c = center(p); return `${c.x},${c.y}`; }).join(" ")} />
+        <polyline className={styles.routeLineBlocked} points={[snapshot.player.position, ...route.path].map(p => { const c = center(p); return `${c.x},${c.y}`; }).join(" ")} />
+        {availableSteps > 0 && <polyline className={styles.routeLine} points={[snapshot.player.position, ...route.path.slice(0, availableSteps)].map(p => { const c = center(p); return `${c.x},${c.y}`; }).join(" ")} />}
       </g>}
       <g pointerEvents="none">
         {snapshot.edges.map(edge => <g key={`${hexKey(edge.position)}:${edge.direction}`}>
@@ -119,9 +126,9 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
             {cell.structureType && <><image href={`/Forge-items/${cell.structureType}.png`} x={p.x - 22} y={p.y - 26} width="44" height="44" /><text x={p.x} y={p.y + 23} textAnchor="middle" className={styles.healthText}>{cell.isUnderConstruction ? `🚧 ${cell.constructionTurnsLeft}` : `HP ${cell.structureHealth}`}</text></>}
             {cell.barrel && <image href="/assets/nachalo/objects/barrel.png" x={p.x - 21} y={p.y - 26} width="42" height="45" preserveAspectRatio="xMidYMid meet" />}
             {cell.resource && (resource
-              ? <image href={resource} x={p.x - 21} y={p.y - 23} width="42" height="42" preserveAspectRatio="xMidYMid meet" />
+              ? <image href={resource} x={p.x + (cell.resource.professionNode ? 9 : -21)} y={p.y + (cell.resource.professionNode ? 6 : -23)} width={cell.resource.professionNode ? 28 : 42} height={cell.resource.professionNode ? 28 : 42} preserveAspectRatio="xMidYMid meet" />
               : <><circle cx={p.x} cy={p.y} r="17" className={styles.fallbackResource} /><text x={p.x} y={p.y + 7} textAnchor="middle" className={styles.fallbackSymbol}>◆</text></>)}
-            <title>{cell.structureType ? `${cell.structureType} · HP ${cell.structureHealth} · owner ${cell.structureOwnerUserId}` : cell.resource?.type ?? (cell.barrel ? labels?.barrel ?? "Barrel" : labels?.portal ?? "Portal")}</title>
+            <title>{cell.structureType ? `${cell.structureType} · HP ${cell.structureHealth} · owner ${cell.structureOwnerUserId}` : (cell.resource ? uiText(language, cell.resource.type) : undefined) ?? (cell.barrel ? labels?.barrel ?? "Barrel" : labels?.portal ?? "Portal")}</title>
           </g>;
         })}
       </g>

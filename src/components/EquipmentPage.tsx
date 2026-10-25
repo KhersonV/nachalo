@@ -1,13 +1,15 @@
 "use client";
 
 import UiText from "@/components/UiText";
+import ArtifactDismantle from "./ArtifactDismantle";
+import JewelryPairInfo from "./equipment/JewelryPairInfo";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getHeroFullbody, getHeroPortrait } from "@/features/heroes/heroArtwork";
 import { BONUS_FIELDS, compareItemBonuses, equipBlockReason, filterEquipmentItems, getAvailableEquipment, getGearCount, isTwoHanded, type InventoryFilters } from "@/features/equipment/equipmentView";
 import ItemBonusComparison from "./equipment/ItemBonusComparison";
-import { equipmentImage } from "@/utils/equipmentAssets";
+import { equipmentImage, equipmentRarityName } from "@/utils/equipmentAssets";
 import { resourceImage } from "@/utils/resourceAssets";
 import type { StorageState, StoredItem } from "@/features/storage/loadoutModel";
 import styles from "../styles/EquipmentPage.module.css";
@@ -68,7 +70,9 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
 
 const STAT_ROWS: Array<{ key: keyof EquipmentStats; label: string }> = [
     { key: "maxHealth", label: "Max Health" },
-    { key: "maxEnergy", label: "Max Energy" },
+    { key: "maxAP", label: "Max AP" },
+    { key: "maxMP", label: "Max MP" },
+    { key: "maxReactions", label: "Reactions" },
     { key: "attack", label: "Attack" },
     { key: "defense", label: "Defense" },
     { key: "mobility", label: "Mobility" },
@@ -78,7 +82,6 @@ const STAT_ROWS: Array<{ key: keyof EquipmentStats; label: string }> = [
 ];
 
 const EQUIPMENT_SLOT_SET = new Set<EquipmentSlot>(EQUIPMENT_SLOTS);
-const RARITY_SET = new Set<ItemRarity>(["green", "blue", "purple", "orange"]);
 const HANDEDNESS_SET = new Set<ItemHandedness>(["none", "one_hand", "two_hand"]);
 
 const equipmentDevGrantEnabled =
@@ -115,9 +118,7 @@ function isEquipmentSlot(value: unknown): value is EquipmentSlot {
 }
 
 function normalizeRarity(value: unknown): ItemRarity {
-    return typeof value === "string" && RARITY_SET.has(value as ItemRarity)
-        ? (value as ItemRarity)
-        : "green";
+    return value === "gray" || value === "green" || value === "blue" || value === "purple" || value === "orange" ? value : "gray";
 }
 
 function normalizeHandedness(value: unknown): ItemHandedness {
@@ -149,6 +150,7 @@ function normalizeBonuses(value: unknown): EquipmentBonuses {
         maxEnergy: numberOrZero(raw.maxEnergy),
         sightRange: numberOrZero(raw.sightRange),
         attackRange: numberOrZero(raw.attackRange),
+        pocketBonus: numberOrZero(raw.pocketBonus),
     };
 }
 
@@ -156,7 +158,9 @@ function normalizeStats(value: unknown): EquipmentStats {
     const raw = isRecord(value) ? value : {};
     return {
         maxHealth: numberOrZero(raw.maxHealth),
-        maxEnergy: numberOrZero(raw.maxEnergy),
+        maxAP: numberOrZero(raw.maxAP),
+        maxMP: numberOrZero(raw.maxMP),
+        maxReactions: numberOrZero(raw.maxReactions),
         attack: numberOrZero(raw.attack),
         defense: numberOrZero(raw.defense),
         mobility: numberOrZero(raw.mobility),
@@ -185,6 +189,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         name,
         setCode: stringOrEmpty(value.setCode) || undefined,
         setName: stringOrEmpty(value.setName) || undefined,
+        jewelrySet: isRecord(value.jewelrySet) && isRecord(value.jewelrySet.bonus) ? { name: stringOrEmpty(value.jewelrySet.name), bonus: normalizeBonuses(value.jewelrySet.bonus), required: 2 } : undefined,
         slot: value.slot,
         itemType: stringOrEmpty(value.itemType),
         handedness: normalizeHandedness(value.handedness),
@@ -387,7 +392,7 @@ function ItemImage({ item }: { item: EquipmentItem }) {
                         event.currentTarget.style.display = "none";
                     }}
                 />
-            ) : null}
+            ) : item.jewelrySet ? <span aria-hidden="true">✦</span> : null}
         </div>
     );
 }
@@ -402,7 +407,7 @@ function BonusList({ bonuses }: { bonuses?: EquipmentBonuses }) {
         <div className={styles.bonusList}>
             {entries.map((entry) => (
                 <span key={entry.key} className={styles.bonusPill}>
-                    <UiText text={entry.label} /> {formatBonusValue(entry.value)}
+                    <UiText text={entry.label} />{entry.key === "pocketBonus" ? ":" : ""} {formatBonusValue(entry.value)}
                 </span>
             ))}
         </div>
@@ -451,7 +456,7 @@ function EquippedSlotCard({
                 <span className={styles.slotIdentity}>
                     <span className={styles.slotLabel}><UiText text={SLOT_LABELS[slot]} /></span>
                     <strong title={item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : undefined)}>{item?.name || (blocked ? <><UiText text="Blocked by" /> {blockedBy || <UiText text="two-handed weapon" />}</> : <UiText text="Empty slot" />)}</strong>
-                    {item && <small><UiText text={formatEnum(item.rarity)} /></small>}
+                    {item && <small><UiText text={equipmentRarityName(item.rarity)} /></small>}
                 </span>
             </button>
             {item && <button type="button" className={styles.slotUnequip} onClick={() => onUnequip(slot)} disabled={busy}><UiText text={busy ? "Working…" : "Unequip"} /></button>}
@@ -471,12 +476,16 @@ function InventoryCard({
     reason: string | null;
     onSelect: (item: EquipmentItem) => void;
 }) {
+    const { language } = useGameLanguage();
+    const pockets = item.bonuses.pocketBonus ?? 0;
+    const pocketText = pockets > 0 ? `${uiText(language, "Additional pockets")}: +${pockets}` : "";
     return (
-        <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} title={item.name}>
+        <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} title={[uiText(language, item.name), pocketText].filter(Boolean).join("\n")}>
             <ItemImage item={item} />
             <span className={styles.inventoryCardCopy}>
                 <strong><UiText text={item.name} /></strong>
-                <small><UiText text={SLOT_LABELS[item.slot]} /> · <UiText text={formatEnum(item.rarity)} /></small>
+                <small><UiText text={SLOT_LABELS[item.slot]} /> · <UiText text={equipmentRarityName(item.rarity)} /></small>
+                {pocketText && <small>{pocketText}</small>}
                 {reason && <small className={styles.inventoryUnavailable}><UiText text={reason} /></small>}
             </span>
         </button>
@@ -493,8 +502,8 @@ function StatsComparison({
     return (
         <div className={styles.statsList}>
             {STAT_ROWS.map((row) => {
-                const baseValue = numberOrZero(baseStats[row.key]);
-                const effectiveValue = numberOrZero(effectiveStats[row.key]);
+                const baseValue = numberOrZero(baseStats[row.key]) / (row.key === "maxAP" || row.key === "maxMP" ? 2 : 1);
+                const effectiveValue = numberOrZero(effectiveStats[row.key]) / (row.key === "maxAP" || row.key === "maxMP" ? 2 : 1);
                 const changed = baseValue !== effectiveValue;
 
                 return (
@@ -662,6 +671,8 @@ export default function EquipmentPage() {
                     cache: "no-store",
                 });
                 await readResponse(response, false);
+                window.dispatchEvent(new Event("nachalo:equipment-changed"));
+                void loadStorage();
                 if (!await loadEquipment()) {
                     setEquipment(null);
                     setSelectedItemId(null);
@@ -676,7 +687,7 @@ export default function EquipmentPage() {
                 setBusyAction(null);
             }
         },
-        [authHeaders, loadEquipment, readResponse, user?.token],
+        [authHeaders, loadEquipment, loadStorage, readResponse, user?.token],
     );
 
     const handleEquip = useCallback(
@@ -839,14 +850,14 @@ export default function EquipmentPage() {
                                 <div className={styles.collectionControls}>
                                     <label>Поиск<input type="search" value={collectionSearch} onChange={event => setCollectionSearch(event.target.value)} placeholder="Название предмета" /></label>
                                     <label>Сортировка<select value={collectionSort} onChange={event => setCollectionSort(event.target.value as "name" | "type" | "rarity")}><option value="name">Название</option><option value="type">Тип</option><option value="rarity">Редкость</option></select></label>
-                                    <label>Редкость<select value={collectionRarity} onChange={event => setCollectionRarity(event.target.value)}><option value="all">Любая</option>{["gray", "green", "blue", "purple", "orange"].map(rarity => <option key={rarity} value={rarity}>{t(formatEnum(rarity))}</option>)}</select></label>
+                                    <label>Редкость<select value={collectionRarity} onChange={event => setCollectionRarity(event.target.value)}><option value="all">Любая</option>{["gray", "green", "blue", "purple", "orange"].map(rarity => <option key={rarity} value={rarity}>{t(equipmentRarityName(rarity))}</option>)}</select></label>
                                     <label className={styles.battleFilter}><input type="checkbox" checked={battleOnly} onChange={event => setBattleOnly(event.target.checked)} />Можно взять в бой</label>
                                 </div>
                                 {(collectionCategory === "all" || collectionCategory === "equipment") && !battleOnly && <div className={styles.filterBar}>
                                     <div className={styles.filterToggle} role="group" aria-label="Hero compatibility"><button type="button" aria-pressed={!filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: false }))}><UiText text="All" /></button><button type="button" aria-pressed={filters.availableOnly} onClick={() => setFilters(current => ({ ...current, availableOnly: true }))}><UiText text="For hero" /></button></div>
                                     <label><UiText text="Slot" /> <select value={filters.slot} onChange={event => setFilters(current => ({ ...current, slot: event.target.value as InventoryFilters["slot"] }))}><option value="all"><UiText text="All slots" /></option>{EQUIPMENT_SLOTS.filter(slot => availableSlots.includes(slot)).map(slot => <option key={slot} value={slot}>{t(SLOT_LABELS[slot])}</option>)}</select></label>
                                     <label><UiText text="Class" /> <select value={filters.heroClass} onChange={event => setFilters(current => ({ ...current, heroClass: event.target.value }))}><option value="all"><UiText text="All classes" /></option>{availableClasses.map(heroClass => <option key={heroClass} value={heroClass}>{t(formatEnum(heroClass))}</option>)}</select></label>
-                                    <label><UiText text="Rarity" /> <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all"><UiText text="All rarities" /></option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{t(formatEnum(rarity))}</option>)}</select></label>
+                                    <label><UiText text="Rarity" /> <select value={filters.rarity} onChange={event => setFilters(current => ({ ...current, rarity: event.target.value as InventoryFilters["rarity"] }))}><option value="all"><UiText text="All rarities" /></option>{availableRarities.map(rarity => <option key={rarity} value={rarity}>{t(equipmentRarityName(rarity))}</option>)}</select></label>
                                 </div>}
                                 {storageError && <p className={styles.inlineError} role="alert">{storageError} <button type="button" onClick={() => void loadStorage()}>Повторить</button></p>}
                                 {!storage && !storageError && <p className={styles.emptyState}>Загрузка хранилища…</p>}
@@ -861,11 +872,12 @@ export default function EquipmentPage() {
 
                             <aside className={styles.detailPanel} aria-label="Item details and comparison">
                                 <div className={styles.detailHeading}><span className={styles.eyebrow}><UiText text="INSPECT" /></span><h3>{selectedStored ? t(selectedStored.name) : t(selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item")}</h3></div>
-                                {selectedStored ? <div className={styles.storedDetail}><span className={styles.itemImageWrap}>{storedImage(selectedStored.key, selectedStored.item) && <img className={styles.itemImage} src={storedImage(selectedStored.key, selectedStored.item)} alt="" />}</span><h4>{t(selectedStored.name)}</h4><p>{t(selectedStored.item.description || "Описание отсутствует")}</p><p>{collectionCategories.find(value => value.key === selectedStored.category)?.label} · ×{selectedStored.item.item_count}</p><p>{storage?.eligibleKeys?.includes(selectedStored.key) ? "Можно взять в HEX-матч" : "Нельзя взять в HEX-матч"}</p>{selectedStored.category === "artifact" && <a className={styles.secondaryButton} href={`/market?sell=${encodeURIComponent(selectedStored.key)}`}>Перейти к продаже</a>}</div> : selectedInventoryItem ? <>
+                                {selectedStored ? <div className={styles.storedDetail}><span className={styles.itemImageWrap}>{storedImage(selectedStored.key, selectedStored.item) && <img className={styles.itemImage} src={storedImage(selectedStored.key, selectedStored.item)} alt="" />}</span><h4>{t(selectedStored.name)}</h4><p>{t(selectedStored.item.description || "Описание отсутствует")}</p>{selectedStored.item.origin && <p>Источник: {selectedStored.item.origin}</p>}<p>{collectionCategories.find(value => value.key === selectedStored.category)?.label} · ×{selectedStored.item.item_count}</p><p>{storage?.eligibleKeys?.includes(selectedStored.key) ? "Можно взять в HEX-матч" : "Нельзя взять в HEX-матч"}</p>{selectedStored.category === "artifact" && <ArtifactDismantle key={selectedStored.key} artifactId={Number(selectedStored.key.slice("artifact_".length))} onDone={loadStorage} />}{(selectedStored.category === "artifact" || selectedStored.category === "resource") && <a className={styles.secondaryButton} href={`/market?sell=${encodeURIComponent(selectedStored.key)}`}>Перейти к продаже</a>}</div> : selectedInventoryItem ? <>
                                     <div className={styles.compareCards}>
-                                        <div className={styles.compareCard}><span><UiText text="NOW EQUIPPED" /></span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{formatEnum(comparedItem.rarity)} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small><UiText text="Set:" /> {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p><UiText text="Empty" /> {SLOT_LABELS[selectedInventoryItem.slot]} <UiText text="slot" /></p>}</div>
-                                        <div className={styles.compareCard}><span><UiText text="SELECTED ITEM" /></span><ItemImage item={selectedInventoryItem} /><strong><UiText text={selectedInventoryItem.name} /></strong><small>{formatEnum(selectedInventoryItem.rarity)} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small><UiText text="Set:" /> <UiText text={selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")} /></small>}</div>
+                                        <div className={styles.compareCard}><span><UiText text="NOW EQUIPPED" /></span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{t(equipmentRarityName(comparedItem.rarity))} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small><UiText text="Set:" /> {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p><UiText text="Empty" /> {SLOT_LABELS[selectedInventoryItem.slot]} <UiText text="slot" /></p>}</div>
+                                        <div className={styles.compareCard}><span><UiText text="SELECTED ITEM" /></span><ItemImage item={selectedInventoryItem} /><strong><UiText text={selectedInventoryItem.name} /></strong><small>{t(equipmentRarityName(selectedInventoryItem.rarity))} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small><UiText text="Set:" /> <UiText text={selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")} /></small>}</div>
                                     </div>
+                                    <JewelryPairInfo item={selectedInventoryItem} equipped={selectedEquipped} />
                                     <ItemBonusComparison rows={itemComparison} />
                                     <div className={styles.itemRestrictions}><ItemMeta item={selectedInventoryItem} /></div>
                                     {selectedBlockReason && <p className={styles.restrictionMessage}>{t(selectedBlockReason)}</p>}
@@ -874,7 +886,7 @@ export default function EquipmentPage() {
                                         {actionError?.key === `unequip-${selectedInventoryItem.slot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
                                         {selectedEquipped[selectedInventoryItem.slot]?.instanceId === selectedInventoryItem.instanceId ? <button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedInventoryItem.slot)}>{t(busyAction ? "Working…" : "Unequip")}</button> : <button type="button" className={styles.primaryButton} disabled={busyAction !== null || !!selectedBlockReason} onClick={() => handleEquip(selectedInventoryItem)}>{t(busyAction?.startsWith("equip-") ? "Equipping…" : "Equip item")}</button>}
                                     </div>
-                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4><UiText text={inspectedItem.name} /></h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} />{(inspectedItem.setName || inspectedItem.setCode) && <p><UiText text="Set:" /> <UiText text={inspectedItem.setName || formatEnum(inspectedItem.setCode || "")} /></p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{t(busyAction ? "Working…" : "Unequip")}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `${t("Blocked by")} ${selectedEquipped.main_hand?.name}.` : t("This slot is empty. Select a compatible item from Available Equipment.")}</p> : <p className={styles.detailPrompt}><UiText text="Choose an available item or an equipment slot to see its details here." /></p>}
+                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4><UiText text={inspectedItem.name} /></h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} /><JewelryPairInfo item={inspectedItem} equipped={selectedEquipped} />{(inspectedItem.setName || inspectedItem.setCode) && <p><UiText text="Set:" /> <UiText text={inspectedItem.setName || formatEnum(inspectedItem.setCode || "")} /></p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{t(busyAction ? "Working…" : "Unequip")}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `${t("Blocked by")} ${selectedEquipped.main_hand?.name}.` : t("This slot is empty. Select a compatible item from Available Equipment.")}</p> : <p className={styles.detailPrompt}><UiText text="Choose an available item or an equipment slot to see its details here." /></p>}
                             </aside>
                         </div>
                     </section>

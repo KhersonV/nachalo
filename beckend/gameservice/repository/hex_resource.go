@@ -23,14 +23,19 @@ func requireHexInteractionPosition(player, target hexgrid.Coord) error {
 }
 
 type HexCollectResult struct {
-	Position      hexgrid.Coord   `json:"position"`
-	ItemID        int             `json:"itemId"`
-	ItemType      string          `json:"itemType"`
-	PlayerName    string          `json:"playerName,omitempty"`
-	Inventory     json.RawMessage `json:"inventory"`
-	StateRevision int64           `json:"stateRevision"`
-	MapRevision   int64           `json:"mapRevision"`
-	Replayed      bool            `json:"-"`
+	ProfessionXP        int              `json:"professionXP,omitempty"`
+	ItemName            string           `json:"itemName,omitempty"`
+	ProfessionGathering bool             `json:"professionGathering,omitempty"`
+	Budget              *HexBudgets      `json:"budget,omitempty"`
+	ActionEffects       []map[string]any `json:"actionEffects,omitempty"`
+	Position            hexgrid.Coord    `json:"position"`
+	ItemID              int              `json:"itemId"`
+	ItemType            string           `json:"itemType"`
+	PlayerName          string           `json:"playerName,omitempty"`
+	Inventory           json.RawMessage  `json:"inventory"`
+	StateRevision       int64            `json:"stateRevision"`
+	MapRevision         int64            `json:"mapRevision"`
+	Replayed            bool             `json:"-"`
 }
 
 func (r *HexCollectResult) SetCommandRevisions(state, mapRevision int64) {
@@ -58,6 +63,9 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	}
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
+	}
+	if err := c.SpendHexTx(ctx, userID, 1, 0, 0); err != nil {
+		return out, err
 	}
 	var mode string
 	var version, health int
@@ -89,6 +97,28 @@ func ApplyHexResourceCollection(ctx context.Context, instanceID string, userID i
 	}
 	if resource.ID <= 0 {
 		return out, ErrCommandRejected
+	}
+	if resource.ProfessionNode != nil {
+		if err := c.gatherProfessionNodeTx(ctx, userID, resource.ProfessionNode, &out); err != nil {
+			return out, err
+		}
+		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET resource=NULL,tile_code=48 WHERE instance_id=$1 AND q=$2 AND r=$3`, instanceID, pos.Q, pos.R); err != nil {
+			return out, err
+		}
+		out.Position = pos
+		budget, err := ReadHexBudgetsTx(ctx, c.Tx, instanceID, userID)
+		if err != nil {
+			return out, err
+		}
+		out.Budget = &budget
+		out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
+		if err != nil {
+			return HexCollectResult{}, err
+		}
+		if publish != nil {
+			publish(out)
+		}
+		return out, nil
 	}
 	itemType := "resource"
 	if resource.ItemType == "artifact" {

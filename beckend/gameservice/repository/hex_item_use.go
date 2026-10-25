@@ -11,17 +11,19 @@ import (
 )
 
 type HexItemResult struct {
-	ItemType      string          `json:"itemType"`
-	ItemID        int             `json:"itemId"`
-	TurnNumber    int             `json:"turnNumber"`
-	Health        int             `json:"health"`
-	Energy        int             `json:"energy"`
-	Inventory     json.RawMessage `json:"inventory"`
-	Axis          string          `json:"axis,omitempty"`
-	Value         int             `json:"value,omitempty"`
-	StateRevision int64           `json:"stateRevision"`
-	MapRevision   int64           `json:"mapRevision"`
-	Replayed      bool            `json:"-"`
+	Budget        *HexBudgets      `json:"budget,omitempty"`
+	ActionEffects []map[string]any `json:"actionEffects,omitempty"`
+	ItemType      string           `json:"itemType"`
+	ItemID        int              `json:"itemId"`
+	TurnNumber    int              `json:"turnNumber"`
+	Health        int              `json:"health"`
+	AP            int              `json:"ap"`
+	Inventory     json.RawMessage  `json:"inventory"`
+	Axis          string           `json:"axis,omitempty"`
+	Value         int              `json:"value,omitempty"`
+	StateRevision int64            `json:"stateRevision"`
+	MapRevision   int64            `json:"mapRevision"`
+	Replayed      bool             `json:"-"`
 }
 
 func (r *HexItemResult) SetCommandRevisions(state, mapRevision int64) {
@@ -70,14 +72,22 @@ func consumeHexInventoryTx(ctx context.Context, tx *sql.Tx, instanceID string, u
 	return updated, nil
 }
 
-func ApplyHexItem(ctx context.Context, instanceID string, userID int, commandID, itemType string, itemID int, publish func(HexItemResult)) (HexItemResult, error) {
+func ApplyHexItem(ctx context.Context, instanceID string, userID int, commandID, itemType string, itemID int, publish func(HexItemResult), targetUsers ...int) (HexItemResult, error) {
 	var out HexItemResult
 	if itemID <= 0 || (itemType != "resource" && itemType != "scroll") {
 		return out, ErrCommandRejected
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	c, err := BeginMatchCommand(ctx, instanceID, userID, commandID, fmt.Sprintf("hex-item-v1:%d:%s:%d", userID, itemType, itemID))
+	targetUser := 0
+	if len(targetUsers) > 0 {
+		targetUser = targetUsers[0]
+	}
+	canonical := fmt.Sprintf("hex-item-v1:%d:%s:%d", userID, itemType, itemID)
+	if targetUser != 0 {
+		canonical += fmt.Sprintf(":target:%d", targetUser)
+	}
+	c, err := BeginMatchCommand(ctx, instanceID, userID, commandID, canonical)
 	if err != nil {
 		return out, err
 	}
@@ -92,22 +102,45 @@ func ApplyHexItem(ctx context.Context, instanceID string, userID int, commandID,
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
 	}
+	if err := validateMatchItemPocketsTx(ctx, c.Tx, instanceID, userID); err != nil {
+		return out, err
+	}
 	var mode string
-	var version, turn, health, maxHealth, energy, maxEnergy int
+	var version, turn, health, maxHealth, ap, maxAP int
 	var pos hexgrid.Coord
-	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,m.turn_number,p.health,p.max_health,p.energy,p.max_energy,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &turn, &health, &maxHealth, &energy, &maxEnergy, &pos.Q, &pos.R)
+	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,m.turn_number,p.health,p.max_health,p.ap,p.max_ap,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &turn, &health, &maxHealth, &ap, &maxAP, &pos.Q, &pos.R)
 	if err != nil {
 		return out, err
 	}
 	if mode != "hex" || version != 2 || health <= 0 {
 		return out, ErrCommandRejected
 	}
-	out.ItemType, out.ItemID, out.TurnNumber, out.Health, out.Energy = itemType, itemID, turn, health, energy
+	out.ItemType, out.ItemID, out.TurnNumber, out.Health, out.AP = itemType, itemID, turn, health, ap
 	if itemType == "resource" {
 		var kind string
 		var effectRaw []byte
 		if err := c.Tx.QueryRowContext(ctx, `SELECT type,effect FROM resources WHERE id=$1`, itemID).Scan(&kind, &effectRaw); err != nil {
 			return out, err
+		}
+		if recipe, ok := craftRecipe(kind); ok && recipe.Effect != "" {
+			if err := c.applyCraftConsumableTx(ctx, userID, targetUser, recipe); err != nil {
+				return out, err
+			}
+			out.Inventory, err = consumeHexInventoryTx(ctx, c.Tx, instanceID, userID, itemType, itemID)
+			if err != nil {
+				return out, err
+			}
+			out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, c.MapChanged)
+			if err != nil {
+				return HexItemResult{}, err
+			}
+			if publish != nil {
+				publish(out)
+			}
+			return out, nil
+		}
+		if targetUser != 0 && targetUser != userID {
+			return out, ErrCommandRejected
 		}
 		if kind != "food" && kind != "water" {
 			return out, ErrCommandRejected
@@ -127,26 +160,36 @@ func ApplyHexItem(ctx context.Context, instanceID string, userID int, commandID,
 				return out, ErrHexFoodCooldown
 			}
 		} else {
-			err = c.Tx.QueryRowContext(ctx, `SELECT count(*) FROM match_commands mc JOIN resources r ON r.id=(mc.response->>'itemId')::int WHERE mc.instance_id=$1 AND mc.user_id=$2 AND mc.response->>'itemType'='resource' AND r.type='water' AND (mc.response->>'turnNumber')::int>=$3`, instanceID, userID, turn-1).Scan(&used)
+			b, err := ReadHexBudgetsTx(ctx, c.Tx, instanceID, userID)
 			if err != nil {
 				return out, err
 			}
-			if used >= 5 {
+			if b.AP >= b.MaxAP || b.PersonalTurn < b.WaterAvailableTurn {
 				return out, ErrHexWaterLimit
 			}
+			if _, err = c.Tx.ExecContext(ctx, `UPDATE match_players SET water_available_turn=personal_turn_counter+2 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID); err != nil {
+				return out, err
+			}
 		}
+
 		out.Health = health + effect["health"]
 		if out.Health > maxHealth {
 			out.Health = maxHealth
 		}
-		out.Energy = energy + effect["energy"]
-		if out.Energy > maxEnergy {
-			out.Energy = maxEnergy
+		out.AP = ap
+		if kind == "water" {
+			out.AP += 2
 		}
-		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET health=$3,energy=$4 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID, out.Health, out.Energy); err != nil {
+		if out.AP > maxAP {
+			out.AP = maxAP
+		}
+		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET health=$3,ap=$4 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID, out.Health, out.AP); err != nil {
 			return out, err
 		}
 	} else {
+		if err := c.SpendHexTx(ctx, userID, 2, 0, 0); err != nil {
+			return out, err
+		}
 		if itemID < 2001 || itemID > 2006 {
 			return out, ErrCommandRejected
 		}
@@ -255,5 +298,5 @@ func ApplyHexItem(ctx context.Context, instanceID string, userID int, commandID,
 }
 
 var ErrHexFoodCooldown = fmt.Errorf("food can be used once every two turns")
-var ErrHexWaterLimit = fmt.Errorf("water can be used at most five times in two turns")
+var ErrHexWaterLimit = fmt.Errorf("water is unavailable until the next eligible personal turn, or AP is full")
 var ErrHexNoTarget = fmt.Errorf("no target for this scroll")

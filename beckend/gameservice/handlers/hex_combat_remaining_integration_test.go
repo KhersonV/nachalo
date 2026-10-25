@@ -218,10 +218,10 @@ func TestHexRangerThirdShotPostgres(t *testing.T) {
 			if err := db.QueryRow(`SELECT pos_q,pos_r,hex_armor_break_stacks FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2`, id, monsterID).Scan(&q, &r, &stacks); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.QueryRow(`SELECT energy FROM match_players WHERE instance_id=$1`, id).Scan(&energy); err != nil {
+			if err := db.QueryRow(`SELECT ap FROM match_players WHERE instance_id=$1`, id).Scan(&energy); err != nil {
 				t.Fatal(err)
 			}
-			if stacks != 0 || energy != third.Energy {
+			if stacks != 0 || energy != third.AP {
 				t.Fatalf("stacks=%d energy=%d result=%+v", stacks, energy, third)
 			}
 			if blocked {
@@ -386,7 +386,7 @@ func TestHexRangerCriticalOrderAndExpiryPostgres(t *testing.T) {
 		t.Fatalf("second break: %+v %v", second, err)
 	}
 	for turn := 1; turn <= 2; turn++ {
-		if _, err := repository.ApplyHexEndTurn(ctx, id, 781, fmt.Sprintf("turn-%d", turn), turn, func(string) int { return 0 }, nil); err != nil {
+		if _, err := repository.ApplyHexEndTurn(ctx, id, 781, fmt.Sprintf("turn-%d", turn), turn, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

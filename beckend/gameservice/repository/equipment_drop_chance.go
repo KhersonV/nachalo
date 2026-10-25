@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const DefaultEquipmentDropChancePercent = 10
+const DefaultEquipmentDropChancePercent = 1
 
 func EquipmentDropChancePercent() int {
 	raw := strings.TrimSpace(os.Getenv("EQUIPMENT_DROP_CHANCE_OVERRIDE"))

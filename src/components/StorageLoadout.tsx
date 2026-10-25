@@ -6,6 +6,7 @@ import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 import { API_BASE } from "@/utils/serviceUrls";
 import {
+    pocketsUsed,
     eligibleItems,
     nextLoadout,
     normalizedLoadout,
@@ -56,6 +57,8 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
     const [open, setOpen] = useState(false);
     const selectedRef = useRef<Record<string, number>>({});
     const tokenRef = useRef(user?.token);
+    const capacityRef = useRef(6);
+    const stacksRef = useRef<Record<string, number>>({});
     const callbacksRef = useRef({ onReadyChange, onAvailabilityChange, onStatusChange });
     const saverRef = useRef<SerializedLoadoutSaver | null>(null);
     const dialogRef = useRef<HTMLDialogElement>(null);
@@ -79,7 +82,7 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
             (nextStatus, reason) => {
                 setStatus(nextStatus);
                 setError(reason?.message ?? "");
-                callbacksRef.current.onReadyChange?.(nextStatus === "saved");
+                callbacksRef.current.onReadyChange?.(nextStatus === "saved" && pocketsUsed(selectedRef.current, stacksRef.current) <= capacityRef.current);
                 callbacksRef.current.onStatusChange?.(nextStatus, reason?.message);
             },
         );
@@ -90,6 +93,7 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
         if (!token) return;
         const response = await fetch(`${API_BASE}/game/storage`, {
             headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
             signal,
         });
         if (!response.ok) throw new Error((await response.text()) || "Storage unavailable");
@@ -97,6 +101,8 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
         if (signal.aborted) return;
         const normalized = normalizedLoadout(next);
         const original = next.loadout ?? {};
+        capacityRef.current = next.pocketCapacity ?? 6;
+        stacksRef.current = next.pocketStacks ?? {};
         selectedRef.current = normalized;
         setStorage(next);
         setSelected(normalized);
@@ -127,9 +133,12 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
         ensureSaved: async () => {
             if (!storage) throw new Error("Loadout unavailable");
             await saverRef.current!.flush();
+            await reload(new AbortController().signal);
+            if (pocketsUsed(selectedRef.current, stacksRef.current) > capacityRef.current) throw new Error(uiText(locale, "Reduce loadout to pocket capacity. Items remain in Storage."));
+            await saverRef.current!.flush();
         },
         retry: retryStorage,
-    }), [storage, reload]);
+    }), [storage, reload, locale]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -152,6 +161,36 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
     }, [reload, user?.token]);
 
     useEffect(() => {
+        const controller = new AbortController();
+        // Refresh capacity without resetting an unsaved selection. The server
+        // remains authoritative for writes and match creation in other tabs.
+        const refreshCapacity = () => {
+            const token = tokenRef.current;
+            if (!token) return;
+            void fetch(`${API_BASE}/game/storage`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+                signal: controller.signal,
+            }).then(async response => {
+                if (!response.ok) throw new Error((await response.text()) || "Storage unavailable");
+                const next = await response.json() as StorageState;
+                if (controller.signal.aborted) return;
+                capacityRef.current = next.pocketCapacity ?? 6;
+                stacksRef.current = next.pocketStacks ?? {};
+                setStorage(next);
+                callbacksRef.current.onReadyChange?.(status === "saved" && pocketsUsed(selectedRef.current, stacksRef.current) <= capacityRef.current);
+            }).catch(reason => { if (!controller.signal.aborted) setError(String(reason)); });
+        };
+        window.addEventListener("nachalo:equipment-changed", refreshCapacity);
+        window.addEventListener("focus", refreshCapacity);
+        return () => {
+            controller.abort();
+            window.removeEventListener("nachalo:equipment-changed", refreshCapacity);
+            window.removeEventListener("focus", refreshCapacity);
+        };
+    }, [status, user?.token]);
+
+    useEffect(() => {
         const dialog = dialogRef.current;
         if (!dialog) return;
         if (open && !dialog.open) { dialog.showModal(); closeRef.current?.focus(); }
@@ -161,8 +200,13 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
     useEffect(() => { if (forceClose) setOpen(false); }, [forceClose]);
 
     const entries = useMemo(() => storage ? eligibleItems(storage) : [], [storage]);
+    const capacity = storage?.pocketCapacity ?? 6;
+    const pocketStacks = storage?.pocketStacks ?? {};
+    const used = pocketsUsed(selected, pocketStacks);
+    const maxTaking = (key: string, total: number) => Math.max(0, Math.min(total, (capacity - used + Math.ceil((selected[key] ?? 0) / (pocketStacks[key] ?? 1))) * (pocketStacks[key] ?? 1)));
     const totalSelected = Object.values(selected).reduce((sum, count) => sum + count, 0);
     const selectedEntries = entries.filter(([key]) => (selected[key] ?? 0) > 0);
+    const filledPockets = selectedEntries.flatMap(([key, item]) => Array.from({ length: Math.ceil((selected[key] ?? 0) / (pocketStacks[key] ?? 1)) }, (_, n) => ({ key, item, count: Math.min(pocketStacks[key] ?? 1, (selected[key] ?? 0) - n * (pocketStacks[key] ?? 1)) })));
     const summary = selectedEntries.slice(0, compact ? 3 : undefined)
         .map(([key, item]) => `${translate(item.name ?? item.item_name ?? key)} ×${selected[key]}`)
         .join(", ");
@@ -170,7 +214,7 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
 
     const changeCount = (key: string, action: QuantityAction, total: number) => {
         if (locked || !allowSelection) return;
-        const next = nextLoadout(selectedRef.current, key, action, total);
+        const next = nextLoadout(selectedRef.current, key, action, (typeof action === "number" && action < 0) || action === "zero" ? total : Math.max(selectedRef.current[key] ?? 0, maxTaking(key, total)));
         if (next === selectedRef.current) return;
         selectedRef.current = next;
         setSelected(next);
@@ -178,11 +222,12 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
     };
 
     const retry = () => { void retryStorage().catch(() => undefined); };
+    const refreshPockets = () => { if (status !== "saved") return; void reload(new AbortController().signal).catch(reason => setError(String(reason))); };
     const statusText = status === "saved" ? t.saved : status === "saving" ? t.saving : t.failed;
     const compactContent = <>
         <span className={styles.compactTopline}><span>{t.title}</span><span className={status === "error" ? styles.error : status === "saved" ? styles.ready : styles.needsSave} role="status">{error ? t.failed : storage ? statusText : t.loading}</span></span>
         <strong className={styles.compactSummary}>{storage ? (compactSummary || (entries.length ? t.noneSelected : t.empty)) : (error || t.loading)}</strong>
-        <span className={styles.compactFooter}>{t.selected}: {totalSelected} {allowSelection && <span>{t.configure} ↗</span>}</span>
+        <span className={styles.compactFooter}>{translate("Pockets")}: {used}/{capacity} · {t.selected}: {totalSelected} {allowSelection && <span>{t.configure} ↗</span>}</span>
     </>;
 
     if (!collapsible) {
@@ -201,12 +246,18 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
         {compact ? allowSelection ? <button ref={openerRef} className={styles.compactTrigger} type="button" onClick={() => setOpen(true)} disabled={!storage || locked}>{compactContent}</button> : <div className={`${styles.compactTrigger} ${styles.compactReadOnly}`}>{compactContent}</div> : <>
             <div className={styles.heading}><h3>{t.title}</h3><span className={status === "error" ? styles.error : status === "saved" ? styles.ready : styles.needsSave} role="status">{error ? t.failed : storage ? statusText : t.loading}</span></div>
             <p className={styles.loadoutSummary}>{storage ? (summary || (entries.length ? t.noneSelected : t.empty)) : (error || t.loading)}</p>
-            <div className={styles.summaryFooter}><span>{t.selected}: <strong>{totalSelected}</strong></span><button ref={openerRef} type="button" onClick={() => setOpen(true)} disabled={!storage || locked || !allowSelection}>{t.configure}</button></div>
+            <div className={styles.summaryFooter}><span>{translate("Pockets")}: <strong>{used}/{capacity}</strong> · {t.selected}: {totalSelected}</span><button ref={openerRef} type="button" onClick={() => setOpen(true)} disabled={!storage || locked || !allowSelection}>{t.configure}</button></div>
         </>}
         {error && <div role="alert" className={styles.saveError}>{t.failed}: {error} <button type="button" onClick={retry}>{t.retry}</button></div>}
         <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="loadout-dialog-title" onCancel={(event) => { event.preventDefault(); setOpen(false); }}>
             <div className={styles.dialogHeader}><div><span className={styles.dialogEyebrow}>{translate("STORAGE")}</span><h2 id="loadout-dialog-title">{t.title}</h2><p>{t.carried}</p></div><button ref={closeRef} type="button" className={styles.closeButton} onClick={() => setOpen(false)} aria-label={t.close}>×</button></div>
             <div className={styles.dialogBody}>
+                <p>{translate("Pockets")}: {used} / {capacity} <button type="button" disabled={status !== "saved" || locked} onClick={refreshPockets}>{translate("Refresh")}</button></p>
+                {used > capacity && <p role="alert">{translate("Reduce loadout to pocket capacity. Items remain in Storage.")}</p>}
+                <div className={styles.pockets}>{Array.from({ length: Math.max(capacity, used) }, (_, index) => {
+                  const filled = filledPockets[index];
+                  return <div key={index} className={styles.pocket}>{filled ? <><img src={filled.item.image} alt="" /><span>{translate(filled.item.name || filled.key)} ×{filled.count}</span></> : <span>—</span>}</div>;
+                })}</div>
                 {entries.length === 0 && <p className={styles.empty}>{t.empty}</p>}
                 <div className={styles.eligibleGrid}>{entries.map(([key, item]) => {
                     const total = Math.max(0, item.item_count ?? 0);
@@ -215,10 +266,10 @@ const StorageLoadout = forwardRef<StorageLoadoutHandle, Props>(function StorageL
                     const image = key.startsWith("resource_") ? resourceImage(item.name ?? item.item_name, item.image) ?? item.image : item.image;
                     return <article key={key} className={styles.eligibleCard}>
                         <div className={styles.itemIdentity}>{image ? <img src={image} alt="" /> : <span className={styles.iconFallback} aria-hidden="true">◇</span>}<strong>{translate(item.name ?? item.item_name ?? key)}</strong></div>
-                        <div className={styles.balances}><span>{t.available} <strong>{available}</strong></span><span>{t.selected} <strong>{taking}</strong></span></div>
+                        <small>{translate("Per pocket")}: {pocketStacks[key] ?? 1}</small><div className={styles.balances}><span>{t.available} <strong>{available}</strong></span><span>{t.selected} <strong>{taking}</strong></span></div>
                         <div className={styles.quantityActions}>{ACTIONS.map((action) => {
                             const label = action === "zero" ? "0" : action === "max" ? translate("Max") : action > 0 ? `+${action}` : String(action);
-                            const disabled = locked || !allowSelection || (action === "zero" || (typeof action === "number" && action < 0) ? taking === 0 : taking >= Math.min(9999, total));
+                            const disabled = locked || !allowSelection || (action === "zero" || (typeof action === "number" && action < 0) ? taking === 0 : taking >= maxTaking(key, total));
                             return <button type="button" key={String(action)} aria-label={`${label} ${translate(item.name ?? item.item_name ?? key)}`} disabled={disabled} onClick={() => changeCount(key, action, total)}>{label}</button>;
                         })}</div>
                     </article>;

@@ -13,9 +13,9 @@ export const BONUS_FIELDS: ReadonlyArray<{ key: keyof EquipmentBonuses; label: s
     { key: "mobility", label: "Mobility" },
     { key: "agility", label: "Reflex" },
     { key: "maxHealth", label: "Max Health" },
-    { key: "maxEnergy", label: "Max Energy" },
     { key: "sightRange", label: "Sight Range" },
     { key: "attackRange", label: "Attack Range" },
+    { key: "pocketBonus", label: "Additional pockets" },
 ];
 
 export function isTwoHanded(item?: EquipmentItem): boolean {

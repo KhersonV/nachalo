@@ -84,17 +84,4 @@ func planHexGuardianAura(start hexgrid.Coord, path []hexgrid.Coord, userID, team
 }
 
 // Forced displacement never deals exit damage, but leaving all auras clears pressure.
-func ClearHexGuardianAuraAfterForcedMoveTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, from, destination hexgrid.Coord) error {
-	var teamID int
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(group_id,0) FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&teamID); err != nil {
-		return err
-	}
-	guardians, err := loadHexGuardiansTx(ctx, tx, instanceID)
-	if err != nil {
-		return err
-	}
-	if hexAuraSourceAt(from, userID, teamID, guardians) == 0 || hexAuraSourceAt(destination, userID, teamID, guardians) == 0 {
-		_, err = tx.ExecContext(ctx, `UPDATE match_players SET hex_guardian_aura_pressure=0,hex_guardian_aura_source_user_id=0 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID)
-	}
-	return err
-}
+func ClearHexGuardianAuraAfterForcedMoveTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, from, destination hexgrid.Coord) error { return nil }

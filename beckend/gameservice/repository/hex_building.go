@@ -10,25 +10,29 @@ import (
 )
 
 type HexBuildResult struct {
-	Position      hexgrid.Coord   `json:"position"`
-	StructureType string          `json:"structureType"`
-	Inventory     json.RawMessage `json:"inventory"`
-	Energy        int             `json:"energy"`
-	StateRevision int64           `json:"stateRevision"`
-	MapRevision   int64           `json:"mapRevision"`
-	Replayed      bool            `json:"-"`
+	Budget        *HexBudgets      `json:"budget,omitempty"`
+	ActionEffects []map[string]any `json:"actionEffects,omitempty"`
+	Position      hexgrid.Coord    `json:"position"`
+	StructureType string           `json:"structureType"`
+	Inventory     json.RawMessage  `json:"inventory"`
+	AP            int              `json:"ap"`
+	StateRevision int64            `json:"stateRevision"`
+	MapRevision   int64            `json:"mapRevision"`
+	Replayed      bool             `json:"-"`
 }
 
 type HexStructureAttackResult struct {
-	Position      hexgrid.Coord `json:"position"`
-	StructureType string        `json:"structureType"`
-	Damage        int           `json:"damage"`
-	Health        int           `json:"health"`
-	Energy        int           `json:"energy"`
-	Destroyed     bool          `json:"destroyed"`
-	StateRevision int64         `json:"stateRevision"`
-	MapRevision   int64         `json:"mapRevision"`
-	Replayed      bool          `json:"-"`
+	Budget        *HexBudgets      `json:"budget,omitempty"`
+	ActionEffects []map[string]any `json:"actionEffects,omitempty"`
+	Position      hexgrid.Coord    `json:"position"`
+	StructureType string           `json:"structureType"`
+	Damage        int              `json:"damage"`
+	Health        int              `json:"health"`
+	AP            int              `json:"ap"`
+	Destroyed     bool             `json:"destroyed"`
+	StateRevision int64            `json:"stateRevision"`
+	MapRevision   int64            `json:"mapRevision"`
+	Replayed      bool             `json:"-"`
 }
 
 func (r *HexStructureAttackResult) SetCommandRevisions(state, mapRevision int64) {
@@ -37,7 +41,7 @@ func (r *HexStructureAttackResult) SetCommandRevisions(state, mapRevision int64)
 
 // Square structure attacks are adjacent melee strikes with flat attack minus defense.
 func ApplyHexStructureAttack(ctx context.Context, instanceID string, userID int, commandID string, pos hexgrid.Coord, publish func(HexStructureAttackResult)) (HexStructureAttackResult, error) {
-	const meleeAttackEnergyCost = 6 // Square combat.go
+	const structureAttackAPCost = 2 // Square combat.go
 	var out HexStructureAttackResult
 	if !hexgrid.Valid(pos) {
 		return out, ErrCommandRejected
@@ -59,15 +63,21 @@ func ApplyHexStructureAttack(ctx context.Context, instanceID string, userID int,
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
 	}
+	if err := c.ClearRangerBreakTx(ctx, userID, "", 0); err != nil {
+		return out, err
+	}
+	if err := c.PrepareHexMainTargetTx(ctx, userID, "structure", 0); err != nil {
+		return out, err
+	}
 	var mode string
-	var version, hp, energy, attack int
+	var version, hp, ap, attack int
 	var playerPos hexgrid.Coord
-	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.energy,p.attack,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &hp, &energy, &attack, &playerPos.Q, &playerPos.R)
+	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.ap,p.attack,p.position_q,p.position_r FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &hp, &ap, &attack, &playerPos.Q, &playerPos.R)
 	if err != nil {
 		return out, err
 	}
 	distance, err := hexgrid.Distance(playerPos, pos)
-	if err != nil || mode != "hex" || version != 2 || hp <= 0 || distance != 1 || energy < meleeAttackEnergyCost {
+	if err != nil || mode != "hex" || version != 2 || hp <= 0 || distance != 1 || ap < structureAttackAPCost {
 		return out, ErrCommandRejected
 	}
 	var kind string
@@ -85,7 +95,7 @@ func ApplyHexStructureAttack(ctx context.Context, instanceID string, userID int,
 	if newHP < 0 {
 		newHP = 0
 	}
-	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET energy=energy-$3 WHERE instance_id=$1 AND user_id=$2 AND energy>=$3`, instanceID, userID, meleeAttackEnergyCost); err != nil {
+	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET ap=ap-$3 WHERE instance_id=$1 AND user_id=$2 AND ap>=$3`, instanceID, userID, structureAttackAPCost); err != nil {
 		return out, err
 	}
 	if newHP > 0 {
@@ -113,7 +123,7 @@ func ApplyHexStructureAttack(ctx context.Context, instanceID string, userID int,
 			}
 		}
 	}
-	out.Position, out.StructureType, out.Damage, out.Health, out.Energy, out.Destroyed = pos, kind, damage, newHP, energy-meleeAttackEnergyCost, newHP == 0
+	out.Position, out.StructureType, out.Damage, out.Health, out.AP, out.Destroyed = pos, kind, damage, newHP, ap-structureAttackAPCost, newHP == 0
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
 	if err != nil {
 		return HexStructureAttackResult{}, err
@@ -165,11 +175,14 @@ func ApplyHexBlueprint(ctx context.Context, instanceID string, userID int, comma
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
 	}
+	if err := c.SpendHexTx(ctx, userID, 2, 0, 0); err != nil {
+		return out, err
+	}
 	var mode string
-	var version, health, energy int
+	var version, health, ap int
 	var playerPos hexgrid.Coord
 	var raw []byte
-	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.energy,p.position_q,p.position_r,p.inventory FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health, &energy, &playerPos.Q, &playerPos.R, &raw)
+	err = c.Tx.QueryRowContext(ctx, `SELECT m.geometry->>'kind',m.schema_version,p.health,p.ap,p.position_q,p.position_r,p.inventory FROM matches m JOIN match_players p ON p.instance_id=m.instance_id AND p.user_id=$2 WHERE m.instance_id=$1`, instanceID, userID).Scan(&mode, &version, &health, &ap, &playerPos.Q, &playerPos.R, &raw)
 	if err != nil {
 		return out, err
 	}
@@ -222,7 +235,7 @@ func ApplyHexBlueprint(ctx context.Context, instanceID string, userID int, comma
 	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET inventory=$3 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID, out.Inventory); err != nil {
 		return out, err
 	}
-	out.Position, out.StructureType, out.Energy = pos, kind, energy
+	out.Position, out.StructureType, out.AP = pos, kind, ap
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
 	if err != nil {
 		return HexBuildResult{}, err

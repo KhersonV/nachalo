@@ -109,6 +109,7 @@ func main() {
 		router.Handle("/game/hex-test/{instance_id}/place-blueprint", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceHexBlueprintHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack-structure", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexStructureHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
+		router.Handle("/game/hex-test/{instance_id}/exchange-ap", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExchangeHexAPHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
 		router.Handle("/game/hex-test/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
@@ -122,6 +123,7 @@ func main() {
 	router.Handle("/game/hex/{instance_id}/place-blueprint", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PlaceHexBlueprintHandler))).Methods("POST")
 	router.Handle("/game/hex/{instance_id}/attack-structure", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexStructureHandler))).Methods("POST")
 	router.Handle("/game/hex/{instance_id}/extract", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExtractHexMatchHandler))).Methods("POST")
+	router.Handle("/game/hex/{instance_id}/exchange-ap", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ExchangeHexAPHandler))).Methods("POST")
 	router.Handle("/game/hex/{instance_id}/end-turn", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.EndHexTurnHandler))).Methods("POST")
 	router.Handle("/game/hex/{instance_id}/attack-preview", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.PreviewHexAttackHandler))).Methods("POST")
 	router.Handle("/game/hex/{instance_id}/attack", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.AttackHexMonsterHandler))).Methods("POST")
@@ -157,12 +159,18 @@ func main() {
 		"/game/storage",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.HexStorageHandler)),
 	).Methods("GET", "PUT")
+	router.Handle("/game/professions/monster-loot", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfessionLootCatalogHandler))).Methods("GET")
 	router.Handle("/game/professions", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfessionsHandler))).Methods("GET")
 	router.Handle("/game/professions/choose", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChooseProfessionHandler))).Methods("POST")
+	router.Handle("/game/professions/recipes", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetCraftRecipesHandler))).Methods("GET")
+	router.Handle("/game/artifacts/dismantle", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ArtifactDismantleHandler))).Methods("GET", "POST")
+	router.Handle("/game/professions/craft", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.CraftProfessionItemHandler))).Methods("POST")
 	router.Handle(
 		"/game/base/state",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetBaseStateHandler)),
 	).Methods("GET")
+	router.Handle("/game/base/guild/build", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildGuildHandler))).Methods("POST")
+
 	router.Handle(
 		"/game/base/forge/build",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.BuildForgeHandler)),

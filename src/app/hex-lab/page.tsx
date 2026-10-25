@@ -111,7 +111,7 @@ export default function HexLabPage() {
     if (!liveInstanceId || !user?.token) { setSelected(position); return; }
     const key = hexKey(position);
     if (selected && hexKey(selected) === key && route && route.path.length > 0 && hexKey(route.path[route.path.length - 1]) === key) {
-      if (!route.affordable) { setError(`Недостаточно энергии: нужно ${route.totalCost}, доступно ${route.energy}.`); return; }
+      if (!route.affordable) { setError(`Недостаточно MP: нужно ${route.totalCost / 2}, доступно ${route.mp / 2}.`); return; }
       setBusy(true); setError("");
       if (!pendingMove.current || pendingMove.current.destination !== key) pendingMove.current = { destination: key, commandId: crypto.randomUUID() };
       try {
@@ -130,7 +130,7 @@ export default function HexLabPage() {
       const data = await response.json() as HexRoute;
       if (requestID !== routeRequest.current) return;
       setRoute(data);
-      if (!data.affordable) setError(`Недостаточно энергии: нужно ${data.totalCost}, доступно ${data.energy}.`);
+      if (!data.affordable) setError(`Недостаточно MP: нужно ${data.totalCost / 2}, доступно ${data.mp / 2}.`);
     } catch (reason) { if (requestID === routeRequest.current) setError(String(reason)); }
   };
 
@@ -183,9 +183,9 @@ export default function HexLabPage() {
     try {
       const response = await fetch(`${API_BASE}/game/hex-test/${encodeURIComponent(liveInstanceId)}/end-turn`, { method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ commandId: pendingTurn.current.commandId, expectedTurn: turn }) });
       if (!response.ok) throw new Error(await response.text());
-      const result = await response.json() as { turnNumber: number; energy: number };
+      const result = await response.json() as { turnNumber: number; budget?: { ap: number; mp: number } };
       await loadLive(liveInstanceId, user.token);
-      setNotice(`Ход ${result.turnNumber}. Энергия: ${result.energy}.`);
+      setNotice(`Ход ${result.turnNumber}. AP: ${(result.budget?.ap ?? 0) / 2}, MP: ${(result.budget?.mp ?? 0) / 2}.`);
       pendingTurn.current = null; setRoute(null);
     } catch (reason) { setError(String(reason)); } finally { setBusy(false); }
   };
@@ -213,13 +213,13 @@ export default function HexLabPage() {
     {notice && <p role="status" style={{ color: "#9ce5ae" }}>{notice}</p>}
     {preview && <>
       <p>hex-v1 · {preview.cells.length} клеток · {preview.edges.length} стен · mapRevision {preview.mapRevision} · stateRevision {preview.stateRevision} · <button onClick={download}>Скачать JSON</button></p>
-      {preview.player && <div><p>Раунд {preview.turnNumber} · ход игрока {preview.activeUser} · HP {preview.player.health} · энергия {preview.player.energy}/{preview.player.maxEnergy} · позиция ({preview.player.position.q}, {preview.player.position.r})</p><p>Инвентарь матча: {Object.entries(preview.player.inventory ?? {}).map(([key, item]) => `${item.item_name ?? key} ×${item.item_count ?? 0}`).join(", ") || "пуст"}</p><button disabled={busy || preview.activeUser !== preview.player.userId} onClick={() => void endTurn()}>Завершить ход</button></div>}
+      {preview.player && <div><p>Раунд {preview.turnNumber} · ход игрока {preview.activeUser} · HP {preview.player.health} · AP {preview.player.ap / 2}/{preview.player.maxAP / 2} · позиция ({preview.player.position.q}, {preview.player.position.r})</p><p>Инвентарь матча: {Object.entries(preview.player.inventory ?? {}).map(([key, item]) => `${item.item_name ?? key} ×${item.item_count ?? 0}`).join(", ") || "пуст"}</p><button disabled={busy || preview.activeUser !== preview.player.userId} onClick={() => void endTurn()}>Завершить ход</button></div>}
       <HexMap snapshot={preview} selected={selected} route={route} selectedTargetId={selectedTargetId} busy={busy}
         attackableTargets={new Set(Object.keys(attackOptions).map(Number))}
         onCellClick={position => { void selectCell(position); }} onMonsterClick={actor => { void selectMonster(actor); }} />
-      <p aria-live="polite">{selectedCell ? `Выбрана клетка (${selectedCell.position.q}, ${selectedCell.position.r}) · ${selectedCell.terrain} · room ${selectedCell.room ?? 0}` : "Выберите клетку для просмотра координат q/r"}{route && ` · маршрут ${route.path.length} шагов · стоимость ${route.totalCost} энергии${route.affordable ? " · второй клик подтверждает" : " · недостаточно энергии"}`}</p>
+      <p aria-live="polite">{selectedCell ? `Выбрана клетка (${selectedCell.position.q}, ${selectedCell.position.r}) · ${selectedCell.terrain} · room ${selectedCell.room ?? 0}` : "Выберите клетку для просмотра координат q/r"}{route && ` · маршрут ${route.path.length} шагов · стоимость ${route.totalCost / 2} MP${route.affordable ? " · второй клик подтверждает" : " · недостаточно MP"}`}</p>
       {selectedCell?.resource && liveInstanceId && <p>Ресурс: {selectedCell.resource.type} · <button disabled={busy || preview.activeUser !== preview.player?.userId} onClick={() => void collectResource()}>Подобрать</button></p>}
-      {selectedTargetId !== null && <p>Монстр {selectedTargetId} · HP {preview.actors.find(actor => actor.id === `monster-${selectedTargetId}`)?.health ?? "?"} · {attackPreview ? `дистанция ${attackPreview.distance}, ${attackPreview.mode === "melee" ? "ближняя" : "дальняя"} атака, стоимость ${attackPreview.cost} энергии. Второй клик по монстру подтверждает.` : "Атака пока недоступна или проверяется."} {attackPreview && <button disabled={busy} onClick={() => { const actor = preview.actors.find(value => value.id === `monster-${selectedTargetId}`); if (actor) void selectMonster(actor); }}>Атаковать</button>}</p>}
+      {selectedTargetId !== null && <p>Монстр {selectedTargetId} · HP {preview.actors.find(actor => actor.id === `monster-${selectedTargetId}`)?.health ?? "?"} · {attackPreview ? `дистанция ${attackPreview.distance}, ${attackPreview.mode === "melee" ? "ближняя" : "дальняя"} атака, стоимость ${attackPreview.cost / 2} AP. Второй клик по монстру подтверждает.` : "Атака пока недоступна или проверяется."} {attackPreview && <button disabled={busy} onClick={() => { const actor = preview.actors.find(value => value.id === `monster-${selectedTargetId}`); if (actor) void selectMonster(actor); }}>Атаковать</button>}</p>}
       <p style={{ color: "#9eb3c4" }}>Голубой маркер — персонаж, красные — монстры, золотые грани — стены, тёмные клетки — непроходимый камень.</p>
     </>}
   </main>;

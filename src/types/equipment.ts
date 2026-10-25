@@ -9,11 +9,12 @@ export type EquipmentSlot =
     | "ring"
     | "amulet";
 
-export type ItemRarity = "green" | "blue" | "purple" | "orange";
+export type ItemRarity = "gray" | "green" | "blue" | "purple" | "orange";
 
 export type ItemHandedness = "none" | "one_hand" | "two_hand";
 
 export type EquipmentBonuses = {
+    pocketBonus?: number;
     attack?: number;
     defense?: number;
     mobility?: number;
@@ -25,6 +26,7 @@ export type EquipmentBonuses = {
 };
 
 export type EquipmentItem = {
+    jewelrySet?: { name: string; bonus: EquipmentBonuses; required: number };
     instanceId: string;
     templateId: number;
     code: string;
@@ -47,6 +49,9 @@ export type EquipmentItem = {
 };
 
 export type EquipmentStats = {
+    maxAP?: number;
+    maxMP?: number;
+    maxReactions?: number;
     maxHealth?: number;
     maxEnergy?: number;
     attack?: number;

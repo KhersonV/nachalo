@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"gameservice/internal/hexgrid"
 )
 
 var ErrCommandConflict = errors.New("commandId already used for different command")
@@ -16,15 +17,22 @@ var ErrCommandRejected = errors.New("command no longer valid")
 // Every participating command locks the same matches row before reading game
 // state, so different Go processes serialize on PostgreSQL.
 type MatchCommand struct {
-	Tx         *sql.Tx
-	InstanceID string
-	CommandID  string
-	UserID     int
-	ActiveUser int
-	Hash       string
-	Replay     json.RawMessage
-	Events     [][]byte
-	Finished   bool
+	Tx               *sql.Tx
+	InstanceID       string
+	CommandID        string
+	UserID           int
+	ActiveUser       int
+	Hash             string
+	Replay           json.RawMessage
+	Events           [][]byte
+	CombatTargetKind string
+	CombatTargetID   int
+	MapChanged       bool
+	NextPersonalTurn bool
+	AuraBefore       []hexAuraMember
+	AuraResolved     bool
+	ActionEffects    []map[string]any
+	Finished         bool
 }
 
 // QueueEvent keeps protocol messages private until the command commits.
@@ -88,6 +96,21 @@ func BeginMatchCommand(ctx context.Context, instanceID string, userID int, comma
 		tx.Rollback()
 		return nil, ErrCommandRejected
 	}
+	if err := c.SyncHexArtifactsTx(ctx); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	c.AuraBefore, err = c.AuraMembersTx(ctx)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	for _, p := range c.AuraBefore {
+		if err := recordHexExploredTx(ctx, c.Tx, c.InstanceID, p.User, p.Position); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
 	return c, nil
 }
 
@@ -101,15 +124,35 @@ func (c *MatchCommand) Commit(ctx context.Context, response interface{}, mapChan
 	if c == nil || c.Tx == nil {
 		return 0, 0, ErrCommandRejected
 	}
+	if !c.AuraResolved {
+		if err := c.ResolveAuraTransitionTx(ctx, c.AuraBefore); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := c.SyncHexArtifactsTx(ctx); err != nil {
+		return 0, 0, err
+	}
+	if err := c.ResolveHexTurnStartTx(ctx); err != nil {
+		return 0, 0, err
+	}
+	alive, err := c.AuraMembersTx(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, p := range alive {
+		if err := recordHexExploredTx(ctx, c.Tx, c.InstanceID, p.User, p.Position); err != nil {
+			return 0, 0, err
+		}
+	}
 	if err := c.persistHexCompletedMatchTx(ctx); err != nil {
 		return 0, 0, err
 	}
 	mapDelta := 0
-	if mapChanged {
+	if mapChanged || c.MapChanged {
 		mapDelta = 1
 	}
 	var stateRevision, mapRevision int64
-	err := c.Tx.QueryRowContext(ctx, `UPDATE matches SET state_revision=state_revision+1,map_revision=map_revision+$2 WHERE instance_id=$1 RETURNING state_revision,map_revision`, c.InstanceID, mapDelta).Scan(&stateRevision, &mapRevision)
+	err = c.Tx.QueryRowContext(ctx, `UPDATE matches SET state_revision=state_revision+1,map_revision=map_revision+$2 WHERE instance_id=$1 RETURNING state_revision,map_revision`, c.InstanceID, mapDelta).Scan(&stateRevision, &mapRevision)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -118,6 +161,72 @@ func (c *MatchCommand) Commit(ctx context.Context, response interface{}, mapChan
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
+		return 0, 0, err
+	}
+	var payload map[string]any
+	if err = json.Unmarshal(encoded, &payload); err != nil {
+		return 0, 0, err
+	}
+	if c.UserID > 0 {
+		b, readErr := ReadHexBudgetsTx(ctx, c.Tx, c.InstanceID, c.UserID)
+		if readErr != nil {
+			return 0, 0, readErr
+		}
+		payload["budget"] = b
+		var hp int
+		if err = c.Tx.QueryRowContext(ctx, `SELECT health FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, c.UserID).Scan(&hp); err != nil {
+			return 0, 0, err
+		}
+		switch response.(type) {
+		case *HexItemResult, *HexBarrelResult:
+			payload["health"] = hp
+		}
+		if _, ok := payload["newAttackerHP"]; ok {
+			payload["newAttackerHP"] = hp
+		}
+		raw, _ := json.Marshal(b)
+		var values map[string]any
+		if err = json.Unmarshal(raw, &values); err != nil {
+			return 0, 0, err
+		}
+		for key, value := range values {
+			payload[key] = value
+		}
+	}
+	if c.CombatTargetKind == "player" && c.CombatTargetID > 0 {
+		var hp int
+		if err = c.Tx.QueryRowContext(ctx, `SELECT health FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, c.CombatTargetID).Scan(&hp); err != nil {
+			return 0, 0, err
+		}
+		payload["newTargetHP"], payload["playerDied"] = hp, hp <= 0
+	}
+	payload["_visuals"] = c.ActionEffects // durable event payload, never a snapshot field
+	safeEffects := []map[string]any{}
+	if c.UserID > 0 && len(c.ActionEffects) > 0 {
+		visible, err := HexVisibleCellsTx(ctx, c.Tx, c.InstanceID, c.UserID)
+		if err != nil {
+			return 0, 0, err
+		}
+		for _, effect := range c.ActionEffects {
+			pos, ok := effect["position"].(hexgrid.Coord)
+			if effect["userId"] == c.UserID || ok && visible[pos] {
+				safeEffects = append(safeEffects, effect)
+			}
+		}
+	}
+	payload["actionEffects"] = safeEffects
+	if _, ok := payload["activeUser"]; ok {
+		var active int
+		if err = c.Tx.QueryRowContext(ctx, `SELECT COALESCE(active_user_id,0) FROM matches WHERE instance_id=$1`, c.InstanceID).Scan(&active); err != nil {
+			return 0, 0, err
+		}
+		payload["activeUser"] = active
+	}
+	encoded, err = json.Marshal(payload)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err = json.Unmarshal(encoded, response); err != nil {
 		return 0, 0, err
 	}
 	_, err = c.Tx.ExecContext(ctx, `INSERT INTO match_commands(instance_id,command_id,user_id,payload_hash,response,state_revision,map_revision) VALUES($1,$2,$3,$4,$5,$6,$7)`, c.InstanceID, c.CommandID, c.UserID, c.Hash, encoded, stateRevision, mapRevision)

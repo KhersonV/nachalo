@@ -52,3 +52,5 @@
 .cameraControls button { min-width: 34px; min-height: 34px; border: 0; border-radius: 999px; padding: 0 10px; color: #e8f6f3; background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
 .cameraControls button:hover { background: rgba(124, 197, 193, .22); }
 @media (max-width: 760px) { .cameraControls { bottom: max(10px, env(safe-area-inset-bottom)); } .cameraControls button { min-height: 32px; } }
+
+.routeEnd { fill: #68e5da; fill-opacity: .3; stroke: #d1fff7; stroke-width: 5; }

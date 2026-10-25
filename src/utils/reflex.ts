@@ -15,19 +15,19 @@ export type ReflexEffectInfo = {
 export const CLASS_REFLEX_EFFECTS: Record<ReflexHeroClass, ReflexEffectInfo> = {
     guardian: {
         name: "Shield Block",
-        description: "Block incoming direct attacks.",
+        description: "Chance to block a primary PvP hit.",
     },
     berserker: {
         name: "Blood Feast",
-        description: "Heal 50% of dealt damage on proc.",
+        description: "Heal 50% of actual primary damage on proc.",
     },
     ranger: {
         name: "Critical Shot",
         description: "Critical Shot deals +42% damage.",
     },
     mystic: {
-        name: "Arcane Overburn",
-        description: "Arcane Overburn burns 4 energy and restores 3 energy.",
+        name: "Arcane Burst",
+        description: "Deal +3 direct HP damage, at most once per personal turn.",
     },
 };
 

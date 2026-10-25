@@ -21,6 +21,9 @@ func (c *MatchCommand) LoseHexBackpackTx(ctx context.Context, userID int, deathC
 	if err := c.Tx.QueryRowContext(ctx, `SELECT inventory,character_id FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, userID).Scan(&backpackRaw, &characterID); err != nil {
 		return err
 	}
+	if _, err := c.Tx.ExecContext(ctx, `DELETE FROM match_profession_xp WHERE match_instance_id=$1 AND character_id=$2`, c.InstanceID, characterID); err != nil {
+		return err
+	}
 	lost, err := parseStorage(backpackRaw)
 	if err != nil {
 		return err

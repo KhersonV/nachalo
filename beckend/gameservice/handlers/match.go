@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -351,6 +352,10 @@ func CreateMatchHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = hash.Write([]byte(req.InstanceID))
 	_, err = repository.CreateHexMatch(r.Context(), repository.HexMatchPlan{InstanceID: req.InstanceID, Mode: req.Mode, Teams: teams, TurnOrder: plan.TurnOrder, Seed: int64(hash.Sum64())})
 	if err != nil {
+		if errors.Is(err, repository.ErrHexPockets) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		handleError(w, "[CreateMatch] HEX materialization failed", err)
 		return
 	}

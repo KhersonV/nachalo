@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { createProfessionNodeAssets } from "./hex3d/ProfessionNodes3D";
 import { axialToWorld, canonicalHexEdge, hexDistance, hexKey, hexNeighbor, type HexCoord } from "@/utils/hexGrid";
 import { AnimatedRanger, type RangerCue } from "./AnimatedRanger";
 import { animateFire, disposeAtmosphere, makeAtmosphereContext, makeColumn, makeFloorBrazier, makeRubble, makeWallTorch, type FireProp } from "./catacombsAtmosphere";
@@ -37,6 +38,7 @@ const tileTop = (_cell: HexCell) => 0;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 type Runtime = {
+  professionNodes: ReturnType<typeof createProfessionNodeAssets>;
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -294,6 +296,12 @@ function populateWorld(rt: Runtime, snapshot: Props["snapshot"], visualMove?: He
       rt.world.add(barrel.group);
       for (const mesh of barrel.hitMeshes) { mesh.userData.cell = cell; rt.objectHits.push(mesh); }
     }
+    if (cell.resource?.professionNode) {
+      const group = rt.professionNodes.create(cell.resource.professionNode.category);
+      group.position.set(x + .32, base, z + .2); rt.world.add(group);
+      group.traverse(object => { if (object instanceof THREE.Mesh) { object.userData.cell = cell; rt.objectHits.push(object); } });
+      continue;
+    }
     if (cell.resource) {
       const quest = snapshot.questArtifact;
       if (cell.visibility === "visible" && cell.resource.item_type === "artifact" && quest?.status === "ground" &&
@@ -399,12 +407,21 @@ function populateWorld(rt: Runtime, snapshot: Props["snapshot"], visualMove?: He
 function populateMarks(rt: Runtime, snapshot: Props["snapshot"], selected: HexCoord | null | undefined, route: HexRoute | null | undefined, targetId: number | null | undefined, targetKind: "player" | "monster" | undefined, indicators: HexCombatIndicator[]) {
   clearMarks(rt);
   const cellsByKey = new Map(snapshot.cells.map(cell => [hexKey(cell.position), cell]));
-  for (const position of route?.path ?? []) {
+  const availableSteps = route?.affordableSteps ?? (route?.affordable ? route.path.length : 0);
+  for (const [index, position] of (route?.path ?? []).entries()) {
     const cell = cellsByKey.get(hexKey(position));
     if (!cell || cell.visibility === "unexplored") continue;
     const { x, z } = hexWorld(position);
-    const marker = new THREE.Mesh(rt.discGeometry, rt.materials[route?.affordable ? "route" : "blocked"]);
+    const marker = new THREE.Mesh(rt.discGeometry, rt.materials[index < availableSteps ? "route" : "blocked"]);
     marker.position.set(x, tileTop(cell) + .035, z); rt.marks.add(marker);
+  }
+  if (route?.reachablePosition && availableSteps > 0) {
+    const cell = cellsByKey.get(hexKey(route.reachablePosition));
+    if (cell && cell.visibility !== "unexplored") {
+      const { x, z } = hexWorld(route.reachablePosition);
+      const ring = new THREE.Mesh(rt.ringGeometry, rt.materials.routeEnd);
+      ring.rotation.x = -Math.PI / 2; ring.position.set(x, tileTop(cell) + .11, z); rt.marks.add(ring);
+    }
   }
   if (selected) {
     const cell = cellsByKey.get(hexKey(selected));
@@ -511,7 +528,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       self: standard(0x83d8e9, { emissive: 0x235762, emissiveIntensity: .35 }),
       monster: standard(0xcf8072, { emissive: 0x5c2420, emissiveIntensity: .55 }), ally: standard(0xe2cc94, { emissive: 0x4c4021, emissiveIntensity: .4 }),
       selfRing: basic(0x69e1ef), actorRing: basic(0xc9ac7a), selected: basic(0x77e7f1),
-      target: basic(0xf0bf67), attackPoint: basic(0xf5d78c), route: basic(0x52d8d8, .3), blocked: basic(0xe78b77, .3),
+      routeEnd: basic(0xc4fff4), target: basic(0xf0bf67), attackPoint: basic(0xf5d78c), route: basic(0x52d8d8, .3), blocked: basic(0xe78b77, .3),
     };
     for (const visibility of ["visible", "explored"] as const) {
       for (let variant = 0; variant < 4; variant++) {
@@ -554,6 +571,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       portalAssets: createPortalAssets(textures[5]), portalModels: new Map(),
       artifactAssets: createQuestArtifactAssets(textureLoader, () => invalidateTexture(), textures[5]), artifactModels: new Map(),
       gemGeometry: new THREE.IcosahedronGeometry(.29, 0),
+      professionNodes: createProfessionNodeAssets(),
       resourceShadowGeometry: new THREE.CircleGeometry(.34, 24), resourceLoader: textureLoader, resourceVisuals: new Map(), disposed: false,
       markerGeometry: new THREE.CapsuleGeometry(.18, .4, 4, 8),
       ringGeometry: new THREE.TorusGeometry(.66, .045, 4, 36), wallGeometry: new THREE.BoxGeometry(1.12, 1.9, .23),
@@ -709,6 +727,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       rt.floorGeometries.forEach(geometry => geometry.dispose());
       if (rt.atmosphere) disposeAtmosphere(rt.atmosphere);
       rt.hover.geometry.dispose(); (rt.hover.material as THREE.Material).dispose();
+      rt.professionNodes.dispose();
       rt.barrelAssets.dispose();
       rt.barrelModels.clear();
       rt.portalAssets.dispose(); rt.portalModels.clear();

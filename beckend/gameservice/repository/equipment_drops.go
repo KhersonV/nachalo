@@ -133,13 +133,15 @@ func grantRandomEquipmentDropTx(tx *sql.Tx, userID int, classID string, matchIns
 			COALESCE(s.name, '')
 		FROM item_templates it
 		JOIN item_sets s ON s.id = it.set_id
+        JOIN jsonb_to_recordset($2::jsonb) AS allowed(code text,set_code text,hero_class text,slot text)
+          ON allowed.code=it.code AND allowed.set_code=s.code
+          AND allowed.hero_class=it.class_restriction AND allowed.slot=it.slot
 		WHERE it.rarity = 'green'
 		  AND s.rarity = 'green'
-		  AND s.code IN ('aegiswarden_set', 'bloodroot_set', 'greenwisp_set', 'sagecloth_set')
 		  AND it.class_restriction = s.class_restriction
 		  AND ($1 = '' OR it.class_restriction = $1)
 		ORDER BY s.class_restriction, it.slot, it.name
-	`, classID)
+	`, classID, equipmentDropCatalogJSON)
 	if err != nil {
 		return nil, fmt.Errorf("GrantRandomEquipmentDrop select templates: %w", err)
 	}
@@ -216,7 +218,7 @@ func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchE
 		return nil, fmt.Errorf("ListMatchEquipmentLootForUser: match instance id required")
 	}
 
-	rows, err := DB.Query(`
+	rows, err := DB.Query(equipmentInstanceColumnsSQL(`
 		SELECT
 			ii.id::text,
 			it.name,
@@ -233,7 +235,8 @@ func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchE
 			it.max_health_bonus,
 			it.max_energy_bonus,
 			it.sight_range_bonus,
-			it.attack_range_bonus
+			it.attack_range_bonus,
+            `+equipmentPocketBonusSQL+`
 		FROM item_instances ii
 		JOIN item_templates it ON it.id = ii.template_id
 		LEFT JOIN item_sets s ON s.id = it.set_id
@@ -242,7 +245,7 @@ func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchE
 		  AND ii.source = 'drop'
 		  AND ii.status <> 'deleted'
 		ORDER BY ii.acquired_at, ii.id
-	`, userID, matchInstanceID)
+	`), userID, matchInstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("ListMatchEquipmentLootForUser query: %w", err)
 	}
@@ -268,6 +271,7 @@ func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchE
 			&item.Bonuses.MaxEnergy,
 			&item.Bonuses.SightRange,
 			&item.Bonuses.AttackRange,
+			&item.Bonuses.PocketBonus,
 		); err != nil {
 			return nil, fmt.Errorf("ListMatchEquipmentLootForUser scan: %w", err)
 		}

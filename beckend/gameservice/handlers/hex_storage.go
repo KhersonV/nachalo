@@ -40,7 +40,7 @@ func HexStorageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		if errors.Is(err, repository.ErrLoadoutUnavailable) || errors.Is(err, repository.ErrLoadoutInvalid) {
+		if errors.Is(err, repository.ErrLoadoutUnavailable) || errors.Is(err, repository.ErrLoadoutInvalid) || errors.Is(err, repository.ErrHexPockets) {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}

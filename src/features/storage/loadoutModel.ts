@@ -4,11 +4,15 @@ export type StoredItem = {
     item_count?: number;
     image?: string;
     description?: string;
+    origin?: string;
     item_type?: string;
     rarity?: string;
 };
 
 export type StorageState = {
+    pocketCapacity?: number;
+    pocketsUsed?: number;
+    pocketStacks?: Record<string, number>;
     inventory: Record<string, StoredItem>;
     loadout: Record<string, number>;
     eligibleKeys: string[];
@@ -144,4 +148,8 @@ export class SerializedLoadoutSaver {
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
     }
+}
+
+export function pocketsUsed(selected: Record<string, number>, stacks: Record<string, number>): number {
+ return Object.entries(selected).reduce((sum, [key, count]) => sum + Math.ceil(count / Math.max(1, stacks[key] ?? 1)), 0);
 }

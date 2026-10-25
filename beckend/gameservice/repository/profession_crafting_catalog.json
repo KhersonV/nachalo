@@ -1,0 +1,2101 @@
+[
+  {
+    "code": "copper_ingot",
+    "name": "Copper ingot",
+    "ru": "Медный слиток",
+    "de": "Kupferbarren",
+    "profession": "blacksmith",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "copper_ore",
+        "quantity": 3
+      }
+    ],
+    "output": 2,
+    "xp": 400,
+    "image": "/professions/processed/craft_copper_ingot.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "iron_ingot",
+    "name": "Iron ingot",
+    "ru": "Железный слиток",
+    "de": "Eisenbarren",
+    "profession": "blacksmith",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "iron_ore",
+        "quantity": 3
+      },
+      {
+        "code": "stone",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 700,
+    "image": "/professions/processed/craft_iron_ingot.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "armor_plate",
+    "name": "Armor plate",
+    "ru": "Доспешная пластина",
+    "de": "Rüstungsplatte",
+    "profession": "blacksmith",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "iron_ingot",
+        "quantity": 2
+      },
+      {
+        "code": "copper_ingot",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 100,
+    "image": "/professions/processed/craft_armor_plate.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "metal_fittings",
+    "name": "Metal fittings",
+    "ru": "Металлические крепления",
+    "de": "Metallbeschläge",
+    "profession": "blacksmith",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "copper_ingot",
+        "quantity": 1
+      },
+      {
+        "code": "iron_ingot",
+        "quantity": 1
+      }
+    ],
+    "output": 4,
+    "xp": 50,
+    "image": "/professions/processed/craft_metal_fittings.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "crystal_setting",
+    "name": "Crystal setting",
+    "ru": "Кристаллическая оправа",
+    "de": "Kristallfassung",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystalline_ore",
+        "quantity": 1
+      },
+      {
+        "code": "iron_ingot",
+        "quantity": 2
+      },
+      {
+        "code": "metal_fittings",
+        "quantity": 2
+      }
+    ],
+    "output": 1,
+    "xp": 1000,
+    "image": "/professions/processed/craft_crystal_setting.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "copper_dust",
+    "name": "Copper dust",
+    "ru": "Медная пыль",
+    "de": "Kupferstaub",
+    "profession": "blacksmith",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "copper_ingot",
+        "quantity": 1
+      }
+    ],
+    "output": 10,
+    "xp": 50,
+    "image": "/professions/processed/craft_copper_dust.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "iron_filings",
+    "name": "Iron filings",
+    "ru": "Железная стружка",
+    "de": "Eisenspäne",
+    "profession": "blacksmith",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "iron_ingot",
+        "quantity": 1
+      }
+    ],
+    "output": 10,
+    "xp": 50,
+    "image": "/professions/processed/craft_iron_filings.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "crystal_dust",
+    "name": "Crystal dust",
+    "ru": "Кристаллическая пыль",
+    "de": "Kristallstaub",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystalline_ore",
+        "quantity": 1
+      }
+    ],
+    "output": 10,
+    "xp": 100,
+    "image": "/professions/processed/craft_crystal_dust.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "tanned_leather",
+    "name": "Tanned leather",
+    "ru": "Выделанная кожа",
+    "de": "Gegerbtes Leder",
+    "profession": "leatherworker",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "orc_hide",
+        "quantity": 1
+      },
+      {
+        "code": "sturdy_bark",
+        "quantity": 2
+      }
+    ],
+    "output": 2,
+    "xp": 500,
+    "image": "/professions/processed/craft_tanned_leather.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "leather_straps",
+    "name": "Leather straps",
+    "ru": "Кожаные ремни",
+    "de": "Lederriemen",
+    "profession": "leatherworker",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "tanned_leather",
+        "quantity": 2
+      },
+      {
+        "code": "forest_fiber",
+        "quantity": 2
+      }
+    ],
+    "output": 4,
+    "xp": 400,
+    "image": "/professions/processed/craft_leather_straps.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "padded_lining",
+    "name": "Padded lining",
+    "ru": "Мягкая подкладка",
+    "de": "Weiches Futter",
+    "profession": "leatherworker",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "forest_fiber",
+        "quantity": 3
+      },
+      {
+        "code": "sturdy_bark",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 900,
+    "image": "/professions/processed/craft_padded_lining.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "sinew_bowstring",
+    "name": "Sinew bowstring",
+    "ru": "Сухожильная тетива",
+    "de": "Bogensehne aus Sehnen",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "strong_tendons",
+        "quantity": 2
+      },
+      {
+        "code": "forest_fiber",
+        "quantity": 2
+      }
+    ],
+    "output": 1,
+    "xp": 1000,
+    "image": "/professions/processed/craft_sinew_bowstring.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "reinforced_leather",
+    "name": "Reinforced leather",
+    "ru": "Усиленная кожа",
+    "de": "Verstärktes Leder",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "tanned_leather",
+        "quantity": 3
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 1
+      },
+      {
+        "code": "metal_fittings",
+        "quantity": 2
+      }
+    ],
+    "output": 2,
+    "xp": 1200,
+    "image": "/professions/processed/craft_reinforced_leather.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "bone_meal",
+    "name": "Bone meal",
+    "ru": "Костяная мука",
+    "de": "Knochenmehl",
+    "profession": "boneworker",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "bone_fragments",
+        "quantity": 3
+      }
+    ],
+    "output": 3,
+    "xp": 350,
+    "image": "/professions/processed/craft_bone_meal.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "sharpened_fangs",
+    "name": "Sharpened fangs",
+    "ru": "Заточенные клыки",
+    "de": "Geschärfte Fangzähne",
+    "profession": "boneworker",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "ancient_fang",
+        "quantity": 2
+      },
+      {
+        "code": "bone_fragments",
+        "quantity": 2
+      }
+    ],
+    "output": 2,
+    "xp": 600,
+    "image": "/professions/processed/craft_sharpened_fangs.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "bone_spikes",
+    "name": "Bone spikes",
+    "ru": "Костяные шипы",
+    "de": "Knochendornen",
+    "profession": "boneworker",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "bone_fragments",
+        "quantity": 3
+      },
+      {
+        "code": "ancient_fang",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 350,
+    "image": "/professions/processed/craft_bone_spikes.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "sinew_binding",
+    "name": "Sinew binding",
+    "ru": "Сухожильный жгут",
+    "de": "Sehnenband",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "strong_tendons",
+        "quantity": 2
+      },
+      {
+        "code": "forest_fiber",
+        "quantity": 2
+      }
+    ],
+    "output": 1,
+    "xp": 1000,
+    "image": "/professions/processed/craft_sinew_binding.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "reinforced_bone_plate",
+    "name": "Reinforced bone plate",
+    "ru": "Укреплённая костная пластина",
+    "de": "Verstärkte Knochenplatte",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "bone_fragments",
+        "quantity": 4
+      },
+      {
+        "code": "ancient_fang",
+        "quantity": 2
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 1200,
+    "image": "/professions/processed/craft_reinforced_bone_plate.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "purified_water",
+    "name": "Purified water",
+    "ru": "Очищенная вода",
+    "de": "Gereinigtes Wasser",
+    "profession": "alchemist",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "water",
+        "quantity": 2
+      },
+      {
+        "code": "moon_grass",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 250,
+    "image": "/professions/processed/craft_purified_water.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "enchanted_water",
+    "name": "Enchanted water",
+    "ru": "Зачарованная вода",
+    "de": "Verzaubertes Wasser",
+    "profession": "alchemist",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "ethereal_flower",
+        "quantity": 1
+      },
+      {
+        "code": "purified_water",
+        "quantity": 2
+      },
+      {
+        "code": "magical_essence",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 1000,
+    "image": "/professions/processed/craft_enchanted_water.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "magical_essence",
+    "name": "Magical essence",
+    "ru": "Магическая эссенция",
+    "de": "Magische Essenz",
+    "profession": "alchemist",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "moon_grass",
+        "quantity": 3
+      },
+      {
+        "code": "cave_mushroom",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 350,
+    "image": "/professions/processed/craft_magical_essence.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "toxic_concentrate",
+    "name": "Toxic concentrate",
+    "ru": "Токсичный концентрат",
+    "de": "Giftkonzentrat",
+    "profession": "alchemist",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "cave_mushroom",
+        "quantity": 3
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 1100,
+    "image": "/professions/processed/craft_toxic_concentrate.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "regenerative_extract",
+    "name": "Regenerative extract",
+    "ru": "Регенеративный экстракт",
+    "de": "Regenerationsextrakt",
+    "profession": "alchemist",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "moon_grass",
+        "quantity": 3
+      },
+      {
+        "code": "purified_water",
+        "quantity": 1
+      },
+      {
+        "code": "cave_mushroom",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 300,
+    "image": "/professions/processed/craft_regenerative_extract.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "alchemical_ink",
+    "name": "Alchemical ink",
+    "ru": "Алхимические чернила",
+    "de": "Alchemistische Tinte",
+    "profession": "scribe",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "magical_essence",
+        "quantity": 1
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 300,
+    "image": "/professions/processed/craft_alchemical_ink.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "runic_seal",
+    "name": "Runic seal",
+    "ru": "Рунная печать",
+    "de": "Runensiegel",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "ethereal_flower",
+        "quantity": 1
+      },
+      {
+        "code": "magical_essence",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 2
+      }
+    ],
+    "output": 1,
+    "xp": 1200,
+    "image": "/professions/processed/craft_runic_seal.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "enchanted_parchment",
+    "name": "Enchanted parchment",
+    "ru": "Зачарованный пергамент",
+    "de": "Verzaubertes Pergament",
+    "profession": "scribe",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "forest_fiber",
+        "quantity": 3
+      },
+      {
+        "code": "purified_water",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 1000,
+    "image": "/professions/processed/craft_enchanted_parchment.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "runic_engraving",
+    "name": "Runic engraving",
+    "ru": "Символическая гравировка",
+    "de": "Runengravur",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_seal",
+        "quantity": 1
+      },
+      {
+        "code": "metal_fittings",
+        "quantity": 2
+      },
+      {
+        "code": "bone_spikes",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 1500,
+    "image": "/professions/processed/craft_runic_engraving.png",
+    "category": "processed",
+    "effect": "",
+    "pocketStack": 0
+  },
+  {
+    "code": "healing_potion",
+    "name": "Healing elixir",
+    "ru": "Эликсир лечения",
+    "de": "Heilelixier",
+    "profession": "alchemist",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "purified_water",
+        "quantity": 2
+      },
+      {
+        "code": "moon_grass",
+        "quantity": 3
+      },
+      {
+        "code": "copper_dust",
+        "quantity": 2
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 450,
+    "image": "/professions/consumables/craft_healing_potion.png",
+    "category": "elixir",
+    "effect": "heal",
+    "pocketStack": 1
+  },
+  {
+    "code": "toxic_elixir",
+    "name": "Poison elixir",
+    "ru": "Эликсир отравления",
+    "de": "Giftelixier",
+    "profession": "alchemist",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "toxic_concentrate",
+        "quantity": 1
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 2
+      },
+      {
+        "code": "iron_filings",
+        "quantity": 3
+      }
+    ],
+    "output": 2,
+    "xp": 350,
+    "image": "/professions/consumables/craft_toxic_elixir.png",
+    "category": "elixir",
+    "effect": "poison",
+    "pocketStack": 1
+  },
+  {
+    "code": "critical_potion",
+    "name": "Critical elixir",
+    "ru": "Эликсир критических ударов",
+    "de": "Kritisches Elixier",
+    "profession": "alchemist",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "magical_essence",
+        "quantity": 2
+      },
+      {
+        "code": "bone_spikes",
+        "quantity": 2
+      },
+      {
+        "code": "iron_filings",
+        "quantity": 5
+      }
+    ],
+    "output": 2,
+    "xp": 1200,
+    "image": "/professions/consumables/craft_critical_potion.png",
+    "category": "elixir",
+    "effect": "critical",
+    "pocketStack": 1
+  },
+  {
+    "code": "vampirism_elixir",
+    "name": "Vampirism elixir",
+    "ru": "Эликсир вампиризма",
+    "de": "Vampirismuselixier",
+    "profession": "alchemist",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "regenerative_extract",
+        "quantity": 2
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 2
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      },
+      {
+        "code": "iron_filings",
+        "quantity": 3
+      }
+    ],
+    "output": 2,
+    "xp": 1200,
+    "image": "/professions/consumables/craft_vampirism_elixir.png",
+    "category": "elixir",
+    "effect": "vampirism",
+    "pocketStack": 2
+  },
+  {
+    "code": "speed_potion",
+    "name": "Speed elixir",
+    "ru": "Эликсир скорости",
+    "de": "Tempoelixier",
+    "profession": "alchemist",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "magical_essence",
+        "quantity": 1
+      },
+      {
+        "code": "purified_water",
+        "quantity": 2
+      },
+      {
+        "code": "forest_fiber",
+        "quantity": 2
+      },
+      {
+        "code": "copper_dust",
+        "quantity": 2
+      }
+    ],
+    "output": 3,
+    "xp": 500,
+    "image": "/professions/consumables/craft_speed_potion.png",
+    "category": "elixir",
+    "effect": "speed",
+    "pocketStack": 1
+  },
+  {
+    "code": "alchemical_antidote",
+    "name": "Antidote",
+    "ru": "Антидот",
+    "de": "Gegengift",
+    "profession": "alchemist",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "purified_water",
+        "quantity": 2
+      },
+      {
+        "code": "moon_grass",
+        "quantity": 2
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 1
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 750,
+    "image": "/professions/consumables/craft_alchemical_antidote.png",
+    "category": "elixir",
+    "effect": "cleanse",
+    "pocketStack": 1
+  },
+  {
+    "code": "healing_scroll",
+    "name": "Healing scroll",
+    "ru": "Свиток лечения",
+    "de": "Heilrolle",
+    "profession": "scribe",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 1
+      },
+      {
+        "code": "purified_water",
+        "quantity": 1
+      },
+      {
+        "code": "copper_dust",
+        "quantity": 2
+      }
+    ],
+    "output": 3,
+    "xp": 150,
+    "image": "/professions/consumables/craft_healing_scroll.png",
+    "category": "scroll",
+    "effect": "heal",
+    "pocketStack": 2
+  },
+  {
+    "code": "poison_scroll",
+    "name": "Poison scroll",
+    "ru": "Свиток отравления",
+    "de": "Giftrolle",
+    "profession": "scribe",
+    "minLevel": 2,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 1
+      },
+      {
+        "code": "toxic_concentrate",
+        "quantity": 1
+      },
+      {
+        "code": "iron_filings",
+        "quantity": 3
+      }
+    ],
+    "output": 2,
+    "xp": 600,
+    "image": "/professions/consumables/craft_poison_scroll.png",
+    "category": "scroll",
+    "effect": "poison",
+    "pocketStack": 2
+  },
+  {
+    "code": "critical_scroll",
+    "name": "Critical scroll",
+    "ru": "Свиток критических ударов",
+    "de": "Kritische Schriftrolle",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 2
+      },
+      {
+        "code": "bone_spikes",
+        "quantity": 2
+      },
+      {
+        "code": "magical_essence",
+        "quantity": 1
+      },
+      {
+        "code": "iron_filings",
+        "quantity": 5
+      }
+    ],
+    "output": 2,
+    "xp": 1500,
+    "image": "/professions/consumables/craft_critical_scroll.png",
+    "category": "scroll",
+    "effect": "critical",
+    "pocketStack": 2
+  },
+  {
+    "code": "vampirism_scroll",
+    "name": "Vampirism scroll",
+    "ru": "Свиток вампиризма",
+    "de": "Vampirismusrolle",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 2
+      },
+      {
+        "code": "regenerative_extract",
+        "quantity": 2
+      },
+      {
+        "code": "bone_meal",
+        "quantity": 1
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      }
+    ],
+    "output": 2,
+    "xp": 1500,
+    "image": "/professions/consumables/craft_vampirism_scroll.png",
+    "category": "scroll",
+    "effect": "vampirism",
+    "pocketStack": 3
+  },
+  {
+    "code": "speed_scroll",
+    "name": "Speed scroll",
+    "ru": "Свиток скорости",
+    "de": "Temporolle",
+    "profession": "scribe",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 1
+      },
+      {
+        "code": "magical_essence",
+        "quantity": 1
+      },
+      {
+        "code": "copper_dust",
+        "quantity": 2
+      }
+    ],
+    "output": 3,
+    "xp": 250,
+    "image": "/professions/consumables/craft_speed_scroll.png",
+    "category": "scroll",
+    "effect": "speed",
+    "pocketStack": 2
+  },
+  {
+    "code": "purification_scroll",
+    "name": "Purification scroll",
+    "ru": "Свиток очищения",
+    "de": "Reinigungsrolle",
+    "profession": "scribe",
+    "minLevel": 1,
+    "ingredients": [
+      {
+        "code": "enchanted_parchment",
+        "quantity": 2
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 1
+      },
+      {
+        "code": "purified_water",
+        "quantity": 1
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      },
+      {
+        "code": "copper_dust",
+        "quantity": 1
+      }
+    ],
+    "output": 3,
+    "xp": 500,
+    "image": "/professions/consumables/craft_purification_scroll.png",
+    "category": "scroll",
+    "effect": "cleanse",
+    "pocketStack": 2
+  },
+  {
+    "code": "crafted_guardian_main_hand",
+    "name": "Stonewarden Sword",
+    "ru": "Stonewarden — оружие",
+    "de": "Stonewarden — Waffe",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 2
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 7
+      },
+      {
+        "code": "iron_ingot",
+        "quantity": 5
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 2
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 2
+      },
+      {
+        "code": "crystal_dust",
+        "quantity": 10
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 4
+      },
+      {
+        "code": "goblin_claw",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_sword.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_sword",
+    "slot": "main_hand",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_off_hand",
+    "name": "Stonewarden Shield",
+    "ru": "Stonewarden — щит",
+    "de": "Stonewarden — Schild",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 2
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 8
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 4
+      },
+      {
+        "code": "metal_fittings",
+        "quantity": 4
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 4
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 3
+      },
+      {
+        "code": "orc_bone_plate",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_shield.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_shield",
+    "slot": "off_hand",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_helmet",
+    "name": "Stonewarden Helm",
+    "ru": "Stonewarden — шлем",
+    "de": "Stonewarden — Helm",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 2
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 11
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 4
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 3
+      },
+      {
+        "code": "troll_horn_plate",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_helm.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_helm",
+    "slot": "helmet",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_chest",
+    "name": "Stonewarden Cuirass",
+    "ru": "Stonewarden — нагрудник",
+    "de": "Stonewarden — Brustschutz",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 4
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 15
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 10
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 6
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 4
+      },
+      {
+        "code": "orc_bone_plate",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_cuirass.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_vest",
+    "slot": "chest",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_pants",
+    "name": "Stonewarden Legguards",
+    "ru": "Stonewarden — штаны",
+    "de": "Stonewarden — Hose",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 3
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 13
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 7
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 6
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 3
+      },
+      {
+        "code": "orc_bone_plate",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_legguards.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_pants",
+    "slot": "pants",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_gloves",
+    "name": "Stonewarden Gauntlets",
+    "ru": "Stonewarden — перчатки",
+    "de": "Stonewarden — Handschuhe",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 2
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 9
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 3
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 4
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      },
+      {
+        "code": "goblin_claw",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_gauntlets.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_gloves",
+    "slot": "gloves",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_guardian_boots",
+    "name": "Stonewarden Sabatons",
+    "ru": "Stonewarden — сапоги",
+    "de": "Stonewarden — Stiefel",
+    "profession": "blacksmith",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "crystal_setting",
+        "quantity": 2
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 10
+      },
+      {
+        "code": "armor_plate",
+        "quantity": 3
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 5
+      },
+      {
+        "code": "troll_horn_plate",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/guardian/Stonewarden/stonewarden_sabatons.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "aegiswarden_boots",
+    "slot": "boots",
+    "heroClass": "guardian"
+  },
+  {
+    "code": "crafted_berserker_main_hand",
+    "name": "Emberfang Ravager Axe",
+    "ru": "Emberfang — оружие",
+    "de": "Emberfang — Waffe",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 4
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 4
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 4
+      },
+      {
+        "code": "crystalline_ore",
+        "quantity": 4
+      },
+      {
+        "code": "iron_ingot",
+        "quantity": 5
+      },
+      {
+        "code": "sharpened_fangs",
+        "quantity": 3
+      },
+      {
+        "code": "goblin_tooth",
+        "quantity": 1
+      },
+      {
+        "code": "orc_tusk",
+        "quantity": 1
+      },
+      {
+        "code": "troll_tooth",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Axe.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_axe",
+    "slot": "main_hand",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_berserker_helmet",
+    "name": "Emberfang Ravager Helm",
+    "ru": "Emberfang — шлем",
+    "de": "Emberfang — Helm",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 2
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 3
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 6
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 3
+      },
+      {
+        "code": "orc_tusk",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Helm.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_horned_helm",
+    "slot": "helmet",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_berserker_chest",
+    "name": "Emberfang Ravager Chest",
+    "ru": "Emberfang — нагрудник",
+    "de": "Emberfang — Brustschutz",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 4
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 5
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 6
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 6
+      },
+      {
+        "code": "orc_tusk",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Chest.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_war_vest",
+    "slot": "chest",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_berserker_pants",
+    "name": "Emberfang Ravager Pants",
+    "ru": "Emberfang — штаны",
+    "de": "Emberfang — Hose",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 3
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 4
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 6
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 5
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Pants.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_raider_pants",
+    "slot": "pants",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_berserker_gloves",
+    "name": "Emberfang Ravager Gloves",
+    "ru": "Emberfang — перчатки",
+    "de": "Emberfang — Handschuhe",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 2
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 2
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 5
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 3
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Gloves.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_grips",
+    "slot": "gloves",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_berserker_boots",
+    "name": "Emberfang Ravager Boots",
+    "ru": "Emberfang — сапоги",
+    "de": "Emberfang — Stiefel",
+    "profession": "boneworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_binding",
+        "quantity": 2
+      },
+      {
+        "code": "reinforced_bone_plate",
+        "quantity": 2
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 6
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 4
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/berserker/Emberfang/Emberfang_Ravager_Boots.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "bloodroot_stompers",
+    "slot": "boots",
+    "heroClass": "berserker"
+  },
+  {
+    "code": "crafted_ranger_main_hand",
+    "name": "Amberveil Bow",
+    "ru": "Amberveil — оружие",
+    "de": "Amberveil — Waffe",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "sinew_bowstring",
+        "quantity": 4
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 12
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 5
+      },
+      {
+        "code": "metal_fittings",
+        "quantity": 10
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 4
+      },
+      {
+        "code": "iron_ingot",
+        "quantity": 2
+      },
+      {
+        "code": "goblin_tendon",
+        "quantity": 1
+      },
+      {
+        "code": "troll_hide",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/06_Amberveil_Bow.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_bow",
+    "slot": "main_hand",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_ranger_helmet",
+    "name": "Amberveil Helm",
+    "ru": "Amberveil — шлем",
+    "de": "Amberveil — Helm",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "reinforced_leather",
+        "quantity": 4
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 7
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 4
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 3
+      },
+      {
+        "code": "troll_hide",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/01_Amberveil_Helm.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_hood",
+    "slot": "helmet",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_ranger_chest",
+    "name": "Amberveil Chest",
+    "ru": "Amberveil — нагрудник",
+    "de": "Amberveil — Brustschutz",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "reinforced_leather",
+        "quantity": 6
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 8
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 8
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 6
+      },
+      {
+        "code": "leather_straps",
+        "quantity": 6
+      },
+      {
+        "code": "troll_hide",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/02_Amberveil_Chest.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_vest",
+    "slot": "chest",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_ranger_pants",
+    "name": "Amberveil Pants",
+    "ru": "Amberveil — штаны",
+    "de": "Amberveil — Hose",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "reinforced_leather",
+        "quantity": 4
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 8
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 6
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 4
+      },
+      {
+        "code": "troll_hide",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/04_Amberveil_Pants.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_ranger_pants",
+    "slot": "pants",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_ranger_gloves",
+    "name": "Amberveil Gloves",
+    "ru": "Amberveil — перчатки",
+    "de": "Amberveil — Handschuhe",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "reinforced_leather",
+        "quantity": 2
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 5
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 5
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 4
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/03_Amberveil_Gloves.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_gloves",
+    "slot": "gloves",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_ranger_boots",
+    "name": "Amberveil Boots",
+    "ru": "Amberveil — сапоги",
+    "de": "Amberveil — Stiefel",
+    "profession": "leatherworker",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "reinforced_leather",
+        "quantity": 2
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 6
+      },
+      {
+        "code": "strong_tendons",
+        "quantity": 5
+      },
+      {
+        "code": "tanned_leather",
+        "quantity": 4
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/ranger/Amberveil/05_Amberveil_Boots.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "greenwisp_boots",
+    "slot": "boots",
+    "heroClass": "ranger"
+  },
+  {
+    "code": "crafted_mystic_main_hand",
+    "name": "Mooncrystal Staff",
+    "ru": "Mooncrystal — оружие",
+    "de": "Mooncrystal — Waffe",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 4
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 4
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 9
+      },
+      {
+        "code": "resinous_wood",
+        "quantity": 2
+      },
+      {
+        "code": "magical_essence",
+        "quantity": 4
+      },
+      {
+        "code": "crystal_dust",
+        "quantity": 10
+      },
+      {
+        "code": "sharpened_fangs",
+        "quantity": 6
+      },
+      {
+        "code": "goblin_earwax",
+        "quantity": 1
+      },
+      {
+        "code": "orc_toxin",
+        "quantity": 1
+      },
+      {
+        "code": "troll_regenerative_gland",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/07_mooncrystal_staff.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_staff",
+    "slot": "main_hand",
+    "heroClass": "mystic"
+  },
+  {
+    "code": "crafted_mystic_chest",
+    "name": "Mooncrystal Chest",
+    "ru": "Mooncrystal — нагрудник",
+    "de": "Mooncrystal — Brustschutz",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 4
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 5
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 10
+      },
+      {
+        "code": "enchanted_parchment",
+        "quantity": 5
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 2
+      },
+      {
+        "code": "troll_regenerative_gland",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/01_mooncrystal_chest.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_jacket",
+    "slot": "chest",
+    "heroClass": "mystic"
+  },
+  {
+    "code": "crafted_mystic_pants",
+    "name": "Mooncrystal Pants",
+    "ru": "Mooncrystal — штаны",
+    "de": "Mooncrystal — Hose",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 3
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 4
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 9
+      },
+      {
+        "code": "enchanted_parchment",
+        "quantity": 3
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 2
+      },
+      {
+        "code": "goblin_earwax",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/05_mooncrystal_pants.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_pants",
+    "slot": "pants",
+    "heroClass": "mystic"
+  },
+  {
+    "code": "crafted_mystic_boots",
+    "name": "Mooncrystal Boots",
+    "ru": "Mooncrystal — сапоги",
+    "de": "Mooncrystal — Stiefel",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 2
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 3
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 7
+      },
+      {
+        "code": "enchanted_parchment",
+        "quantity": 3
+      },
+      {
+        "code": "troll_regenerative_gland",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/06_mooncrystal_boots.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_boots",
+    "slot": "boots",
+    "heroClass": "mystic"
+  },
+  {
+    "code": "crafted_mystic_gloves",
+    "name": "Mooncrystal Gloves",
+    "ru": "Mooncrystal — перчатки",
+    "de": "Mooncrystal — Handschuhe",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 2
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 2
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 7
+      },
+      {
+        "code": "alchemical_ink",
+        "quantity": 3
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 1
+      },
+      {
+        "code": "goblin_earwax",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/04_mooncrystal_gloves.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_gloves",
+    "slot": "gloves",
+    "heroClass": "mystic"
+  },
+  {
+    "code": "crafted_mystic_helmet",
+    "name": "Mooncrystal Helmet",
+    "ru": "Mooncrystal — шлем",
+    "de": "Mooncrystal — Helm",
+    "profession": "scribe",
+    "minLevel": 3,
+    "ingredients": [
+      {
+        "code": "runic_engraving",
+        "quantity": 2
+      },
+      {
+        "code": "enchanted_water",
+        "quantity": 2
+      },
+      {
+        "code": "ethereal_flower",
+        "quantity": 9
+      },
+      {
+        "code": "padded_lining",
+        "quantity": 2
+      },
+      {
+        "code": "enchanted_parchment",
+        "quantity": 3
+      },
+      {
+        "code": "goblin_earwax",
+        "quantity": 1
+      }
+    ],
+    "output": 1,
+    "xp": 2000,
+    "image": "/equipment/mystic/Mooncrystal/02_mooncrystal_helmet.png",
+    "category": "equipment",
+    "effect": "",
+    "pocketStack": 0,
+    "baseTemplate": "sagecloth_hood",
+    "slot": "helmet",
+    "heroClass": "mystic"
+  }
+]

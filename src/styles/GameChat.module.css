@@ -118,3 +118,25 @@
 @media (min-width: 681px) { .match.open { width: min(650px, calc(54vw - 40px)); } }
 @media (max-width: 850px) { .chatColumns { grid-template-columns: minmax(0, 1fr) 150px; } }
 @media (max-width: 680px) { .chat.open { width: min(390px, calc(100vw - 12px)); } .chatColumns { grid-template-columns: 1fr; } .onlinePanel { border-left: 0; border-top: 1px solid #5a594f; } .onlineList { max-height: 110px; } .history { height: min(21dvh, 150px); } }
+
+/* HEX desktop uses the shared HUD frame; lobby and mobile chat keep their layout. */
+@media (min-width: 1024px) {
+    .chat.floatingHud { position: static; transform: none; width: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+    .floatingHud .header[hidden] { display: none; }
+    .floatingHud .content { border-top: 0; }
+    .floatingHud .chatColumns { grid-template-columns: minmax(0, 1fr) 116px; }
+    .floatingHud .history { height: 142px; }
+    .floatingHud .onlineList { max-height: 190px; }
+    .floatingHud .onlineHead { padding: 6px; font-size: 11px; }
+    .floatingHud .onlineSearch { margin: 3px 5px; width: calc(100% - 10px); box-sizing: border-box; }
+    .floatingHud .onlinePlayer { padding: 5px; gap: 4px; font-size: 11px; }
+    .floatingHud .composer { flex-wrap: wrap; gap: 4px; padding: 5px; }
+    .floatingHud .composer textarea { flex-basis: 100%; min-height: 32px; max-height: 60px; resize: none; }
+    .floatingHud .composer button { padding: 4px 7px; }
+    .floatingHud .composer .emojiTrigger { min-width: 28px; }
+    .floatingHud .tabs button { font-size: 11px; padding: 6px 2px; }
+}
+@media (min-width: 1024px) {
+    :global(body):has(.floatingHud) .emojiPicker,
+    :global(body):has(.floatingHud) .playerMenu { z-index: 60; }
+}

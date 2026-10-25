@@ -1,0 +1,505 @@
+{
+  "sets": [
+    {
+      "code": "jewelry_oakbound",
+      "name": "Oakbound",
+      "heroClass": "guardian",
+      "rarity": "green",
+      "source": "craft",
+      "items": [
+        {
+          "code": "oakbound_ring",
+          "name": "Oakbound Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 1,
+            "attack": 1,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "oakbound_amulet",
+          "name": "Oakbound Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 0,
+            "defense": 3,
+            "maxHealth": 10
+          }
+        }
+      ],
+      "pairBonus": {
+        "maxHealth": 10
+      }
+    },
+    {
+      "code": "jewelry_bastionheart",
+      "name": "Bastionheart",
+      "heroClass": "guardian",
+      "rarity": "blue",
+      "source": "craft",
+      "items": [
+        {
+          "code": "bastionheart_ring",
+          "name": "Bastionheart Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 2,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "bastionheart_amulet",
+          "name": "Bastionheart Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 3,
+            "attack": 0,
+            "defense": 5,
+            "maxHealth": 18
+          }
+        }
+      ],
+      "pairBonus": {
+        "maxHealth": 18
+      }
+    },
+    {
+      "code": "jewelry_bloodfang",
+      "name": "Bloodfang",
+      "heroClass": "berserker",
+      "rarity": "green",
+      "source": "craft",
+      "items": [
+        {
+          "code": "bloodfang_ring",
+          "name": "Bloodfang Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 1,
+            "attack": 3,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "bloodfang_amulet",
+          "name": "Bloodfang Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 0,
+            "defense": 1,
+            "maxHealth": 8
+          }
+        }
+      ],
+      "pairBonus": {
+        "attack": 1
+      }
+    },
+    {
+      "code": "jewelry_warborn",
+      "name": "Warborn",
+      "heroClass": "berserker",
+      "rarity": "blue",
+      "source": "craft",
+      "items": [
+        {
+          "code": "warborn_ring",
+          "name": "Warborn Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 5,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "warborn_amulet",
+          "name": "Warborn Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 3,
+            "attack": 0,
+            "defense": 2,
+            "maxHealth": 15
+          }
+        }
+      ],
+      "pairBonus": {
+        "attack": 2
+      }
+    },
+    {
+      "code": "jewelry_windmark",
+      "name": "Windmark",
+      "heroClass": "ranger",
+      "rarity": "green",
+      "source": "craft",
+      "items": [
+        {
+          "code": "windmark_ring",
+          "name": "Windmark Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 1,
+            "attack": 2,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "windmark_amulet",
+          "name": "Windmark Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 0,
+            "defense": 2,
+            "maxHealth": 7
+          }
+        }
+      ],
+      "pairBonus": {
+        "defense": 1
+      }
+    },
+    {
+      "code": "jewelry_hawkseye",
+      "name": "Hawkseye",
+      "heroClass": "ranger",
+      "rarity": "blue",
+      "source": "craft",
+      "items": [
+        {
+          "code": "hawkseye_ring",
+          "name": "Hawkseye Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 4,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "hawkseye_amulet",
+          "name": "Hawkseye Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 3,
+            "attack": 0,
+            "defense": 3,
+            "maxHealth": 12
+          }
+        }
+      ],
+      "pairBonus": {
+        "defense": 2
+      }
+    },
+    {
+      "code": "jewelry_starwhisper",
+      "name": "Starwhisper",
+      "heroClass": "mystic",
+      "rarity": "green",
+      "source": "craft",
+      "items": [
+        {
+          "code": "starwhisper_ring",
+          "name": "Starwhisper Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 1,
+            "attack": 2,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "starwhisper_amulet",
+          "name": "Starwhisper Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 0,
+            "defense": 1,
+            "maxHealth": 8
+          }
+        }
+      ],
+      "pairBonus": {
+        "attack": 1
+      }
+    },
+    {
+      "code": "jewelry_astralveil",
+      "name": "Astralveil",
+      "heroClass": "mystic",
+      "rarity": "blue",
+      "source": "craft",
+      "items": [
+        {
+          "code": "astralveil_ring",
+          "name": "Astralveil Ring",
+          "slot": "ring",
+          "image": "",
+          "bonuses": {
+            "agility": 2,
+            "attack": 4,
+            "defense": 0,
+            "maxHealth": 0
+          }
+        },
+        {
+          "code": "astralveil_amulet",
+          "name": "Astralveil Amulet",
+          "slot": "amulet",
+          "image": "",
+          "bonuses": {
+            "agility": 3,
+            "attack": 0,
+            "defense": 2,
+            "maxHealth": 14
+          }
+        }
+      ],
+      "pairBonus": {
+        "attack": 2
+      }
+    }
+  ],
+  "resources": [
+    {
+      "code": "artifact_shard",
+      "name": "Artifact shard",
+      "ru": "Осколок артефакта",
+      "de": "Artefaktsplitter",
+      "price": 0
+    },
+    {
+      "code": "enchanted_dust",
+      "name": "Enchanted dust",
+      "ru": "Зачарованная пыль",
+      "de": "Verzauberter Staub",
+      "price": 0
+    },
+    {
+      "code": "arcane_fragment",
+      "name": "Arcane fragment",
+      "ru": "Магический фрагмент",
+      "de": "Arkanes Fragment",
+      "price": 0
+    },
+    {
+      "code": "refined_essence",
+      "name": "Refined essence",
+      "ru": "Очищенная эссенция",
+      "de": "Geläuterte Essenz",
+      "price": 0
+    },
+    {
+      "code": "ring_blank",
+      "name": "Ring blank",
+      "ru": "Заготовка кольца",
+      "de": "Ringrohling",
+      "price": 100
+    },
+    {
+      "code": "amulet_blank",
+      "name": "Amulet blank",
+      "ru": "Заготовка амулета",
+      "de": "Amulettrohling",
+      "price": 150
+    }
+  ],
+  "costs": {
+    "green": {
+      "ring": {
+        "ring_blank": 1,
+        "artifact_shard": 8,
+        "enchanted_dust": 4
+      },
+      "amulet": {
+        "amulet_blank": 1,
+        "artifact_shard": 10,
+        "enchanted_dust": 5
+      }
+    },
+    "blue": {
+      "ring": {
+        "ring_blank": 1,
+        "artifact_shard": 20,
+        "enchanted_dust": 12,
+        "arcane_fragment": 5,
+        "refined_essence": 2
+      },
+      "amulet": {
+        "amulet_blank": 1,
+        "artifact_shard": 24,
+        "enchanted_dust": 15,
+        "arcane_fragment": 6,
+        "refined_essence": 3
+      }
+    }
+  },
+  "profession": "blacksmith",
+  "levels": {
+    "green": 1,
+    "blue": 3
+  },
+  "xp": {
+    "green": 0,
+    "blue": 0
+  },
+  "dismantle": {
+    "berserker_axe": [
+      {
+        "code": "artifact_shard",
+        "quantity": 4
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 1
+      }
+    ],
+    "boots_of_stealth": [
+      {
+        "code": "artifact_shard",
+        "quantity": 3
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 2
+      }
+    ],
+    "crown_of_enlightenment": [
+      {
+        "code": "artifact_shard",
+        "quantity": 3
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 3
+      },
+      {
+        "code": "arcane_fragment",
+        "quantity": 1
+      }
+    ],
+    "dragon_eye": [
+      {
+        "code": "artifact_shard",
+        "quantity": 4
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 2
+      },
+      {
+        "code": "arcane_fragment",
+        "quantity": 2
+      },
+      {
+        "code": "refined_essence",
+        "quantity": 1
+      }
+    ],
+    "fire_amulet": [
+      {
+        "code": "artifact_shard",
+        "quantity": 3
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 4
+      },
+      {
+        "code": "arcane_fragment",
+        "quantity": 1
+      }
+    ],
+    "gloves_of_precision": [
+      {
+        "code": "artifact_shard",
+        "quantity": 5
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 1
+      }
+    ],
+    "guardian_shield": [
+      {
+        "code": "artifact_shard",
+        "quantity": 6
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 2
+      }
+    ],
+    "knight_sword": [
+      {
+        "code": "artifact_shard",
+        "quantity": 5
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 2
+      },
+      {
+        "code": "arcane_fragment",
+        "quantity": 1
+      }
+    ],
+    "ring_of_wisdom": [
+      {
+        "code": "artifact_shard",
+        "quantity": 2
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 4
+      },
+      {
+        "code": "arcane_fragment",
+        "quantity": 2
+      }
+    ],
+    "titan_breastplate": [
+      {
+        "code": "artifact_shard",
+        "quantity": 7
+      },
+      {
+        "code": "enchanted_dust",
+        "quantity": 2
+      },
+      {
+        "code": "refined_essence",
+        "quantity": 1
+      }
+    ]
+  }
+}

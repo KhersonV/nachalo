@@ -4,7 +4,7 @@ import type { HexCoord } from "@/utils/hexGrid";
 const actorKey = (ref: HexCombatRef) => `${ref.type}-${ref.id}`;
 
 type AttackVisual = { steps?: HexCombatStep[]; effects?: HexCombatEffect[]; targetHP?: number; attackerHPBefore?: number; attackerPosition?: HexCoord; targetPosition?: HexCoord };
-type MoveVisual = { position: HexCoord; auraEnergyCost?: number; auraHits?: Array<{ position: HexCoord; damage: number }>; auraEnded?: boolean };
+type MoveVisual = { position: HexCoord; auraMPCost?: number; auraHits?: Array<{ position: HexCoord; damage: number }>; auraEnded?: boolean };
 
 export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual, eventId: string): HexCombatIndicator[] {
   const positions = new Map(snapshot.actors.map(actor => [actor.id, actor.position]));
@@ -43,10 +43,9 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
   for (const effect of result.effects ?? []) {
     if (effect.succeeded === false && effect.kind !== "push") continue;
     if (effect.kind === "lifesteal" && (effect.amount ?? 0) > 0) add(effect.source, `+${effect.amount} HP`, "heal");
-    if (effect.kind === "energyDrain") {
-      if ((effect.energyDrained ?? effect.amount ?? 0) > 0) add(effect.target, `-${effect.energyDrained ?? effect.amount} энергии`, "energyLoss");
-      if ((effect.energyGranted ?? 0) > 0) add(effect.source, `+${effect.energyGranted} энергии`, "energyGain");
-    }
+    if (effect.kind === "mpDrain") add(effect.target, "−1 MP на следующем ходу", "status");
+    if (effect.kind === "mysticOverload") add(effect.target, "Магический перегруз", "status");
+    if (effect.kind === "mpGain" && effect.source?.id !== snapshot.player?.userId && (effect.mpGranted ?? 0) > 0) add(effect.source, `+${effect.mpGranted! / 2} MP`, "energyGain");
     if (effect.kind === "push") {
       const destination = effect.positionAfter && { q: effect.positionAfter.x, r: effect.positionAfter.y };
       add(effect.target, effect.succeeded ? "Отталкивание" : "Отталкивание блокировано", "push", destination);
@@ -55,7 +54,7 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
         const lost = Math.min(effect.bonusDamage!, Math.max(0, health.get(targetKey) ?? effect.bonusDamage!));
         if (lost > 0) add(effect.target, `-${lost} HP`, "damage");
       }
-      if ((effect.energyGranted ?? 0) > 0) add(effect.source, `+${effect.energyGranted} энергии`, "energyGain");
+      if (effect.source?.id !== snapshot.player?.userId && (effect.mpGranted ?? 0) > 0) add(effect.source, `+${effect.mpGranted! / 2} MP`, "energyGain");
     }
     if (effect.kind === "armorBreak") add(effect.target, `Пробитие брони${effect.stacks ? ` ×${effect.stacks}` : ""}`, "status");
     if (effect.kind === "armorBreakEnd") add(effect.target, "Пробитие снято", "status", effect.positionAfter && { q: effect.positionAfter.x, r: effect.positionAfter.y });
@@ -70,7 +69,7 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
 export function hexMoveIndicators(result: MoveVisual, eventId: string): HexCombatIndicator[] {
   const out: HexCombatIndicator[] = [];
   const add = (position: HexCoord, text: string, tone: HexCombatIndicator["tone"]) => out.push({ id: `${eventId}:${out.length}`, position, text, tone, lane: out.filter(item => item.position.q === position.q && item.position.r === position.r).length });
-  if ((result.auraEnergyCost ?? 0) > 0) add(result.position, `-${result.auraEnergyCost} энергии · аура`, "aura");
+  if ((result.auraMPCost ?? 0) > 0) add(result.position, `-${result.auraMPCost! / 2} MP · аура`, "aura");
   for (const hit of result.auraHits ?? []) if (hit.damage > 0) add(hit.position, `-${hit.damage} HP · аура`, "aura");
   if (result.auraEnded) add(result.position, "Аура снята", "status");
   return out;

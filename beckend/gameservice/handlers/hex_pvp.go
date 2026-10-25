@@ -30,7 +30,7 @@ func PreviewHexPlayerAttack(ctx context.Context, instanceID string, userID, targ
 	if err := tx.Commit(); err != nil {
 		return out, err
 	}
-	return HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, Energy: state.Player.Energy, TargetHP: state.Monster.Stats.Health}, nil
+	return HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, AP: state.Player.AP, TargetHP: state.Monster.Stats.Health}, nil
 }
 
 func pushHexPlayerTx(ctx context.Context, c *repository.MatchCommand, from, target hexgrid.Coord, targetID int) (bool, hexgrid.Coord, error) {
@@ -175,6 +175,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		return out, err
 	}
 	defer c.Rollback()
+	c.CombatTargetKind, c.CombatTargetID = "player", targetID
 	if c.Replay != nil {
 		if err := json.Unmarshal(c.Replay, &out); err != nil {
 			return out, err
@@ -182,12 +183,45 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		out.Replayed = true
 		return out, nil
 	}
+	out, err = applyHexPlayerAttackTx(ctx, c, userID, targetID)
+	if err != nil {
+		return out, err
+	}
+	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, c.MapChanged)
+	if err != nil {
+		return HexAttackResult{}, err
+	}
+	if publish != nil {
+		publish(out)
+	}
+	return out, nil
+}
+
+// Uses the caller's locked MatchCommand; no nested transaction or second commit.
+func applyHexPlayerAttackTx(ctx context.Context, c *repository.MatchCommand, userID, targetID int) (HexAttackResult, error) {
+	var out HexAttackResult
+	instanceID := c.InstanceID
 	s, err := readHexAttackTx(ctx, c.Tx, instanceID, userID, targetID, true, "player")
 	if err != nil {
 		return out, err
 	}
+	if err := c.PrepareHexMainTargetTx(ctx, userID, "player", targetID); err != nil {
+		return out, err
+	}
+	keepKind, keepID := "", 0
+	if s.Player.Stats.CharacterType == "ranger" && s.Mode == attackModeRanged {
+		keepKind, keepID = "player", targetID
+	}
+	if err := c.ClearRangerBreakTx(ctx, userID, keepKind, keepID); err != nil {
+		return out, err
+	}
+	if s.Monster.ArmorBreakOwner != userID {
+		s.Monster.ArmorBreakStacks = 0
+	}
 	a, d := s.Player.Stats, s.Monster.Stats
-	d.Defense -= s.Monster.ArmorBreakStacks * armorBreakDefensePenaltyPerStack
+	if a.CharacterType == "ranger" && s.Mode == attackModeRanged {
+		d.Defense -= s.Monster.ArmorBreakStacks * armorBreakDefensePenaltyPerStack
+	}
 	if d.Defense < 0 {
 		d.Defense = 0
 	}
@@ -198,19 +232,29 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		hit = attackResult{NewHealth: s.Monster.Stats.Health}
 		effects = append(effects, CombatEffect{Kind: "block", Target: &targetRef, Succeeded: true})
 	}
+	rangerChance := 0
 	if a.CharacterType == "ranger" {
-		var crit bool
-		hit, crit = tryApplyRangerCriticalShot(a, s.Monster.Stats.Health, hit)
+		rangerChance = balance.CalculateReflexProcChance(a.Agility)
+	}
+	if hit.Triggered && hit.Damage > 0 {
+		damage, crit, e := c.CraftCriticalTx(ctx, userID, hit.Damage, rangerChance, rollReflexProc)
+		if e != nil {
+			return out, e
+		}
+		hit = applyFlatDamage(s.Monster.Stats.Health, damage)
 		if crit {
 			effects = append(effects, CombatEffect{Kind: "crit", Source: &attackerRef, Target: &targetRef, Succeeded: true})
 		}
 	}
 	steps := []CombatStep{{Kind: "hit", Source: &attackerRef, Target: targetRef, Damage: hit.Damage, TargetHPAfter: hit.NewHealth}}
-	attackerEnergy, targetEnergy := s.Player.Energy-s.Cost, s.Monster.Energy
+	attackerAP, targetAP := s.Player.AP-s.Cost, s.Monster.AP
 	attackerHP, targetHP := a.Health, hit.NewHealth
 	bonus, followup, counterDamage := 0, 0, 0
-	if a.CharacterType == "berserker" && hit.Damage > 0 && rollReflexProc(balance.CalculateReflexProcChance(a.Agility)) {
-		heal := actualDamageDealt(s.Monster.Stats.Health, targetHP) / 2
+	heal, err := c.CraftLifestealTx(ctx, userID, actualDamageDealt(s.Monster.Stats.Health, targetHP), a.CharacterType == "berserker" && hit.Damage > 0 && rollReflexProc(balance.CalculateReflexProcChance(a.Agility)), rollReflexProc)
+	if err != nil {
+		return out, err
+	}
+	if heal > 0 {
 		if heal > a.MaxHealth-attackerHP {
 			heal = a.MaxHealth - attackerHP
 		}
@@ -219,44 +263,37 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			effects = append(effects, CombatEffect{Kind: "lifesteal", Source: &attackerRef, Target: &attackerRef, Amount: heal, Succeeded: true})
 		}
 	}
-	if a.CharacterType == "mystic" && hit.Triggered && targetHP > 0 {
-		burn, gain := energyDrainPerHit, energyDrainGainPerHit
-		if rollReflexProc(balance.CalculateReflexProcChance(a.Agility)) {
-			burn, gain = arcaneOverburnEnergyBurn, arcaneOverburnEnergyGain
-			effects = append(effects, CombatEffect{Kind: "arcaneOverburn", Source: &attackerRef, Target: &targetRef, Succeeded: true})
+	if a.CharacterType == "mystic" && hit.Triggered {
+		extra, reflex, err := c.MysticHitTx(ctx, userID, "player", targetID, rollReflexProc(balance.CalculateReflexProcChance(a.Agility)))
+		if err != nil {
+			return out, err
 		}
-		actual := burn
-		if actual > targetEnergy {
-			actual = targetEnergy
-		}
-		targetEnergy -= actual
-		if gain > s.Player.MaxEnergy-attackerEnergy {
-			gain = s.Player.MaxEnergy - attackerEnergy
-		}
-		if gain < 0 {
-			gain = 0
-		}
-		attackerEnergy += gain
-		bonus = burn - actual
-		if bonus > 0 {
-			next := applyFlatDamage(targetHP, bonus)
-			bonus = actualDamageDealt(targetHP, next.NewHealth)
+		if targetHP > 0 && extra+reflex > 0 {
+			next := applyFlatDamage(targetHP, extra+reflex)
 			targetHP = next.NewHealth
-			steps = append(steps, CombatStep{Kind: "bonus", Source: &attackerRef, Target: targetRef, Damage: bonus, TargetHPAfter: targetHP})
+			bonus += next.Damage
+			steps = append(steps, CombatStep{Kind: "mysticOverload", Source: &attackerRef, Target: targetRef, Damage: next.Damage, TargetHPAfter: targetHP})
+			effects = append(effects, CombatEffect{Kind: "mysticOverload", Source: &attackerRef, Target: &targetRef, Amount: extra, BonusDamage: reflex, Succeeded: true})
 		}
-		effects = append(effects, CombatEffect{Kind: "energyDrain", Source: &attackerRef, Target: &targetRef, Amount: actual, EnergyGranted: gain, EnergyDrained: actual, Succeeded: true})
+		if targetHP > 0 {
+			applied, err := c.MysticDrainTx(ctx, userID, targetID)
+			if err != nil {
+				return out, err
+			}
+			if applied {
+				effects = append(effects, CombatEffect{Kind: "mpDrain", Source: &attackerRef, Target: &targetRef, Succeeded: true})
+			}
+		}
 	}
-	counterCost := standardCounterAttackEnergyCost
-	if d.CharacterType == "guardian" {
-		counterCost = 0
-	}
-	if s.Mode == attackModeMelee && targetHP > 0 && targetEnergy >= counterCost {
-		targetEnergy -= counterCost
+	if s.Mode == attackModeMelee && targetHP > 0 && s.Monster.Reactions > 0 {
+		if err := c.SpendHexTx(ctx, targetID, 0, 0, 1); err != nil {
+			return out, err
+		}
 		counterAttacker := s.Monster.Stats
 		counterAttacker.Health = targetHP
 		counterDefender := a
 		counterDefender.Health = attackerHP
-		counterDefender.Defense -= s.Player.ArmorBreakStacks * armorBreakDefensePenaltyPerStack
+		// Only a Ranger main attack can use its owned armor break.
 		if counterDefender.Defense < 0 {
 			counterDefender.Defense = 0
 		}
@@ -272,16 +309,24 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		}
 	}
 	mapChanged := false
-	if a.CharacterType == "ranger" && s.Mode == attackModeRanged && hit.Triggered && targetHP > 0 {
+	targetImmune, err := c.CraftImmuneTx(ctx, targetID)
+	if err != nil {
+		return out, err
+	}
+	if a.CharacterType == "ranger" && s.Mode == attackModeRanged && hit.Triggered && targetHP > 0 && !targetImmune {
 		if s.Monster.ArmorBreakStacks >= armorBreakMaxStacks {
-			attackerEnergy += rangerThirdShotEnergyRefund
-			if attackerEnergy > s.Player.MaxEnergy {
-				attackerEnergy = s.Player.MaxEnergy
-			}
-			var auraPressureBefore int
-			if err := c.Tx.QueryRowContext(ctx, `SELECT hex_guardian_aura_pressure FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID).Scan(&auraPressureBefore); err != nil {
+			granted := 2
+			b, err := repository.ReadHexBudgetsTx(ctx, c.Tx, instanceID, userID)
+			if err != nil {
 				return out, err
 			}
+			if granted > repository.HexMPCap-b.MP {
+				granted = repository.HexMPCap - b.MP
+			}
+			if err := c.GrantHexMPTx(ctx, userID, granted); err != nil {
+				return out, err
+			}
+			effects = append(effects, CombatEffect{Kind: "mpGain", Source: &attackerRef, MPGranted: granted, Succeeded: true})
 			pushed, pos, err := pushHexPlayerTx(ctx, c, s.Player.Position, s.Monster.Position, targetID)
 			if err != nil {
 				return out, err
@@ -289,15 +334,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			if pushed {
 				mapChanged = true
 				effects = append(effects, CombatEffect{Kind: "push", Source: &attackerRef, Target: &targetRef, Succeeded: true, PositionAfter: &CombatPoint{X: pos.Q, Y: pos.R}})
-				if auraPressureBefore > 0 {
-					var auraPressureAfter int
-					if err := c.Tx.QueryRowContext(ctx, `SELECT hex_guardian_aura_pressure FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID).Scan(&auraPressureAfter); err != nil {
-						return out, err
-					}
-					if auraPressureAfter == 0 {
-						effects = append(effects, CombatEffect{Kind: "guardianAuraEnd", Target: &targetRef, Succeeded: true, PositionAfter: &CombatPoint{X: pos.Q, Y: pos.R}})
-					}
-				}
+
 			} else {
 				next := resolveHexRangerPlayerPushFallback(a, d, targetHP)
 				bonus += next.Damage
@@ -305,7 +342,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 				steps = append(steps, CombatStep{Kind: "bonus", Source: &attackerRef, Target: targetRef, Damage: next.Damage, TargetHPAfter: targetHP})
 				effects = append(effects, CombatEffect{Kind: "push", Source: &attackerRef, Target: &targetRef, Succeeded: false, BonusDamage: next.Damage})
 			}
-			if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_stacks=0,hex_armor_break_turns=0 WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID); err != nil {
+			if err := c.SetRangerBreakTx(ctx, "player", targetID, userID, 0); err != nil {
 				return out, err
 			}
 			endEffect := CombatEffect{Kind: "armorBreakEnd", Target: &targetRef, Succeeded: true}
@@ -315,23 +352,23 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 			effects = append(effects, endEffect)
 		} else {
 			stacks := s.Monster.ArmorBreakStacks + 1
-			if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_armor_break_stacks=$3,hex_armor_break_turns=$4 WHERE instance_id=$1 AND user_id=$2`, instanceID, targetID, stacks, armorBreakDurationTurns); err != nil {
+			if err := c.SetRangerBreakTx(ctx, "player", targetID, userID, stacks); err != nil {
 				return out, err
 			}
-			effects = append(effects, CombatEffect{Kind: "armorBreak", Source: &attackerRef, Target: &targetRef, Value: -armorBreakDefensePenaltyPerStack, Stacks: stacks, DurationTurns: armorBreakDurationTurns, Succeeded: true})
+			effects = append(effects, CombatEffect{Kind: "armorBreak", Source: &attackerRef, Target: &targetRef, Value: -armorBreakDefensePenaltyPerStack, Stacks: stacks, Succeeded: true})
 		}
 	}
 	if attackerHP > 0 {
-		if err := c.SetCombatPlayerVitalsTx(ctx, userID, attackerHP, attackerEnergy); err != nil {
+		if err := c.SetHexCombatVitalsTx(ctx, userID, attackerHP, attackerAP); err != nil {
 			return out, err
 		}
 	} else {
-		if err := c.SetCombatPlayerVitalsTx(ctx, userID, a.Health, attackerEnergy); err != nil {
+		if err := c.SetHexCombatVitalsTx(ctx, userID, a.Health, attackerAP); err != nil {
 			return out, err
 		}
 	}
 	if targetHP > 0 {
-		if err := c.SetCombatPlayerVitalsTx(ctx, targetID, targetHP, targetEnergy); err != nil {
+		if err := c.SetHexCombatVitalsTx(ctx, targetID, targetHP, targetAP); err != nil {
 			return out, err
 		}
 	}
@@ -354,13 +391,7 @@ func ApplyHexPlayerAttack(ctx context.Context, instanceID string, userID, target
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: s.Distance, Cost: s.Cost, Mode: s.Mode, Energy: attackerEnergy, TargetHP: s.Monster.Stats.Health}, Damage: hit.Damage + bonus + followup, CounterDamage: counterDamage, NewTargetHP: targetHP, NewAttackerHP: attackerHP, PlayerDied: targetHP <= 0, AttackStyle: resolvePresentationAttackStyle(a, s.Mode), Effects: effects, Steps: steps, Drops: []EquipmentDropPayload{}, AttackerPosition: s.Player.Position, TargetPosition: s.Monster.Position, AttackerHPBefore: a.Health}
-	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, mapChanged)
-	if err != nil {
-		return HexAttackResult{}, err
-	}
-	if publish != nil {
-		publish(out)
-	}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: s.Distance, Cost: s.Cost, Mode: s.Mode, AP: attackerAP, TargetHP: s.Monster.Stats.Health}, Damage: hit.Damage + bonus + followup, CounterDamage: counterDamage, NewTargetHP: targetHP, NewAttackerHP: attackerHP, PlayerDied: targetHP <= 0, AttackStyle: resolvePresentationAttackStyle(a, s.Mode), Effects: effects, Steps: steps, Drops: []EquipmentDropPayload{}, AttackerPosition: s.Player.Position, TargetPosition: s.Monster.Position, AttackerHPBefore: a.Health}
+	c.MapChanged = c.MapChanged || mapChanged
 	return out, nil
 }

@@ -9,6 +9,11 @@ import (
 )
 
 const (
+	GuildCostWood  = 10
+	GuildCostStone = 10
+	GuildCostIron  = 10
+	GuildCostGold  = 25
+
 	ForgeCostWood  = 40
 	ForgeCostStone = 30
 	ForgeCostIron  = 20
@@ -28,10 +33,15 @@ type baseBuildingConfig struct {
 	AlreadyBuiltError string
 	CostWood          int
 	CostStone         int
+	CostGold          int
 	CostIron          int
 }
 
 var (
+	guildBuildingConfig = baseBuildingConfig{
+		Name: "ArtisansGuild", LevelColumn: "guild_level", AlreadyBuiltError: "guild already built",
+		CostWood: GuildCostWood, CostStone: GuildCostStone, CostIron: GuildCostIron, CostGold: GuildCostGold,
+	}
 	forgeBuildingConfig = baseBuildingConfig{
 		Name:              "Forge",
 		LevelColumn:       "forge_level",
@@ -111,6 +121,7 @@ func EnsurePlayerBaseBuildingsTable() {
         forge_level INTEGER NOT NULL DEFAULT 0,
         library_level INTEGER NOT NULL DEFAULT 0,
         tavern_level INTEGER NOT NULL DEFAULT 0,
+        guild_level INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -125,6 +136,10 @@ func EnsurePlayerBaseBuildingsTable() {
 	if _, err := DB.Exec(`ALTER TABLE player_base_buildings ADD COLUMN IF NOT EXISTS tavern_level INTEGER NOT NULL DEFAULT 0`); err != nil {
 		log.Fatalf("EnsurePlayerBaseBuildingsTable add tavern_level: %v", err)
 	}
+	if _, err := DB.Exec(`ALTER TABLE player_base_buildings ADD COLUMN IF NOT EXISTS guild_level INTEGER NOT NULL DEFAULT 0`); err != nil {
+		log.Fatalf("EnsurePlayerBaseBuildingsTable add guild_level: %v", err)
+	}
+
 }
 
 func ensureBaseBuildingsRow(userID int) error {
@@ -162,6 +177,8 @@ func getBaseBuildingLevel(userID int, cfg baseBuildingConfig) (int, error) {
 	return level, nil
 }
 
+func GetGuildLevel(userID int) (int, error) { return getBaseBuildingLevel(userID, guildBuildingConfig) }
+
 func GetForgeLevel(userID int) (int, error) {
 	return getBaseBuildingLevel(userID, forgeBuildingConfig)
 }
@@ -195,17 +212,22 @@ func buildBaseBuilding(userID int, cfg baseBuildingConfig) error {
 	}
 
 	var invRaw string
-	if err := tx.QueryRow(`SELECT inventory FROM player_profiles WHERE user_id = $1 FOR UPDATE`, userID).Scan(&invRaw); err != nil {
+	var balance int
+	if err := tx.QueryRow(`SELECT inventory,balance FROM player_profiles WHERE user_id = $1 FOR UPDATE`, userID).Scan(&invRaw, &balance); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errors.New("player not found")
 		}
 		return fmt.Errorf("Build%s lock player inventory: %w", cfg.Name, err)
 	}
 
+	if cfg.CostGold > 0 && balance < cfg.CostGold {
+		return errors.New("not enough gold")
+	}
+
 	inv := make(map[string]map[string]interface{})
 	if invRaw != "" && invRaw != "{}" {
 		if err := json.Unmarshal([]byte(invRaw), &inv); err != nil {
-			inv = make(map[string]map[string]interface{})
+			return fmt.Errorf("Build%s decode inventory: %w", cfg.Name, err)
 		}
 	}
 
@@ -243,7 +265,7 @@ func buildBaseBuilding(userID int, cfg baseBuildingConfig) error {
 		return fmt.Errorf("Build%s marshal inventory: %w", cfg.Name, err)
 	}
 
-	if _, err := tx.Exec(`UPDATE player_profiles SET inventory = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, string(invBytes), userID); err != nil {
+	if _, err := tx.Exec(`UPDATE player_profiles SET inventory = $1, balance=balance-$3, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2`, string(invBytes), userID, cfg.CostGold); err != nil {
 		return fmt.Errorf("Build%s update player inventory: %w", cfg.Name, err)
 	}
 
@@ -274,3 +296,5 @@ func BuildLibrary(userID int) error {
 func BuildTavern(userID int) error {
 	return buildBaseBuilding(userID, tavernBuildingConfig)
 }
+
+func BuildGuild(userID int) error { return buildBaseBuilding(userID, guildBuildingConfig) }

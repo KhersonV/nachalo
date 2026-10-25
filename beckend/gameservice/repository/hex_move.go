@@ -2,30 +2,40 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
-	"gameservice/game"
-	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 )
 
 type HexRouteResult struct {
-	Path           []hexgrid.Coord    `json:"path"`
-	StepCost       int                `json:"stepCost"`
-	TotalCost      int                `json:"totalCost"`
-	Energy         int                `json:"energy"`
-	Affordable     bool               `json:"affordable"`
-	Position       hexgrid.Coord      `json:"position"`
-	StateRevision  int64              `json:"stateRevision,omitempty"`
-	MapRevision    int64              `json:"mapRevision,omitempty"`
-	Replayed       bool               `json:"-"`
-	AuraEnergyCost int                `json:"auraEnergyCost,omitempty"`
-	AuraHits       []HexAuraVisualHit `json:"auraHits,omitempty"`
-	AuraEnded      bool               `json:"auraEnded,omitempty"`
+	Destination       hexgrid.Coord `json:"destination"`
+	ReachablePosition hexgrid.Coord `json:"reachablePosition"`
+	AffordableSteps   int           `json:"affordableSteps"`
+	ReachableCost     int           `json:"reachableCost"`
+	StepCosts         []int         `json:"stepCosts"`
+	PreviewToken      string        `json:"previewToken"`
+	Partial           bool          `json:"partial"`
+
+	Budget        *HexBudgets        `json:"budget,omitempty"`
+	ActionEffects []map[string]any   `json:"actionEffects,omitempty"`
+	Path          []hexgrid.Coord    `json:"path"`
+	StepCost      int                `json:"stepCost"`
+	TotalCost     int                `json:"totalCost"`
+	MP            int                `json:"mp"`
+	Affordable    bool               `json:"affordable"`
+	Position      hexgrid.Coord      `json:"position"`
+	StateRevision int64              `json:"stateRevision,omitempty"`
+	MapRevision   int64              `json:"mapRevision,omitempty"`
+	Replayed      bool               `json:"-"`
+	AuraMPCost    int                `json:"auraMPCost,omitempty"`
+	AuraHits      []HexAuraVisualHit `json:"auraHits,omitempty"`
+	AuraEnded     bool               `json:"auraEnded,omitempty"`
 }
 
 type HexAuraVisualHit struct {
@@ -64,159 +74,154 @@ func ApplyHexMove(ctx context.Context, instanceID string, userID int, commandID 
 
 // publish is invoked only after Commit succeeds, never for a replay.
 func ApplyHexMoveWithPublish(ctx context.Context, instanceID string, userID int, commandID string, destination hexgrid.Coord, publish func(HexRouteResult)) (HexRouteResult, error) {
-	var empty HexRouteResult
-	if !hexgrid.Valid(destination) {
-		return empty, ErrCommandRejected
-	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	canonical := fmt.Sprintf("hex-move-v1:%d:%d:%d", userID, destination.Q, destination.R)
-	c, err := BeginMatchCommand(ctx, instanceID, userID, commandID, canonical)
+	return ApplyHexMoveWithPreview(ctx, instanceID, userID, commandID, destination, "", publish)
+}
+
+func ApplyHexMoveWithPreview(ctx context.Context, instanceID string, userID int, commandID string, destination hexgrid.Coord, token string, publish func(HexRouteResult)) (HexRouteResult, error) {
+	var out HexRouteResult
+	c, err := BeginMatchCommand(ctx, instanceID, userID, commandID, fmt.Sprintf("hex-move-stage1047:%d:%d:%d:%s", userID, destination.Q, destination.R, token))
 	if err != nil {
-		return empty, err
+		return out, err
 	}
 	defer c.Rollback()
 	if c.Replay != nil {
-		if err := json.Unmarshal(c.Replay, &empty); err != nil {
-			return HexRouteResult{}, err
+		err = json.Unmarshal(c.Replay, &out)
+		out.Replayed = true
+		return out, err
+	}
+	if token != "" {
+		planned, e := findHexRouteTx(ctx, c.Tx, instanceID, userID, destination)
+		if e != nil {
+			return out, e
 		}
-		empty.Replayed = true
-		return empty, nil
+		if planned.PreviewToken != token {
+			return out, ErrCommandRejected
+		}
 	}
+	out, err = ApplyHexMoveTx(ctx, c, userID, destination)
+	if err != nil {
+		return out, err
+	}
+	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
+	if err != nil {
+		return HexRouteResult{}, err
+	}
+	if publish != nil {
+		publish(out)
+	}
+	return out, nil
+}
+
+// Shared step execution for movement and an atomic move+attack command.
+func ApplyHexMoveTx(ctx context.Context, c *MatchCommand, userID int, destination hexgrid.Coord) (HexRouteResult, error) {
+	var out HexRouteResult
 	if c.ActiveUser != userID {
-		return empty, ErrCommandRejected
+		return out, ErrCommandRejected
 	}
-	route, err := findHexRouteTx(ctx, c.Tx, instanceID, userID, destination)
+	instanceID := c.InstanceID
+	out, err := findHexRouteTx(ctx, c.Tx, instanceID, userID, destination)
 	if err != nil {
-		return empty, err
+		return out, err
 	}
-	if !route.Affordable {
-		return empty, ErrHexEnergy
+	if out.AffordableSteps == 0 {
+		return out, ErrHexEnergy
 	}
-	start := route.Position
-	var health, teamID int
-	pressure := hexAuraPressure{}
-	if err := c.Tx.QueryRowContext(ctx, `SELECT health,COALESCE(group_id,0),hex_guardian_aura_pressure,hex_guardian_aura_source_user_id FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&health, &teamID, &pressure.amount, &pressure.sourceUserID); err != nil {
-		return empty, err
-	}
-	guardians, err := loadHexGuardiansTx(ctx, c.Tx, instanceID)
-	if err != nil {
-		return empty, err
-	}
-	extra, nextPressure, hits := planHexGuardianAura(start, route.Path, userID, teamID, guardians, pressure)
-	if route.TotalCost != len(route.Path)*route.StepCost+extra {
-		return empty, ErrCommandRejected
-	}
-	finalPath := route.Path
-	finalHealth, killerID := health, 0
-	for _, hit := range hits {
-		finalHealth -= hit.damage
-		if finalHealth <= 0 {
-			finalPath = route.Path[:hit.step+1]
-			killerID = hit.sourceUserID
+	path := append([]hexgrid.Coord(nil), out.Path[:out.AffordableSteps]...)
+	out.StepCosts = nil
+	out.AuraMPCost = 0
+	out.Path = nil
+	out.TotalCost = 0
+	for _, to := range path {
+		before, err := c.AuraMembersTx(ctx)
+		if err != nil {
+			return out, err
+		}
+		costs, extra, err := hexRouteCostsTx(ctx, c.Tx, instanceID, userID, out.Position, []hexgrid.Coord{to})
+		if err != nil {
+			return out, err
+		}
+		if err = c.SpendHexTx(ctx, userID, 0, costs[0], 0); err != nil {
+			return out, err
+		}
+		inside := auraMembership(before)[userID] != 0
+		if _, err = c.Tx.ExecContext(ctx, `UPDATE match_players SET position_q=$3,position_r=$4,hex_first_step_used=true,hex_aura_slow_used=hex_aura_slow_used OR $5 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID, to.Q, to.R, inside); err != nil {
+			return out, err
+		}
+		if _, err = c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND q=$2 AND r=$3`, instanceID, out.Position.Q, out.Position.R); err != nil {
+			return out, err
+		}
+		if _, err = c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=true WHERE instance_id=$1 AND q=$2 AND r=$3`, instanceID, to.Q, to.R); err != nil {
+			return out, err
+		}
+		out.Position = to
+		out.Path = append(out.Path, to)
+		out.TotalCost += costs[0]
+		out.StepCosts = append(out.StepCosts, costs[0])
+		out.AuraMPCost += extra
+		if err = c.ResolveAuraTransitionTx(ctx, before); err != nil {
+			return out, err
+		}
+		if err = recordHexExploredTx(ctx, c.Tx, instanceID, userID, to); err != nil {
+			return out, err
+		}
+		var hp int
+		if err = c.Tx.QueryRowContext(ctx, `SELECT health FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&hp); err != nil {
+			return out, err
+		}
+		if hp <= 0 {
 			break
 		}
 	}
-	if finalHealth < 0 {
-		finalHealth = 0
-	}
-	if len(finalPath) < len(route.Path) {
-		extra, nextPressure, hits = planHexGuardianAura(start, finalPath, userID, teamID, guardians, pressure)
-		route.TotalCost = len(finalPath)*route.StepCost + extra
-		route.Path = finalPath
-	}
-	finalPosition := finalPath[len(finalPath)-1]
-	route.AuraEnergyCost = extra
-	route.AuraEnded = hexAuraSourceAt(start, userID, teamID, guardians) != 0 && hexAuraSourceAt(finalPosition, userID, teamID, guardians) == 0
-	visualHealth := health
-	for _, hit := range hits {
-		lost := hit.damage
-		if lost > visualHealth {
-			lost = visualHealth
-		}
-		visualHealth -= lost
-		route.AuraHits = append(route.AuraHits, HexAuraVisualHit{Position: route.Path[hit.step], Damage: lost, SourceID: hit.sourceUserID})
-	}
-	result, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET position_q=$1,position_r=$2,energy=energy-$3,hex_guardian_aura_pressure=$8,hex_guardian_aura_source_user_id=$9 WHERE instance_id=$4 AND user_id=$5 AND position_q=$6 AND position_r=$7 AND energy>=$3 AND health>0`, finalPosition.Q, finalPosition.R, route.TotalCost, instanceID, userID, start.Q, start.R, nextPressure.amount, nextPressure.sourceUserID)
+	c.AuraResolved = true
+	b, err := ReadHexBudgetsTx(ctx, c.Tx, instanceID, userID)
 	if err != nil {
-		return empty, err
+		return out, err
 	}
-	if n, _ := result.RowsAffected(); n != 1 {
-		return empty, ErrCommandRejected
+	out.MP = b.MP
+	out.AffordableSteps = len(out.Path)
+	out.ReachablePosition = out.Position
+	out.ReachableCost = out.TotalCost
+	out.Partial = out.Position != destination
+	return out, nil
+}
+
+// Simulates exactly the per-step costs, including first-step artifact and one aura surcharge.
+func hexRouteCostsTx(ctx context.Context, tx *sql.Tx, instance string, user int, start hexgrid.Coord, path []hexgrid.Coord) ([]int, int, error) {
+	var artifact string
+	var first, slow bool
+	if err := tx.QueryRowContext(ctx, `SELECT hex_applied_artifact,hex_first_step_used,hex_aura_slow_used FROM match_players WHERE instance_id=$1 AND user_id=$2`, instance, user).Scan(&artifact, &first, &slow); err != nil {
+		return nil, 0, err
 	}
-	for _, update := range []struct {
-		pos      hexgrid.Coord
-		occupied bool
-	}{{start, false}, {finalPosition, true}} {
-		result, err = c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=$1 WHERE instance_id=$2 AND q=$3 AND r=$4`, update.occupied, instanceID, update.pos.Q, update.pos.R)
-		if err != nil {
-			return empty, err
-		}
-		if n, _ := result.RowsAffected(); n != 1 {
-			return empty, ErrCommandRejected
-		}
-	}
-	for i, hit := range hits {
-		if err := c.RecordDamageEventTx(ctx, game.DamageEvent{SourceType: game.ResultSourcePlayer, DealerID: hit.sourceUserID, TargetType: "player", TargetID: userID, Amount: route.AuraHits[i].Damage}); err != nil {
-			return empty, err
-		}
-	}
-	if finalHealth == 0 {
-		if _, err := c.RecordKillEventTx(ctx, game.KillEvent{SourceType: game.ResultSourcePlayer, KillerID: killerID, VictimType: "player", VictimID: userID, Damage: hits[len(hits)-1].damage}); err != nil {
-			return empty, err
-		}
-		if err := c.MarkCombatPlayerDeadTx(ctx, userID); err != nil {
-			return empty, err
-		}
-		if err := transferHexQuestToTurretOwnerTx(ctx, c, userID, killerID); err != nil {
-			return empty, err
-		}
-		if err := c.LoseHexBackpackTx(ctx, userID, finalPosition); err != nil {
-			return empty, err
-		}
-		turn, err := c.RemoveCombatPlayerFromTurnOrderTx(ctx, userID)
-		if err != nil {
-			return empty, err
-		}
-		if err := c.ResetHexTurnDeadlineTx(ctx, turn.ActiveUserID); err != nil {
-			return empty, err
-		}
-		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET is_player=false WHERE instance_id=$1 AND q=$2 AND r=$3`, instanceID, finalPosition.Q, finalPosition.R); err != nil {
-			return empty, err
-		}
-		if turn.ActiveUserID == 0 {
-			var groupID int
-			if err := c.Tx.QueryRowContext(ctx, `SELECT COALESCE(group_id,0) FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, killerID).Scan(&groupID); err != nil {
-				return empty, err
-			}
-			winnerID, winnerGroup := killerID, 0
-			if groupID > 0 {
-				winnerID, winnerGroup = 0, groupID
-			}
-			if _, err := c.Tx.ExecContext(ctx, `UPDATE matches SET finished_at=now(),hex_turn_deadline=NULL,winner_id=$2,winner_group_id=$3 WHERE instance_id=$1`, instanceID, winnerID, winnerGroup); err != nil {
-				return empty, err
-			}
-		}
-	} else if finalHealth != health {
-		if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET health=$3 WHERE instance_id=$1 AND user_id=$2`, instanceID, userID, finalHealth); err != nil {
-			return empty, err
-		}
-	}
-	visited := append([]hexgrid.Coord{start}, route.Path...)
-	if err := recordHexExploredTx(ctx, c.Tx, instanceID, userID, visited...); err != nil {
-		return empty, err
-	}
-	route.Position = finalPosition
-	route.Energy -= route.TotalCost
-	route.Affordable = route.Energy >= 0
-	route.StateRevision, route.MapRevision, err = c.Commit(ctx, &route, true)
+	c := &MatchCommand{Tx: tx, InstanceID: instance}
+	all, err := c.AuraMembersTx(ctx)
 	if err != nil {
-		return empty, err
+		return nil, 0, err
 	}
-	if publish != nil {
-		publish(route)
+	out := []int{}
+	extra := 0
+	for _, to := range path {
+		cost := 1
+		if artifact == ArtifactTitanBreastplate {
+			cost++
+		}
+		if artifact == ArtifactBootsOfStealth && !first {
+			cost = 0
+		}
+		for i := range all {
+			if all[i].User == user {
+				all[i].Position = start
+			}
+		}
+		if !slow && auraMembership(all)[user] != 0 {
+			cost += 2
+			extra += 2
+			slow = true
+		}
+		first = true
+		start = to
+		out = append(out, cost)
 	}
-	return route, nil
+	return out, extra, nil
 }
 
 func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID int, destination hexgrid.Coord) (HexRouteResult, error) {
@@ -227,7 +232,7 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 	var mode string
 	var version int
 	var active int
-	err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0) FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active)
+	err := tx.QueryRowContext(ctx, `SELECT geometry->>'kind',schema_version,COALESCE(active_user_id,0),state_revision,map_revision FROM matches WHERE instance_id=$1 AND finished_at IS NULL`, instanceID).Scan(&mode, &version, &active, &out.StateRevision, &out.MapRevision)
 	if err != nil {
 		return out, err
 	}
@@ -235,8 +240,8 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 		return out, ErrHexUnavailable
 	}
 	var health, mobility, teamID int
-	err = tx.QueryRowContext(ctx, `SELECT position_q,position_r,energy,health,mobility,COALESCE(group_id,0) FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).
-		Scan(&out.Position.Q, &out.Position.R, &out.Energy, &health, &mobility, &teamID)
+	err = tx.QueryRowContext(ctx, `SELECT position_q,position_r,mp,health,mobility,COALESCE(group_id,0) FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).
+		Scan(&out.Position.Q, &out.Position.R, &out.MP, &health, &mobility, &teamID)
 	if err != nil {
 		return out, err
 	}
@@ -360,14 +365,32 @@ func findHexRouteTx(ctx context.Context, tx *sql.Tx, instanceID string, userID i
 	if len(out.Path) > 128 {
 		return HexRouteResult{}, ErrHexBlocked
 	}
-	out.StepCost = balance.MoveEnergyCost(mobility)
-	guardians, err := loadHexGuardiansTx(ctx, tx, instanceID)
+	out.StepCost = 1
+	costs, extra, err := hexRouteCostsTx(ctx, tx, instanceID, userID, out.Position, out.Path)
 	if err != nil {
 		return out, err
 	}
-	extra, _, _ := planHexGuardianAura(out.Position, out.Path, userID, teamID, guardians, hexAuraPressure{})
-	out.TotalCost = len(out.Path)*out.StepCost + extra
-	out.Affordable = out.Energy >= out.TotalCost
+	out.Destination = destination
+	out.ReachablePosition = out.Position
+	out.StepCosts = costs
+	out.TotalCost = 0
+	for i, cost := range costs {
+		out.TotalCost += cost
+		if out.AffordableSteps == i && out.TotalCost <= out.MP {
+			out.AffordableSteps++
+			out.ReachableCost = out.TotalCost
+			out.ReachablePosition = out.Path[i]
+		}
+	}
+	out.AuraMPCost = extra
+	out.Affordable = out.MP >= out.TotalCost
+	out.Partial = !out.Affordable
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return out, err
+	}
+	digest := sha256.Sum256(raw)
+	out.PreviewToken = hex.EncodeToString(digest[:])
 	return out, nil
 }
 
@@ -384,4 +407,9 @@ func HexMoveErrorStatus(err error) int {
 	default:
 		return 500
 	}
+}
+
+// Preview helper for compound commands; the caller owns the same transaction.
+func FindHexRouteTx(ctx context.Context, tx *sql.Tx, instance string, user int, destination hexgrid.Coord) (HexRouteResult, error) {
+	return findHexRouteTx(ctx, tx, instance, user, destination)
 }

@@ -1,0 +1,34 @@
+.page { min-height: 100%; padding: var(--ui-space-3) 0 var(--ui-space-8); color: var(--ui-text); background: linear-gradient(180deg, rgb(9 16 26 / 85%), #0a1420 850px), url('/assets/ui/backgrounds/base.webp') center top / 100% auto no-repeat; }
+.container { max-width: var(--lobby-page-max-width); margin: 0 auto; display: grid; gap: var(--ui-space-4); }
+.filters { display: flex; gap: var(--ui-space-2); flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: var(--ui-space-4); }
+.card { display: flex; flex-direction: column; gap: var(--ui-space-3); min-width: 0; background: linear-gradient(150deg, rgb(22 34 49 / 96%), rgb(12 21 34 / 97%)); }
+.card :is(h2,h3,p) { margin: 0; }
+.card :is(h2,h3) { color: var(--ui-gold); font-family: var(--ui-display-font); }
+.card p, .card small { color: var(--ui-text-muted); line-height: 1.6; }
+.card button { margin-top: auto; }
+.monsterImage, .materialImage { width: 100%; height: 180px; object-fit: contain; border-radius: var(--ui-radius-md); background: rgb(7 17 28 / 65%); }
+.materialImage { height: 150px; }
+.monsterHeader { display: flex; align-items: center; gap: var(--ui-space-4); }
+.monsterHeader img { width: 100px; height: 100px; object-fit: contain; }
+.monsterHeader h2 { margin-top: 0; font-family: var(--ui-display-font); color: var(--ui-gold); }
+.detail { width: min(600px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; color: var(--ui-text); background: var(--ui-surface-raised, #132030); padding: var(--ui-space-5); border: 1px solid var(--ui-gold); border-radius: var(--ui-radius-lg); box-shadow: var(--ui-shadow); }
+.detail::backdrop { background: rgb(0 0 0 / 75%); }
+.detail p { line-height: 1.6; color: var(--ui-text-muted); }
+.detail h2 { font-family: var(--ui-display-font); color: var(--ui-gold); }
+.detail dl { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ui-space-3); }
+.detail dt { color: var(--ui-text-muted); }
+.detail dd { margin: 0; }
+.detail a { color: var(--ui-gold); }
+.largeImage { display: block; width: 100%; height: 240px; object-fit: contain; }
+.close { display: block; margin-left: auto; }
+@media (max-width: 600px) { .monsterHeader { align-items: flex-start; } .monsterHeader img { width: 70px; height: 70px; } .detail { padding: var(--ui-space-3); } }
+.embedded { padding: 0; background: transparent; }
+.gatheringSection { display: grid; gap: 14px; padding-top: 14px; border-top: 1px solid #9c7b4759; }
+.gatheringCategory { padding: 14px; border: 1px solid #806a4559; border-radius: 8px; background: #111e2bcc; }
+.gatheringSection [data-locked='true'] { opacity: .65; }
+
+.recipeIcon { width: 24px; height: 24px; object-fit: contain; vertical-align: middle; }
+
+.gatheringCategory[data-rarity='green'], .card[data-rarity='green'] { border-left: 3px solid #80c99a; }
+.gatheringCategory[data-rarity='blue'], .card[data-rarity='blue'] { border-left: 3px solid #79bde4; }

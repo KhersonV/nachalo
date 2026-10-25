@@ -30,11 +30,13 @@ export type BuildingState = {
         wood: number;
         stone: number;
         iron: number;
+        gold?: number;
     };
     resources: {
         wood: number;
         stone: number;
         iron: number;
+        gold?: number;
     };
     canBuild: boolean;
     unlockables: ForgeRecipe[];
@@ -47,17 +49,20 @@ export type BaseState = {
         wood: number;
         stone: number;
         iron: number;
+        gold?: number;
     };
     resources: {
         wood: number;
         stone: number;
         iron: number;
+        gold?: number;
     };
     canBuild: boolean;
     recipes: ForgeRecipe[];
     forge: BuildingState;
     library: BuildingState;
     tavern: BuildingState;
+    guild: BuildingState;
 };
 
 export type HeroState = {

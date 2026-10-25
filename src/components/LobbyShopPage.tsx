@@ -28,7 +28,7 @@ const CATEGORY_LABELS: Record<ShopCategory, string> = {
 };
 const GREEN_SET_NAMES = ["Sagecloth · Mystic", "Bloodroot · Berserker", "Greenwisp · Ranger", "Aegiswarden · Guardian"];
 const EFFECT_LABELS: Record<string, string> = {
-    health: "Health", energy: "Energy", sight_bonus: "Sight", structure_health: "Structure health",
+    health: "Health", ap_half: "AP (×0.5)", sight_bonus: "Sight", structure_health: "Structure health",
     structure_defense: "Structure defense", turret_damage: "Turret damage", structure_blocking: "Blocks passage",
 };
 
@@ -224,18 +224,22 @@ export default function LobbyShopPage() {
     React.useEffect(() => { void loadData(); }, [loadData]);
     const changeCount = (type: string, next: number) => setCounts(current => ({ ...current, [type]: clampShopQuantity(next) }));
 
+    const purchaseAttempt = React.useRef<{ key: string; commandId: string } | null>(null);
     const buy = async (item: ShopItem) => {
         if (!user?.token || busyRef.current || !catalog.some(entry => entry.type === item.type)) return;
         const count = clampShopQuantity(counts[item.type] ?? 1);
         const reason = purchaseBlockReason(item, count, player?.balance ?? null, forgeBuilt, libraryBuilt);
         if (reason) { setError(reason); return; }
         busyRef.current = true; setBusy(true); setError(""); setNotice("");
+        const requestKey = `${item.type}:${count}`;
+        if (purchaseAttempt.current?.key !== requestKey) purchaseAttempt.current = { key: requestKey, commandId: crypto.randomUUID() };
         try {
             const response = await fetch(`${API_BASE}/game/shop/buy`, {
                 method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ player_id: user.id, item_type: item.type, count }),
+                body: JSON.stringify({ player_id: user.id, item_type: item.type, count, commandId: purchaseAttempt.current!.commandId }),
             });
             if (!response.ok) throw await responseError(response);
+            purchaseAttempt.current = null;
             const data = await response.json().catch(() => null);
             let confirmedPlayer: PlayerShopState | null = null;
             try { if (data?.player) confirmedPlayer = normalizePlayer(data.player); } catch { /* Refresh below is authoritative. */ }

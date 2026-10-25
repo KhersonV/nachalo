@@ -30,11 +30,28 @@ func hexCombatDatabase(t *testing.T) (*sql.DB, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Legacy migration introspection is not schema-qualified everywhere. Keep
+	// all fixtures in this test database serialized, even across Go processes.
+	lockConn, err := admin.Conn(context.Background())
+	if err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
+	if _, err = lockConn.ExecContext(context.Background(), `SELECT pg_advisory_lock(1045,1045)`); err != nil {
+		lockConn.Close()
+		admin.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = lockConn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(1045,1045)`)
+		lockConn.Close()
+		admin.Close()
+	})
 	schema := fmt.Sprintf("hex_combat_%d", time.Now().UnixNano())
 	if _, err := admin.Exec(`CREATE SCHEMA ` + schema); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); admin.Close() })
+	t.Cleanup(func() { _, _ = admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`) })
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		u, err := url.Parse(dsn)
 		if err != nil {
@@ -55,7 +72,7 @@ func hexCombatDatabase(t *testing.T) (*sql.DB, string) {
 	repository.DB = db
 	t.Cleanup(func() { repository.DB = old; db.Close() })
 	repository.RunMigrations()
-	for _, file := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql"} {
+	for _, file := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql", "stage4_storage_loadout.sql", "stage5_quest_artifact.sql", "stage5_portal_extraction.sql", "stage6_fog_turn.sql", "stage10_presence.sql"} {
 		raw, err := os.ReadFile("../../../docs/hex-migration/" + file)
 		if err != nil {
 			t.Fatal(err)

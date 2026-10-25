@@ -21,8 +21,8 @@ type PlayerResponse struct {
 		X int `json:"x"`
 		Y int `json:"y"`
 	} `json:"position"`
-	Energy        int    `json:"energy"`
-	MaxEnergy     int    `json:"maxEnergy"`
+	Energy        int    `json:"-"`
+	MaxEnergy     int    `json:"-"`
 	Health        int    `json:"health"`
 	MaxHealth     int    `json:"maxHealth"`
 	Level         int    `json:"level"`

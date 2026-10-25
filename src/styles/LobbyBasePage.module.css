@@ -77,3 +77,13 @@
 @media (prefers-reduced-motion: reduce) { .buildingCard { transition: none; } .buildingCard:hover { transform: none; } }
 
 .marketBuilding{display:flex;align-items:center;gap:16px;margin:18px 0;padding:20px;border:1px solid var(--ui-gold);border-radius:var(--ui-radius-lg);background:linear-gradient(120deg,var(--ui-surface-raised),var(--ui-surface));color:var(--ui-gold);text-decoration:none;box-shadow:var(--ui-shadow)}.marketBuilding:hover{background:var(--ui-surface-raised)}.marketBuilding:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}.marketBuilding img{width:48px;height:48px}.marketBuilding span:nth-child(2){display:grid;gap:4px;flex:1}.marketBuilding strong{font-family:var(--ui-display-font);font-size:1.3rem}.marketBuilding small{color:var(--ui-text-muted)}
+
+/* Guild uses the neutral building fallback and its own stone/wood emblem. */
+.guild { --building-image: linear-gradient(135deg, #35404a, #292b2c 50%, #503f2e); position: relative; }
+.guildEmblem { position: absolute; right: 12px; top: 10px; width: 110px; color: #b69a6a; opacity: .75; pointer-events: none; }
+.guildEmblem svg { display: block; width: 100%; height: auto; }
+.guild .buildingTopline, .guild .buildingCardCopy, .guild.workArt > :not(.guildEmblem) { position: relative; }
+.guild[data-built='false'] .guildEmblem { filter: grayscale(1); opacity: .35; }
+.buildingSelector { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .buildingSelector { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .buildingSelector { grid-template-columns: 1fr; } }

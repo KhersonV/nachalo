@@ -14,19 +14,21 @@ import (
 )
 
 type HexBarrelResult struct {
-	Position      hexgrid.Coord   `json:"position"`
-	Outcome       string          `json:"outcome"`
-	Damage        int             `json:"damage,omitempty"`
-	Health        int             `json:"health"`
-	ItemID        int             `json:"itemId,omitempty"`
-	ItemName      string          `json:"itemName,omitempty"`
-	ItemType      string          `json:"itemType,omitempty"`
-	QuestFound    bool            `json:"questFound,omitempty"`
-	PlayerName    string          `json:"playerName,omitempty"`
-	Inventory     json.RawMessage `json:"inventory,omitempty"`
-	StateRevision int64           `json:"stateRevision"`
-	MapRevision   int64           `json:"mapRevision"`
-	Replayed      bool            `json:"-"`
+	Budget        *HexBudgets      `json:"budget,omitempty"`
+	ActionEffects []map[string]any `json:"actionEffects,omitempty"`
+	Position      hexgrid.Coord    `json:"position"`
+	Outcome       string           `json:"outcome"`
+	Damage        int              `json:"damage,omitempty"`
+	Health        int              `json:"health"`
+	ItemID        int              `json:"itemId,omitempty"`
+	ItemName      string           `json:"itemName,omitempty"`
+	ItemType      string           `json:"itemType,omitempty"`
+	QuestFound    bool             `json:"questFound,omitempty"`
+	PlayerName    string           `json:"playerName,omitempty"`
+	Inventory     json.RawMessage  `json:"inventory,omitempty"`
+	StateRevision int64            `json:"stateRevision"`
+	MapRevision   int64            `json:"mapRevision"`
+	Replayed      bool             `json:"-"`
 }
 
 func (r *HexBarrelResult) SetCommandRevisions(state, mapRevision int64) {
@@ -57,6 +59,9 @@ func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandI
 	}
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
+	}
+	if err := c.SpendHexTx(ctx, userID, 1, 0, 0); err != nil {
+		return out, err
 	}
 	var mode string
 	var version, health int
@@ -103,6 +108,14 @@ func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandI
 	outcome, err := rollHexQuestBarrel(barrel, resources, artifacts, questID, questSpawned, remainingBarrels)
 	if err != nil {
 		return out, err
+	}
+	// Consume under the match/cell locks before death drops; all writes roll back together.
+	result, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET barbel=NULL,tile_code=48 WHERE instance_id=$1 AND q=$2 AND r=$3 AND barbel IS NOT NULL`, instanceID, pos.Q, pos.R)
+	if err != nil {
+		return out, err
+	}
+	if n, _ := result.RowsAffected(); n != 1 {
+		return out, ErrCommandRejected
 	}
 	out.Position = pos
 	switch value := outcome.(type) {
@@ -173,18 +186,6 @@ func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandI
 	default:
 		return out, ErrCommandRejected
 	}
-	result, err := c.Tx.ExecContext(ctx, `UPDATE match_map_cells SET barbel=NULL,tile_code=48 WHERE instance_id=$1 AND q=$2 AND r=$3 AND barbel IS NOT NULL`, instanceID, pos.Q, pos.R)
-	if err != nil {
-		return out, err
-	}
-	if n, _ := result.RowsAffected(); n != 1 {
-		return out, ErrCommandRejected
-	}
-	if out.Outcome == "damage" && out.Health == 0 {
-		if err := c.LoseHexBackpackTx(ctx, userID, pos); err != nil {
-			return out, err
-		}
-	}
 	out.StateRevision, out.MapRevision, err = c.Commit(ctx, &out, true)
 	if err != nil {
 		return HexBarrelResult{}, err
@@ -216,7 +217,7 @@ func rollHexQuestBarrel(barrel game.ResourceData, resources, artifacts []game.Re
 }
 
 func getHexResourcesTx(ctx context.Context, tx *sql.Tx) ([]game.ResourceData, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id,type,description,effect,image FROM resources WHERE resource_kind='resource'`)
+	rows, err := tx.QueryContext(ctx, `SELECT id,type,description,effect,image FROM resources WHERE resource_kind='resource' AND type NOT IN (`+professionMaterialTypesSQL+`)`)
 	if err != nil {
 		return nil, err
 	}

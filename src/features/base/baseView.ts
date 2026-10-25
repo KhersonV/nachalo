@@ -1,9 +1,9 @@
 import type { BaseState, BuildingState, HeroesState, HeroState } from "../../types/LobbyTypes";
 
-export type BuildingKey = "forge" | "library" | "tavern";
+export type BuildingKey = "forge" | "library" | "tavern" | "guild";
 export type ResourceKey = "wood" | "stone" | "iron";
 
-export const BUILDING_KEYS: readonly BuildingKey[] = ["forge", "library", "tavern"];
+export const BUILDING_KEYS: readonly BuildingKey[] = ["forge", "library", "tavern", "guild"];
 export const RESOURCE_KEYS: readonly ResourceKey[] = ["wood", "stone", "iron"];
 
 export function selectedBuilding(state: BaseState, key: BuildingKey): BuildingState {
@@ -13,7 +13,7 @@ export function selectedBuilding(state: BaseState, key: BuildingKey): BuildingSt
 export function buildingStatus(building: BuildingState): "built" | "ready" | "missing" | "unavailable" {
     if (building.built) return "built";
     if (building.canBuild) return "ready";
-    if (RESOURCE_KEYS.some(key => resourceMissing(building, key) > 0)) return "missing";
+    if ((building.costs.gold ?? 0) > (building.resources.gold ?? 0) || RESOURCE_KEYS.some(key => resourceMissing(building, key) > 0)) return "missing";
     return "unavailable";
 }
 

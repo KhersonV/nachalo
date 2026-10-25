@@ -157,6 +157,22 @@ func AddInventoryItemTx(tx *sql.Tx, instanceID string, playerID int, itemType st
 		}
 	}
 
+	if itemType == "resource" {
+		var code string
+		if err := tx.QueryRow(`SELECT type FROM resources WHERE id=$1`, itemID).Scan(&code); err != nil {
+			return "", err
+		}
+		if material, _, ok := peacefulMaterial(code); ok {
+			inv[key]["origin"], inv[key]["resource_code"] = peacefulOrigin(code), code
+			inv[key]["name"], inv[key]["item_name"] = material.Name, material.Name
+		}
+		if material, ok := professionMaterial(code); ok {
+			inv[key]["origin"] = professionMaterialOrigin(code)
+			inv[key]["resource_code"] = code
+			inv[key]["name"], inv[key]["item_name"] = material.Name, material.Name
+		}
+	}
+
 	// 4) Сохраняем JSON-инвентарь обратно в match_players
 	newInvBytes, err := json.Marshal(inv)
 	if err != nil {

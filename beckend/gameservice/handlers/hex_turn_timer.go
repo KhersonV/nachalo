@@ -86,7 +86,7 @@ func expireHexTurns(ctx context.Context) {
 	rows.Close()
 	for _, d := range all {
 		commandID := fmt.Sprintf("hex-timeout:%d:%d", d.turn, d.user)
-		_, err := repository.ApplyHexExpiredTurn(ctx, d.id, d.user, commandID, d.turn, resolveCharacterRegen, func(result repository.HexTurnResult) {
+		_, err := repository.ApplyHexExpiredTurn(ctx, d.id, d.user, commandID, d.turn, func(result repository.HexTurnResult) {
 			publishHexPatch(d.id, commandID, result.StateRevision, result.MapRevision, "TURN_TIMEOUT", nil)
 		})
 		if err != nil && err != repository.ErrCommandRejected {

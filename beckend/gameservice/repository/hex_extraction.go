@@ -30,6 +30,8 @@ const hexQuestParticipantResultUpsertSQL = `INSERT INTO hex_player_results(insta
 	SET result=hex_player_results.result || jsonb_build_object('reason',$4::text,'winnerUserId',$5::integer,'winnerTeamId',$6::integer)`
 
 type HexPlayerResult struct {
+	Budget             *HexBudgets               `json:"budget,omitempty"`
+	ActionEffects      []map[string]any          `json:"actionEffects,omitempty"`
 	Method             string                    `json:"method"`
 	Reason             string                    `json:"reason,omitempty"`
 	WinnerUserID       int                       `json:"winnerUserId,omitempty"`
@@ -95,6 +97,9 @@ func ApplyHexExtraction(ctx context.Context, instanceID string, userID int, comm
 	}
 	if c.ActiveUser != userID {
 		return out, ErrCommandRejected
+	}
+	if err := c.SpendHexTx(ctx, userID, 0, 2, 0); err != nil {
+		return out, err
 	}
 	var mode, geometry string
 	var version, questID, turn int
@@ -192,6 +197,9 @@ func ApplyHexExtraction(ctx context.Context, instanceID string, userID int, comm
 		return out, err
 	}
 	if _, err := c.Tx.ExecContext(ctx, `UPDATE player_profiles SET inventory=$2::jsonb,balance=balance+$3-$4,updated_at=now() WHERE user_id=$1`, userID, encodedStorage, gold, spent); err != nil {
+		return out, err
+	}
+	if err := transferHexProfessionXPTx(ctx, c.Tx, instanceID, characterID); err != nil {
 		return out, err
 	}
 	if err := grantHexExperienceTx(ctx, c.Tx, characterID, xp); err != nil {
@@ -361,7 +369,7 @@ func mergeHexExtractionStorage(storage, backpack map[string]map[string]any, ques
 
 // Match inventory already contains item metadata. Refresh resource/artifact
 // labels from their catalogs for durable results and Storage presentation.
-func enrichHexResultItemsTx(ctx context.Context, tx *sql.Tx, items map[string]map[string]any) error {
+func enrichHexResultItemsTx(ctx context.Context, tx storageQuerier, items map[string]map[string]any) error {
 	for key, item := range items {
 		parts := strings.SplitN(key, "_", 2)
 		if len(parts) != 2 || (parts[0] != "resource" && parts[0] != "artifact") {
@@ -386,6 +394,26 @@ func enrichHexResultItemsTx(ctx context.Context, tx *sql.Tx, items map[string]ma
 		}
 		if err != nil {
 			return err
+		}
+		if material, ok := professionMaterial(name); parts[0] == "resource" && ok {
+			item["origin"] = professionMaterialOrigin(material.Code)
+			item["resource_code"] = material.Code
+			name = material.Name
+		}
+		if material, _, ok := peacefulMaterial(name); parts[0] == "resource" && ok {
+			item["origin"] = peacefulOrigin(name)
+			item["resource_code"] = name
+			name = material.Name
+		}
+		if recipe, ok := craftRecipe(name); parts[0] == "resource" && ok {
+			item["resource_code"], item["origin"] = name, "Artisans' Guild"
+			var effects map[string]int
+			if recipe.Effect != "" {
+				effects = map[string]int{"craft_consumable": 1}
+			}
+			item["effect"] = effects
+			item["consumable_effect"], item["consumable_kind"], item["pocket_stack"] = recipe.Effect, recipe.Category, recipe.PocketStack
+			name = recipe.Name
 		}
 		item["name"], item["item_name"], item["image"], item["description"] = name, name, image, description
 	}

@@ -49,7 +49,7 @@ func progressHexConstructionTx(ctx context.Context, tx *sql.Tx, instanceID strin
 			return false, err
 		}
 		if item.kind == "scout_tower" {
-			if _, err := tx.ExecContext(ctx, `UPDATE match_players SET sight_range=LEAST(5,sight_range+1) WHERE instance_id=$1 AND user_id=$2 AND NOT EXISTS(SELECT 1 FROM match_player_structures WHERE instance_id=$1 AND user_id=$2 AND has_scout_tower_bonus)`, instanceID, item.owner); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE match_players SET sight_range=sight_range+1 WHERE instance_id=$1 AND user_id=$2 AND NOT EXISTS(SELECT 1 FROM match_player_structures WHERE instance_id=$1 AND user_id=$2 AND has_scout_tower_bonus)`, instanceID, item.owner); err != nil {
 				return false, err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE match_player_structures SET has_scout_tower_bonus=true WHERE instance_id=$1 AND user_id=$2`, instanceID, item.owner); err != nil {
@@ -197,6 +197,11 @@ func progressHexTurretsTx(ctx context.Context, c *MatchCommand) (bool, error) {
 					recorded, err := c.RecordKillEventTx(ctx, game.KillEvent{SourceType: damageSource, KillerID: damageDealer, VictimType: "monster", VictimID: selected.id, Damage: damage})
 					if err != nil {
 						return false, err
+					}
+					if recorded && ownerEligible {
+						if err := c.GrantProfessionMonsterLootTx(ctx, t.owner, selected.id); err != nil {
+							return false, err
+						}
 					}
 					removed, err := c.Tx.ExecContext(ctx, `DELETE FROM match_monsters WHERE instance_id=$1 AND monster_instance_id=$2 AND health>0`, c.InstanceID, selected.id)
 					if err != nil {

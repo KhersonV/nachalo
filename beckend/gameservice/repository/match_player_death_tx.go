@@ -32,6 +32,9 @@ func (c *MatchCommand) MarkCombatPlayerDeadTx(ctx context.Context, userID int) e
 	if n != 1 {
 		return ErrCommandRejected
 	}
+	if err := c.ClearRangerBreakTx(ctx, userID, "", 0); err != nil {
+		return err
+	}
 	_, err = c.RecordDefeatedUserTx(ctx, userID)
 	return err
 }

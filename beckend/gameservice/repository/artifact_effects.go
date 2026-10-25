@@ -70,7 +70,7 @@ func applyQuestArtifactStats(player *models.PlayerResponse, effect QuestArtifact
 		player.Attack += 2
 		player.Defense -= 4
 	case ArtifactCrownEnlightenment:
-		player.MaxEnergy += 5
+		player.Attack += 3
 		player.MaxHealth -= 15
 	case ArtifactGlovesOfPrecision:
 		player.Attack++
@@ -83,7 +83,7 @@ func applyQuestArtifactStats(player *models.PlayerResponse, effect QuestArtifact
 		player.Defense++
 		player.MaxHealth -= 20
 	case ArtifactRingOfWisdom:
-		player.MaxEnergy -= 25
+		player.Agility += 1
 	case ArtifactTitanBreastplate:
 		player.Attack -= 3
 		player.Defense += 2

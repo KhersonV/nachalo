@@ -4,6 +4,7 @@ import UiText from "@/components/UiText";
 
 import React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { API_BASE } from "@/utils/serviceUrls";
 import { useAuth } from "../contexts/AuthContext";
 import { getHeroPortrait } from "@/features/heroes/heroArtwork";
@@ -15,6 +16,7 @@ import StorageLoadout from "./StorageLoadout";
 import styles from "../styles/LobbyBasePage.module.css";
 
 const BUILDINGS: Record<BuildingKey, { name: string; description: string; path: string }> = {
+    guild: { name: "Artisans' Guild", description: "The Guild unites gatherers and artisans. Heroes unlock professions, choose a craft, and develop their skills here.", path: "/game/base/guild/build" },
     forge: { name: "Forge", description: "Blueprints and tools for the road.", path: "/game/base/forge/build" },
     library: { name: "Library", description: "Knowledge kept within the stronghold.", path: "/game/base/library/build" },
     tavern: { name: "Tavern", description: "Recruit and ready your heroes.", path: "/game/base/tavern/build" },
@@ -46,12 +48,13 @@ function readHeroesState(value: unknown): HeroesState {
 
 function requestError(text: string, fallback: string): string {
     const messages: Record<string, string> = {
+        guild_already_built: "The Artisans’ Guild is already built.",
         not_enough_resources: "Not enough resources for this building.",
         forge_already_built: "Forge is already built.",
         library_already_built: "Library is already built.",
         tavern_already_built: "Tavern is already built.",
         hero_already_owned: "This hero is already owned.",
-        not_enough_gold: "Not enough gold to hire this hero.",
+        not_enough_gold: "Not enough gold.",
         tavern_required: "Build the Tavern before hiring heroes.",
         hero_not_owned: "You do not own this hero yet.",
         hero_not_found: "Hero not found.",
@@ -68,12 +71,17 @@ function ResourceSummary({ state, gold }: { state: BaseState | null; gold: numbe
     </div>;
 }
 
+function GuildEmblem() {
+    return <span className={styles.guildEmblem} aria-hidden="true"><svg viewBox="0 0 120 100" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round"><path fill="#26313a" d="M14 89V37L60 10l46 27v52ZM28 89V43h64v46"/><path stroke="#826345" strokeWidth="7" d="M23 41h74M34 46v43m52-43v43"/><path fill="#20202a" stroke="#bca06d" d="m42 54 18-9 18 9v22L60 87 42 76Z"/><path stroke="#d8b780" d="m50 77 18-23m-16 0 12-6 10 8-9 8-13-10Z"/></svg></span>;
+}
+
 function BuildingSelector({ state, selected, onSelect }: { state: BaseState; selected: BuildingKey; onSelect: (key: BuildingKey) => void }) {
     return <div className={styles.buildingSelector} role="group" aria-label="Choose a building">
         {BUILDING_KEYS.map(key => {
             const building = selectedBuilding(state, key);
             const status = buildingStatus(building);
-            return <button key={key} type="button" className={`${styles.buildingCard} ${styles[key]} ${selected === key ? styles.buildingCardSelected : ""}`} aria-pressed={selected === key} onClick={() => onSelect(key)}>
+            return <button key={key} type="button" className={`${styles.buildingCard} ${styles[key]} ${selected === key ? styles.buildingCardSelected : ""}`} data-built={building.built} aria-pressed={selected === key} onClick={() => onSelect(key)}>
+                {key === "guild" && <GuildEmblem />}
                 <span className={styles.buildingTopline}><span><UiText text="STRONGHOLD" /></span><span><UiText text="LEVEL" /> {building.level}</span></span>
                 <span className={styles.buildingCardCopy}><strong><UiText text={BUILDINGS[key].name} /></strong><small><UiText text={STATUS_LABELS[status]} /></small></span>
             </button>;
@@ -83,6 +91,7 @@ function BuildingSelector({ state, selected, onSelect }: { state: BaseState; sel
 
 function BuildingCost({ building }: { building: BuildingState }) {
     return <div className={styles.costGrid} aria-label="Building cost">
+        {(building.costs.gold ?? 0) > 0 && <div className={`${styles.costItem} ${(building.resources.gold ?? 0) < (building.costs.gold ?? 0) ? styles.costMissing : ""}`}><img src={resourceAsset("gold")!} alt="" /><span><UiText text="Gold" /><small><UiText text="Have" /> {building.resources.gold ?? 0}</small></span><strong>{building.costs.gold}{(building.resources.gold ?? 0) < (building.costs.gold ?? 0) && <small><UiText text="Need" /> {(building.costs.gold ?? 0) - (building.resources.gold ?? 0)}</small>}</strong></div>}
         {RESOURCE_KEYS.map(key => {
             const missing = resourceMissing(building, key);
             return <div key={key} className={`${styles.costItem} ${missing > 0 ? styles.costMissing : ""}`}>
@@ -106,6 +115,8 @@ function TavernHeroCard({ hero, busy, onHire, onActivate }: { hero: HeroState; b
 
 export default function LobbyBasePage() {
     const { user } = useAuth();
+    const searchParams = useSearchParams();
+    const requestedBuilding = searchParams.get("building");
     const [baseState, setBaseState] = React.useState<BaseState | null>(null);
     const [heroesState, setHeroesState] = React.useState<HeroesState | null>(null);
     const [selected, setSelected] = React.useState<BuildingKey>("forge");
@@ -164,6 +175,11 @@ export default function LobbyBasePage() {
         void loadHeroes();
     }, [loadBase, loadHeroes]);
 
+    React.useEffect(() => {
+        const key = BUILDING_KEYS.find(value => value === requestedBuilding);
+        if (key) setSelected(key);
+    }, [requestedBuilding]);
+
     const build = async () => {
         const key = confirmBuild;
         if (!key || !baseState || !user?.token || busyRef.current || baseError || !buildActionAllowed(baseState[key], false)) return;
@@ -207,7 +223,7 @@ export default function LobbyBasePage() {
     const building = baseState ? selectedBuilding(baseState, selected) : null;
     const buildStatus = building ? buildingStatus(building) : null;
     const pending = confirmBuild && baseState ? baseState[confirmBuild] : null;
-    const buildDescription = pending && confirmBuild ? `Current level ${pending.level}. Build ${BUILDINGS[confirmBuild].name} for ${RESOURCE_KEYS.map(key => `${pending.costs[key]} ${key}`).join(", ")}?` : "";
+    const buildDescription = pending && confirmBuild ? `Current level ${pending.level}. Build ${BUILDINGS[confirmBuild].name} for ${RESOURCE_KEYS.map(key => `${pending.costs[key]} ${key}`).join(", ")}${pending.costs.gold ? `, ${pending.costs.gold} Gold` : ""}?` : "";
 
     return <main className={styles.pageRoot}><div className={styles.container}>
         <header className={styles.pageHeader}><span className={styles.eyebrow}><UiText text="YOUR STRONGHOLD" /></span><h1><UiText text="Base" /></h1><p><UiText text="Build your halls, gather knowledge, and prepare your heroes." /></p></header>
@@ -218,10 +234,11 @@ export default function LobbyBasePage() {
         {loadingBase && !baseState ? <LoadingState title="Opening the stronghold…" /> : !baseState ? <ErrorState title="Base unavailable" description="Retry loading the current server state." action={<button type="button" className={styles.secondaryButton} onClick={() => void loadBase()}><UiText text="Retry" /></button>} /> : <>
             <BuildingSelector state={baseState} selected={selected} onSelect={setSelected} />
             {building && <section className={styles.workPanel} aria-label={`${BUILDINGS[selected].name} details`}>
-                <div className={`${styles.workArt} ${styles[selected]}`}><span className={styles.eyebrow}><UiText text="SELECTED BUILDING" /></span><h2><UiText text={BUILDINGS[selected].name} /></h2><span><UiText text="Level" /> {building.level}</span></div>
+                <div className={`${styles.workArt} ${styles[selected]}`}>{selected === "guild" && <GuildEmblem />}<span className={styles.eyebrow}><UiText text="SELECTED BUILDING" /></span><h2><UiText text={BUILDINGS[selected].name} /></h2><span><UiText text="Level" /> {building.level}</span></div>
                 <div className={styles.workContent}>
                     <div className={styles.workHeading}><div><span className={styles.eyebrow}><UiText text="STRONGHOLD DEVELOPMENT" /></span><p><UiText text={BUILDINGS[selected].description} /></p></div><span className={styles.statusBadge}>{buildStatus ? <UiText text={STATUS_LABELS[buildStatus]} /> : "—"}</span></div>
-                    {!building.built ? <><h3><UiText text="Construction cost" /></h3><BuildingCost building={building} />{buildStatus === "unavailable" && <p className={styles.blockReason}><UiText text="Construction is unavailable under the current server rules." /></p>}<button type="button" className={styles.primaryButton} disabled={!buildActionAllowed(building, busyAction !== null || Boolean(baseError))} onClick={() => setConfirmBuild(selected)}><UiText text={busyAction === `build:${selected}` ? "Building…" : "Build"} /> <UiText text={BUILDINGS[selected].name} /></button></> : selected !== "tavern" && <p className={styles.builtNote}><UiText text="Built and ready. This building has no available upgrade action." /></p>}
+                    {!building.built ? <><h3><UiText text="Construction cost" /></h3><BuildingCost building={building} />{buildStatus === "unavailable" && <p className={styles.blockReason}><UiText text="Construction is unavailable under the current server rules." /></p>}<button type="button" className={styles.primaryButton} disabled={!buildActionAllowed(building, busyAction !== null || Boolean(baseError))} onClick={() => setConfirmBuild(selected)}><UiText text={busyAction === `build:${selected}` ? "Building…" : "Build"} /> <UiText text={BUILDINGS[selected].name} /></button></> : selected !== "tavern" && selected !== "guild" && <p className={styles.builtNote}><UiText text="Built and ready. This building has no available upgrade action." /></p>}
+                    {selected === "guild" && building.built && <div className={styles.featureSection}><h3><UiText text="Professions" /></h3><p><UiText text="One Guild unlocks professions for every hero on this account. Each hero keeps their own progress." /></p><Link className={styles.primaryButton} href="/professions"><UiText text="Open guild" /></Link></div>}
                     {selected === "forge" && building.built && <div className={styles.featureSection}><div className={styles.featureHeading}><h3><UiText text="Blueprint references" /></h3><span><UiText text="Information only" /></span></div>{building.unlockables.length ? <div className={styles.referenceGrid}>{building.unlockables.map(recipe => <article key={recipe.id}><strong><UiText text={recipe.name} /></strong><p><UiText text={recipe.description} /></p></article>)}</div> : <p><UiText text="No blueprint references available." /></p>}<p className={styles.featureNote}><UiText text="Crafting is not available in Base." /></p></div>}
                     {selected === "library" && <div className={styles.featureSection}><div className={styles.featureHeading}><h3><UiText text="Library notes" /></h3><span><UiText text="Coming Soon" /></span></div>{building.unlockables.length > 0 && <div className={styles.referenceGrid}>{building.unlockables.map(entry => <article key={entry.id}><strong><UiText text={entry.name} /></strong><p><UiText text={entry.description} /></p></article>)}</div>}<p className={styles.featureNote}><UiText text="Research actions are not available yet." /></p></div>}
                     {selected === "tavern" && <div className={styles.featureSection}><div className={styles.featureHeading}><h3><UiText text="Hero roster" /></h3><span>{heroesState?.heroes.filter(hero => hero.owned).length ?? "—"} <UiText text="owned" /></span></div>{!building.built && <p className={styles.featureNote}><UiText text="Build the Tavern to hire new heroes." /></p>}{loadingHeroes && !heroesState ? <LoadingState title="Loading heroes…" /> : heroesState?.heroes.length ? <div className={styles.heroGrid}>{heroesState.heroes.map(hero => <TavernHeroCard key={hero.id} hero={hero} busy={busyAction === `hire:${hero.id}` || busyAction === `activate:${hero.id}`} onHire={candidate => void changeHero(candidate, "hire")} onActivate={candidate => void changeHero(candidate, "activate")} />)}</div> : <EmptyState title="No heroes available" description="The server has not returned a hero roster." />}</div>}

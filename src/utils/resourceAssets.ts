@@ -15,6 +15,11 @@ export function resourceAsset(type: string | undefined | null): string | null {
 }
 
 export function resourceImage(type: string | undefined | null, image: string | undefined | null): string | null {
+  // Older stored stacks can retain these paths after the PNG names are fixed.
+  if (image === "/professions/processed/ craft_sharpened_fangs.png") return "/professions/processed/craft_sharpened_fangs.png";
+  if (image === "/professions/consumables/craft_speed_potionа.png") return "/professions/consumables/craft_speed_potion.png";
+  if (/^\/professions\/gathering\/(ore|forest|remains|herbs)\.svg$/.test(image?.trim() ?? "")) return image?.trim() || null;
+  if (/^\/professions\/(gathering|processed|consumables)\/[^/]+\.png$/.test(image?.trim() ?? "")) return image || null;
   const direct = resourceAsset(type);
   if (direct) return direct;
   const legacyType = /^\/?main_resources\/(wood|stone|iron|water|food|gold)\.(?:webp|png)$/i.exec(image?.trim() ?? "")?.[1];

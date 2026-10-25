@@ -10,12 +10,14 @@ import (
 )
 
 type forgeCostResponse struct {
+	Gold  int `json:"gold"`
 	Wood  int `json:"wood"`
 	Stone int `json:"stone"`
 	Iron  int `json:"iron"`
 }
 
 type forgeResourceResponse struct {
+	Gold  int `json:"gold"`
 	Wood  int `json:"wood"`
 	Stone int `json:"stone"`
 	Iron  int `json:"iron"`
@@ -28,6 +30,7 @@ type forgeRecipeResponse struct {
 }
 
 type forgeStateResponse struct {
+	Guild      buildingStateResponse `json:"guild"`
 	ForgeLevel int                   `json:"forgeLevel"`
 	Built      bool                  `json:"built"`
 	Costs      forgeCostResponse     `json:"costs"`
@@ -90,6 +93,11 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
 		return nil, err
 	}
 	tavernLevel, err := repository.GetTavernLevel(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	guildLevel, err := repository.GetGuildLevel(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +181,13 @@ func buildForgeState(userID int) (*forgeStateResponse, error) {
 	}
 
 	return &forgeStateResponse{
+		Guild: buildingStateResponse{
+			Level: guildLevel, Built: guildLevel > 0,
+			Costs:       forgeCostResponse{Wood: repository.GuildCostWood, Stone: repository.GuildCostStone, Iron: repository.GuildCostIron, Gold: repository.GuildCostGold},
+			Resources:   forgeResourceResponse{Wood: woodCount, Stone: stoneCount, Iron: ironCount, Gold: player.Balance},
+			CanBuild:    guildLevel == 0 && woodCount >= repository.GuildCostWood && stoneCount >= repository.GuildCostStone && ironCount >= repository.GuildCostIron && player.Balance >= repository.GuildCostGold,
+			Unlockables: []forgeRecipeResponse{},
+		},
 		ForgeLevel: forgeLevel,
 		Built:      forgeBuilt,
 		Costs: forgeCostResponse{
@@ -336,6 +351,43 @@ func BuildTavernHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(state)
+}
+
+// The same ownership, pricing and atomic payment path as the other base buildings.
+func BuildGuildHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if err := repository.BuildGuild(userID); err != nil {
+		status, code := http.StatusInternalServerError, "failed_to_build_guild"
+		switch err.Error() {
+		case "guild already built":
+			status, code = http.StatusConflict, "guild_already_built"
+		case "not enough resources":
+			status, code = http.StatusBadRequest, "not_enough_resources"
+		case "not enough gold":
+			status, code = http.StatusBadRequest, "not_enough_gold"
+		case "player not found":
+			status, code = http.StatusNotFound, "player_not_found"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
+		return
+	}
+	state, err := buildForgeState(userID)
+	if err != nil {
+		http.Error(w, `{"error":"failed_to_load_base_state"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(state)
 }

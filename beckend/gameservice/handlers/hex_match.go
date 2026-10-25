@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"gameservice/internal/hexgrid"
@@ -19,11 +20,20 @@ func hexCommandStatus(err error) int {
 	if errors.Is(err, repository.ErrCommandRejected) || errors.Is(err, repository.ErrHexUnavailable) {
 		return http.StatusBadRequest
 	}
+	if errors.Is(err, repository.ErrCraftConsumable) || errors.Is(err, repository.ErrCraftPoisonMonster) {
+		return http.StatusBadRequest
+	}
+	if errors.Is(err, repository.ErrProfessionGatherGuild) || errors.Is(err, repository.ErrProfessionGatherClass) || errors.Is(err, repository.ErrProfessionGatherLimit) {
+		return http.StatusBadRequest
+	}
 	if errors.Is(err, repository.ErrHexInteractionPosition) {
 		return http.StatusBadRequest
 	}
 	if errors.Is(err, repository.ErrHexPortalPosition) || errors.Is(err, repository.ErrHexExtractionMethod) || errors.Is(err, repository.ErrStorageInsufficientGold) {
 		return http.StatusBadRequest
+	}
+	if errors.Is(err, repository.ErrHexPockets) {
+		return http.StatusConflict
 	}
 	if errors.Is(err, repository.ErrHexFoodCooldown) || errors.Is(err, repository.ErrHexWaterLimit) || errors.Is(err, repository.ErrHexNoTarget) {
 		return http.StatusBadRequest
@@ -36,6 +46,18 @@ func publishHexPatch(instanceID, commandID string, state, mapRevision int64, cha
 }
 
 func publishHexPatchChanges(instanceID, commandID string, state, mapRevision int64, changes []any) {
+	// Effects stay in the command ledger. The existing visual socket filter checks
+	// each recipient's actual visibility, including effects unseen by the mover.
+	var rawEffects []byte
+	if err := repository.DB.QueryRow(`SELECT response->'_visuals' FROM match_commands WHERE instance_id=$1 AND command_id=$2`, instanceID, commandID).Scan(&rawEffects); err == nil {
+		var effects []map[string]any
+		if json.Unmarshal(rawEffects, &effects) == nil {
+			for i, effect := range effects {
+				visual := map[string]any{"position": effect["position"], "path": []any{}, "auraHits": []any{map[string]any{"position": effect["position"], "damage": effect["amount"], "sourceId": effect["sourceId"]}}}
+				publishHexVisual(instanceID, fmt.Sprintf("%s:aura:%d", commandID, i), state, "move", visual)
+			}
+		}
+	}
 	// Every client fetches its own filtered snapshot after this revision notice.
 	// Command payloads may contain hidden positions or inventory, so do not
 	// broadcast them to the other members of the match.
@@ -154,22 +176,23 @@ func MoveHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		CommandID   string        `json:"commandId"`
-		Destination hexgrid.Coord `json:"destination"`
+		CommandID    string        `json:"commandId"`
+		Destination  hexgrid.Coord `json:"destination"`
+		PreviewToken string        `json:"previewToken"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
-	if req.CommandID == "" || len(req.CommandID) > 128 {
-		http.Error(w, "commandId is required", 400)
+	if req.CommandID == "" || len(req.CommandID) > 128 || req.PreviewToken == "" {
+		http.Error(w, "commandId and previewToken are required", 400)
 		return
 	}
 	instanceID := mux.Vars(r)["instance_id"]
-	result, err := repository.ApplyHexMoveWithPublish(r.Context(), instanceID, userID, req.CommandID, req.Destination, func(committed repository.HexRouteResult) {
+	result, err := repository.ApplyHexMoveWithPreview(r.Context(), instanceID, userID, req.CommandID, req.Destination, req.PreviewToken, func(committed repository.HexRouteResult) {
 		publishHexPatch(instanceID, req.CommandID, committed.StateRevision, committed.MapRevision, "MOVE_PLAYER", map[string]any{"instanceId": instanceID, "userId": userID, "newPosition": committed.Position})
-		if committed.AuraEnergyCost > 0 || len(committed.AuraHits) > 0 || committed.AuraEnded {
-			publishHexVisual(instanceID, req.CommandID, committed.StateRevision, "move", map[string]any{"userId": userID, "position": committed.Position, "path": committed.Path, "auraEnergyCost": committed.AuraEnergyCost, "auraHits": committed.AuraHits, "auraEnded": committed.AuraEnded})
+		if committed.AuraMPCost > 0 || len(committed.AuraHits) > 0 || committed.AuraEnded {
+			publishHexVisual(instanceID, req.CommandID, committed.StateRevision, "move", map[string]any{"userId": userID, "position": committed.Position, "path": committed.Path, "auraMPCost": committed.AuraMPCost, "auraHits": committed.AuraHits, "auraEnded": committed.AuraEnded})
 		}
 	})
 	if err != nil {
@@ -198,6 +221,11 @@ func CollectHexResourceHandler(w http.ResponseWriter, r *http.Request) {
 		changes := []any{map[string]any{"type": "RESOURCE_COLLECTED", "payload": map[string]any{"instanceId": id, "userId": userID, "position": committed.Position, "itemType": committed.ItemType}}}
 		if committed.ItemType == "artifact" {
 			changes = append(changes, map[string]any{"type": "QUEST_ARTIFACT_FOUND", "payload": map[string]any{"instanceId": id, "userId": userID, "playerName": committed.PlayerName, "position": committed.Position}})
+		}
+		// A revision invalidation is enough: each recipient reloads a fog-filtered
+		// snapshot. Do not broadcast a hidden professional node's position or reward.
+		if committed.ProfessionGathering {
+			changes = []any{map[string]any{"type": "RESOURCE_COLLECTED", "payload": map[string]any{"instanceId": id}}}
 		}
 		publishHexPatchChanges(id, req.CommandID, committed.StateRevision, committed.MapRevision, changes)
 	})
@@ -244,9 +272,10 @@ func UseHexItemHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		CommandID string `json:"commandId"`
-		ItemType  string `json:"itemType"`
-		ItemID    int    `json:"itemId"`
+		CommandID    string `json:"commandId"`
+		ItemType     string `json:"itemType"`
+		ItemID       int    `json:"itemId"`
+		TargetUserID int    `json:"targetUserId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CommandID == "" || len(req.CommandID) > 128 {
 		http.Error(w, "commandId and item required", 400)
@@ -255,7 +284,7 @@ func UseHexItemHandler(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["instance_id"]
 	result, err := repository.ApplyHexItem(r.Context(), id, userID, req.CommandID, req.ItemType, req.ItemID, func(committed repository.HexItemResult) {
 		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "ITEM_USED", map[string]any{"instanceId": id, "userId": userID, "itemType": committed.ItemType, "itemId": committed.ItemID})
-	})
+	}, req.TargetUserID)
 	if err != nil {
 		http.Error(w, err.Error(), hexCommandStatus(err))
 		return
@@ -362,7 +391,7 @@ func EndHexTurnHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := mux.Vars(r)["instance_id"]
-	result, err := repository.ApplyHexEndTurn(r.Context(), id, userID, req.CommandID, req.ExpectedTurn, resolveCharacterRegen, func(committed repository.HexTurnResult) {
+	result, err := repository.ApplyHexEndTurn(r.Context(), id, userID, req.CommandID, req.ExpectedTurn, func(committed repository.HexTurnResult) {
 		publishHexPatch(id, req.CommandID, committed.StateRevision, committed.MapRevision, "TURN_PASSED", map[string]any{"instanceId": id, "userId": committed.CompletedUser, "active_user": committed.ActiveUser, "turnNumber": committed.TurnNumber})
 	})
 	if err != nil {
@@ -374,4 +403,27 @@ func EndHexTurnHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func ExchangeHexAPHandler(w http.ResponseWriter, r *http.Request) {
+	user, ok := hexUser(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		CommandID string `json:"commandId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", 400)
+		return
+	}
+	instance := mux.Vars(r)["instance_id"]
+	out, err := repository.ExchangeHexAP(r.Context(), instance, user, req.CommandID)
+	if err != nil {
+		http.Error(w, err.Error(), hexCommandStatus(err))
+		return
+	}
+	publishHexPatch(instance, req.CommandID, out.StateRevision, out.MapRevision, "AP_EXCHANGE", nil)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }

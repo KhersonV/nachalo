@@ -65,3 +65,7 @@
 }
 @media (max-width: 390px) { .quantityActions { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .dialog::backdrop { backdrop-filter: none; } }
+
+.pockets { display: grid; grid-template-columns: repeat(auto-fit,minmax(76px,1fr)); gap: 6px; margin: 10px 0 16px; }
+.pocket { min-height: 80px; padding: 5px; border: 1px solid #536070; border-radius: 6px; background: #111a24; text-align: center; font-size: 11px; }
+.pocket img { display: block; width: 42px; height: 42px; object-fit: contain; margin: auto; }

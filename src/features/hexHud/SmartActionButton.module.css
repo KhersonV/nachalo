@@ -1,0 +1,15 @@
+.control { position: relative; flex: none; display: grid; place-items: center; }
+.control .button { --action-color: #626a75; display: grid; place-items: center; width: 56px; height: 56px; min-width: 56px; min-height: 56px; padding: 0; border: 2px solid var(--action-color); border-radius: 50%; background: color-mix(in srgb, var(--action-color) 28%, #101720); color: #eee5d5; box-shadow: inset 0 0 10px #0007, 0 0 10px color-mix(in srgb, var(--action-color) 28%, transparent); cursor: pointer; transition: background .18s, border-color .18s, box-shadow .18s; }
+.control .attack { --action-color: #b94747; }
+.control .collect { --action-color: #347fc3; }
+.control .portal { --action-color: #32966c; }
+.control .button[aria-disabled=true] { opacity: .6; cursor: not-allowed; }
+.control .button:hover:not([aria-disabled=true]) { background: color-mix(in srgb, var(--action-color) 48%, #101720); box-shadow: 0 0 16px color-mix(in srgb, var(--action-color) 45%, transparent); }
+.control .button:focus-visible { outline: 2px solid #e5cf9d; outline-offset: 3px; }
+.tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); width: max-content; max-width: min(300px, calc(100vw - 28px)); padding: 9px 12px; border: 1px solid #856841; border-radius: 6px; background: #0c1524f5; color: #efe3cb; font: 12px/1.5 var(--ui-font, Arial, sans-serif); white-space: pre-line; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .15s; }
+.control:hover .tooltip, .control:focus-within .tooltip { visibility: visible; opacity: 1; }
+.spinner { width: 20px; height: 20px; border: 2px solid #eee4; border-top-color: #eee; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .control .button, .tooltip { transition: none; } .spinner { animation: none; } }
+.control .button > span:first-child { margin: 0; color: inherit; }
+.control .none { --action-color: #626a75; }

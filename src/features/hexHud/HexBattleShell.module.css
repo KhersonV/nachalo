@@ -139,3 +139,79 @@
 .mapModeSwitch button[aria-pressed='true'] { background: #a77a3f; color: #10141b; }
 .mapModeSwitch button:disabled { opacity: .4; cursor: not-allowed; }
 .mapModeSwitch button:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
+
+/* Stage 9.2 desktop HUD. Map fills the space between the two compact bars. */
+.hudMenu { position: relative; font-size: 12px; color: #edc780; }
+.hudMenu summary { cursor: pointer; padding: 6px; }
+.hudMenu button { position: absolute; right: 0; top: 30px; width: 230px; padding: 10px; background: #192535; border: 1px solid #947344; color: #edc780; cursor: pointer; }
+.reactions { margin-top: 7px; color: #d5c4a4; font-size: 11px; }
+.effectBadges { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+.effectBadges span { padding: 3px 6px; border: 1px solid #75613b; border-radius: 5px; color: #e8c98f; background: #4a382a50; font-size: 10px; }
+.secondaryStats summary { color: #d6be8e; cursor: pointer; padding: 7px 0; font-size: 12px; }
+.contextControl { display: grid; gap: 6px; margin-top: 12px; }
+.contextControl button { color: #f2dfb9; background: #4a3b29; border-color: #9b7946; width: 100%; }
+.contextControl small { color: #c4af9a; overflow-wrap: anywhere; }
+.embeddedLog { position: static; width: auto; max-height: 230px; overflow: auto; margin-top: 8px; }
+.objectImage { width: 56px; height: 56px; object-fit: contain; float: left; margin: 8px 10px 5px 0; }
+@media (min-width: 1024px) {
+  .shell { grid-template-rows: 68px minmax(0, 1fr) 64px; }
+  .top { min-height: 0; height: 68px; box-sizing: border-box; padding: 6px 16px; gap: clamp(12px, 2vw, 28px); z-index: 50; }
+  .brand { min-width: 170px; gap: 8px; }
+  .brandName { font-size: 22px; }
+  .brandMark { font-size: 25px; }
+  .brand div strong { font-size: 10px; }
+  .turn strong { font-size: 16px; }
+  .timer { min-width: 92px; }
+  .timer strong { font-size: 20px; }
+  .topTools { gap: 10px; }
+  .connection { font-size: 11px; }
+  .left, .right { position: static; width: auto; max-height: none; overflow: visible; display: contents; }
+  .card { padding: 11px; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+  .card h2 { font-size: 17px; }
+  .heroHead { gap: 9px; margin-bottom: 8px; }
+  .heroHead img { width: 45px; height: 51px; }
+  .heroHead h2 { font-size: 17px; }
+  .condition { margin-top: 3px; font-size: 10px; }
+  .vital { margin-top: 7px; gap: 4px; font-size: 11px; }
+  .track { height: 5px; }
+  .heroMeta { margin-top: 4px; padding-top: 4px; gap: 5px; }
+  .logToggle { margin-top: 7px; min-height: 30px !important; }
+  .bottom { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, auto) minmax(150px, 1fr); min-height: 0; height: 64px; box-sizing: border-box; padding: 8px 16px; gap: 12px; z-index: 50; }
+  .bottom button { min-height: 42px; height: 42px; padding: 7px 16px; font-size: 12px; }
+  .bottom .bagButton { justify-self: start; width: auto; }
+  .bottom .dockContext { display: none; }
+  .bottom .endTurn { justify-self: end; width: auto; min-width: 180px; }
+  .inventorySheet { z-index: 70; bottom: 76px; max-height: calc(100dvh - 160px); }
+  .noticeStack { z-index: 45; top: 78px; right: 332px; max-width: 300px; }
+  .feedback { z-index: 45; bottom: 78px; pointer-events: none; }
+  .error { bottom: 115px; }
+  .placementCancel { z-index: 45; bottom: 78px; }
+  .mapModeSwitch { top: 8px; }
+}
+/* Override ActionLog's standalone positioning regardless of CSS chunk order. */
+.embeddedLog.embeddedLog { position: static; top: auto; left: auto; width: 100%; box-sizing: border-box; max-height: 230px; }
+@media (min-width: 1024px) {
+  .brandName { padding-right: 9px; letter-spacing: .12em; }
+  .turn { min-width: 135px; max-width: min(300px, 25vw); padding: 3px 10px; }
+  .bottom .endTurn { color: #171b1e; background: linear-gradient(#edce8b, #b88b43); box-shadow: inset 0 0 0 1px #ffdfa0; }
+}
+@media (max-width: 1023px) { .hudMenu { display: none; } }
+@media (min-width: 1024px) {
+  .shell { isolation: auto; }
+  .inventorySheet { z-index: 70 !important; bottom: 76px !important; max-height: calc(100dvh - 160px) !important; }
+}
+
+/* Smart action occupies dock space, never the map or camera controls. */
+.dockCenter { display: flex; align-items: center; justify-content: center; gap: clamp(8px, 1.5vw, 20px); min-width: 0; }
+.bottom .infoButton { display: grid; place-items: center; min-width: 36px; width: 36px; padding: 4px; color: #d2be98; background: #182534; }
+.waterButton, .card .waterButton { display: block; width: 100%; min-height: 28px; margin-top: 7px; padding: 4px 7px; border: 1px solid #4e7b97; border-radius: 5px; background: #1c3547; color: #c3e2f3; font-size: 11px; cursor: pointer; }
+.waterButton[aria-disabled=true] { opacity: .6; cursor: not-allowed; }
+.waterButton:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
+@media (min-width: 1024px) {
+  .shell { grid-template-rows: 68px minmax(0, 1fr) 72px; }
+  .bottom { height: 72px; padding: 6px 16px; grid-template-columns: minmax(150px, 1fr) auto minmax(180px, 1fr); }
+}
+@media (max-width: 1023px) {
+  .dockCenter { gap: 5px; }
+  .dockCenter > button { min-width: 0; font-size: 10px; padding: 4px; }
+}
