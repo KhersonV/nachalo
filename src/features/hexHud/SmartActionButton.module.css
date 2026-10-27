@@ -13,3 +13,8 @@
 @media (prefers-reduced-motion: reduce) { .control .button, .tooltip { transition: none; } .spinner { animation: none; } }
 .control .button > span:first-child { margin: 0; color: inherit; }
 .control .none { --action-color: #626a75; }
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .control .button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .tooltip { max-width: min(240px, calc(100vw - 24px)); left: auto; right: -38px; transform: none; font-size: 11px; }
+}

@@ -7,6 +7,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"gameservice/repository"
 	"log"
 	"net/http"
 	"strings"
@@ -47,7 +48,7 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			
+
 			var uid int
 			switch v := claims["user_id"].(type) {
 			case float64:
@@ -57,6 +58,15 @@ func GameAuthMiddleware(jwtSecretKey string, next http.Handler) http.Handler {
 			default:
 				log.Printf("Неожиданный тип для user_id: %T, значение: %v", claims["user_id"], claims["user_id"])
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
+				return
+			}
+			exists, lookupErr := repository.AuthenticationPlayerExists(r.Context(), uid)
+			if lookupErr != nil {
+				http.Error(w, "Authentication storage unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if !exists {
+				http.Error(w, "Account no longer exists", http.StatusUnauthorized)
 				return
 			}
 			ctx := context.WithValue(r.Context(), common.UserIDKey, uid)

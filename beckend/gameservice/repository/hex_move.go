@@ -158,6 +158,7 @@ func ApplyHexMoveTx(ctx context.Context, c *MatchCommand, userID int, destinatio
 		out.TotalCost += costs[0]
 		out.StepCosts = append(out.StepCosts, costs[0])
 		out.AuraMPCost += extra
+		c.RecordAuraMovement(userID, AuraMovementVoluntary)
 		if err = c.ResolveAuraTransitionTx(ctx, before); err != nil {
 			return out, err
 		}

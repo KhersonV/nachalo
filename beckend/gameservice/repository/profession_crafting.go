@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gameservice/internal/game/balance"
 	"strings"
 )
 
@@ -23,41 +24,44 @@ var ErrCraftProfession = errors.New("another processing profession is required")
 var ErrCraftReplay = errors.New("This crafting request was already used for another item.")
 
 type CraftIngredient struct {
-	Code       string `json:"code"`
-	Quantity   int    `json:"quantity"`
-	ResourceID int    `json:"resourceId"`
-	Name       string `json:"name"`
-	Image      string `json:"image"`
-	Owned      int    `json:"owned"`
+	Code        string `json:"code"`
+	Quantity    int    `json:"quantity"`
+	ResourceID  int    `json:"resourceId"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Image       string `json:"image"`
+	Owned       int    `json:"owned"`
 }
 type CraftRecipe struct {
- Rarity string `json:"rarity,omitempty"`
- JewelrySet *JewelryPair `json:"jewelrySet,omitempty"`
- JewelryProgress int `json:"jewelryProgress"`
-	Code         string            `json:"code"`
-	Name         string            `json:"name"`
-	RU           string            `json:"ru"`
-	DE           string            `json:"de"`
-	Profession   string            `json:"profession"`
-	MinLevel     int               `json:"minLevel"`
-	Ingredients  []CraftIngredient `json:"ingredients"`
-	Output       int               `json:"output"`
-	XP           int               `json:"xp"`
-	Image        string            `json:"image"`
-	Category     string            `json:"category"`
-	Effect       string            `json:"effect"`
-	PocketStack  int               `json:"pocketStack"`
-	BaseTemplate string            `json:"baseTemplate,omitempty"`
-	Slot         string            `json:"slot,omitempty"`
-	HeroClass    string            `json:"heroClass,omitempty"`
-	ResultID     int64             `json:"resultId"`
-	Available    bool              `json:"available"`
-	Reason       string            `json:"reason,omitempty"`
-	Description  string            `json:"description"`
-	Bonuses      EquipmentBonuses  `json:"bonuses"`
-	Durability   int               `json:"durability,omitempty"`
-	PocketBonus  int               `json:"pocketBonus,omitempty"`
-	Tradable     bool              `json:"tradable"`
+	Handedness      string                    `json:"handedness,omitempty"`
+	CombatBonuses   balance.CombatItemBonuses `json:"combatBonuses,omitempty"`
+	Rarity          string                    `json:"rarity,omitempty"`
+	JewelrySet      *JewelryPair              `json:"jewelrySet,omitempty"`
+	JewelryProgress int                       `json:"jewelryProgress"`
+	Code            string                    `json:"code"`
+	Name            string                    `json:"name"`
+	RU              string                    `json:"ru"`
+	DE              string                    `json:"de"`
+	Profession      string                    `json:"profession"`
+	MinLevel        int                       `json:"minLevel"`
+	Ingredients     []CraftIngredient         `json:"ingredients"`
+	Output          int                       `json:"output"`
+	XP              int                       `json:"xp"`
+	Image           string                    `json:"image"`
+	Category        string                    `json:"category"`
+	Effect          string                    `json:"effect"`
+	PocketStack     int                       `json:"pocketStack"`
+	BaseTemplate    string                    `json:"baseTemplate,omitempty"`
+	Slot            string                    `json:"slot,omitempty"`
+	HeroClass       string                    `json:"heroClass,omitempty"`
+	ResultID        int64                     `json:"resultId"`
+	Available       bool                      `json:"available"`
+	Reason          string                    `json:"reason,omitempty"`
+	Description     string                    `json:"description"`
+	Bonuses         EquipmentBonuses          `json:"bonuses"`
+	Durability      int                       `json:"durability,omitempty"`
+	PocketBonus     int                       `json:"pocketBonus,omitempty"`
+	Tradable        bool                      `json:"tradable"`
 }
 
 var craftingRecipes = func() []CraftRecipe {
@@ -69,7 +73,7 @@ var craftingRecipes = func() []CraftRecipe {
 	for i := range out {
 		r := &out[i]
 		if r.Category == "equipment" {
- r.Rarity = "blue"
+			r.Rarity = "blue"
 			item, set, ok := equipmentCatalogItem(r.Code)
 			if !ok || set.Source != "craft" || set.Rarity != "blue" || set.HeroClass != r.HeroClass || item.Slot != r.Slot || item.BaseTemplate != r.BaseTemplate {
 				panic("invalid equipment craft catalog: " + r.Code)
@@ -95,8 +99,10 @@ func craftResourceNameCases() string {
 			s += " WHEN '" + r.Code + "' THEN '" + strings.ReplaceAll(r.Name, "'", "''") + "'"
 		}
 	}
- for _, r := range jewelryCatalog.Resources { s += " WHEN '" + r.Code + "' THEN '" + strings.ReplaceAll(r.Name,"'","''") + "'" }
- return s
+	for _, r := range jewelryCatalog.Resources {
+		s += " WHEN '" + r.Code + "' THEN '" + strings.ReplaceAll(r.Name, "'", "''") + "'"
+	}
+	return s
 }
 func craftResourceTypes() []string {
 	out := []string{}
@@ -105,8 +111,10 @@ func craftResourceTypes() []string {
 			out = append(out, "'"+r.Code+"'")
 		}
 	}
- for _, r := range jewelryCatalog.Resources { out = append(out,"'"+r.Code+"'") }
- return out
+	for _, r := range jewelryCatalog.Resources {
+		out = append(out, "'"+r.Code+"'")
+	}
+	return out
 }
 
 func EnsureCraftingSchema() error {
@@ -118,7 +126,9 @@ func EnsureCraftingSchema() error {
 	if _, err = tx.Exec(`LOCK TABLE resources IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(jewelrySchemaSQL); err != nil { return err }
+	if _, err = tx.Exec(jewelrySchemaSQL); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(craftingSchemaSQL); err != nil {
 		return err
 	}
@@ -126,11 +136,12 @@ func EnsureCraftingSchema() error {
 		return err
 	}
 	for _, r := range craftingRecipes {
- if r.Category == "jewelry" { continue }
+		if r.Category == "jewelry" {
+			continue
+		}
 		if r.Category == "equipment" {
-			// Derive a compatible existing class/slot template, keeping gray items intact.
-			_, err = tx.Exec(`INSERT INTO item_templates(code,name,slot,item_type,handedness,rarity,class_restriction,image_url,attack_bonus,defense_bonus,mobility_bonus,agility_bonus,max_health_bonus,sight_range_bonus,attack_range_bonus,pocket_bonus,tradable,npc_price,sell_price)
-    SELECT $1,$2,slot,item_type,handedness,'blue',class_restriction,$3,attack_bonus+CASE WHEN slot='main_hand' THEN 2 ELSE 0 END,defense_bonus+CASE WHEN slot<>'main_hand' THEN 2 ELSE 0 END,mobility_bonus,agility_bonus,max_health_bonus+4,sight_range_bonus,attack_range_bonus,CASE WHEN slot IN ('chest','pants') THEN 2 ELSE 0 END,true,0,0 FROM item_templates WHERE code=$4 ON CONFLICT(code) DO NOTHING`, r.Code, r.Name, r.Image, r.BaseTemplate)
+			// Active equipment is seeded from private metadata below, without Common rows.
+			continue
 		} else {
 			effect := "{}"
 			if r.Effect != "" {
@@ -178,7 +189,9 @@ func craftResourceTx(ctx context.Context, q storageQuerier, code string) (int, s
 	return id, image, description, effect, err
 }
 func resourceDisplayName(code string) string {
- if r,ok:=JewelryResourceByCode(code);ok { return r.Name }
+	if r, ok := JewelryResourceByCode(code); ok {
+		return r.Name
+	}
 	if name, ok := map[string]string{"water": "Water", "food": "Food", "wood": "Wood", "stone": "Stone", "iron": "Iron"}[code]; ok {
 		return name
 	}
@@ -206,14 +219,17 @@ func enrichCraftRecipes(ctx context.Context, q storageQuerier, inventory map[str
 		r.Ingredients = append([]CraftIngredient(nil), r.Ingredients...)
 		r.Available = true
 		r.Description = craftEffectDescription(r)
- if r.Category == "jewelry" { r.Description = "Craft-only jewelry. Ring and amulet of the same series grant a 2/2 bonus." }
+		if item, _, ok := jewelryItem(r.Code); ok {
+			r.Description = item.Description
+		}
 		for i := range r.Ingredients {
 			in := &r.Ingredients[i]
-			id, image, _, _, err := craftResourceTx(ctx, q, in.Code)
+			id, image, description, _, err := craftResourceTx(ctx, q, in.Code)
 			if err != nil {
 				return nil, err
 			}
 			in.ResourceID, in.Image, in.Name, in.Owned = id, image, resourceDisplayName(in.Code), storageCount(inventory[fmt.Sprintf("resource_%d", id)])
+			in.Description = description
 			if in.Owned < in.Quantity {
 				r.Available = false
 				r.Reason = "not enough crafting ingredients"
@@ -222,8 +238,11 @@ func enrichCraftRecipes(ctx context.Context, q storageQuerier, inventory map[str
 		var err error
 		if r.Category == "equipment" || r.Category == "jewelry" {
 			r.Durability = 150
-			err = q.QueryRowContext(ctx, `SELECT id,image_url,attack_bonus,defense_bonus,mobility_bonus,agility_bonus,max_health_bonus,`+equipmentPocketBonusSQL+`,tradable FROM item_templates it WHERE code=$1 AND rarity=$2`, r.Code, r.Rarity).Scan(&r.ResultID, &r.Image, &r.Bonuses.Attack, &r.Bonuses.Defense, &r.Bonuses.Mobility, &r.Bonuses.Agility, &r.Bonuses.MaxHealth, &r.PocketBonus, &r.Tradable)
+			err = q.QueryRowContext(ctx, `SELECT id,image_url,handedness,attack_bonus,defense_bonus,mobility_bonus,agility_bonus,max_health_bonus,`+equipmentPocketBonusSQL+`,tradable FROM item_templates it WHERE code=$1 AND rarity=$2`, r.Code, r.Rarity).Scan(&r.ResultID, &r.Image, &r.Handedness, &r.Bonuses.Attack, &r.Bonuses.Defense, &r.Bonuses.Mobility, &r.Bonuses.Agility, &r.Bonuses.MaxHealth, &r.PocketBonus, &r.Tradable)
 			r.Bonuses.PocketBonus = r.PocketBonus
+			if item, _, ok := equipmentCatalogItem(r.Code); ok {
+				r.CombatBonuses = item.CombatBonuses
+			}
 		} else {
 			err = q.QueryRowContext(ctx, `SELECT id,tradable FROM resources WHERE type=$1 AND resource_kind='resource' ORDER BY id LIMIT 1`, r.Code).Scan(&r.ResultID, &r.Tradable)
 		}
@@ -264,16 +283,24 @@ func GetCraftRecipes(ctx context.Context, user, character int) ([]CraftRecipe, e
 		prof, level = state.Processing.Code, state.Processing.Level
 	}
 	recipes, err := enrichCraftRecipes(ctx, DB, inv, prof, level, state.Guild.Built)
- if err != nil { return nil, err }
- equipped, err := GetCharacterEquipment(state.CharacterID)
- if err != nil { return nil, err }
- for i := range recipes {
-  r := &recipes[i]
-  if _,set,ok := jewelryItem(r.Code); ok && set.HeroClass == state.HeroClassID {
-   for _,slot := range []string{"ring","amulet"} { if item:=equipped[slot]; item!=nil && item.SetCode==set.Code && item.ClassRestriction==set.HeroClass {r.JewelryProgress++} }
-  }
- }
- return recipes, nil
+	if err != nil {
+		return nil, err
+	}
+	equipped, err := GetCharacterEquipment(state.CharacterID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range recipes {
+		r := &recipes[i]
+		if _, set, ok := jewelryItem(r.Code); ok && set.HeroClass == state.HeroClassID {
+			for _, slot := range []string{"ring", "amulet"} {
+				if item := equipped[slot]; item != nil && item.SetCode == set.Code && item.ClassRestriction == set.HeroClass {
+					r.JewelryProgress++
+				}
+			}
+		}
+	}
+	return recipes, nil
 }
 
 // Public links contain no account inventory or profession progress.

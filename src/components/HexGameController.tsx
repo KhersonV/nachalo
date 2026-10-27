@@ -9,7 +9,9 @@ import { hexAttackIndicators, hexMoveIndicators } from "@/utils/hexCombatIndicat
 import { useHexMatchSnapshot } from "@/hooks/useHexMatchSnapshot";
 import type { ActionLogEntry, ActionLogCategory, ActionLogTone } from "@/types";
 import HexMap from "./HexMap";
-import Inventory from "./Inventory";
+import HexLoadingBoundary from "@/features/hexLoading/HexLoadingBoundary";
+import HexLoading from "@/features/hexLoading/HexLoading";
+import { reportHexCache, timeHexStage } from "@/features/hexLoading/performance";
 import ActionLog from "./ActionLog";
 import HexMatchResults from "./HexMatchResults";
 import hexStyles from "@/styles/HexGameController.module.css";
@@ -21,25 +23,46 @@ import { resolveSmartAction, type SmartAction } from "@/features/hexHud/smartAct
 import SmartActionButton from "@/features/hexHud/SmartActionButton";
 import HexActionNotices, { useActionNotices } from "@/features/hexHud/HexActionNotices";
 import { HexBattleShell, HexTopBar, HexHeroPanel, HexTargetPanel, HexQuestPanel, HexParticipantsPanel, HexActionBar } from "@/features/hexHud/HexHudPanels";
+import { mobileOverlayEvent, openMobileOverlay, useMobileBattleHud } from "@/features/hexHud/mobileBattleLayout";
 import DraggableHudPanel, { useHudPanel, useDesktopHud } from "@/features/hexHud/DraggableHudPanel";
 import hudStyles from "@/features/hexHud/HexBattleShell.module.css";
 
 const equipmentDropNotice = (result: HexAttackResult, ownerUserId: number | undefined, label: string) =>
   result.drops?.filter(drop => !ownerUserId || drop.ownerUserId === ownerUserId).map(drop => `${label}: ${drop.name}`).join(", ") ?? "";
 
-const HexMap3D = dynamic(() => import("./HexMap3D"), { ssr: false });
+const HexMap3D = dynamic(() => {
+  const done = timeHexStage("3D JavaScript (import to evaluation)");
+  return import("./HexMap3D").then(module => { done(); return module; });
+}, { ssr: false, loading: () => <HexLoading local stage="map" /> });
+const Inventory = dynamic(() => import("./Inventory"), { ssr: false, loading: () => <HexLoading local /> });
 
 type Pending = { key: string; commandId: string };
-type Props = { instanceId: string; initialSnapshot: HexSnapshot };
-type HexBarrelResult = { outcome: "damage" | "resource" | "artifact"; damage?: number; health: number; itemName?: string };
+type Props = { instanceId: string; initialSnapshot: HexSnapshot; onInteractive?: () => void };
+type HexBarrelResult = { outcome: "damage" | "resource" | "artifact" | "empty"; damage?: number; health: number; itemName?: string };
 type HexItemResult = { itemType: string; itemId: number; health: number; budget?: import("@/types/HexGameTypes").HexBudgets; axis?: "q" | "r"; value?: number };
 
-export default function HexGameController({ instanceId, initialSnapshot }: Props) {
+export default function HexGameController({ instanceId, initialSnapshot, onInteractive }: Props) {
   const { user } = useAuth();
   const { language, setLanguage, messages: t } = useGameLanguage();
   const { snapshot, refresh, base, unavailable, syncError, connection, questNotice, turnTimeoutNotice, presenceNotice, visualNotices } = useHexMatchSnapshot(instanceId, initialSnapshot, user?.token);
   const selectedPanel = useHudPanel("selected");
-  const desktopHud = useDesktopHud();
+  const mobileHud = useMobileBattleHud();
+  const desktopHud = useDesktopHud() && !mobileHud;
+  const [fieldReady, setFieldReady] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const [slowConnection, setSlowConnection] = useState(false);
+  useEffect(() => {
+    if (entered) return;
+    const timer = window.setTimeout(() => setSlowConnection(true), 20_000);
+    return () => window.clearTimeout(timer);
+  }, [entered]);
+  const markFieldReady = useCallback(() => setFieldReady(true), []);
+  useEffect(() => {
+    if (entered || !fieldReady || connection !== "live") return;
+    setEntered(true);
+    onInteractive?.();
+    reportHexCache();
+  }, [entered, fieldReady, connection, onInteractive]);
   const [detailsRequested, setDetailsRequested] = useState(false);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -73,6 +96,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const introStarted = useRef(false);
   const [blueprintKey, setBlueprintKey] = useState<string | null>(null);
   const [log, setLog] = useState<ActionLogEntry[]>([]);
+  const repeatAttack = useRef<{ key: string; revision: number; personalTurn: number; from: string; targetPosition: string } | null>(null);
+  const [budgetChange, setBudgetChange] = useState<{ revision: number; ap: number; mp: number } | null>(null);
   const pendingMove = useRef<Pending | null>(null);
   const pendingAttack = useRef<Pending | null>(null);
   const pendingCollect = useRef<Pending | null>(null);
@@ -91,12 +116,21 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const showIndicators = useCallback((key: string, next: HexCombatIndicator[]) => {
     if (visualized.current.has(key) || next.length === 0) return;
     visualized.current.add(key);
-    setIndicators(current => [...current, ...next]);
+    setIndicators(current => {
+      const combined = [...current];
+      for (const indicator of next) {
+        const occupied = new Set(combined.filter(item => hexKey(item.position) === hexKey(indicator.position)).map(item => item.lane));
+        let lane = 0;
+        while (occupied.has(lane)) lane++;
+        combined.push({ ...indicator, lane });
+      }
+      return combined;
+    });
     const ids = new Set(next.map(item => item.id));
     const timer = window.setTimeout(() => {
       setIndicators(current => current.filter(item => !ids.has(item.id)));
       indicatorTimers.current = indicatorTimers.current.filter(item => item !== timer);
-    }, 1100);
+    }, 1900);
     indicatorTimers.current.push(timer);
   }, []);
   const showPlayerVitals = (key: string, health: number) => {
@@ -113,21 +147,22 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     if (!hero) return;
     const before = previousBudget.current;
     if (before && before.revision !== snapshot.stateRevision) {
-      const changes: HexCombatIndicator[] = [];
-      for (const [label, delta] of [["AP", (hero.ap - before.ap) / 2], ["MP", (hero.mp - before.mp) / 2], ["Reaction", hero.reactions - before.reactions]] as const) {
-        if (delta) changes.push({ id: `${snapshot.stateRevision}:${label}`, position: hero.position, text: `${delta > 0 ? "+" : ""}${delta} ${label}`, tone: delta > 0 ? "energyGain" : "energyLoss", lane: changes.length });
-      }
-      if (changes.length) showIndicators(`budget:${snapshot.stateRevision}`, changes);
+      setBudgetChange({ revision: snapshot.stateRevision, ap: (hero.ap - before.ap) / 2, mp: (hero.mp - before.mp) / 2 });
     }
     previousBudget.current = { revision: snapshot.stateRevision, ap: hero.ap, mp: hero.mp, reactions: hero.reactions };
   }, [snapshot.stateRevision, snapshot.player, showIndicators]);
   useEffect(() => {
+    if (!budgetChange) return;
+    const timer = window.setTimeout(() => setBudgetChange(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [budgetChange]);
+  useEffect(() => {
     for (const notice of visualNotices) {
       if (visualized.current.has(notice.commandId)) continue;
-      if (notice.kind === "attack") showIndicators(notice.commandId, hexAttackIndicators(snapshot, notice, notice.commandId));
-      if (notice.kind === "move" && notice.position) showIndicators(notice.commandId, hexMoveIndicators({ ...notice, position: notice.position }, notice.commandId));
+      if (notice.kind === "attack") showIndicators(notice.commandId, hexAttackIndicators(snapshot, notice, notice.commandId, language));
+      if (notice.kind === "move" && notice.position) showIndicators(notice.commandId, hexMoveIndicators({ ...notice, position: notice.position }, notice.commandId, language));
     }
-  }, [visualNotices, showIndicators, snapshot]);
+  }, [visualNotices, showIndicators, snapshot, language]);
 
   useEffect(() => { if (turnTimeoutNotice) notify(t.turnTimedOut); }, [turnTimeoutNotice, notify, t.turnTimedOut]);
   useEffect(() => {
@@ -155,6 +190,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
 	useEffect(() => { const timer = window.setInterval(() => setClockNow(Date.now()), 250); return () => window.clearInterval(timer); }, []);
   const post = useCallback(async <T,>(action: string, body: object): Promise<T> => {
     if (!user?.token) throw new Error(t.sessionUnavailable);
+    if (!["route", "attack-preview", "attack"].includes(action)) repeatAttack.current = null;
     const response = await fetch(`${base}/${action}`, {
       method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
@@ -173,6 +209,13 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const selectedCell = selected ? cellByCoord.get(hexKey(selected)) : undefined;
   const currentCell = snapshot.player ? cellByCoord.get(hexKey(snapshot.player.position)) : undefined;
   const myTurn = !snapshot.finished && !snapshot.result && !unavailable && !!snapshot.player && snapshot.activeUser === snapshot.player.userId && snapshot.player.health > 0;
+  const canRepeatAttack = (actor: HexActor) => {
+    const previous = repeatAttack.current;
+    const id = actor.kind === "player" ? actor.userId : Number(actor.id.replace(/^monster-/, ""));
+    return !!previous && myTurn && previous.key === `${actor.kind}:${id}` && previous.revision === snapshot.stateRevision &&
+      previous.personalTurn === snapshot.player?.personalTurn && previous.from === hexKey(snapshot.player!.position) &&
+      previous.targetPosition === hexKey(actor.position);
+  };
   const defeated = snapshot.result?.method === "defeat" || (!!snapshot.finished && !snapshot.result && !!snapshot.player && snapshot.player.health <= 0);
   const extracted = !!snapshot.result && snapshot.result.method !== "defeat";
   const questKey = `artifact_${snapshot.questArtifactId ?? 0}`;
@@ -197,6 +240,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const selectCell = async (position: HexCoord) => {
     if (busy || actionInFlight.current || !myTurn) return;
     if (blueprintKey) {
+      repeatAttack.current = null;
       const key = `${blueprintKey}:${hexKey(position)}`;
       actionInFlight.current = true; setBusy(true); setError("");
       try {
@@ -209,6 +253,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     const occupant = snapshot.actors.find(actor => hexKey(actor.position) === hexKey(position));
     if (occupant && (occupant.kind === "monster" || occupant.kind === "player" && occupant.userId !== snapshot.player?.userId)) { await selectMonster(occupant); return; }
     if (cellByCoord.get(hexKey(position))?.visibility === "unexplored") return;
+    repeatAttack.current = null;
     setTargetId(null); setAttackPreview(null); setPreviewFailure(null);
     const key = hexKey(position);
     if (snapshot.player && key === hexKey(snapshot.player.position)) { setSelected(position); setRoute(null); setError(""); return; }
@@ -256,6 +301,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       failure: previewFailure?.key === `${actor.kind}:${id}:${snapshot.stateRevision}` ? previewFailure.reason : undefined });
     ++routeRequest.current;
     if (targetId !== id || targetKind !== actor.kind) {
+      repeatAttack.current = null;
       setSelected(null); setRoute(null); setRouteRevision(null);
       setPreviewFailure(null); setAttackPreview(null); setLastAttack(null);
       pendingAttack.current = null;
@@ -268,7 +314,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     const id = actor.kind === "player" ? actor.userId : Number(actor.id.replace(/^monster-/, ""));
     if (id === undefined || !Number.isSafeInteger(id)) return;
     const kind = actor.kind;
-    const confirmed = targetId === id && targetKind === kind && attackPreviewRevision === snapshot.stateRevision && attackPreview?.previewToken ? attackPreview : null;
+    let confirmed = targetId === id && targetKind === kind && attackPreviewRevision === snapshot.stateRevision && attackPreview?.previewToken ? attackPreview : null;
+    const continuing = canRepeatAttack(actor);
     actionInFlight.current = true; setBusy(true);
     try {
       if (!confirmed) {
@@ -280,7 +327,8 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
         setRoute(preview.route ?? null); setRouteRevision(preview.route ? revision : null);
         setSelected(preview.route ? preview.attackPosition ?? null : null);
         if (preview.reason) notify(preview.reason);
-        return;
+        if (continuing && preview.canAttack && !preview.route) confirmed = preview;
+        else { repeatAttack.current = null; return; }
       }
       if (confirmed.ap < confirmed.cost) { setError("Недостаточно AP для атаки"); return; }
       if (!confirmed.canAttack && !(confirmed.route?.affordableSteps)) { setError(confirmed.reason || "Атака недоступна"); return; }
@@ -294,7 +342,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
         if (mapModeRef.current === "3d" && connectionRef.current === "live" && moved.path.length) setVisualMove({ commandId: visualId, instanceId, from, position: moved.position, path: moved.path, stateRevision: result.stateRevision });
       }
       if (result.attacked) {
-        showIndicators(attackCommandId, hexAttackIndicators(snapshot, result, attackCommandId));
+        showIndicators(attackCommandId, hexAttackIndicators(snapshot, result, attackCommandId, language));
         setLastAttack(result);
         record(`${kind === "player" ? t.player : t.monsterHit} ${id}: ${t.damage} ${result.damage}, ${t.counterattack} ${result.counterDamage}${result.monsterDied || result.playerDied ? `, ${t.killed}` : ""}`, "attack", "success");
         const dropNotice = equipmentDropNotice(result, snapshot.player?.userId, t.categories.equipment);
@@ -303,11 +351,17 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
         setLastAttack(null);
         record(result.reason || "Выполнено частичное сближение", "movement", "success");
       }
+      if (result.attacked && result.newTargetHP > 0 && result.newAttackerHP > 0) {
+        const push = result.effects.find(effect => effect.kind === "push" && effect.succeeded && effect.positionAfter);
+        repeatAttack.current = { key: `${kind}:${id}`, revision: result.stateRevision, personalTurn: snapshot.player!.personalTurn,
+          from: hexKey(result.movement?.position ?? from), targetPosition: hexKey(push?.positionAfter ? { q: push.positionAfter.x, r: push.positionAfter.y } : actor.position) };
+      } else repeatAttack.current = null;
       pendingAttack.current = null;
       setAttackPreview(null); setAttackPreviewRevision(null); setRoute(null); setRouteRevision(null); setSelected(null);
       if (result.monsterDied || result.newTargetHP <= 0 || result.newAttackerHP <= 0) setTargetId(null);
       await refresh();
     } catch (reason) {
+      repeatAttack.current = null;
       if (typeof reason === "object" && reason && "status" in reason && Number(reason.status) >= 400 && Number(reason.status) < 500) {
         setAttackPreview(null); setAttackPreviewRevision(null); setRoute(null); setRouteRevision(null); pendingAttack.current = null; void refresh().catch(() => {});
       }
@@ -344,7 +398,7 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
       if (mapModeRef.current === "3d" && connectionRef.current === "live") setOpenedBarrel({ commandId: barrelCommandId, instanceId, position });
       if (result.outcome === "damage") showPlayerVitals(barrelCommandId, result.health);
       await refresh(); pendingBarrel.current = null; setSelected(null); setRoute(null);
-      record(result.outcome === "damage" ? `${t.barrelDamage} ${result.damage}` : `${result.outcome === "artifact" ? t.barrelArtifact : t.barrelResource} ${result.itemName ?? ""}`, "barrel", "success");
+      record(result.outcome === "empty" ? t.barrelEmpty : result.outcome === "damage" ? `${t.barrelDamage} ${result.damage}` : `${result.outcome === "artifact" ? t.barrelArtifact : t.barrelResource} ${result.itemName ?? ""}`, "barrel", "success");
     } catch (reason) { setError(String(reason)); throw reason; } finally { actionInFlight.current = false; setBusy(false); }
   };
   const useItem = async (itemType: "resource" | "scroll", itemId: number, targetUserId?: number): Promise<string> => {
@@ -408,6 +462,10 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
   const smartAction = resolveSmartAction({ snapshot, language, selected, target, pending: busy, unavailable,
     preview: attackPreviewRevision === snapshot.stateRevision ? attackPreview ?? undefined : undefined,
     failure: previewFailure?.key === targetKey ? previewFailure.reason : undefined });
+  if (smartAction.kind === "attack" && target && canRepeatAttack(target)) {
+    smartAction.label = uiText(language, "Repeat attack");
+    smartAction.hint = uiText(language, "One click to attack the same target again. Other actions restore confirmation.");
+  }
   const performSmartAction = async (action: SmartAction) => {
     if (actionInFlight.current || busy) return;
     if (!action.enabled) { if (action.kind !== "none") setError(action.disabledReason); return; }
@@ -429,6 +487,15 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     }
     await selectCell(position);
   };
+  // Timer/UI renders must not recreate map props or its callbacks. The refs
+  // delegate to the current gameplay handlers, including current route/budgets.
+  const mapHandlers = useRef({ cell: handleCellClick, actor: selectMonster, unavailable: () => { setWebglAvailable(false); setMapMode("2d"); setError("WebGL is unavailable. Switched to 2D map."); } });
+  mapHandlers.current = { cell: handleCellClick, actor: selectMonster, unavailable: () => { setWebglAvailable(false); setMapMode("2d"); setError("WebGL is unavailable. Switched to 2D map."); } };
+  const onMapCell = useCallback((position: HexCoord) => { void mapHandlers.current.cell(position); }, []);
+  const onMapActor = useCallback((actor: HexActor) => { void mapHandlers.current.actor(actor); }, []);
+  const onMapUnavailable = useCallback(() => mapHandlers.current.unavailable(), []);
+  const map2DSnapshot = useMemo(() => ({ cells: snapshot.cells, edges: snapshot.edges, actors: snapshot.actors, player: snapshot.player }), [snapshot.cells, snapshot.edges, snapshot.actors, snapshot.player]);
+  const map3DSnapshot = useMemo(() => ({ ...map2DSnapshot, instanceId: snapshot.instanceId, questArtifact: snapshot.questArtifact }), [map2DSnapshot, snapshot.instanceId, snapshot.questArtifact]);
   const waterEntries = Object.entries(snapshot.player?.inventory ?? {}).filter(([key, entry]) => /^resource_[1-9]\d*$/.test(key) && (entry.name || entry.item_name || "").trim().toLowerCase() === "water" && (entry.item_count ?? 0) > 0);
   const waterCount = waterEntries.reduce((sum, [, entry]) => sum + (entry.item_count ?? 0), 0);
   const waterTurns = Math.max(0, (snapshot.player?.waterAvailableTurn ?? 0) - (snapshot.player?.personalTurn ?? 0));
@@ -440,19 +507,32 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
     if (water) await useItem("resource", Number(water[0].slice("resource_".length))).catch(() => {});
   };
 
+  useEffect(() => {
+    if (!mobileHud) return;
+    const closeOther = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (id !== "inventory") setInventoryOpen(false);
+      if (id !== "target") setDetailsRequested(false);
+    };
+    window.addEventListener(mobileOverlayEvent, closeOther);
+    return () => window.removeEventListener(mobileOverlayEvent, closeOther);
+  }, [mobileHud]);
+  useEffect(() => { if (mobileHud && inventoryOpen) openMobileOverlay("inventory"); }, [mobileHud, inventoryOpen]);
+  useEffect(() => { if (mobileHud && detailsRequested) openMobileOverlay("target"); }, [mobileHud, detailsRequested]);
+
   return <div className={hexStyles.hexGame} data-geometry="hex-v1">
     <HexBattleShell
       top={<HexTopBar snapshot={snapshot} view={view} connection={connection} language={language} onLanguage={setLanguage} labels={t} />}
       left={<HexHeroPanel view={view} labels={t} language={language} logOpen={logOpen} onLog={() => setLogOpen(open => !open)} water={{ count: waterCount, turns: waterTurns, reason: waterReason, onUse: () => void drinkWater() }} actor={snapshot.actors.find(actor => actor.userId === snapshot.player?.userId && actor.kind === "player")} journal={log.length ? <ActionLog entries={log} className={hudStyles.embeddedLog} expanded onExpandedChange={setLogOpen} labels={t} /> : <p>{t.noEvents}</p>} />}
       right={<>
         <HexQuestPanel quest={quest} status={questStatus} labels={t} />
-        {!view.finished && detailsRequested && (view.target || view.cell) && <DraggableHudPanel panel={selectedPanel} title={view.target ? view.target.name || view.target.id : `${view.cell?.resource?.type || (view.cell?.barrel ? t.barrel : view.cell?.isPortal ? t.portal : t.cell)} (${view.cell?.position.q}, ${view.cell?.position.r})`} anchor="target" width={304} enabled={desktopHud}>
+        {!view.finished && detailsRequested && (view.target || view.cell) && <div className={hudStyles.targetSheet}><DraggableHudPanel panel={selectedPanel} title={view.target ? view.target.name || view.target.id : `${view.cell?.resource?.type || (view.cell?.barrel ? t.barrel : view.cell?.isPortal ? t.portal : t.cell)} (${view.cell?.position.q}, ${view.cell?.position.r})`} anchor="target" width={304} enabled={desktopHud}>
           <HexTargetPanel view={view} lastAttack={lastAttack} onCloseTarget={desktopHud ? undefined : () => setDetailsRequested(false)} labels={t} />
-        </DraggableHudPanel>}
+        </DraggableHudPanel></div>}
         <HexParticipantsPanel snapshot={snapshot} labels={t} />
       </>}
-      bottom={<HexActionBar view={view} busy={busy} inventoryOpen={inventoryOpen} bagLabel={{ en: "Backpack", ru: "Рюкзак", de: "Rucksack" }[language]}
-        smartAction={<SmartActionButton action={smartAction} onAction={() => void performSmartAction(smartAction)} />}
+      bottom={<HexActionBar view={view} busy={busy} budgetChange={budgetChange} inventoryOpen={inventoryOpen} bagLabel={{ en: "Backpack", ru: "Рюкзак", de: "Rucksack" }[language]}
+        actionLabel={smartAction.label} smartAction={<SmartActionButton action={smartAction} onAction={() => void performSmartAction(smartAction)} />}
         canInspect={!!view.target || !!view.cell} onInspect={() => { setDetailsRequested(true); selectedPanel.setMode("expanded"); }}
         onInventory={() => setInventoryOpen(open => !open)} onEndTurn={() => void endTurn()} onExchange={() => void exchangeAP()} labels={t} />}
     >
@@ -460,11 +540,12 @@ export default function HexGameController({ instanceId, initialSnapshot }: Props
         <button type="button" aria-pressed={mapMode === "2d"} onClick={() => { setVisualMove(null); setOpenedBarrel(null); setMapMode("2d"); }}>2D</button>
         <button type="button" aria-pressed={mapMode === "3d"} disabled={!webglAvailable} onClick={() => setMapMode("3d")}>3D</button>
       </div>
-      {mapMode === "3d" ? <HexMap3D snapshot={{ instanceId: snapshot.instanceId, cells: snapshot.cells, edges: snapshot.edges, actors: snapshot.actors, player: snapshot.player, questArtifact: snapshot.questArtifact }} visualMove={visualMove} openedBarrel={openedBarrel} connection={connection} visualNotices={visualNotices} selected={view.finished ? null : view.cell?.position ?? null} route={view.finished ? null : view.route ?? null} selectedTargetId={view.finished || !view.target ? null : targetId} selectedTargetKind={targetKind} indicators={indicators} busy={busy || !myTurn} labels={t}
-        onCellClick={position => void handleCellClick(position)} onMonsterClick={actor => void selectMonster(actor)} onUnavailable={() => { setWebglAvailable(false); setMapMode("2d"); setError("WebGL is unavailable. Switched to 2D map."); }} />
-        : <HexMap snapshot={{ cells: snapshot.cells, edges: snapshot.edges, actors: snapshot.actors, player: snapshot.player }} selected={view.finished ? null : view.cell?.position ?? null} route={view.finished ? null : view.route ?? null} selectedTargetId={view.finished || !view.target ? null : targetId} selectedTargetKind={targetKind} indicators={indicators} busy={busy || !myTurn} labels={t}
-          onCellClick={position => void handleCellClick(position)} onMonsterClick={actor => void selectMonster(actor)} />}
+      <div className={hudStyles.mapSurface}>{mapMode === "3d" ? <HexLoadingBoundary><HexMap3D onReady={markFieldReady} snapshot={map3DSnapshot} visualMove={visualMove} openedBarrel={openedBarrel} connection={connection} visualNotices={visualNotices} selected={view.finished ? null : view.cell?.position ?? null} route={view.finished ? null : view.route ?? null} selectedTargetId={view.finished || !view.target ? null : targetId} selectedTargetKind={targetKind} indicators={indicators} busy={busy || !myTurn} labels={t}
+        onCellClick={onMapCell} onMonsterClick={onMapActor} onUnavailable={onMapUnavailable} /></HexLoadingBoundary>
+        : <HexMap onReady={markFieldReady} snapshot={map2DSnapshot} selected={view.finished ? null : view.cell?.position ?? null} route={view.finished ? null : view.route ?? null} selectedTargetId={view.finished || !view.target ? null : targetId} selectedTargetKind={targetKind} indicators={indicators} busy={busy || !myTurn} labels={t}
+          onCellClick={onMapCell} onMonsterClick={onMapActor} />}</div>
     </HexBattleShell>
+    {!entered && <HexLoading stage={fieldReady ? "connecting" : "map"} error={syncError || (unavailable ? "Match unavailable." : slowConnection ? "Connection is taking longer than expected. You can retry safely." : undefined)} onRetry={() => window.location.reload()} />}
     {blueprintKey && <button type="button" className={hudStyles.placementCancel} onClick={() => { setBlueprintKey(null); pendingBuild.current = null; }}>{t.close} · {blueprintKey}</button>}
     {!view.finished && view.remaining >= 1 && view.remaining <= 5 && <div key={`${snapshot.turnNumber}:${view.remaining}`} className={hudStyles.finalSecond} aria-live="assertive">{view.remaining}</div>}
     {(introVisible && quest) && <div key={questNotice ? `found:${questNotice.userId}:${questNotice.q}:${questNotice.r}` : `intro:${instanceId}`} className={hudStyles.artifactFlight} role="status">

@@ -9,8 +9,8 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function HexLabPage() {
   const { user, isLoading } = useAuth();
-  const [seedText, setSeedText] = useState("1");
-  const [seed, setSeed] = useState(1);
+  const [seedText, setSeedText] = useState("");
+  const [seed, setSeed] = useState<number | null>(null);
   const [preview, setPreview] = useState<HexPreview | null>(null);
   const [liveInstanceId, setLiveInstanceId] = useState("");
   const [route, setRoute] = useState<HexRoute | null>(null);
@@ -82,7 +82,7 @@ export default function HexLabPage() {
   useEffect(() => {
     if (liveInstanceId) return;
     const controller = new AbortController();
-    fetch(`${API_BASE}/game/hex-preview?seed=${seed}`, { signal: controller.signal })
+    fetch(`${API_BASE}/game/hex-preview?seed=${seed ?? 1}`, { signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error(`HEX API: ${response.status}. Проверьте HEX_PREVIEW_ENABLED=true и GameService.`);
         const data: unknown = await response.json();
@@ -97,7 +97,7 @@ export default function HexLabPage() {
     if (!user?.token) { setError("Войдите в аккаунт, чтобы создать тестовый матч."); return; }
     setBusy(true); setError("");
     try {
-      const response = await fetch(`${API_BASE}/game/hex-test`, { method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ seed }) });
+      const response = await fetch(`${API_BASE}/game/hex-test`, { method: "POST", headers: { Authorization: `Bearer ${user.token}`, "Content-Type": "application/json" }, body: JSON.stringify(seed === null ? {} : { seed }) });
       if (!response.ok) throw new Error(await response.text());
       const data: unknown = await response.json();
       if (!isPreview(data) || !data.player) throw new Error("Некорректный HEX snapshot");
@@ -203,8 +203,8 @@ export default function HexLabPage() {
   return <main style={{ minHeight: "100vh", background: "#101722", color: "#e6edf4", padding: 24, fontFamily: "sans-serif" }}>
     <h1>Nachalo · HEX Lab</h1>
     <p>Pointy-top карта. Тестовый матч использует ваш выбранный герой и сохраняется в PostgreSQL; квадратная игра работает отдельно.</p>
-    {!liveInstanceId && <form onSubmit={event => { event.preventDefault(); const value = Number(seedText); if (Number.isSafeInteger(value)) setSeed(value); }} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
-      <label htmlFor="hex-seed">Seed</label><input id="hex-seed" value={seedText} onChange={event => setSeedText(event.target.value)} inputMode="numeric" style={{ width: 90, padding: 7 }} />
+    {!liveInstanceId && <form onSubmit={event => { event.preventDefault(); if (!seedText.trim()) { setSeed(null); return; } const value = Number(seedText); if (Number.isSafeInteger(value)) setSeed(value); }} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+      <label htmlFor="hex-seed">Seed</label><input id="hex-seed" placeholder="Случайный" value={seedText} onChange={event => setSeedText(event.target.value)} inputMode="numeric" style={{ width: 90, padding: 7 }} />
       <button type="submit">Создать карту</button>
     </form>}
     {!liveInstanceId && <button disabled={busy || isLoading || !user} onClick={createLive}>Создать игровой HEX-матч</button>}

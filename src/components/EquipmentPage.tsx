@@ -2,6 +2,8 @@
 
 import UiText from "@/components/UiText";
 import ArtifactDismantle from "./ArtifactDismantle";
+import CombatItemStats from "./equipment/CombatItemStats";
+import { jewelryEntry } from "@/utils/jewelry";
 import JewelryPairInfo from "./equipment/JewelryPairInfo";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -104,6 +106,8 @@ function storedCategory(key: string, item: StoredItem): CollectionCategory {
     return "resource";
 }
 function storedImage(key: string, item: StoredItem): string {
+    const jewelry = jewelryEntry(item.name || item.item_name);
+    if (jewelry) return jewelry.image;
     if (key.startsWith("resource_")) return resourceImage(item.name || item.item_name || "", item.image || "") || item.image || "";
     if (key.startsWith("blueprint_")) return item.image || `/Forge-items/${key.slice("blueprint_".length)}.png`;
     return item.image || "";
@@ -189,6 +193,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         name,
         setCode: stringOrEmpty(value.setCode) || undefined,
         setName: stringOrEmpty(value.setName) || undefined,
+        combatBonuses: isRecord(value.combatBonuses) ? Object.fromEntries(Object.entries(value.combatBonuses).filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1]))) : undefined,
         jewelrySet: isRecord(value.jewelrySet) && isRecord(value.jewelrySet.bonus) ? { name: stringOrEmpty(value.jewelrySet.name), bonus: normalizeBonuses(value.jewelrySet.bonus), required: 2 } : undefined,
         slot: value.slot,
         itemType: stringOrEmpty(value.itemType),
@@ -198,6 +203,7 @@ function normalizeItem(value: unknown): EquipmentItem | null {
         classRestriction,
         levelRequirement: numberOrUndefined(value.levelRequirement),
         imageUrl: equipmentImage(stringOrEmpty(value.imageUrl), code),
+        description: stringOrEmpty(value.description),
         bonuses: normalizeBonuses(value.bonuses),
         sellPrice: numberOrUndefined(value.sellPrice),
         status: stringOrEmpty(value.status) || undefined,
@@ -428,6 +434,11 @@ function ItemMeta({ item }: { item: EquipmentItem }) {
     );
 }
 
+// Touch keeps single-tap selection and the explicit action buttons.
+function isMouseDoubleClick(event: React.MouseEvent<HTMLButtonElement>): boolean {
+    return event.button === 0 && event.detail === 2 && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
 function EquippedSlotCard({
     slot,
     item,
@@ -449,14 +460,18 @@ function EquippedSlotCard({
     onSelect: (slot: EquipmentSlot) => void;
     onUnequip: (slot: EquipmentSlot) => void;
 }) {
+    const { language } = useGameLanguage();
     return (
         <article className={`${styles.slotCard} ${blocked ? styles.slotCardBlocked : ""} ${selected ? styles.slotCardSelected : ""}`} data-rarity={item?.rarity}>
-            <button type="button" className={styles.slotPrimary} aria-pressed={selected} onClick={() => onSelect(slot)}>
+            <button type="button" className={styles.slotPrimary} aria-pressed={selected} onClick={() => onSelect(slot)} title={item ? uiText(language, "Double-click to unequip item") : undefined} onDoubleClick={event => {
+                if (item && !busy && !blocked && isMouseDoubleClick(event)) onUnequip(slot);
+            }}>
                 {item ? <ItemImage item={item} /> : <span className={styles.slotGlyph}>{blocked ? "🔒" : SLOT_LABELS[slot].slice(0, 2).toUpperCase()}</span>}
                 <span className={styles.slotIdentity}>
                     <span className={styles.slotLabel}><UiText text={SLOT_LABELS[slot]} /></span>
                     <strong title={item?.name || (blocked ? `Blocked by ${blockedBy || "two-handed weapon"}` : undefined)}>{item?.name || (blocked ? <><UiText text="Blocked by" /> {blockedBy || <UiText text="two-handed weapon" />}</> : <UiText text="Empty slot" />)}</strong>
                     {item && <small><UiText text={equipmentRarityName(item.rarity)} /></small>}
+                    {item && <small className={styles.doubleClickHint}><UiText text="Double-click to unequip item" /></small>}
                 </span>
             </button>
             {item && <button type="button" className={styles.slotUnequip} onClick={() => onUnequip(slot)} disabled={busy}><UiText text={busy ? "Working…" : "Unequip"} /></button>}
@@ -469,23 +484,30 @@ function InventoryCard({
     item,
     selected,
     reason,
+    busy,
     onSelect,
+    onEquip,
 }: {
     item: EquipmentItem;
     selected: boolean;
     reason: string | null;
+    busy: boolean;
+    onEquip: (item: EquipmentItem) => void;
     onSelect: (item: EquipmentItem) => void;
 }) {
     const { language } = useGameLanguage();
     const pockets = item.bonuses.pocketBonus ?? 0;
     const pocketText = pockets > 0 ? `${uiText(language, "Additional pockets")}: +${pockets}` : "";
     return (
-        <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} title={[uiText(language, item.name), pocketText].filter(Boolean).join("\n")}>
+        <button type="button" className={`${styles.inventoryCard} ${selected ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity} aria-pressed={selected} onClick={() => onSelect(item)} onDoubleClick={event => {
+            if (!busy && !reason && isMouseDoubleClick(event)) onEquip(item);
+        }} title={[uiText(language, item.name), pocketText, uiText(language, "Double-click to equip item")].filter(Boolean).join("\n")}>
             <ItemImage item={item} />
             <span className={styles.inventoryCardCopy}>
                 <strong><UiText text={item.name} /></strong>
                 <small><UiText text={SLOT_LABELS[item.slot]} /> · <UiText text={equipmentRarityName(item.rarity)} /></small>
                 {pocketText && <small>{pocketText}</small>}
+                {!reason && <small className={styles.doubleClickHint}><UiText text="Double-click to equip item" /></small>}
                 {reason && <small className={styles.inventoryUnavailable}><UiText text={reason} /></small>}
             </span>
         </button>
@@ -864,7 +886,7 @@ export default function EquipmentPage() {
                                 {(visibleEquipment.length + visibleStorage.length) === 0 && storage && <div className={styles.emptyState}>В этой категории нет предметов.</div>}
                                 {(visibleEquipment.length + visibleStorage.length) > 0 && <div className={styles.inventoryGrid}>
                                     {visibleEquipment.map(item => {
-                                        return <InventoryCard key={item.instanceId} item={item} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedStorageKey(null); setSelectedSlot(null); setActionError(null); }} />;
+                                        return <InventoryCard key={item.instanceId} item={item} busy={busyAction !== null} onEquip={handleEquip} selected={selectedItemId === item.instanceId} reason={equipBlockReason(item, selectedCharacter, selectedEquipped)} onSelect={selected => { setSelectedItemId(selected.instanceId); setSelectedStorageKey(null); setSelectedSlot(null); setActionError(null); }} />;
                                     })}
                                     {visibleStorage.map(({ key, item, name, category }) => <button key={key} type="button" className={`${styles.inventoryCard} ${selectedStorageKey === key ? styles.inventoryCardSelected : ""}`} data-rarity={item.rarity || "gray"} onClick={() => { setSelectedStorageKey(key); setSelectedItemId(null); setSelectedSlot(null); }}><span className={styles.itemImageWrap}>{storedImage(key, item) && <img className={styles.itemImage} src={storedImage(key, item)} alt="" />}</span><span className={styles.inventoryCardCopy}><strong>{t(name)}</strong><small>{collectionCategories.find(value => value.key === category)?.label} · ×{item.item_count}</small></span></button>)}
                                 </div>}
@@ -872,12 +894,12 @@ export default function EquipmentPage() {
 
                             <aside className={styles.detailPanel} aria-label="Item details and comparison">
                                 <div className={styles.detailHeading}><span className={styles.eyebrow}><UiText text="INSPECT" /></span><h3>{selectedStored ? t(selectedStored.name) : t(selectedInventoryItem ? "Compare equipment" : selectedSlot ? SLOT_LABELS[selectedSlot] : "Select an item")}</h3></div>
-                                {selectedStored ? <div className={styles.storedDetail}><span className={styles.itemImageWrap}>{storedImage(selectedStored.key, selectedStored.item) && <img className={styles.itemImage} src={storedImage(selectedStored.key, selectedStored.item)} alt="" />}</span><h4>{t(selectedStored.name)}</h4><p>{t(selectedStored.item.description || "Описание отсутствует")}</p>{selectedStored.item.origin && <p>Источник: {selectedStored.item.origin}</p>}<p>{collectionCategories.find(value => value.key === selectedStored.category)?.label} · ×{selectedStored.item.item_count}</p><p>{storage?.eligibleKeys?.includes(selectedStored.key) ? "Можно взять в HEX-матч" : "Нельзя взять в HEX-матч"}</p>{selectedStored.category === "artifact" && <ArtifactDismantle key={selectedStored.key} artifactId={Number(selectedStored.key.slice("artifact_".length))} onDone={loadStorage} />}{(selectedStored.category === "artifact" || selectedStored.category === "resource") && <a className={styles.secondaryButton} href={`/market?sell=${encodeURIComponent(selectedStored.key)}`}>Перейти к продаже</a>}</div> : selectedInventoryItem ? <>
+                                {selectedStored ? <div className={styles.storedDetail}><span className={styles.itemImageWrap}>{storedImage(selectedStored.key, selectedStored.item) && <img className={styles.itemImage} src={storedImage(selectedStored.key, selectedStored.item)} alt="" />}</span><h4>{t(selectedStored.name)}</h4><p>{t(jewelryEntry(selectedStored.name)?.description || selectedStored.item.description || "Описание отсутствует")}</p>{selectedStored.item.origin && <p>Источник: {selectedStored.item.origin}</p>}<p>{collectionCategories.find(value => value.key === selectedStored.category)?.label} · ×{selectedStored.item.item_count}</p><p>{storage?.eligibleKeys?.includes(selectedStored.key) ? "Можно взять в HEX-матч" : "Нельзя взять в HEX-матч"}</p>{selectedStored.category === "artifact" && <ArtifactDismantle key={selectedStored.key} artifactId={Number(selectedStored.key.slice("artifact_".length))} onDone={loadStorage} />}{(selectedStored.category === "artifact" || selectedStored.category === "resource") && <a className={styles.secondaryButton} href={`/market?sell=${encodeURIComponent(selectedStored.key)}`}>Перейти к продаже</a>}</div> : selectedInventoryItem ? <>
                                     <div className={styles.compareCards}>
                                         <div className={styles.compareCard}><span><UiText text="NOW EQUIPPED" /></span>{comparedItem ? <><ItemImage item={comparedItem} /><strong>{comparedItem.name}</strong><small>{t(equipmentRarityName(comparedItem.rarity))} · {SLOT_LABELS[comparedItem.slot]}</small>{(comparedItem.setName || comparedItem.setCode) && <small><UiText text="Set:" /> {comparedItem.setName || formatEnum(comparedItem.setCode || "")}</small>}</> : <p><UiText text="Empty" /> {SLOT_LABELS[selectedInventoryItem.slot]} <UiText text="slot" /></p>}</div>
                                         <div className={styles.compareCard}><span><UiText text="SELECTED ITEM" /></span><ItemImage item={selectedInventoryItem} /><strong><UiText text={selectedInventoryItem.name} /></strong><small>{t(equipmentRarityName(selectedInventoryItem.rarity))} · {SLOT_LABELS[selectedInventoryItem.slot]}</small>{(selectedInventoryItem.setName || selectedInventoryItem.setCode) && <small><UiText text="Set:" /> <UiText text={selectedInventoryItem.setName || formatEnum(selectedInventoryItem.setCode || "")} /></small>}</div>
                                     </div>
-                                    <JewelryPairInfo item={selectedInventoryItem} equipped={selectedEquipped} />
+                                    {(selectedInventoryItem.description || jewelryEntry(selectedInventoryItem.code)?.description) && <p><UiText text={selectedInventoryItem.description || jewelryEntry(selectedInventoryItem.code)?.description || ""} /></p>}<CombatItemStats bonuses={selectedInventoryItem.combatBonuses} /><JewelryPairInfo item={selectedInventoryItem} equipped={selectedEquipped} />
                                     <ItemBonusComparison rows={itemComparison} />
                                     <div className={styles.itemRestrictions}><ItemMeta item={selectedInventoryItem} /></div>
                                     {selectedBlockReason && <p className={styles.restrictionMessage}>{t(selectedBlockReason)}</p>}
@@ -886,7 +908,7 @@ export default function EquipmentPage() {
                                         {actionError?.key === `unequip-${selectedInventoryItem.slot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}
                                         {selectedEquipped[selectedInventoryItem.slot]?.instanceId === selectedInventoryItem.instanceId ? <button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedInventoryItem.slot)}>{t(busyAction ? "Working…" : "Unequip")}</button> : <button type="button" className={styles.primaryButton} disabled={busyAction !== null || !!selectedBlockReason} onClick={() => handleEquip(selectedInventoryItem)}>{t(busyAction?.startsWith("equip-") ? "Equipping…" : "Equip item")}</button>}
                                     </div>
-                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4><UiText text={inspectedItem.name} /></h4><ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} /><JewelryPairInfo item={inspectedItem} equipped={selectedEquipped} />{(inspectedItem.setName || inspectedItem.setCode) && <p><UiText text="Set:" /> <UiText text={inspectedItem.setName || formatEnum(inspectedItem.setCode || "")} /></p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{t(busyAction ? "Working…" : "Unequip")}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `${t("Blocked by")} ${selectedEquipped.main_hand?.name}.` : t("This slot is empty. Select a compatible item from Available Equipment.")}</p> : <p className={styles.detailPrompt}><UiText text="Choose an available item or an equipment slot to see its details here." /></p>}
+                                </> : selectedSlot ? inspectedItem ? <div className={styles.inspectedSlot}><ItemImage item={inspectedItem} /><h4><UiText text={inspectedItem.name} /></h4>{(inspectedItem.description || jewelryEntry(inspectedItem.code)?.description) && <p><UiText text={inspectedItem.description || jewelryEntry(inspectedItem.code)?.description || ""} /></p>}<ItemMeta item={inspectedItem} /><BonusList bonuses={inspectedItem.bonuses} /><CombatItemStats bonuses={inspectedItem.combatBonuses} /><JewelryPairInfo item={inspectedItem} equipped={selectedEquipped} />{(inspectedItem.setName || inspectedItem.setCode) && <p><UiText text="Set:" /> <UiText text={inspectedItem.setName || formatEnum(inspectedItem.setCode || "")} /></p>}{actionError?.key === `unequip-${selectedSlot}` && <p className={styles.inlineError} role="alert">{actionError.message}</p>}<button type="button" className={styles.secondaryButton} disabled={busyAction !== null} onClick={() => handleUnequip(selectedSlot)}>{t(busyAction ? "Working…" : "Unequip")}</button></div> : <p className={styles.detailPrompt}>{selectedSlot === "off_hand" && offHandBlocked ? `${t("Blocked by")} ${selectedEquipped.main_hand?.name}.` : t("This slot is empty. Select a compatible item from Available Equipment.")}</p> : <p className={styles.detailPrompt}><UiText text="Choose an available item or an equipment slot to see its details here." /></p>}
                             </aside>
                         </div>
                     </section>

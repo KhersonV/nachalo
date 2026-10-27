@@ -2,11 +2,15 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
+	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 	"gameservice/internal/hexmap"
 	"gameservice/models"
@@ -24,6 +28,39 @@ type HexMatchPlan struct {
 // CreateHexMatch materializes one generated map and every participant in one transaction.
 func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, error) {
 	var empty hexmap.Snapshot
+	// Resolve once, before any loadout or match writes. Commands never consult
+	// the process flag for an existing match.
+	ruleset, rulesetErr := balance.ParseCombatRuleset(os.Getenv("NACHALO_COMBAT_RULESET"))
+	if rulesetErr != nil {
+		return empty, rulesetErr
+	}
+	if err := balance.RequirePlayableRuleset(ruleset); err != nil {
+		return empty, err
+	}
+	var combatConfig *balance.V34ResearchConfig
+	configJSON := []byte(`{}`)
+	var combatSeed int64
+	if ruleset == balance.ExperimentalV34 {
+		config := balance.ExperimentalV34Config()
+		combatConfig = &config
+		var err error
+		configJSON, err = json.Marshal(config)
+		if err != nil {
+			return empty, err
+		}
+		if seed := os.Getenv("NACHALO_COMBAT_SEED"); seed != "" {
+			combatSeed, err = strconv.ParseInt(seed, 10, 64)
+			if err != nil {
+				return empty, fmt.Errorf("invalid NACHALO_COMBAT_SEED: %w", err)
+			}
+		} else {
+			var bytes [8]byte
+			if _, err = rand.Read(bytes[:]); err != nil {
+				return empty, err
+			}
+			combatSeed = int64(binary.LittleEndian.Uint64(bytes[:]))
+		}
+	}
 	if plan.InstanceID == "" || plan.Mode == "" || len(plan.TurnOrder) == 0 {
 		return empty, ErrCommandRejected
 	}
@@ -57,20 +94,6 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 	if err != nil {
 		return empty, err
 	}
-	snapshot, err := hexmap.GenerateDungeon(hexmap.Config{Teams: plan.Teams, MonsterProb: .05, BarrelProb: .1, ResourceProb: .1}, hexmap.Catalogs{Monsters: monsters, Resources: resources}, plan.Seed)
-	if err != nil {
-		return empty, err
-	}
-	if plan.Mode != "hex-test" {
-		if err := placeProfessionNodes(ctx, &snapshot, plan.Seed); err != nil {
-			return empty, err
-		}
-	}
-	snapshot.InstanceID = plan.InstanceID
-	starts := map[int]hexmap.Start{}
-	for _, start := range snapshot.Starts {
-		starts[start.UserID] = start
-	}
 	// Resolve the same selected hero and effective equipment stats used by Square.
 	type participant struct {
 		profile   *models.PlayerResponse
@@ -92,6 +115,37 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 			return empty, fmt.Errorf("effective hero for %d: %w", id, err)
 		}
 		participants[id] = participant{profile, character, effective}
+	}
+	generationConfig := hexmap.Config{Teams: plan.Teams, MonsterProb: .05, BarrelProb: .1, ResourceProb: .1}
+	for _, id := range plan.TurnOrder {
+		stats := legacySnapshotStats(participants[id].effective)
+		if combatConfig != nil {
+			stats, _ = normalizedV34Loadout(participants[id].effective, combatConfig)
+		}
+		attackRange := 1
+		if stats.IsRanged && stats.AttackRange > attackRange {
+			attackRange = stats.AttackRange
+		}
+		if attackRange > generationConfig.MaxAttackRange {
+			generationConfig.MaxAttackRange = attackRange
+		}
+	}
+	snapshot, err := hexmap.GenerateDungeon(generationConfig, hexmap.Catalogs{Monsters: monsters, Resources: resources}, plan.Seed)
+	if err != nil {
+		return empty, err
+	}
+	if plan.Mode != "hex-test" {
+		if err := placeProfessionNodes(ctx, &snapshot, plan.Seed); err != nil {
+			return empty, err
+		}
+	}
+	if err := hexmap.ValidatePlacement(snapshot, generationConfig); err != nil {
+		return empty, fmt.Errorf("HEX placement validation: %w", err)
+	}
+	snapshot.InstanceID = plan.InstanceID
+	starts := map[int]hexmap.Start{}
+	for _, start := range snapshot.Starts {
+		starts[start.UserID] = start
 	}
 	orderedStarts := make([]hexgrid.Coord, 0, len(plan.TurnOrder))
 	for _, id := range plan.TurnOrder {
@@ -149,9 +203,12 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 			return empty, fmt.Errorf("take HEX loadouts: %w", err)
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO matches(instance_id,mode,teams_count,total_players,active_user_id,turn_order,turn_number,map_width,map_height,map,schema_version,geometry,start_positions_v2,portal_position_v2,map_revision,state_revision,quest_artifact_id,hex_reward_events_ready,hex_turn_deadline)
-		VALUES($1,$2,$3,$4,$5,$6,1,$7,$7,$8,2,$9,$10,$11,1,1,$12,TRUE,now()+$13 * interval '1 second')`, plan.InstanceID, plan.Mode, len(plan.Teams), len(plan.TurnOrder), plan.TurnOrder[0], orderJSON, snapshot.Radius*2+1, mapJSON, geometryJSON, startsJSON, portalJSON, questArtifactID, int(HexTurnDuration().Seconds()))
+	_, err = tx.ExecContext(ctx, `INSERT INTO matches(instance_id,mode,teams_count,total_players,active_user_id,turn_order,turn_number,map_width,map_height,map,schema_version,geometry,start_positions_v2,portal_position_v2,map_revision,state_revision,quest_artifact_id,hex_reward_events_ready,hex_turn_deadline,combat_ruleset)
+		VALUES($1,$2,$3,$4,$5,$6,1,$7,$7,$8,2,$9,$10,$11,1,1,$12,TRUE,now()+$13 * interval '1 second',$14)`, plan.InstanceID, plan.Mode, len(plan.Teams), len(plan.TurnOrder), plan.TurnOrder[0], orderJSON, snapshot.Radius*2+1, mapJSON, geometryJSON, startsJSON, portalJSON, questArtifactID, int(HexTurnDuration().Seconds()), string(ruleset))
 	if err != nil {
+		return empty, err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE matches SET combat_config=$2::jsonb,combat_rng_seed=$3 WHERE instance_id=$1`, plan.InstanceID, string(configJSON), combatSeed); err != nil {
 		return empty, err
 	}
 	for _, cell := range snapshot.Cells {
@@ -199,7 +256,11 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 	for _, id := range plan.TurnOrder {
 		p := participants[id]
 		start := starts[id]
-		stats := p.effective.EffectiveStats
+		stats := legacySnapshotStats(p.effective)
+		profile := p.effective.CombatProfile
+		if combatConfig != nil {
+			stats, profile = normalizedV34Loadout(p.effective, combatConfig)
+		}
 		image := p.character.Image
 		if image == "" {
 			image = ResolveHeroClassMeta(p.character.HeroClassID).Image
@@ -212,6 +273,19 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 			VALUES($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$11,$12,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now())`, plan.InstanceID, id, p.profile.Name, image, p.character.ID, p.character.HeroClassID, start.Position.Q, start.Position.R, matchInventory, p.character.Level, 0, stats.MaxHealth, p.character.Exp, p.character.MaxExp, stats.Attack, stats.Defense, stats.Mobility, stats.Agility, stats.SightRange, stats.IsRanged, stats.AttackRange, loadouts[id].Balance, start.TeamID)
 		if err != nil {
 			return empty, err
+		}
+		combatProfile, err := json.Marshal(profile)
+		if err != nil {
+			return empty, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE match_players SET hex_combat_balance=$3::jsonb WHERE instance_id=$1 AND user_id=$2`, plan.InstanceID, id, string(combatProfile)); err != nil {
+			return empty, err
+		}
+		if combatConfig != nil && p.character.HeroClassID == "mystic" {
+			shield := balance.ResearchRound(float64(stats.MaxHealth) * combatConfig.Mechanics["arcane"])
+			if _, err = tx.ExecContext(ctx, `UPDATE match_players SET combat_magic_shield=$3 WHERE instance_id=$1 AND user_id=$2`, plan.InstanceID, id, shield); err != nil {
+				return empty, err
+			}
 		}
 		// Freeze account Guild access once, inside the participant creation transaction.
 		// Building the Guild later never updates this flag in an existing match.
@@ -264,12 +338,17 @@ func CreateHexMatch(ctx context.Context, plan HexMatchPlan) (hexmap.Snapshot, er
 			return empty, err
 		}
 	}
-	initial := &MatchCommand{Tx: tx, InstanceID: plan.InstanceID, ActiveUser: 0, NextPersonalTurn: true}
+	initial := &MatchCommand{Tx: tx, InstanceID: plan.InstanceID, ActiveUser: 0, NextPersonalTurn: true, Ruleset: ruleset, CombatConfig: combatConfig, RandomSeed: combatSeed}
 	if err := initial.SyncHexArtifactsTx(ctx); err != nil {
 		return empty, err
 	}
 	if err := initial.ResolveHexTurnStartTx(ctx); err != nil {
 		return empty, err
+	}
+	if combatConfig != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE matches SET combat_rng_counter=$2 WHERE instance_id=$1`, plan.InstanceID, initial.RandomCounter); err != nil {
+			return empty, err
+		}
 	}
 	for _, id := range plan.TurnOrder {
 		if err := recordHexExploredTx(ctx, tx, plan.InstanceID, id, starts[id].Position); err != nil {

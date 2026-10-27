@@ -3,3 +3,8 @@
 .error { border-color: #aa655a; background: #382020f0; color: #ffe0ce; }
 @keyframes appear { 0% { opacity: 0; transform: translateY(-5px); } 8%, 86% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .notice { animation: none; } }
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .stack { top: calc(var(--hex-mobile-top, 0px) + 6px); width: min(300px, calc(100vw - 24px)); }
+  .notice { padding: 5px 8px; font-size: 11px; }
+}

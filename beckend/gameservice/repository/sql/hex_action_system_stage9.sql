@@ -30,3 +30,6 @@ BEGIN
   ALTER TABLE item_set_bonuses ADD CONSTRAINT stage9_set_no_energy CHECK(max_energy_bonus=0);
  END IF;
 END $stage9$;
+
+-- Stage 10.4.10: server-authored equipment abilities frozen at match preparation.
+ALTER TABLE match_players ADD COLUMN IF NOT EXISTS hex_combat_balance JSONB NOT NULL DEFAULT '{}'::jsonb;

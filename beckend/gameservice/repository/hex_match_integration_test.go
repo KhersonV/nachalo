@@ -51,15 +51,7 @@ func hexTestDatabase(t *testing.T) (*sql.DB, string) {
 	DB = db
 	t.Cleanup(func() { DB = old; db.Close() })
 	RunMigrations()
-	for _, name := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql", "stage4_storage_loadout.sql", "stage5_quest_artifact.sql", "stage5_portal_extraction.sql", "stage6_fog_turn.sql", "stage10_presence.sql"} {
-		data, err := os.ReadFile("../../../docs/hex-migration/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(data)); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-	}
+	// RunMigrations applies the embedded HEX stages once via the migration ledger.
 	if _, err := CreatePlayerProfile(CreatePlayerProfileInput{UserID: 701, Name: "Hex Tester", CharacterType: "guardian"}); err != nil {
 		t.Fatal(err)
 	}

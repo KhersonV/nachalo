@@ -1,0 +1,10 @@
+.screen { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) 24px; color: #e9ddc0; background: radial-gradient(ellipse at 50% 35%, #293027, #10151b 55%, #080b0f); }
+.card { max-width: 30rem; text-align: center; padding: 24px; border: 1px solid #b49a554d; border-radius: 12px; background: #11181eee; box-shadow: 0 12px 45px #0006; }
+.brand { display: block; color: #d9bb74; font: 600 clamp(24px, 7vw, 40px) Georgia, serif; letter-spacing: .2em; margin-bottom: 24px; }
+.spinner { display: inline-block; width: 26px; height: 26px; border: 2px solid #b49a553d; border-top-color: #d9bb74; border-radius: 50%; animation: spin 1s linear infinite; }
+.card p { line-height: 1.5; overflow-wrap: anywhere; }
+.card button { min-height: 44px; padding: 8px 20px; color: #eddbb1; border: 1px solid #b49a55; border-radius: 6px; background: #2c2a20; cursor: pointer; pointer-events: auto; }
+.local { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; color: #e9ddc0; }
+.local .card { padding: 12px 20px; margin: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-style: dotted; } }

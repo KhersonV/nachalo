@@ -35,7 +35,7 @@ func (r *HexBarrelResult) SetCommandRevisions(state, mapRevision int64) {
 	r.StateRevision, r.MapRevision = state, mapRevision
 }
 
-// The Square outcome function owns the probabilities and random damage range.
+// The shared barrel outcome function owns the category probabilities and damage range.
 var hexBarrelRoll = game.OpenBarbel
 
 func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandID string, pos hexgrid.Coord, publish func(HexBarrelResult)) (HexBarrelResult, error) {
@@ -119,6 +119,8 @@ func ApplyHexBarrel(ctx context.Context, instanceID string, userID int, commandI
 	}
 	out.Position = pos
 	switch value := outcome.(type) {
+	case game.EmptyBarrelEvent:
+		out.Outcome, out.Health = "empty", health
 	case game.DamageEvent:
 		out.Outcome = "damage"
 		out.Damage = value.Amount

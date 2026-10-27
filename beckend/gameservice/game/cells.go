@@ -4,10 +4,7 @@
 
 package game
 
-import (
-	"errors"
-	"math/rand"
-)
+import "math/rand"
 
 // TileType определяет тип тайла на карте.
 type TileType rune
@@ -105,14 +102,14 @@ func OpenBarbel(
 	const minDamage = 3
 	const maxDamage = 5
 
-	// 30% шанс получить урон
-	if r < 0.3 {
+	// One category roll per barrel; no per-item or fallback artifact rolls.
+	if r < float64(BarrelDamageChancePercent)/100 {
 		// Рассчитываем случайный урон в диапазоне [minDamage, maxDamage]
 		dmg := minDamage + rand.Intn(maxDamage-minDamage+1)
 		return DamageEvent{SourceType: ResultSourceEnvironment, Amount: dmg}, nil
 	}
-	// 40% шанс выпадения ресурса
-	if r < 0.3+0.4 && len(resources) > 0 {
+	// Preserve the ordinary resource category.
+	if r < float64(BarrelDamageChancePercent+BarrelResourceChancePercent)/100 {
 		// Собираем всех ресурсов, кроме того, что был в бочке
 		var candidates []ResourceData
 		for _, res := range resources {
@@ -123,17 +120,18 @@ func OpenBarbel(
 			candidates = append(candidates, res)
 		}
 		if len(candidates) == 0 {
-			return nil, nil
+			return EmptyBarrelEvent{}, nil
 		}
 		chosen := candidates[rand.Intn(len(candidates))]
 		return chosen, nil
 	}
 
-	// Иначе артефакт
-	if len(artifacts) > 0 {
+	// Only this interval yields an ordinary artifact. Missing pools never
+	// increase another category's probability.
+	if r < float64(BarrelDamageChancePercent+BarrelResourceChancePercent+BarrelArtifactChancePercent())/100 && len(artifacts) > 0 {
 		chosen := artifacts[rand.Intn(len(artifacts))]
 		return chosen, nil
 	}
 
-	return nil, errors.New("не удалось определить результат открытия бочки")
+	return EmptyBarrelEvent{}, nil
 }

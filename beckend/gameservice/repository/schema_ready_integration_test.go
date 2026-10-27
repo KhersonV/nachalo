@@ -59,21 +59,19 @@ func TestStage2SchemaReadinessPostgres(t *testing.T) {
 			t.Fatalf("ready=%v err=%v, want diagnostic %q", ready, err, want)
 		}
 	}
-	checkMissing("Stage 1")
-	stage1, err := os.ReadFile("../../../docs/hex-migration/stage1_geometry.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(string(stage1)); err != nil {
-		t.Fatal(err)
-	}
-	checkMissing("Stage 2")
-	stage2, err := os.ReadFile("../../../docs/hex-migration/stage2_commands.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(string(stage2)); err != nil {
-		t.Fatal(err)
+	// RunMigrations already applied the embedded stages. Simulate missing tables
+	// in this isolated schema instead of replaying non-repeatable Stage 1 SQL.
+	for _, stage := range []struct{ table, diagnostic string }{
+		{"match_hex_edges", "Stage 1"},
+		{"match_commands", "Stage 2"},
+	} {
+		if _, err := db.Exec(`ALTER TABLE ` + stage.table + ` RENAME TO readiness_missing_table`); err != nil {
+			t.Fatal(err)
+		}
+		checkMissing(stage.diagnostic)
+		if _, err := db.Exec(`ALTER TABLE readiness_missing_table RENAME TO ` + stage.table); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ready, err := SchemaReady()
 	if err != nil || !ready {

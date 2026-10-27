@@ -15,19 +15,19 @@ export type ReflexEffectInfo = {
 export const CLASS_REFLEX_EFFECTS: Record<ReflexHeroClass, ReflexEffectInfo> = {
     guardian: {
         name: "Shield Block",
-        description: "Chance to block a primary PvP hit.",
+        description: "Base block chance from Reflex. Class counters apply in PvP.",
     },
     berserker: {
         name: "Blood Feast",
-        description: "Heal 50% of actual primary damage on proc.",
+        description: "Heal 50% of actual primary damage on proc; equipment increases the coefficient.",
     },
     ranger: {
         name: "Critical Shot",
-        description: "Critical Shot deals +42% damage.",
+        description: "Base critical damage is 142%; equipped bow and boots increase it.",
     },
     mystic: {
         name: "Arcane Burst",
-        description: "Deal +3 direct HP damage, at most once per personal turn.",
+        description: "Deal +3 direct damage on Reflex, at most once per personal turn; gloves increase it.",
     },
 };
 
@@ -71,4 +71,14 @@ function normalizeReflexHeroClass(heroClassId?: string): ReflexHeroClass | null 
         return normalized;
     }
     return null;
+}
+
+// Presentation only; the server rolls the effect, independently of ordinary reactions.
+export function getClassReflexChance(reflex: number, owner?: string, opponent?: string, pvp = false): number {
+    const base = getReflexProcChance(reflex);
+    if (!pvp) return base;
+    const counters: Record<string,string> = { guardian: "berserker", berserker: "ranger", ranger: "mystic", mystic: "guardian" };
+    const own = owner?.toLowerCase() ?? "", other = opponent?.toLowerCase() ?? "";
+    if (counters[other] === own) return 0;
+    return Math.min(35, base + (counters[own] === other ? 10 : 0));
 }

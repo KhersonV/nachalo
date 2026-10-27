@@ -44,6 +44,9 @@ func main() {
 	if err := handlers.RegisterMarketShopCatalog(context.Background()); err != nil {
 		log.Fatalf("market catalog: %v", err)
 	}
+	if err := repository.RecordGameContentBootstrap(context.Background()); err != nil {
+		log.Fatalf("content bootstrap: %v", err)
+	}
 	defer repository.DB.Close()
 	if err := repository.MarkHexPresenceUnknownOnStart(context.Background()); err != nil {
 		log.Fatalf("HEX presence initialization: %v", err)
@@ -159,6 +162,7 @@ func main() {
 		"/game/storage",
 		middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.HexStorageHandler)),
 	).Methods("GET", "PUT")
+	router.Handle("/game/knowledge", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetKnowledgeHandler))).Methods("GET")
 	router.Handle("/game/professions/monster-loot", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfessionLootCatalogHandler))).Methods("GET")
 	router.Handle("/game/professions", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.GetProfessionsHandler))).Methods("GET")
 	router.Handle("/game/professions/choose", middleware.GameAuthMiddleware(jwtSecretKey, http.HandlerFunc(handlers.ChooseProfessionHandler))).Methods("POST")

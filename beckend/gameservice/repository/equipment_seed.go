@@ -1,8 +1,7 @@
 package repository
 
 import (
-	"database/sql"
-	"fmt"
+	"strings"
 )
 
 type equipmentSetSeed struct {
@@ -119,140 +118,35 @@ var equipmentSeedCatalog = []equipmentSetSeed{
 	},
 }
 
-func defaultEquipmentSetCodeForClass(heroClassID string) (string, bool) {
-	heroClassID = NormalizeHeroClassID(heroClassID)
+// Historical numbers are private construction metadata, never persisted Common
+// templates. Active templates are seeded directly by seedEquipmentSetsTx.
+func equipmentBaseForCode(code string) (equipmentItemSeed, bool) {
 	for _, set := range equipmentSeedCatalog {
-		if set.ClassRestriction == heroClassID {
+		for _, item := range set.Items {
+			if item.Code == code {
+				return item, true
+			}
+		}
+	}
+	return equipmentItemSeed{}, false
+}
+
+func defaultEquipmentSetCodeForClass(heroClassID string) (string, bool) {
+	for _, set := range equipmentSetsCatalog {
+		if set.HeroClass == NormalizeHeroClassID(heroClassID) && set.Rarity == "green" {
 			return set.Code, true
 		}
 	}
 	return "", false
 }
 
-func seedEquipmentCatalog() error {
-	tx, err := DB.Begin()
-	if err != nil {
-		return fmt.Errorf("seed equipment catalog begin tx: %w", err)
+func seedEquipmentCatalog() error { return nil }
+
+// PostgreSQL checks the candidate INSERT before ON CONFLICT handles an existing row.
+func equipmentImageOrPlaceholder(image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return "/ui-icons/backpack.png"
 	}
-	defer tx.Rollback()
-
-	for _, set := range equipmentSeedCatalog {
-		var setID int64
-		if err := tx.QueryRow(`
-			INSERT INTO item_sets (code, name, class_restriction, rarity, description)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (code) DO UPDATE SET
-				name = EXCLUDED.name,
-				class_restriction = EXCLUDED.class_restriction,
-				rarity = EXCLUDED.rarity,
-				description = EXCLUDED.description,
-				updated_at = now()
-			RETURNING id
-		`, set.Code, set.Name, set.ClassRestriction, set.Rarity, set.Description).Scan(&setID); err != nil {
-			return fmt.Errorf("seed equipment set %s: %w", set.Code, err)
-		}
-
-		for _, item := range set.Items {
-			if _, err := tx.Exec(`
-				INSERT INTO item_templates (
-					code,
-					name,
-					set_id,
-					slot,
-					item_type,
-					handedness,
-					rarity,
-					class_restriction,
-					image_url,
-					attack_bonus,
-					defense_bonus,
-					mobility_bonus,
-					agility_bonus,
-					max_health_bonus,
-					max_energy_bonus,
-					sight_range_bonus,
-					attack_range_bonus
-				)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-				ON CONFLICT (code) DO UPDATE SET
-					name = EXCLUDED.name,
-					set_id = EXCLUDED.set_id,
-					slot = EXCLUDED.slot,
-					item_type = EXCLUDED.item_type,
-					handedness = EXCLUDED.handedness,
-					rarity = EXCLUDED.rarity,
-					class_restriction = EXCLUDED.class_restriction,
-					image_url = EXCLUDED.image_url,
-					updated_at = now()
-			`,
-				item.Code,
-				item.Name,
-				setID,
-				item.Slot,
-				item.ItemType,
-				item.Handedness,
-				item.Rarity,
-				item.ClassRestriction,
-				item.ImageURL,
-				item.Bonuses.Attack,
-				item.Bonuses.Defense,
-				item.Bonuses.Mobility,
-				item.Bonuses.Agility,
-				item.Bonuses.MaxHealth,
-				item.Bonuses.MaxEnergy,
-				item.Bonuses.SightRange,
-				item.Bonuses.AttackRange,
-			); err != nil {
-				return fmt.Errorf("seed equipment item %s: %w", item.Code, err)
-			}
-		}
-
-		for _, bonus := range set.Bonuses {
-			effectCode := sql.NullString{}
-			if bonus.EffectCode != nil {
-				effectCode = sql.NullString{String: *bonus.EffectCode, Valid: true}
-			}
-			if _, err := tx.Exec(`
-				INSERT INTO item_set_bonuses (
-					set_id,
-					pieces_required,
-					description,
-					attack_bonus,
-					defense_bonus,
-					mobility_bonus,
-					agility_bonus,
-					max_health_bonus,
-					max_energy_bonus,
-					sight_range_bonus,
-					attack_range_bonus,
-					effect_code,
-					effect_value
-				)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-				ON CONFLICT (set_id, pieces_required) DO UPDATE SET
-					description = EXCLUDED.description
-			`,
-				setID,
-				bonus.PiecesRequired,
-				bonus.Description,
-				bonus.Bonuses.Attack,
-				bonus.Bonuses.Defense,
-				bonus.Bonuses.Mobility,
-				bonus.Bonuses.Agility,
-				bonus.Bonuses.MaxHealth,
-				bonus.Bonuses.MaxEnergy,
-				bonus.Bonuses.SightRange,
-				bonus.Bonuses.AttackRange,
-				effectCode,
-				bonus.EffectValue,
-			); err != nil {
-				return fmt.Errorf("seed equipment set bonus %s/%d: %w", set.Code, bonus.PiecesRequired, err)
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("seed equipment catalog commit: %w", err)
-	}
-	return nil
+	return image
 }

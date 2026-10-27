@@ -7,7 +7,7 @@ import { uiText } from "@/i18n/uiText";
 import { API_BASE } from "@/utils/serviceUrls";
 import { ConfirmDialog } from "./ui";
 
-type Preview = { artifactId: number; name: string; quantity: number; owned: number; yields: { code: string; name: string; quantity: number }[] };
+type Preview = { artifactId: number; name: string; quantity: number; owned: number; yields: { code: string; name: string; image?: string; description?: string; quantity: number }[] };
 export default function ArtifactDismantle({ artifactId, onDone }: { artifactId: number; onDone: () => Promise<void> }) {
  const { user } = useAuth(); const { language } = useGameLanguage();
  const t = (s: string) => uiText(language, s);
@@ -43,7 +43,7 @@ export default function ArtifactDismantle({ artifactId, onDone }: { artifactId: 
  return <section>
   <h4>{t("Dismantle artifact")}</h4>
   <label>{t("Quantity")} <input type="number" min={1} max={Math.min(100, preview?.owned ?? 100)} value={quantity} disabled={busy} onChange={e => setQuantity(Math.min(100, Math.max(1, Math.trunc(Number(e.target.value) || 1))))} /></label>
-  {preview && <><p>{t(preview.name)} ×{preview.quantity} · {t("Available")}: {preview.owned}</p><ul>{preview.yields.map(v => <li key={v.code}>{t(v.name)} ×{v.quantity}</li>)}</ul><button type="button" disabled={busy} onClick={() => setConfirm(true)}>{t("Dismantle")}</button></>}
+  {preview && <><p>{t(preview.name)} ×{preview.quantity} · {t("Available")}: {preview.owned}</p><ul>{preview.yields.map(v => <li key={v.code}>{v.image && <img src={v.image} alt="" width={40} height={40} style={{objectFit:"contain"}} />} {t(v.name)} ×{v.quantity}{v.description && <p>{t(v.description)}</p>}</li>)}</ul><button type="button" disabled={busy} onClick={() => setConfirm(true)}>{t("Dismantle")}</button></>}
   {error && <p role="alert">{t(error)} <button type="button" disabled={busy} onClick={() => setRefreshVersion(v => v + 1)}>{t("Refresh")}</button></p>}{notice && <p role="status">{notice}</p>}
   <ConfirmDialog open={confirm && !!preview} title={t("Dismantle artifact?")} description={preview ? `${t(preview.name)} ×${preview.quantity} → ${preview.yields.map(v => `${t(v.name)} ×${v.quantity}`).join(", ")}` : ""} confirmLabel={t("Dismantle")} cancelLabel={t("Cancel")} tone="danger" busy={busy} onConfirm={() => void dismantle()} onCancel={() => { if (!busy) setConfirm(false); }} />
  </section>;

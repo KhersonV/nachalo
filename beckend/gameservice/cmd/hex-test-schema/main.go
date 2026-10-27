@@ -1,5 +1,4 @@
-// hex-test-schema creates only the existing base schema in a local test DB.
-// Stage 1 and Stage 2 SQL are still applied manually by the developer.
+// hex-test-schema creates the base schema and embedded HEX stages in a local test DB.
 package main
 
 import (
@@ -28,5 +27,5 @@ func main() {
 	}
 	repository.DB = db
 	repository.RunMigrations()
-	log.Println("base schema ready; apply stage1_geometry.sql and stage2_commands.sql manually")
+	log.Println("base schema and embedded HEX migrations ready")
 }

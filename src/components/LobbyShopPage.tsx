@@ -137,7 +137,7 @@ function SellItemDetails({ item, busy, onSell }: { item: EquipmentItem; busy: bo
     return <div className={styles.detailsBody}>
         <div className={styles.detailsHero}><ProductImage src={equipmentImage(item.imageUrl, item.code)} name={item.name} large /><div><span className={styles.eyebrow}><UiText text={formatEnum(item.rarity)} /> · <UiText text={formatEnum(item.slot)} /></span><h2><UiText text={item.name} /></h2><p><UiText text={item.setName || item.classRestriction || "Available equipment"} /></p></div></div>
         <div className={styles.detailFacts}><span><UiText text="Item instance" /> <strong className={styles.instanceId}>{item.instanceId}</strong></span><span><UiText text="Sell value" /> <strong>{formatGold(item.sellPrice!)}</strong></span></div>
-        <p className={styles.sellWarning}><UiText text="Selling permanently removes this item from your inventory." /></p>
+        <p className={styles.sellWarning}><UiText text="Selling permanently removes this item from your inventory." /></p>{item.sellPrice === 0 && <p>Серверная цена этого предмета — 0 золота. Продажа удалит этот экземпляр без начисления золота.</p>}
         <button type="button" className={styles.primaryAction} disabled={busy} onClick={onSell}><UiText text={busy ? "Selling…" : "Sell for"} /> {!busy && formatGold(item.sellPrice!)}</button>
     </div>;
 }
@@ -180,6 +180,7 @@ export default function LobbyShopPage() {
     const sellItems = React.useMemo(() => getSellableEquipment(equipment.inventory, equipment.equippedByCharacter, equipment.equipped), [equipment]);
     const visibleCatalog = React.useMemo(() => filterShopItems(catalog, category), [catalog, category]);
     const selectedBuy = visibleCatalog.find(item => item.type === selectedBuyId) || visibleCatalog[0] || null;
+    const blockedSellItems = (equipment.inventory || []).filter(item => item.canSell === false && item.sellBlockReason);
     const selectedSell = sellItems.find(item => item.instanceId === selectedSellId) || sellItems[0] || null;
     const confirmItem = sellItems.find(item => item.instanceId === confirmSellId) || null;
 
@@ -250,6 +251,12 @@ export default function LobbyShopPage() {
         finally { busyRef.current = false; setBusy(false); }
     };
 
+    React.useEffect(() => {
+        const refresh = () => { if (!busyRef.current && document.visibilityState === "visible") void loadData(); };
+        window.addEventListener("focus", refresh);
+        return () => window.removeEventListener("focus", refresh);
+    }, [loadData]);
+
     const sell = async () => {
         const item = confirmItem;
         if (!item || !user?.token || busyRef.current || !equipment.inventory) return;
@@ -296,9 +303,10 @@ export default function LobbyShopPage() {
             {notice && <StatusMessage tone="success" className={styles.message}>{notice}</StatusMessage>}
             {loading && !player && catalog.length === 0 ? <LoadingState title="Opening the market…" /> : <div className={styles.contentGrid}>
                 <section className={styles.catalogPanel} aria-label={tab === "buy" ? "Shop catalog" : "Available equipment for sale"}>
+                    {tab === "sell" && sellItems.length > 0 && blockedSellItems.map(item => <p key={item.instanceId}>{t(item.name)}: {t(item.sellBlockReason!)}</p>)}
                     <div className={styles.sectionHeading}><div><span className={styles.eyebrow}><UiText text={tab === "buy" ? "BROWSE GOODS" : "YOUR INVENTORY"} /></span><h2><UiText text={tab === "buy" ? CATEGORY_LABELS[category] : "Sell Equipment"} /></h2></div><span>{tab === "buy" ? visibleCatalog.length : sellItems.length} <UiText text="items" /></span></div>
                     {tab === "buy" && category === "scroll" && <div className={styles.categoryArt}><span><UiText text="Scriptorium" /></span><small><UiText text="Scrolls require a Library." /></small></div>}
-                    {tab === "buy" && category === "preview" ? <div className={styles.previewSection}><div className={styles.previewArt}><span><UiText text="Green Sets" /></span><strong><UiText text="Coming Soon" /></strong></div><p><UiText text="Equipment sets cannot be purchased yet." /></p><div className={styles.previewNames}>{GREEN_SET_NAMES.map(name => <span key={name}>{name}</span>)}</div></div> : tab === "buy" ? visibleCatalog.length ? <div className={styles.productGrid}>{visibleCatalog.map(item => <ShopItemCard key={item.type} item={item} selected={selectedBuy?.type === item.type} onSelect={() => { setSelectedBuyId(item.type); showDetails(); }} />)}</div> : <EmptyState title="No goods in this category" description="The current server catalog has no items here." /> : !equipment.inventory ? <ErrorState title="Sell inventory unavailable" description="Refresh to load the server's free equipment list." action={<button type="button" className={styles.secondaryAction} onClick={() => void loadData()}><UiText text="Retry" /></button>} /> : sellItems.length ? <div className={styles.productGrid}>{sellItems.map(item => <SellItemCard key={item.instanceId} item={item} selected={selectedSell?.instanceId === item.instanceId} onSelect={() => { setSelectedSellId(item.instanceId); showDetails(); }} />)}</div> : <EmptyState title="No unequipped equipment available" description="Equipped items must be removed in Inventory before they can be sold." />}
+                    {tab === "buy" && category === "preview" ? <div className={styles.previewSection}><div className={styles.previewArt}><span><UiText text="Green Sets" /></span><strong><UiText text="Coming Soon" /></strong></div><p><UiText text="Equipment sets cannot be purchased yet." /></p><div className={styles.previewNames}>{GREEN_SET_NAMES.map(name => <span key={name}>{name}</span>)}</div></div> : tab === "buy" ? visibleCatalog.length ? <div className={styles.productGrid}>{visibleCatalog.map(item => <ShopItemCard key={item.type} item={item} selected={selectedBuy?.type === item.type} onSelect={() => { setSelectedBuyId(item.type); showDetails(); }} />)}</div> : <EmptyState title="No goods in this category" description="The current server catalog has no items here." /> : !equipment.inventory ? <ErrorState title="Sell inventory unavailable" description="Refresh to load the server's free equipment list." action={<button type="button" className={styles.secondaryAction} onClick={() => void loadData()}><UiText text="Retry" /></button>} /> : sellItems.length ? <div className={styles.productGrid}>{sellItems.map(item => <SellItemCard key={item.instanceId} item={item} selected={selectedSell?.instanceId === item.instanceId} onSelect={() => { setSelectedSellId(item.instanceId); showDetails(); }} />)}</div> : <><EmptyState title="No unequipped equipment available" description="Equipped items must be removed in Inventory before they can be sold." />{blockedSellItems.map(item => <p key={item.instanceId}>{t(item.name)}: {t(item.sellBlockReason!)}</p>)}</>}
                 </section>
                 <aside className={styles.detailsPanel} aria-label="Selected item details">
                     <div className={styles.detailHeading}><span className={styles.eyebrow}>{t(tab === "buy" ? "MAKE A PURCHASE" : "SELL AN ITEM")}</span><h2><UiText text="Item details" /></h2></div>

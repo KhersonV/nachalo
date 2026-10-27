@@ -64,6 +64,16 @@ func ConnectDB() {
 }
 
 func RunMigrations() {
+	seedLock, err := DB.Conn(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer seedLock.Close()
+	if _, err = seedLock.ExecContext(context.Background(), `SELECT pg_advisory_lock(711010,2)`); err != nil {
+		log.Fatal(err)
+	}
+	defer seedLock.ExecContext(context.Background(), `SELECT pg_advisory_unlock(711010,2)`)
+
 	CreateMonstersTable()
 	CreateResourcesTable()
 	CreateArtifactsTable()
@@ -109,6 +119,9 @@ func RunMigrations() {
 	EnsurePlayerBaseBuildingsTable()
 	EnsureMatchStatsRetentionSchema()
 	EnsureQuestArtifactColumn()
+	if err := EnsureAutomaticHexSchema(context.Background()); err != nil {
+		log.Fatalf("automatic HEX schema: %v", err)
+	}
 	if err := EnsureHexActionSchema(); err != nil {
 		log.Fatal(err)
 	}
@@ -228,7 +241,8 @@ func SchemaReady() (bool, error) {
 			"updated_at",
 		},
 		"match_players": {
-			"profession_unlocked", "profession_gather_count", "craft_status",
+			"combat_started", "combat_magic_shield",
+			"profession_unlocked", "profession_gather_count", "craft_status", "hex_combat_balance",
 			"ap", "max_ap", "mp", "max_mp", "reactions", "max_reactions",
 			"personal_turn_counter", "water_available_turn", "hex_armor_break_owner",
 			"character_id",
@@ -241,7 +255,7 @@ func SchemaReady() (bool, error) {
 			"image",
 			"group_id",
 		},
-		"matches": {"quest_artifact_id"},
+		"matches": {"quest_artifact_id", "combat_ruleset", "combat_config", "combat_rng_seed", "combat_rng_counter"},
 		"match_stats": {
 			"winner_user_ids",
 			"mode",
@@ -319,7 +333,7 @@ func SchemaReady() (bool, error) {
 		columns map[string][]string
 	}{
 		{
-			name: "Stage 1", file: "docs/hex-migration/stage1_geometry.sql",
+			name: "Stage 1", file: "beckend/gameservice/repository/sql/hex_bootstrap/stage1_geometry.sql",
 			tables: []string{"hex_stage1_migration_marker", "match_hex_edges"},
 			columns: map[string][]string{
 				"hex_stage1_migration_marker": {"version"},
@@ -331,7 +345,7 @@ func SchemaReady() (bool, error) {
 			},
 		},
 		{
-			name: "Stage 2", file: "docs/hex-migration/stage2_commands.sql",
+			name: "Stage 2", file: "beckend/gameservice/repository/sql/hex_bootstrap/stage2_commands.sql",
 			tables: []string{"match_commands"},
 			columns: map[string][]string{
 				"matches":        {"combat_result_events", "combat_results_complete", "finished_at"},

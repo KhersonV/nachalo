@@ -128,7 +128,15 @@ func ensureGatheringSchemaTx(tx *sql.Tx) error {
 // A separate seeded RNG leaves the established dungeon, quest, monster and ordinary
 // resource streams unchanged. This runs only when creating a new persisted match.
 func placeProfessionNodes(ctx context.Context, snapshot *hexmap.Snapshot, seed int64) error {
-	blocked := map[hexgrid.Coord]bool{}
+	teams := []hexmap.Team{}
+	seenTeams := map[int]bool{}
+	for _, start := range snapshot.Starts {
+		if !seenTeams[start.TeamID] {
+			teams = append(teams, hexmap.Team{ID: start.TeamID})
+			seenTeams[start.TeamID] = true
+		}
+	}
+	blocked := hexmap.PlacementReservations(*snapshot, hexmap.Config{Teams: teams})
 	for _, start := range snapshot.Starts {
 		blocked[start.Position] = true
 	}

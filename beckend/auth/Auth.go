@@ -278,6 +278,14 @@ func authMiddleware(next http.Handler) http.Handler {
 				http.Error(w, "Неверный токен", http.StatusUnauthorized)
 				return
 			}
+			if userID <= 0 || userID != float64(int(userID)) {
+				http.Error(w, "Invalid account", http.StatusUnauthorized)
+				return
+			}
+			if _, err := getUserByID(int(userID)); err != nil {
+				http.Error(w, "Account no longer exists", http.StatusUnauthorized)
+				return
+			}
 			ctx := context.WithValue(r.Context(), common.UserIDKey, int(userID))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		} else {

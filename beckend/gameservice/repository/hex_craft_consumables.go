@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 )
 
@@ -159,7 +160,13 @@ func (c *MatchCommand) applyCraftConsumableTx(ctx context.Context, user, target 
 		if err = c.AuraDamageTx(ctx, target, user, percentHP(maxHP, immediate), "poison"); err != nil {
 			return err
 		}
-		if percentHP(maxHP, immediate) >= hp {
+		lethal:=percentHP(maxHP, immediate)>=hp
+		if c.CombatConfig!=nil {
+			var remaining int
+			if err=c.Tx.QueryRowContext(ctx,`SELECT health FROM match_players WHERE instance_id=$1 AND user_id=$2`,c.InstanceID,target).Scan(&remaining);err!=nil {return err}
+			lethal=remaining<=0 // Opening/buffer may have absorbed a nominally lethal dose.
+		}
+		if lethal {
 			targetState = CraftStatus{}
 		}
 	case "critical":
@@ -290,7 +297,7 @@ func (c *MatchCommand) TickCraftStatusesTx(ctx context.Context, user int) error 
 
 // Only successful main attacks enter this helper. Bonuses share one critical roll;
 // the best active critical damage bonus wins, avoiding multiplying Ranger crit twice.
-func (c *MatchCommand) CraftCriticalTx(ctx context.Context, user, damage, rangerChance int, roll func(int) bool) (int, bool, error) {
+func (c *MatchCommand) CraftCriticalTx(ctx context.Context, user, damage, rangerChance int, roll func(int) bool, classCritical ...int) (int, bool, error) {
 	if damage <= 0 {
 		return damage, false, nil
 	}
@@ -299,15 +306,21 @@ func (c *MatchCommand) CraftCriticalTx(ctx context.Context, user, damage, ranger
 		return 0, false, err
 	}
 	chance, bonus := rangerChance, 42
+ coefficient:=1.42
+ if c.CombatConfig!=nil && rangerChance>0 {coefficient=c.CombatConfig.Factors["crit"]}
+ if rangerChance > 0 && len(classCritical)>0 && classCritical[0]-100 > bonus { bonus = classCritical[0]-100 }
 	if s.Critical != nil {
 		if s.Critical.Charges > 0 {
-			chance, bonus = 100, 50
+			chance = 100
+ if coefficient<1.5 {coefficient=1.5}
+ if bonus < 50 { bonus = 50 }
 			s.Critical.Charges--
 			if s.Critical.Charges == 0 {
 				s.Critical = nil
 			}
 		} else if s.Critical.Until > turn {
 			chance += 50
+ if coefficient<1.42 {coefficient=1.42}
 		}
 	}
 	if chance > 100 {
@@ -318,11 +331,12 @@ func (c *MatchCommand) CraftCriticalTx(ctx context.Context, user, damage, ranger
 		return 0, false, err
 	}
 	if crit {
-		damage = damage * (100 + bonus) / 100
+		if c.CombatConfig!=nil {damage=balance.ResearchRound(float64(damage)*coefficient)
+		} else {damage = damage * (100 + bonus) / 100}
 	}
 	return damage, crit, nil
 }
-func (c *MatchCommand) CraftLifestealTx(ctx context.Context, user, damage int, classProc bool, roll func(int) bool) (int, error) {
+func (c *MatchCommand) CraftLifestealTx(ctx context.Context, user, damage int, classProc bool, roll func(int) bool, classHeal ...int) (int, error) {
 	if damage <= 0 {
 		return 0, nil
 	}
@@ -331,19 +345,25 @@ func (c *MatchCommand) CraftLifestealTx(ctx context.Context, user, damage int, c
 		return 0, err
 	}
 	percent := 0
+ researchPercent:=0.0
 	if classProc {
 		percent = 50
+ if c.CombatConfig!=nil {researchPercent=50*c.CombatConfig.Factors["heal"]}
+ if len(classHeal)>0 { percent = classHeal[0] }
 	}
 	if s.Vampirism != nil && s.Vampirism.Until > turn {
 		if s.Vampirism.Kind == "elixir" {
 			percent += 70
+ researchPercent+=70
 		} else if roll(55) {
 			percent += 80
+ researchPercent+=80
 		}
 	}
 	if percent > 100 {
 		percent = 100
 	}
+	if c.CombatConfig!=nil {if researchPercent>100 {researchPercent=100};return balance.ResearchRound(float64(damage)*researchPercent/100),nil}
 	return damage * percent / 100, nil
 }
 

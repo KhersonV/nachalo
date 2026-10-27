@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { timeHexStage } from "@/features/hexLoading/performance";
 import { API_BASE, WS_URL } from "@/utils/serviceUrls";
 import { isHexSnapshot, type HexSnapshot, type HexVisualNotice } from "@/types/HexGameTypes";
 
@@ -41,6 +42,7 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
 
   useEffect(() => {
     if (!token) return;
+    const finishConnect = timeHexStage("WebSocket connect + authoritative refresh");
     let closed = false;
     let socket: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -53,7 +55,7 @@ export function useHexMatchSnapshot(instanceId: string, initialSnapshot: HexSnap
       socket.onopen = () => {
         window.dispatchEvent(new Event("nachalo:chat-socket-open"));
         socket?.send(JSON.stringify({ type: "JOIN_MATCH", instanceId }));
-        void refresh().then(() => { if (!closed && socket?.readyState === WebSocket.OPEN) setConnection("live"); }).catch(report);
+        void refresh().then(() => { if (!closed && socket?.readyState === WebSocket.OPEN) { finishConnect(); setConnection("live"); } }).catch(report);
       };
       socket.onmessage = event => {
         try {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"gameservice/game"
+	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 )
 
@@ -15,31 +16,69 @@ const HexMPCap = 16
 //go:embed sql/hex_action_system_stage9.sql
 var hexActionSchema string
 
-func EnsureHexActionSchema() error { _, err := DB.Exec(hexActionSchema); return err }
+//go:embed sql/combat_ruleset_v34.sql
+var combatRulesetSchema string
+
+func EnsureHexActionSchema() error {
+	_, err := DB.Exec(hexActionSchema + "\n" + combatRulesetSchema)
+	return err
+}
 
 type HexBudgets struct {
-	InGuardianAura     bool   `json:"inGuardianAura"`
-	AP                 int    `json:"ap"`
-	MaxAP              int    `json:"maxAP"`
-	MP                 int    `json:"mp"`
-	MaxMP              int    `json:"maxMP"`
-	Reactions          int    `json:"reactions"`
-	MaxReactions       int    `json:"maxReactions"`
-	PersonalTurn       int    `json:"personalTurn"`
-	WaterAvailableTurn int    `json:"waterAvailableTurn"`
-	MPDrain            bool   `json:"mpDrain"`
-	OverloadTarget     string `json:"overloadTarget"`
-	OverloadCount      int    `json:"overloadCount"`
-	MysticReflexUsed   bool   `json:"mysticReflexUsed"`
-	AuraSlowUsed       bool   `json:"auraSlowUsed"`
+	MagicShield int `json:"magicShield,omitempty"`
+	CombatProfile      balance.CombatProfile `json:"combatProfile"`
+	InGuardianAura     bool                  `json:"inGuardianAura"`
+	AP                 int                   `json:"ap"`
+	MaxAP              int                   `json:"maxAP"`
+	MP                 int                   `json:"mp"`
+	MaxMP              int                   `json:"maxMP"`
+	Reactions          int                   `json:"reactions"`
+	MaxReactions       int                   `json:"maxReactions"`
+	PersonalTurn       int                   `json:"personalTurn"`
+	WaterAvailableTurn int                   `json:"waterAvailableTurn"`
+	MPDrain            bool                  `json:"mpDrain"`
+	OverloadTarget     string                `json:"overloadTarget"`
+	OverloadCount      int                   `json:"overloadCount"`
+	MysticReflexUsed   bool                  `json:"mysticReflexUsed"`
+	AuraSlowUsed       bool                  `json:"auraSlowUsed"`
 }
 
 func ReadHexBudgetsTx(ctx context.Context, tx storageQuerier, instance string, user int) (HexBudgets, error) {
 	var b HexBudgets
 	err := tx.QueryRowContext(ctx, `SELECT ap,max_ap,mp,max_mp,reactions,max_reactions,personal_turn_counter,water_available_turn,hex_mp_drain,hex_overload_target,hex_overload_count,hex_mystic_reflex_used,hex_aura_slow_used FROM match_players WHERE instance_id=$1 AND user_id=$2`, instance, user).Scan(&b.AP, &b.MaxAP, &b.MP, &b.MaxMP, &b.Reactions, &b.MaxReactions, &b.PersonalTurn, &b.WaterAvailableTurn, &b.MPDrain, &b.OverloadTarget, &b.OverloadCount, &b.MysticReflexUsed, &b.AuraSlowUsed)
 	if err == nil {
-		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM match_players p JOIN match_players g ON g.instance_id=p.instance_id AND g.user_id<>p.user_id AND g.group_id<>p.group_id AND g.character_type='guardian' AND g.health>0 WHERE p.instance_id=$1 AND p.user_id=$2 AND p.health>0 AND GREATEST(abs(g.position_q-p.position_q),abs(g.position_r-p.position_r),abs((g.position_q-p.position_q)+(g.position_r-p.position_r)))<=2)`, instance, user).Scan(&b.InGuardianAura)
+		b.CombatProfile, err = ReadHexCombatProfileTx(ctx, tx, instance, user)
 	}
+	if err==nil && b.CombatProfile.Ruleset==balance.ExperimentalV34 {
+		var class string
+		var attack,reflex int
+		err=tx.QueryRowContext(ctx,`SELECT character_type,attack,agility,combat_magic_shield FROM match_players WHERE instance_id=$1 AND user_id=$2`,instance,user).Scan(&class,&attack,&reflex,&b.MagicShield)
+		if err==nil {
+			_,config,e:=ReadMatchCombatRulesTx(ctx,tx,instance)
+			if e!=nil {err=e
+			} else if config!=nil {
+				chance:=balance.CalculateReflexProcChance(reflex)
+				if class=="guardian" {chance=balance.ResearchRound(float64(chance)*config.Factors["block"]);if chance>55 {chance=55}}
+				b.CombatProfile.ReflexChance=&chance
+				b.CombatProfile.ClassHealPercent=50*config.Factors["heal"]
+				b.CombatProfile.FollowupMultiplier=.5*config.Factors["followup"]
+				b.CombatProfile.CriticalMultiplier=config.Factors["crit"]
+				b.CombatProfile.OverloadSecond=balance.ResearchRound(2*config.Factors["overload"])
+				b.CombatProfile.OverloadThird=balance.ResearchRound(5*config.Factors["overload"])
+				b.CombatProfile.MysticReflexDamage=balance.ResearchRound(3*config.Factors["magic"])
+				if class=="guardian" {b.CombatProfile.AbilityAttackScale=float64(attack)/float64(config.BaseAttack[0]);b.CombatProfile.AuraExit=balance.ResearchRound(3*config.Factors["aura"])
+				} else if class=="mystic" {b.CombatProfile.AbilityAttackScale=float64(attack)/float64(config.BaseAttack[3])}
+			}
+		}
+	}
+	if err == nil {
+		var all []hexAuraMember
+		all, err = readHexAuraMembersTx(ctx, tx, instance)
+		if err == nil {
+			b.InGuardianAura = auraMembership(all)[user] != 0
+		}
+	}
+
 	return b, err
 }
 func (c *MatchCommand) SpendHexTx(ctx context.Context, user, ap, mp, reactions int) error {
@@ -87,13 +126,15 @@ func (c *MatchCommand) SetRangerBreakTx(ctx context.Context, kind string, id, ow
 	return err
 }
 
-// Only triggered MAIN hits advance a series; blocks and failed commands do not.
+// Callers admit connected main attacks: new v34 includes physical blocks,
+// excludes dodges; saved pre-penetration configurations retain their old gates.
 func (c *MatchCommand) MysticHitTx(ctx context.Context, user int, targetKind string, targetID int, reflexProc bool) (int, int, error) {
 	key := fmt.Sprintf("%s:%d", targetKind, targetID)
 	var last string
 	var count int
 	var used bool
-	if err := c.Tx.QueryRowContext(ctx, `SELECT hex_overload_target,hex_overload_count,hex_mystic_reflex_used FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, user).Scan(&last, &count, &used); err != nil {
+	var reflexStat int
+	if err := c.Tx.QueryRowContext(ctx, `SELECT hex_overload_target,hex_overload_count,hex_mystic_reflex_used,agility FROM match_players WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, user).Scan(&last, &count, &used,&reflexStat); err != nil {
 		return 0, 0, err
 	}
 	if last != key {
@@ -103,16 +144,25 @@ func (c *MatchCommand) MysticHitTx(ctx context.Context, user int, targetKind str
 	if count > 4 {
 		count = 4
 	}
+	profile, err := ReadHexCombatProfileTx(ctx, c.Tx, c.InstanceID, user)
+	if err != nil {
+		return 0, 0, err
+	}
 	extra := 0
 	if count == 2 {
-		extra = 2
+		extra = profile.OverloadSecond
 	}
 	if count == 3 {
-		extra = 5
+		extra = profile.OverloadThird
+	}
+	if c.CombatConfig!=nil {
+		extra=balance.ResearchRound(float64(extra)*c.CombatConfig.Factors["overload"])
+		reflexProc=!used && c.RollResearchChance(float64(balance.CalculateReflexProcChance(reflexStat)))
 	}
 	reflex := 0
 	if !used && reflexProc {
-		reflex = 3
+		reflex = profile.MysticReflexDamage
+		if c.CombatConfig!=nil {reflex=balance.ResearchRound(float64(reflex)*c.CombatConfig.Factors["magic"])}
 		used = true
 	}
 	if _, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_overload_target=$3,hex_overload_count=$4,hex_mystic_reflex_used=$5 WHERE instance_id=$1 AND user_id=$2`, c.InstanceID, user, key, count, used); err != nil {
@@ -140,27 +190,34 @@ func (c *MatchCommand) MysticDrainTx(ctx context.Context, user, target int) (boo
 }
 
 type hexAuraMember struct {
+	Attack int
+	Profile            balance.CombatProfile
 	User, Team, Health int
 	Class              string
 	Position           hexgrid.Coord
 }
 
 func (c *MatchCommand) AuraMembersTx(ctx context.Context) ([]hexAuraMember, error) {
-	rows, err := c.Tx.QueryContext(ctx, `SELECT user_id,group_id,health,character_type,position_q,position_r FROM match_players WHERE instance_id=$1 AND health>0 ORDER BY user_id`, c.InstanceID)
+	return readHexAuraMembersTx(ctx, c.Tx, c.InstanceID)
+}
+func readHexAuraMembersTx(ctx context.Context, tx storageQuerier, instance string) ([]hexAuraMember, error) {
+	var raw []byte
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE(jsonb_agg(jsonb_build_object('User',user_id,'Team',group_id,'Health',health,'Class',character_type,'Attack',attack,'Position',jsonb_build_object('q',position_q,'r',position_r),'Profile',hex_combat_balance) ORDER BY user_id),'[]'::jsonb) FROM match_players WHERE instance_id=$1 AND health>0`, instance).Scan(&raw)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []hexAuraMember{}
-	for rows.Next() {
-		var p hexAuraMember
-		if err := rows.Scan(&p.User, &p.Team, &p.Health, &p.Class, &p.Position.Q, &p.Position.R); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	for i := range out {
+		if out[i].Profile.AuraRadius <= 0 {
+			out[i].Profile = balance.DefaultCombatProfile()
+		}
+	}
+	return out, nil
 }
+
 func auraMembership(all []hexAuraMember) map[int]int {
 	out := map[int]int{}
 	for _, p := range all {
@@ -169,7 +226,7 @@ func auraMembership(all []hexAuraMember) map[int]int {
 				continue
 			}
 			d, err := hexgrid.Distance(p.Position, g.Position)
-			if err == nil && d <= 2 {
+			if err == nil && d <= g.Profile.AuraRadius {
 				out[p.User] = g.User
 				break
 			}
@@ -177,6 +234,15 @@ func auraMembership(all []hexAuraMember) map[int]int {
 	}
 	return out
 }
+func auraProfile(all []hexAuraMember, user int) balance.CombatProfile {
+	for _, p := range all {
+		if p.User == user {
+			return p.Profile
+		}
+	}
+	return balance.DefaultCombatProfile()
+}
+
 func (c *MatchCommand) AuraDamageTx(ctx context.Context, user, source, damage int, kind string) error {
 	var hp int
 	var pos hexgrid.Coord
@@ -185,6 +251,24 @@ func (c *MatchCommand) AuraDamageTx(ctx context.Context, user, source, damage in
 	}
 	if hp <= 0 {
 		return nil
+	}
+	if c.CombatConfig!=nil {
+		var class string
+		if err:=c.Tx.QueryRowContext(ctx,`SELECT character_type FROM match_players WHERE instance_id=$1 AND user_id=$2`,c.InstanceID,user).Scan(&class);err!=nil {return err}
+		event:=kind
+		attack:=0
+		switch kind {
+		case "guardianAuraStart":event="aura_tick"
+		case "guardianAuraStartExtra":event="aura_tick_extra"
+		case "guardianAuraExit":event="aura_exit";damage=balance.ResearchRound(float64(damage)*c.CombatConfig.Factors["aura"])
+		}
+		if event=="aura_tick" || event=="aura_tick_extra" || event=="aura_exit" {
+			if err:=c.Tx.QueryRowContext(ctx,`SELECT attack FROM match_players WHERE instance_id=$1 AND user_id=$2`,c.InstanceID,source).Scan(&attack);err!=nil {return err}
+		}
+		resolved,err:=c.ResolveResearchDamageTx(ctx,user,balance.V34Incoming{Kind:event,Damage:damage,Attack:attack,Defender:class})
+		if err!=nil {return err};damage=resolved.Damage
+		for _,effect:=range resolved.Effects {c.ActionEffects=append(c.ActionEffects,map[string]any{"kind":effect.Kind,"userId":user,"sourceId":source,"position":pos,"amount":effect.Amount})}
+		if damage<=0 {return nil}
 	}
 	if damage > hp {
 		damage = hp
@@ -224,12 +308,31 @@ func (c *MatchCommand) AuraDamageTx(ctx context.Context, user, source, damage in
 	return err
 }
 
-// A single transition event, including a Ranger push or the Guardian moving away.
+type AuraMovementCause string
+
+const (
+	AuraMovementVoluntary AuraMovementCause = "voluntary"
+	AuraMovementForced    AuraMovementCause = "forced"
+)
+
+// The movement executor records the cause explicitly, independently of turn ownership.
+// Entries belong to the next transition only; route steps resolve separately.
+func (c *MatchCommand) RecordAuraMovement(user int, cause AuraMovementCause) {
+	if c.auraMovements == nil {
+		c.auraMovements = make(map[int]AuraMovementCause)
+	}
+	c.auraMovements[user] = cause
+	c.AuraResolved = false
+}
+
+// A single transition event, including voluntary steps and forced displacement.
 func (c *MatchCommand) ResolveAuraTransitionTx(ctx context.Context, before []hexAuraMember) error {
 	after, err := c.AuraMembersTx(ctx)
 	if err != nil {
 		return err
 	}
+	movements := c.auraMovements
+	c.auraMovements = nil
 	moved := false
 	for _, a := range after {
 		for _, b := range before {
@@ -244,7 +347,25 @@ func (c *MatchCommand) ResolveAuraTransitionTx(ctx context.Context, before []hex
 	old, now := auraMembership(before), auraMembership(after)
 	for _, p := range after {
 		if source := old[p.User]; source != 0 && now[p.User] == 0 {
-			if err := c.AuraDamageTx(ctx, p.User, source, 3, "guardianAuraExit"); err != nil {
+			// Keep the union-of-enemy-auras exit rule. Exclude only owners whose
+			// voluntary movement caused this exit: with that owner held at its old
+			// position, the enemy would still be inside. Other owners remain eligible,
+			// including when this player is itself a voluntarily moving Guardian.
+			exitBefore := append([]hexAuraMember(nil), before...)
+			for i, g := range exitBefore {
+				if g.Class != "guardian" || movements[g.User] != AuraMovementVoluntary {
+					continue
+				}
+				distance, e := hexgrid.Distance(p.Position, g.Position)
+				if e == nil && distance <= g.Profile.AuraRadius {
+					exitBefore[i].Class = "" // Suppress this aura as a damage source only.
+				}
+			}
+			source = auraMembership(exitBefore)[p.User]
+			if source == 0 {
+				continue
+			}
+			if err := c.AuraDamageTx(ctx, p.User, source, auraProfile(before, source).AuraExit, "guardianAuraExit"); err != nil {
 				return err
 			}
 		}
@@ -252,6 +373,7 @@ func (c *MatchCommand) ResolveAuraTransitionTx(ctx context.Context, before []hex
 	return nil
 }
 func (c *MatchCommand) StartHexPersonalTurnTx(ctx context.Context, user int) error {
+	if err:=c.StartResearchPersonalTurnTx(ctx,user);err!=nil {return err}
 	if err := c.ClearRangerBreakTx(ctx, user, "", 0); err != nil {
 		return err
 	}
@@ -266,7 +388,10 @@ func (c *MatchCommand) StartHexPersonalTurnTx(ctx context.Context, user int) err
 		return err
 	}
 	if source := auraMembership(all)[user]; source != 0 {
-		return c.AuraDamageTx(ctx, user, source, 2, "guardianAuraStart")
+		if err:=c.AuraDamageTx(ctx,user,source,auraProfile(all,source).AuraTick,"guardianAuraStart");err!=nil {return err}
+		// v22 adds only a POSITIVE correction to the original 2-HP tick.
+		// Preserve the two separate rounding/buffer events when tuning above 1.
+		if c.CombatConfig!=nil {extra:=balance.ResearchRound(2*c.CombatConfig.Factors["aura"])-2;if extra>0 {return c.AuraDamageTx(ctx,user,source,extra,"guardianAuraStartExtra")}}
 	}
 	return nil
 }
@@ -347,5 +472,12 @@ func (c *MatchCommand) SetHexCombatVitalsTx(ctx context.Context, user, hp, ap in
 func (c *MatchCommand) PrepareHexMainTargetTx(ctx context.Context, user int, kind string, id int) error {
 	key := fmt.Sprintf("%s:%d", kind, id)
 	_, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_overload_target=$3,hex_overload_count=0 WHERE instance_id=$1 AND user_id=$2 AND character_type='mystic' AND hex_overload_target<>$3`, c.InstanceID, user, key)
+	return err
+}
+
+// Legacy and saved pre-penetration v34 only: a block breaks the series
+// without refunding its once-per-turn Reflex. New v34 blocks do not call this.
+func (c *MatchCommand) ResetHexOverloadTx(ctx context.Context, user int) error {
+	_, err := c.Tx.ExecContext(ctx, `UPDATE match_players SET hex_overload_target='',hex_overload_count=0 WHERE instance_id=$1 AND user_id=$2 AND character_type='mystic'`, c.InstanceID, user)
 	return err
 }

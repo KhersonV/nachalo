@@ -11,6 +11,7 @@ import ChatEmoteMessage, { EmoteImage } from "@/components/ChatEmoteMessage";
 import { chatEmotes, type ChatEmoteCategory } from "@/utils/chatEmotes";
 import DraggableHudPanel, { useHudPanel, useDesktopHud } from "@/features/hexHud/DraggableHudPanel";
 import styles from "@/styles/GameChat.module.css";
+import { mobileOverlayEvent, openMobileOverlay, useMobileBattleHud } from "@/features/hexHud/mobileBattleLayout";
 
 type Channel = "MAIN" | "GROUP" | "TRADE";
 type ChatMessage = {
@@ -77,7 +78,8 @@ export default function GameChat() {
     const match = pathname === "/game";
     const visible = Boolean(user && (match || ["/mode", "/base", "/equipment", "/professions", "/drop-guide", "/shop", "/market", "/profile", "/matches"].some(path => pathname === path || pathname.startsWith(path + "/"))));
     const chatPanel = useHudPanel("chat");
-    const desktopHud = useDesktopHud() && match;
+    const mobileHud = useMobileBattleHud();
+    const desktopHud = useDesktopHud() && match && !mobileHud;
     const [lobbyExpanded, setLobbyExpanded] = useState(false);
     const expanded = desktopHud ? chatPanel.layout.mode === "expanded" : lobbyExpanded;
     const setChatLayout = chatPanel.setLayout;
@@ -97,6 +99,18 @@ export default function GameChat() {
     const [mutedIds, setMutedIds] = useState<number[]>([]);
     const [draft, setDraft] = useState("");
     const [emojiOpen, setEmojiOpen] = useState(false);
+    // Expansion is presentation state; message/channel/unread handling stays shared.
+    useEffect(() => { if (match && mobileHud) setLobbyExpanded(false); }, [match, mobileHud]);
+    useEffect(() => {
+        if (!match || !mobileHud) return;
+        const closeOther = (event: Event) => {
+            if ((event as CustomEvent<string>).detail !== "chat") { setLobbyExpanded(false); setEmojiOpen(false); }
+        };
+        window.addEventListener(mobileOverlayEvent, closeOther);
+        return () => window.removeEventListener(mobileOverlayEvent, closeOther);
+    }, [match, mobileHud]);
+    useEffect(() => { if (match && mobileHud && expanded) openMobileOverlay("chat"); }, [match, mobileHud, expanded]);
+
     const [emojiCategory, setEmojiCategory] = useState<EmojiCategory>("faces");
     const [pickerSection, setPickerSection] = useState<PickerSection>("emoji");
     const [animateEmotes, setAnimateEmotes] = useState<boolean | null>(null);
@@ -643,9 +657,9 @@ export default function GameChat() {
         } catch { setError(text.failure); }
     };
     const canSend = Boolean(user?.token && draft.trim() && Array.from(draft.trim()).length <= 1000 && !sending && (privateView || channel !== "GROUP" || partyId));
-    return <DraggableHudPanel panel={chatPanel} title={`${text.title}${totalUnread > 0 ? ` · ${totalUnread}` : ""}`} anchor="chat" width={410} enabled={desktopHud} onModeChange={mode => { setEmojiOpen(false); if (mode === "expanded") { if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; } }}><section className={`${styles.chat} ${match ? styles.match : ""} ${expanded ? styles.open : ""} ${desktopHud ? styles.floatingHud : ""}`} aria-label={text.title} onKeyDown={event => event.stopPropagation()}>
-        <button hidden={desktopHud} type="button" className={styles.header} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setEmojiOpen(false); if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; }}>
-            <span>{text.title}</span><span className={styles.headerRight}>{totalUnread > 0 && <span className={styles.badge}>{totalUnread}</span>}{expanded ? "−" : "+"}</span>
+    return <DraggableHudPanel panel={chatPanel} title={`${text.title}${totalUnread > 0 ? ` · ${totalUnread}` : ""}`} anchor="chat" width={410} enabled={desktopHud} onModeChange={mode => { setEmojiOpen(false); if (mode === "expanded") { if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; } }}><section className={`${styles.chat} ${match ? styles.match : ""} ${expanded ? styles.open : ""} ${desktopHud ? styles.floatingHud : ""}`} aria-label={text.title} onKeyDown={event => { event.stopPropagation(); if (match && mobileHud && event.key === "Escape") { setExpanded(false); setEmojiOpen(false); } }}>
+        <button hidden={desktopHud} type="button" className={styles.header} aria-label={expanded && match && mobileHud ? `${text.title} · ${{ en: "Close", ru: "Закрыть", de: "Schließen" }[language]}` : text.title} aria-expanded={expanded} onClick={() => { setExpanded(value => !value); setEmojiOpen(false); if (privateView) void markRead(privateView.id); else setUnread(previous => ({ ...previous, [channel]: 0 })); stickToBottom.current = true; }}>
+            <span>{text.title}</span><span className={styles.headerRight}>{totalUnread > 0 && <span className={styles.badge}>{totalUnread}</span>}{expanded ? match && mobileHud ? "×" : "−" : "+"}</span>
         </button>
         {expanded && <div className={styles.content}>
             <div className={styles.tabs} role="tablist" aria-label={text.title}>

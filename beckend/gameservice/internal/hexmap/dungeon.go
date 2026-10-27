@@ -17,7 +17,9 @@ type Team struct {
 	PlayerIDs []int
 }
 type Config struct {
-	Teams                                 []Team
+	Teams []Team
+	// MaxAttackRange is resolved from the actual match loadouts.
+	MaxAttackRange                        int
 	MonsterProb, BarrelProb, ResourceProb float64
 }
 type Catalogs struct {
@@ -134,15 +136,18 @@ func GenerateDungeon(cfg Config, catalogs Catalogs, seed int64) (Snapshot, error
 	for ; radius <= 32; radius++ {
 		for attempt := 0; attempt < 8; attempt++ {
 			rng := rand.New(rand.NewSource(seed + int64(radius)*1000003 + int64(attempt)*7919))
-			snap, centers, floor, err := geometry(radius, len(cfg.Teams), total, seed, rng)
+			snap, _, floor, err := geometry(radius, len(cfg.Teams), total, seed, rng)
 			if err != nil || len(floor) < minFloor {
 				continue
 			}
-			if placeStarts(&snap, cfg, centers, floor) != nil {
+			if placeStarts(&snap, cfg, rand.New(rand.NewSource(seed^int64(radius)*32452843^int64(attempt)*49999))) != nil {
 				continue
 			}
 			placeObjects(&snap, cfg, monsters, normal, barrel, floor, rng)
 			placeBrazierEnvironment(&snap, floor, seed)
+			if ValidatePlacement(snap, cfg) != nil {
+				continue
+			}
 			nm, nb, nr := 0, 0, 0
 			for _, a := range snap.Actors {
 				if a.Kind == "monster" {
@@ -335,87 +340,6 @@ func geometry(radius, teams, total int, seed int64, rng *rand.Rand) (Snapshot, [
 	}
 	return snap, centers, floor, nil
 }
-func placeStarts(s *Snapshot, cfg Config, centers []hexgrid.Coord, floor map[hexgrid.Coord]floorInfo) error {
-	used := map[hexgrid.Coord]bool{}
-	s.Starts = []Start{}
-	for i, t := range cfg.Teams {
-		anchor := centers[i+1]
-		candidates := []hexgrid.Coord{}
-		for c := range floor {
-			d, _ := hexgrid.Distance(anchor, c)
-			if d <= 4 {
-				candidates = append(candidates, c)
-			}
-		}
-		sort.Slice(candidates, func(a, b int) bool {
-			da, _ := hexgrid.Distance(anchor, candidates[a])
-			db, _ := hexgrid.Distance(anchor, candidates[b])
-			if da == db {
-				if candidates[a].R == candidates[b].R {
-					return candidates[a].Q < candidates[b].Q
-				}
-				return candidates[a].R < candidates[b].R
-			}
-			return da < db
-		})
-		count := 0
-		for _, c := range candidates {
-			if used[c] {
-				continue
-			}
-			used[c] = true
-			id := t.PlayerIDs[count]
-			s.Starts = append(s.Starts, Start{UserID: id, TeamID: t.ID, Position: c})
-			s.Actors = append(s.Actors, Actor{ID: fmt.Sprintf("player-%d", id), Kind: "player", Position: c})
-			count++
-			if count == len(t.PlayerIDs) {
-				break
-			}
-		}
-		if count != len(t.PlayerIDs) {
-			return fmt.Errorf("team %d has no adjacent floor area", t.ID)
-		}
-	}
-	candidates := []hexgrid.Coord{}
-	for c := range floor {
-		d, _ := hexgrid.Distance(hexgrid.Coord{}, c)
-		if d <= 3 && !used[c] && c != (hexgrid.Coord{}) {
-			candidates = append(candidates, c)
-		}
-	}
-	if len(candidates) == 0 {
-		return fmt.Errorf("portal has no floor cell")
-	}
-	score := func(c hexgrid.Coord) int {
-		min := 100000
-		for _, st := range s.Starts {
-			d, _ := hexgrid.Distance(c, st.Position)
-			if d < min {
-				min = d
-			}
-		}
-		return min
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		a, b := score(candidates[i]), score(candidates[j])
-		if a == b {
-			if candidates[i].R == candidates[j].R {
-				return candidates[i].Q < candidates[j].Q
-			}
-			return candidates[i].R < candidates[j].R
-		}
-		return a > b
-	})
-	portal := candidates[0]
-	s.Portal = &portal
-	for i := range s.Cells {
-		if s.Cells[i].Position == portal {
-			s.Cells[i].IsPortal = true
-			break
-		}
-	}
-	return nil
-}
 func floorPath(from, to hexgrid.Coord, floor map[hexgrid.Coord]floorInfo) []hexgrid.Coord {
 	seen := map[hexgrid.Coord]bool{from: true}
 	prev := map[hexgrid.Coord]hexgrid.Coord{}
@@ -444,13 +368,7 @@ func floorPath(from, to hexgrid.Coord, floor map[hexgrid.Coord]floorInfo) []hexg
 	return p
 }
 func placeObjects(s *Snapshot, cfg Config, monsters []game.MonsterData, resources []game.ResourceData, barrel *game.ResourceData, floor map[hexgrid.Coord]floorInfo, rng *rand.Rand) {
-	reserved := map[hexgrid.Coord]bool{}
-	for _, st := range s.Starts {
-		for _, c := range floorPath(st.Position, *s.Portal, floor) {
-			reserved[c] = true
-		}
-	}
-	reserved[*s.Portal] = true
+	reserved := PlacementReservations(*s, cfg)
 	for i := range s.Cells {
 		c := &s.Cells[i]
 		if c.Terrain != "floor" || reserved[c.Position] {

@@ -72,15 +72,7 @@ func hexCombatDatabase(t *testing.T) (*sql.DB, string) {
 	repository.DB = db
 	t.Cleanup(func() { repository.DB = old; db.Close() })
 	repository.RunMigrations()
-	for _, file := range []string{"stage1_geometry.sql", "stage2_commands.sql", "stage3_hex_pve.sql", "stage4_storage_loadout.sql", "stage5_quest_artifact.sql", "stage5_portal_extraction.sql", "stage6_fog_turn.sql", "stage10_presence.sql"} {
-		raw, err := os.ReadFile("../../../docs/hex-migration/" + file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(raw)); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// RunMigrations applies the embedded HEX stages once via the migration ledger.
 	if _, err := repository.CreatePlayerProfile(repository.CreatePlayerProfileInput{UserID: 781, Name: "HEX combat", CharacterType: "guardian"}); err != nil {
 		t.Fatal(err)
 	}

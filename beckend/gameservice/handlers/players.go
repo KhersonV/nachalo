@@ -49,7 +49,7 @@ var characterTemplates = map[string]characterTemplate{
 		CharacterType: defaultCharacterType,
 		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 130, MaxHealth: 130,
-		Attack: 9, Defense: 8,
+		Attack: 13, Defense: 9,
 		Mobility: 2, Agility: 5,
 		SightRange: 2,
 		IsRanged:   false, AttackRange: 1,
@@ -58,7 +58,7 @@ var characterTemplates = map[string]characterTemplate{
 		CharacterType: "berserker",
 		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 100, MaxHealth: 100,
-		Attack: 14, Defense: 3,
+		Attack: 17, Defense: 4,
 		Mobility: 3, Agility: 5,
 		SightRange: 2,
 		IsRanged:   false, AttackRange: 1,
@@ -67,7 +67,7 @@ var characterTemplates = map[string]characterTemplate{
 		CharacterType: "ranger",
 		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 92, MaxHealth: 92,
-		Attack: 11, Defense: 4,
+		Attack: 16, Defense: 7,
 		Mobility: 4, Agility: 5,
 		SightRange: 2,
 		IsRanged:   true, AttackRange: 2,
@@ -76,7 +76,7 @@ var characterTemplates = map[string]characterTemplate{
 		CharacterType: "mystic",
 		Energy:        0, EnergyRegen: 0, MaxEnergy: 0,
 		Health: 95, MaxHealth: 95,
-		Attack: 10, Defense: 4,
+		Attack: 18, Defense: 5,
 		Mobility: 3, Agility: 5,
 		SightRange: 3,
 		IsRanged:   true, AttackRange: 3,
@@ -86,9 +86,16 @@ var characterTemplates = map[string]characterTemplate{
 func resolveCharacterTemplate(characterType string) characterTemplate {
 	normalized := strings.TrimSpace(strings.ToLower(characterType))
 	if template, ok := characterTemplates[normalized]; ok {
+		if stats,err:=repository.ConfiguredHeroClassStats(normalized);err==nil {
+			template.Health,template.MaxHealth,template.Attack,template.Defense=stats.Health,stats.MaxHealth,stats.Attack,stats.Defense
+		}
 		return template
 	}
-	return characterTemplates[defaultCharacterType]
+	template:=characterTemplates[defaultCharacterType]
+	if stats,err:=repository.ConfiguredHeroClassStats(defaultCharacterType);err==nil {
+		template.Health,template.MaxHealth,template.Attack,template.Defense=stats.Health,stats.MaxHealth,stats.Attack,stats.Defense
+	}
+	return template
 }
 
 func resolveCharacterRegen(characterType string) int {

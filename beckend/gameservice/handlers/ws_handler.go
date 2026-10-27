@@ -141,6 +141,16 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	exists, lookupErr := repository.AuthenticationPlayerExists(r.Context(), int(userID))
+	if lookupErr != nil {
+		http.Error(w, "Authentication storage unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !exists {
+		http.Error(w, "Account no longer exists", http.StatusUnauthorized)
+		return
+	}
+
 	// 3. Апгрейдим соединение, если всё ок
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

@@ -48,7 +48,7 @@ type CombatStep struct {
 	Source        *CombatTargetRef `json:"source,omitempty"`
 	Target        CombatTargetRef  `json:"target"`
 	Damage        int              `json:"damage,omitempty"`
-	TargetHPAfter int              `json:"targetHpAfter,omitempty"`
+	TargetHPAfter int              `json:"targetHpAfter"`
 }
 
 type CombatEffect struct {
@@ -61,7 +61,7 @@ type CombatEffect struct {
 	Succeeded         bool             `json:"succeeded"`
 	PositionAfter     *CombatPoint     `json:"positionAfter,omitempty"`
 	BonusDamage       int              `json:"bonusDamage,omitempty"`
-	MPGranted int `json:"mpGranted,omitempty"`
+	MPGranted         int              `json:"mpGranted,omitempty"`
 	EnergyGranted     int              `json:"energyGranted,omitempty"`
 	EnergyDrained     int              `json:"energyDrained,omitempty"`
 	Amount            int              `json:"amount,omitempty"`
@@ -72,6 +72,7 @@ type CombatEffect struct {
 type attackMode string
 
 type stats struct {
+	Rules *balance.V34ResearchConfig
 	Attack        int
 	Defense       int
 	Agility       int
@@ -124,10 +125,12 @@ func resolveAttackEnergyCost(mode attackMode) int {
 }
 
 func resolvePrimaryDamage(att stats, def stats) int {
-	dmg := att.Attack - def.Defense
-	if dmg < 0 {
-		dmg = 0
-	}
+	dmg := balance.DefenseDamage(att.Attack, def.Defense)
+	if att.Rules!=nil {dmg=balance.V34DefenseDamage(att.Attack,def.Defense,att.Rules)}
+	return resolveWoundedDamage(att,def,dmg)
+}
+
+func resolveWoundedDamage(att stats, def stats, dmg int) int {
 	if att.CharacterType == "berserker" && def.MaxHealth > 0 && dmg > 0 {
 		hpRatio := float64(def.Health) / float64(def.MaxHealth)
 		bonusMultiplier := 1.0
@@ -144,6 +147,26 @@ func resolvePrimaryDamage(att stats, def stats) int {
 	return dmg
 }
 
+func resolveCounterDamage(att stats, def stats) attackResult {
+	if att.Rules==nil {return applyDamage(att,def)}
+	damage:=balance.ResearchRound(float64(balance.V34DefenseDamage(att.Attack,def.Defense,att.Rules))*att.Rules.Factors["counter"])
+	return applyFlatDamage(def.Health,resolveWoundedDamage(att,def,damage))
+}
+
+func classReflexChance(owner,opponent stats) int {
+	if owner.Rules!=nil {return balance.CalculateReflexProcChance(owner.Agility)}
+	return balance.ClassReflexChance(owner.Agility,owner.CharacterType,opponent.CharacterType,true)
+}
+
+func researchEffects(effects []CombatEffect, additions []balance.V34Effect, source,target CombatTargetRef) []CombatEffect {
+	for _, effect:=range additions {
+		ref:=target
+		if effect.Kind=="hatred" || effect.Kind=="armorFocus" {ref=source}
+		effects=append(effects,CombatEffect{Kind:effect.Kind,Source:&source,Target:&ref,Amount:effect.Amount,Succeeded:true})
+	}
+	return effects
+}
+
 func applyDamage(att stats, def stats) attackResult {
 	dmg := resolvePrimaryDamage(att, def)
 	newHP := def.Health - dmg
@@ -157,11 +180,15 @@ func defaultRollReflexProc(chance int) bool {
 	return chance > 0 && rand.Intn(100) < chance
 }
 
-func resolveGuardianShieldBlock(targetType string, defender stats) bool {
+func resolveGuardianShieldBlock(targetType string, defender stats, rolls ...func(int) bool) bool {
 	if targetType != "player" || defender.CharacterType != "guardian" {
 		return false
 	}
-	return rollReflexProc(balance.CalculateReflexProcChance(defender.Agility))
+	chance:=balance.CalculateReflexProcChance(defender.Agility)
+	if defender.Rules!=nil {chance=balance.ResearchRound(float64(chance)*defender.Rules.Factors["block"]);if chance>55 {chance=55}}
+	roll:=rollReflexProc
+	if len(rolls)>0 {roll=rolls[0]}
+	return roll(chance)
 }
 
 func actualDamageDealt(healthBefore int, healthAfter int) int {

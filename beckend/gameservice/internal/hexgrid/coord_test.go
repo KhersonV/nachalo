@@ -25,7 +25,7 @@ type fixture struct {
 
 func load(t *testing.T) fixture {
 	t.Helper()
-	b, e := os.ReadFile("../../../../docs/hex-migration/fixtures/geometry-v1.json")
+	b, e := os.ReadFile("testdata/geometry-v1.json")
 	if e != nil {
 		t.Fatal(e)
 	}

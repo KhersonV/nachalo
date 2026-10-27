@@ -1,4 +1,5 @@
 "use client";
+import { scheduleHexPreload } from "@/features/hexLoading/preload";
 
 import UiText from "@/components/UiText";
 import React, { useEffect, useState } from "react";
@@ -18,6 +19,7 @@ export default function MatchReadyModal({
     onClose,
     onJoin,
 }: Props) {
+    useEffect(scheduleHexPreload, []);
     const router = useRouter();
     const [secondsLeft, setSecondsLeft] = useState(() =>
         redirectAtMs

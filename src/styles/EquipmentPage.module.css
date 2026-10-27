@@ -191,3 +191,9 @@
 }
 
 .slotCard[data-rarity='gray'], .inventoryCard[data-rarity='gray'] { border-left: 3px solid #a7a9ad; }
+
+/* Mouse shortcuts are optional; touch users retain the explicit action buttons. */
+.doubleClickHint { display: none; }
+@media (hover: hover) and (pointer: fine) {
+    .doubleClickHint { display: block; color: var(--ui-text-muted); font-size: .68rem; }
+}

@@ -54,6 +54,12 @@ func publishHexPatchChanges(instanceID, commandID string, state, mapRevision int
 		if json.Unmarshal(rawEffects, &effects) == nil {
 			for i, effect := range effects {
 				visual := map[string]any{"position": effect["position"], "path": []any{}, "auraHits": []any{map[string]any{"position": effect["position"], "damage": effect["amount"], "sourceId": effect["sourceId"]}}}
+				switch effect["kind"] {
+				case "openingWard", "arcaneWard", "closeWard", "meleeWard", "rangedWard":
+					// Absorbed/reduced damage is a status, never another HP loss.
+					delete(visual, "auraHits")
+					visual["statusEffects"] = []any{map[string]any{"kind": effect["kind"], "amount": effect["amount"]}}
+				}
 				publishHexVisual(instanceID, fmt.Sprintf("%s:aura:%d", commandID, i), state, "move", visual)
 			}
 		}
@@ -110,13 +116,17 @@ func CreateHexTestMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Seed int64 `json:"seed"`
+		Seed *int64 `json:"seed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON", 400)
 		return
 	}
-	snapshot, err := repository.CreateHexTestMatch(r.Context(), userID, req.Seed)
+	seeds := []int64{}
+	if req.Seed != nil {
+		seeds = append(seeds, *req.Seed)
+	}
+	snapshot, err := repository.CreateHexTestMatch(r.Context(), userID, seeds...)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return

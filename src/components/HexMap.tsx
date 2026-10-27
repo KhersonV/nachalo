@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
-import { axialToWorld, HEX_DIRECTIONS, hexKey, type HexCoord } from "@/utils/hexGrid";
+import { axialToWorld, worldToAxial, HEX_DIRECTIONS, hexKey, type HexCoord } from "@/utils/hexGrid";
 import { heroArt, monsterArt, resourceArt } from "@/utils/hexArt";
 import { useHexCamera } from "@/hooks/useHexCamera";
 import type { HexActor, HexCombatIndicator, HexEdge, HexPlayer, HexRoute, HexSnapshot } from "@/types/HexGameTypes";
+import { timeHexStage } from "@/features/hexLoading/performance";
 import styles from "@/styles/HexMap.module.css";
 import type { HexGameMessages } from "@/i18n/hexGame";
 
@@ -45,15 +46,46 @@ type Props = {
   attackableTargets?: ReadonlySet<number>;
   indicators?: HexCombatIndicator[];
   busy?: boolean;
+  onReady?: () => void;
   onCellClick: (position: HexCoord) => void;
   onMonsterClick: (actor: HexActor) => void;
   labels?: HexGameMessages;
 };
 
-export default function HexMap({ snapshot, selected, route, selectedTargetId, selectedTargetKind, attackableTargets, indicators = [], busy, onCellClick, onMonsterClick, labels }: Props) {
+function HexMap({ onReady, snapshot, selected, route, selectedTargetId, selectedTargetKind, attackableTargets, indicators = [], busy, onCellClick, onMonsterClick, labels }: Props) {
   const { language } = useGameLanguage();
+  const [finishPreparation] = useState(() => timeHexStage("2D preparation to painted field"));
+  useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => { finishPreparation(); onReady?.(); }); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [onReady, finishPreparation]);
   const hero = useMemo(() => center(snapshot.player?.position ?? { q: 0, r: 0 }), [snapshot.player?.position.q, snapshot.player?.position.r]);
-  const camera = useHexCamera(hero);
+  const pickTouch = useCallback((point: { x: number; y: number }, svg: SVGSVGElement) => {
+    if (busy) return;
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (!svg || !hit || !svg.contains(hit)) return;
+    // Capture retargets pointerup to the SVG; hit-test sprites first to keep
+    // actors/objects clickable even where their artwork extends beyond a tile.
+    const actorId = hit.closest("[data-hex-actor]")?.getAttribute("data-hex-actor");
+    const actor = actorId && snapshot.actors.find(value => value.id === actorId);
+    if (actor) {
+      if (actor.kind === "player" && actor.userId === snapshot.player?.userId) onCellClick(actor.position);
+      else onMonsterClick(actor);
+      return;
+    }
+    const objectKey = hit.closest("[data-hex-object]")?.getAttribute("data-hex-object");
+    const object = objectKey && snapshot.cells.find(cell => hexKey(cell.position) === objectKey);
+    if (object) { onCellClick(object.position); return; }
+    const matrix = svg.getScreenCTM();
+    if (!matrix) return;
+    const screenPoint = svg.createSVGPoint(); screenPoint.x = point.x; screenPoint.y = point.y;
+    const world = screenPoint.matrixTransform(matrix.inverse());
+    const position = worldToAxial({ x: world.x, z: world.y }, RADIUS);
+    const cell = snapshot.cells.find(value => hexKey(value.position) === hexKey(position));
+    if (cell && cell.visibility !== "unexplored") onCellClick(cell.position);
+  }, [busy, snapshot.actors, snapshot.cells, snapshot.player?.userId, onCellClick, onMonsterClick]);
+  const camera = useHexCamera(hero, pickTouch);
   const routeCells = useMemo(() => new Set(route?.path.map(hexKey) ?? []), [route]);
   const availableSteps = route?.affordableSteps ?? (route?.affordable ? route.path.length : 0);
   const availableCells = useMemo(() => new Set(route?.path.slice(0, availableSteps).map(hexKey) ?? []), [route, availableSteps]);
@@ -72,10 +104,8 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
   const ownPosition = snapshot.player?.position && hexKey(snapshot.player.position);
   const sprite = heroArt(snapshot.player?.characterType);
 
-  return <div className={styles.viewport} data-testid="hex-game-map" data-camera-zoom={camera.camera.zoom.toFixed(3)} data-camera-x={camera.camera.x.toFixed(1)} data-camera-y={camera.camera.y.toFixed(1)}>
-    <svg ref={camera.svgRef} role="img" aria-label={labels?.map ?? "HEX dungeon map"} className={styles.map} viewBox={camera.viewBox}
-      data-panning={camera.panning} onWheel={camera.onWheel} onPointerDown={camera.onPointerDown} onPointerMove={camera.onPointerMove}
-      onPointerUp={camera.onPointerUp} onPointerCancel={camera.onPointerUp} onClickCapture={camera.onClickCapture}>
+  // Camera movement changes the viewBox, not the world geometry/handlers.
+  const world = useMemo(() => <>
       <defs>
         <pattern id="hex-floor" patternUnits="userSpaceOnUse" width="184" height="184"><image href="/assets/nachalo/catacombs/floor_stone.webp" width="184" height="184" /></pattern>
         <pattern id="hex-rock" patternUnits="userSpaceOnUse" width="190" height="190"><image href="/assets/nachalo/catacombs/wall_base.webp" width="190" height="190" /></pattern>
@@ -163,13 +193,20 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
       <g className={styles.indicators} pointerEvents="none" aria-hidden="true">
         {indicators.map(indicator => {
           const p = center(indicator.position);
-          return <text key={indicator.id} x={p.x} y={p.y - 35 - Math.min(indicator.lane, 4) * 17} textAnchor="middle" className={`${styles.indicator} ${styles[indicator.tone]}`}>{indicator.text}</text>;
+          return <text key={indicator.id} x={p.x} y={p.y - 35 - indicator.lane * 22} textAnchor="middle" className={`${styles.indicator} ${styles[indicator.tone]}`}>{indicator.text}</text>;
         })}
       </g>
       <g pointerEvents="none" aria-hidden="true">
         <path data-hex-boundary="true" d={boundaryPath} className={styles.boundaryGlow} vectorEffect="non-scaling-stroke" />
         <path d={boundaryPath} className={styles.boundaryGold} vectorEffect="non-scaling-stroke" />
       </g>
+  </>, [snapshot.cells, snapshot.edges, snapshot.actors, snapshot.player?.userId, selected, route, selectedTargetId, selectedTargetKind, attackableTargets, indicators, busy, onCellClick, onMonsterClick, labels, language, routeCells, availableCells, availableSteps, boundaryPath, ownPosition, sprite]);
+
+  return <div className={styles.viewport} data-testid="hex-game-map" data-camera-zoom={camera.camera.zoom.toFixed(3)} data-camera-x={camera.camera.x.toFixed(1)} data-camera-y={camera.camera.y.toFixed(1)}>
+    <svg ref={camera.svgRef} role="img" aria-label={labels?.map ?? "HEX dungeon map"} className={styles.map} viewBox={camera.viewBox}
+      data-panning={camera.panning} onWheel={camera.onWheel} onPointerDown={camera.onPointerDown} onPointerMove={camera.onPointerMove}
+      onPointerUp={camera.onPointerUp} onPointerCancel={camera.onPointerCancel} onLostPointerCapture={camera.onLostPointerCapture} onClickCapture={camera.onClickCapture}>
+      {world}
     </svg>
     <div className={styles.cameraControls} aria-label={labels?.camera ?? "Map camera"}>
       <button type="button" onClick={() => camera.zoomBy(1.2)} aria-label={labels?.zoomIn ?? "Zoom in"}>+</button>
@@ -178,3 +215,5 @@ export default function HexMap({ snapshot, selected, route, selectedTargetId, se
     </div>
   </div>;
 }
+
+export default memo(HexMap);

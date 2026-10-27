@@ -1,4 +1,3 @@
-
 //=================================
 // gameservice/game/barrel_test.go
 //=================================
@@ -55,8 +54,9 @@ func TestOpenBarbel_ResourceEvent(t *testing.T) {
 }
 
 func TestOpenBarbel_ArtifactEvent(t *testing.T) {
-	// r ≥ 0.7 → артефакт
-	rnd = func() float64 { return 0.8 }
+	// 0.7 ≤ r < 0.74 → ordinary artifact
+	t.Setenv("BARREL_ARTIFACT_CHANCE_PERCENT", "4")
+	rnd = func() float64 { return 0.72 }
 	cell := makeCell()
 	artifacts := []ResourceData{
 		{ID: 10, Type: "magic_ring"},
@@ -87,6 +87,7 @@ func TestOpenBarbel_Empty_NoBarrel(t *testing.T) {
 }
 
 func TestOpenBarrel_AllCases(t *testing.T) {
+	t.Setenv("BARREL_ARTIFACT_CHANCE_PERCENT", "4")
 	cell := makeCell()
 	resources := []ResourceData{{ID: 2, Type: "food"}}
 	artifacts := []ResourceData{{ID: 10, Type: "magic_ring"}}
@@ -98,7 +99,8 @@ func TestOpenBarrel_AllCases(t *testing.T) {
 	}{
 		{"damage", 0.2, reflect.TypeOf(DamageEvent{})},
 		{"resource", 0.5, reflect.TypeOf(ResourceData{})},
-		{"artifact", 0.8, reflect.TypeOf(ResourceData{})},
+		{"artifact", 0.72, reflect.TypeOf(ResourceData{})},
+		{"empty", 0.8, reflect.TypeOf(EmptyBarrelEvent{})},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -106,6 +108,57 @@ func TestOpenBarrel_AllCases(t *testing.T) {
 			out, _ := OpenBarbel(cell, resources, artifacts)
 			if reflect.TypeOf(out) != c.wantT {
 				t.Errorf("%q: expected %v, got %T", c.name, c.wantT, out)
+			}
+		})
+	}
+}
+
+// Exercise category boundaries and absent pools without statistical sampling.
+func TestBarrelCategoryBoundariesAndMissingPools(t *testing.T) {
+	t.Setenv("BARREL_ARTIFACT_CHANCE_PERCENT", "4")
+	original := rnd
+	t.Cleanup(func() { rnd = original })
+	resources := []ResourceData{{ID: 2, Type: "food"}}
+	artifacts := []ResourceData{{ID: 10, Type: "magic_ring"}}
+	for _, tc := range []struct {
+		name                 string
+		roll                 float64
+		resources, artifacts []ResourceData
+		want                 any
+	}{
+		{"damage upper", .299999, resources, artifacts, DamageEvent{}},
+		{"resource lower", .3, resources, artifacts, ResourceData{}},
+		{"resource upper", .699999, resources, artifacts, ResourceData{}},
+		{"artifact lower", .7, resources, artifacts, ResourceData{}},
+		{"artifact upper", .739999, resources, artifacts, ResourceData{}},
+		{"empty lower", .74, resources, artifacts, EmptyBarrelEvent{}},
+		{"empty upper", .999999, resources, artifacts, EmptyBarrelEvent{}},
+		{"no resource fallback", .5, nil, artifacts, EmptyBarrelEvent{}},
+		{"no artifact fallback", .72, resources, nil, EmptyBarrelEvent{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rolls := 0
+			rnd = func() float64 { rolls++; return tc.roll }
+			got, err := OpenBarbel(makeCell(), tc.resources, tc.artifacts)
+			if err != nil || reflect.TypeOf(got) != reflect.TypeOf(tc.want) {
+				t.Fatalf("got %T, %v; want %T", got, err, tc.want)
+			}
+			if rolls != 1 {
+				t.Fatalf("category rolls = %d, want 1", rolls)
+			}
+		})
+	}
+}
+
+func TestBarrelArtifactChanceConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int
+	}{{"", 4}, {"4", 4}, {"0", 0}, {"12", 12}, {"30", 30}, {"31", 4}, {"-1", 4}, {"invalid", 4}} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("BARREL_ARTIFACT_CHANCE_PERCENT", tc.raw)
+			if got := BarrelArtifactChancePercent(); got != tc.want {
+				t.Fatalf("got %d, want %d", got, tc.want)
 			}
 		})
 	}

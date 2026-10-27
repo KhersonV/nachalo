@@ -38,7 +38,7 @@
 .healthText, .playerName { fill: #fff7e4; stroke: #0c1419; stroke-width: 3; paint-order: stroke; font-size: 12px; font-weight: 700; }
 .playerName { font-size: 11px; }
 .indicators { pointer-events: none; }
-.indicator { font-size: 15px; font-weight: 900; stroke: #071016; stroke-width: 4px; paint-order: stroke; filter: drop-shadow(0 2px 4px #000); animation: hexIndicatorRise 1.05s ease-out both; }
+.indicator { font-size: 15px; font-weight: 900; stroke: #071016; stroke-width: 4px; paint-order: stroke; filter: drop-shadow(0 2px 4px #000); animation: hexIndicatorRise 1.8s ease-out both; }
 .damage { fill: #ff7770; }
 .critical { fill: #ffb054; font-size: 19px; }
 .heal { fill: #83ed9a; }
@@ -54,3 +54,10 @@
 @media (max-width: 760px) { .cameraControls { bottom: max(10px, env(safe-area-inset-bottom)); } .cameraControls button { min-height: 32px; } }
 
 .routeEnd { fill: #68e5da; fill-opacity: .3; stroke: #d1fff7; stroke-width: 5; }
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .viewport { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) 44px; overscroll-behavior: contain; }
+  .map { min-height: 0; grid-row: 1; }
+  .cameraControls { position: static; grid-row: 2; justify-self: center; align-self: center; transform: none; max-width: 100%; padding: 0 5px; gap: 3px; box-sizing: border-box; height: 44px; border-radius: 6px; }
+  .cameraControls button { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 12px; touch-action: manipulation; }
+}

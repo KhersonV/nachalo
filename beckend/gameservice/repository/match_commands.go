@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 )
 
@@ -31,8 +32,13 @@ type MatchCommand struct {
 	NextPersonalTurn bool
 	AuraBefore       []hexAuraMember
 	AuraResolved     bool
+	auraMovements    map[int]AuraMovementCause
 	ActionEffects    []map[string]any
 	Finished         bool
+	Ruleset          balance.CombatRuleset
+	CombatConfig     *balance.V34ResearchConfig
+	RandomSeed       int64
+	RandomCounter    int64
 }
 
 // QueueEvent keeps protocol messages private until the command commits.
@@ -72,7 +78,8 @@ func BeginMatchCommand(ctx context.Context, instanceID string, userID int, comma
 		return nil, err
 	}
 	c := &MatchCommand{Tx: tx, InstanceID: instanceID, CommandID: commandID, UserID: userID}
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(active_user_id,0),finished_at IS NOT NULL FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&c.ActiveUser, &c.Finished); err != nil {
+	var combatConfig []byte
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(active_user_id,0),finished_at IS NOT NULL,combat_ruleset,combat_config,combat_rng_seed,combat_rng_counter FROM matches WHERE instance_id=$1 FOR UPDATE`, instanceID).Scan(&c.ActiveUser, &c.Finished, &c.Ruleset,&combatConfig,&c.RandomSeed,&c.RandomCounter); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -96,6 +103,13 @@ func BeginMatchCommand(ctx context.Context, instanceID string, userID int, comma
 		tx.Rollback()
 		return nil, ErrCommandRejected
 	}
+	if err := balance.RequirePlayableRuleset(c.Ruleset); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	var configErr error
+	c.CombatConfig,configErr = DecodeMatchCombatConfig(c.Ruleset,combatConfig)
+	if configErr != nil { tx.Rollback(); return nil,configErr }
 	if err := c.SyncHexArtifactsTx(ctx); err != nil {
 		tx.Rollback()
 		return nil, err
@@ -134,6 +148,9 @@ func (c *MatchCommand) Commit(ctx context.Context, response interface{}, mapChan
 	}
 	if err := c.ResolveHexTurnStartTx(ctx); err != nil {
 		return 0, 0, err
+	}
+	if c.Ruleset==balance.ExperimentalV34 {
+		if _,err:=c.Tx.ExecContext(ctx,`UPDATE matches SET combat_rng_counter=$2 WHERE instance_id=$1`,c.InstanceID,c.RandomCounter); err!=nil {return 0,0,err}
 	}
 	alive, err := c.AuraMembersTx(ctx)
 	if err != nil {

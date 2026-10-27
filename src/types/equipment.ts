@@ -26,6 +26,8 @@ export type EquipmentBonuses = {
 };
 
 export type EquipmentItem = {
+    description?: string;
+    combatBonuses?: Record<string, number>;
     jewelrySet?: { name: string; bonus: EquipmentBonuses; required: number };
     instanceId: string;
     templateId: number;
@@ -42,6 +44,8 @@ export type EquipmentItem = {
     imageUrl: string;
     bonuses: EquipmentBonuses;
     sellPrice?: number;
+    canSell?: boolean;
+    sellBlockReason?: string;
     isTwoHanded?: boolean;
     status?: string;
     version?: number;

@@ -246,7 +246,8 @@ func GetPlayerByUserID(userID int) (*models.PlayerResponse, error) {
 	}
 
 	if !characterID.Valid {
-		stats := ResolveHeroClassStats(DefaultHeroClassID)
+		stats,statsErr := ConfiguredHeroClassStats(DefaultHeroClassID)
+		if statsErr!=nil {return nil,statsErr}
 		meta := ResolveHeroClassMeta(DefaultHeroClassID)
 		player.CharacterType = DefaultHeroClassID
 		player.SelectedHeroClassID = DefaultHeroClassID

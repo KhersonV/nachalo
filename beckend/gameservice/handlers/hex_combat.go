@@ -104,10 +104,13 @@ func readHexAttackFromTx(ctx context.Context, tx *sql.Tx, instanceID string, use
 	if mode != "hex" || version != 2 {
 		return out, repository.ErrHexUnavailable
 	}
+	_,combatRules,rulesErr:=repository.ReadMatchCombatRulesTx(ctx,tx,instanceID)
+	if rulesErr!=nil {return out,rulesErr}
 	if active != userID {
 		return out, repository.ErrCommandRejected
 	}
 	p := &out.Player
+	p.Stats.Rules=combatRules
 	p.ID = userID
 	err := tx.QueryRowContext(ctx, `SELECT position_q,position_r,ap,max_ap,health,max_health,attack,defense,agility,is_ranged,attack_range,character_type,group_id,hex_armor_break_stacks,hex_armor_break_owner,reactions FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&p.Position.Q, &p.Position.R, &p.AP, &p.MaxAP, &p.Stats.Health, &p.Stats.MaxHealth, &p.Stats.Attack, &p.Stats.Defense, &p.Stats.Agility, &p.Stats.IsRanged, &p.Stats.AttackRange, &p.Stats.CharacterType, &p.TeamID, &p.ArmorBreakStacks, &p.ArmorBreakOwner, &p.Reactions)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -117,6 +120,7 @@ func readHexAttackFromTx(ctx context.Context, tx *sql.Tx, instanceID string, use
 		return out, err
 	}
 	m := &out.Monster
+	m.Stats.Rules=combatRules
 	m.ID = targetID
 	if len(targetKind) > 0 && targetKind[0] == "player" {
 		if targetID == userID {
@@ -400,10 +404,20 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 	if state.Monster.ArmorBreakOwner != userID {
 		state.Monster.ArmorBreakStacks = 0
 	}
+	profile, err := repository.ReadHexCombatProfileTx(ctx, c.Tx, instanceID, userID)
+	if err != nil {
+		return out, err
+	}
 	a, d := state.Player.Stats, state.Monster.Stats
+	roll:=combatRoll(c)
+	attackerRef := CombatTargetRef{ID: userID, Type: CombatActorPlayer}
+	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorMonster}
+	var researchCombatEffects []CombatEffect
 	effectiveMonster := d
 	if a.CharacterType == "ranger" && state.Mode == attackModeRanged && state.Monster.ArmorBreakOwner == userID {
-		effectiveMonster.Defense -= state.Monster.ArmorBreakStacks * monsterArmorBreakPenaltyPerStack
+		penalty:=monsterArmorBreakPenaltyPerStack
+		if c.CombatConfig!=nil {penalty=balance.ResearchRound(c.CombatConfig.Factors["armor_break"])}
+		effectiveMonster.Defense -= state.Monster.ArmorBreakStacks * penalty
 	}
 	if effectiveMonster.Defense < 0 {
 		effectiveMonster.Defense = 0
@@ -417,7 +431,7 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 		rangerChance = balance.CalculateReflexProcChance(a.Agility)
 	}
 	var criticalShot bool
-	hit.Damage, criticalShot, err = c.CraftCriticalTx(ctx, userID, hit.Damage, rangerChance, rollReflexProc)
+	hit.Damage, criticalShot, err = c.CraftCriticalTx(ctx, userID, hit.Damage, rangerChance, roll, profile.CriticalPercent)
 	if err != nil {
 		return out, err
 	}
@@ -425,20 +439,34 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 	if hit.NewHealth < 0 {
 		hit.NewHealth = 0
 	}
+	prePrimary:=hit.Damage
+	if c.CombatConfig!=nil {
+		hit,researchCombatEffects,err=incomingCombatTx(ctx,c,attackerRef,targetRef,a,d,d.Health,hit.Damage,"basic",state.Distance)
+		if err!=nil {return out,err}
+	}
 	mysticExtra, mysticReflex := 0, 0
-	if a.CharacterType == "mystic" && hit.Triggered {
-		mysticExtra, mysticReflex, err = c.MysticHitTx(ctx, userID, "monster", targetID, rollReflexProc(balance.CalculateReflexProcChance(a.Agility)))
+	if a.CharacterType == "mystic" && mysticAttackConnects(c.CombatConfig, hit.Triggered, false, researchCombatEffects) {
+		proc:=false
+		if c.CombatConfig==nil {proc=roll(balance.CalculateReflexProcChance(a.Agility))}
+		mysticExtra, mysticReflex, err = c.MysticHitTx(ctx, userID, "monster", targetID, proc)
 		if err != nil {
 			return out, err
 		}
 	}
 	primaryHP := hit.NewHealth
-	hit.NewHealth -= mysticExtra + mysticReflex
+	mysticDamage:=mysticExtra+mysticReflex
+	if c.CombatConfig!=nil && primaryHP>0 && mysticDamage>0 {
+		next,extra,e:=incomingCombatTx(ctx,c,attackerRef,targetRef,a,d,primaryHP,mysticDamage,"overload",state.Distance)
+		if e!=nil {return out,e};mysticDamage=next.Damage;researchCombatEffects=append(researchCombatEffects,extra...)
+	}
+	hit.NewHealth -= mysticDamage
 	if hit.NewHealth < 0 {
 		hit.NewHealth = 0
 	}
 	counterDamage := 0
 	if state.Mode == attackModeMelee && hit.NewHealth > 0 {
+		// NPC retaliation keeps its PvE coefficient; PARAM.counter belongs to
+		// hero reactions. The selected match DEF formula still applies.
 		counterDamage = applyDamage(d, a).Damage
 		if a.CharacterType == "berserker" && counterDamage > 0 {
 			counterDamage = counterDamage * berserkerMonsterCounterPercent / 100
@@ -447,19 +475,17 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 			}
 		}
 	}
-	attackerRef := CombatTargetRef{ID: userID, Type: CombatActorPlayer}
-	targetRef := CombatTargetRef{ID: targetID, Type: CombatActorMonster}
 	steps := []CombatStep{{Kind: "hit", Source: &attackerRef, Target: targetRef, Damage: hit.Damage, TargetHPAfter: primaryHP}}
-	effects := []CombatEffect{}
+	effects := append([]CombatEffect{},researchCombatEffects...)
 	if mysticExtra+mysticReflex > 0 {
-		steps = append(steps, CombatStep{Kind: "mysticOverload", Source: &attackerRef, Target: targetRef, Damage: mysticExtra + mysticReflex, TargetHPAfter: hit.NewHealth})
+		steps = append(steps, CombatStep{Kind: "mysticOverload", Source: &attackerRef, Target: targetRef, Damage: mysticDamage, TargetHPAfter: hit.NewHealth})
 		effects = append(effects, CombatEffect{Kind: "mysticOverload", Source: &attackerRef, Target: &targetRef, Amount: mysticExtra, BonusDamage: mysticReflex, Succeeded: true})
 	}
 
 	if criticalShot {
 		effects = append(effects, CombatEffect{Kind: "crit", Source: &attackerRef, Target: &targetRef, Succeeded: true})
 	}
-	heal, err := c.CraftLifestealTx(ctx, userID, actualDamageDealt(d.Health, primaryHP), a.CharacterType == "berserker" && hit.Damage > 0 && rollReflexProc(balance.CalculateReflexProcChance(a.Agility)), rollReflexProc)
+	heal, err := c.CraftLifestealTx(ctx, userID, actualDamageDealt(d.Health, primaryHP), a.CharacterType == "berserker" && hit.Damage > 0 && roll(balance.CalculateReflexProcChance(a.Agility)), roll, profile.HealPercent)
 	if err != nil {
 		return out, err
 	}
@@ -475,7 +501,11 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 	finalMonsterHP := hit.NewHealth
 	counter := attackResult{NewHealth: a.Health}
 	if state.Mode == attackModeMelee && finalMonsterHP > 0 {
-		counter = attackResult{Damage: counterDamage, NewHealth: a.Health - counterDamage, Triggered: true}
+		if c.CombatConfig!=nil {
+			var extra []CombatEffect
+			counter,extra,err=incomingCombatTx(ctx,c,targetRef,attackerRef,d,a,a.Health,counterDamage,"counter",state.Distance)
+			if err!=nil {return out,err};effects=append(effects,extra...);counterDamage=counter.Damage
+		} else {counter = attackResult{Damage: counterDamage, NewHealth: a.Health - counterDamage, Triggered: true}}
 		steps = append(steps, CombatStep{Kind: "counter", Source: &targetRef, Target: attackerRef, Damage: counter.Damage, TargetHPAfter: counter.NewHealth})
 	}
 	playerDied := counter.Triggered && counter.NewHealth <= 0
@@ -491,9 +521,11 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 	}
 	followupDamage := 0
 	if a.CharacterType == "berserker" && state.Mode == attackModeMelee && counter.Triggered && hit.Triggered && finalMonsterHP > 0 && counter.NewHealth > 0 && berserkerFollowUpLimitPerTurn == 0 {
-		followupDamage = hit.Damage / 2
+		followupDamage = hit.Damage/2 + profile.FollowupDamage
+		if c.CombatConfig!=nil {followupDamage=balance.ResearchRound(float64(prePrimary)*.5*c.CombatConfig.Factors["followup"])}
 		if followupDamage > 0 {
-			followup := applyFlatDamage(finalMonsterHP, followupDamage)
+			followup,extra,e := incomingCombatTx(ctx,c,attackerRef,targetRef,a,d,finalMonsterHP,followupDamage,"followup",state.Distance)
+			if e!=nil {return out,e};effects=append(effects,extra...);followupDamage=followup.Damage
 			finalMonsterHP = followup.NewHealth
 			steps = append(steps, CombatStep{Kind: "followup", Source: &attackerRef, Target: targetRef, Damage: followup.Damage, TargetHPAfter: finalMonsterHP})
 		}
@@ -554,7 +586,11 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 			if err := c.SetRangerBreakTx(ctx, "monster", targetID, userID, stacks); err != nil {
 				return out, err
 			}
-			effects = append(effects, CombatEffect{Kind: "armorBreak", Source: &attackerRef, Target: &targetRef, Value: -monsterArmorBreakPenaltyPerStack, Stacks: stacks, Succeeded: true})
+			penalty := monsterArmorBreakPenaltyPerStack
+			if c.CombatConfig != nil {
+				penalty = balance.ResearchRound(c.CombatConfig.Factors["armor_break"])
+			}
+			effects = append(effects, CombatEffect{Kind: "armorBreak", Source: &attackerRef, Target: &targetRef, Value: -penalty, Stacks: stacks, Succeeded: true})
 		}
 	}
 	if !playerDied && (ap != state.Player.AP || counter.NewHealth != state.Player.Stats.Health) {
@@ -624,7 +660,7 @@ func applyHexAttackTx(ctx context.Context, c *repository.MatchCommand, userID, t
 		}
 		mapChanged = true
 	}
-	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, AP: ap, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: finalMonsterHP, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, state.Mode), Effects: effects, Steps: steps, Drops: drops, AttackerPosition: state.Player.Position, TargetPosition: state.Monster.Position, AttackerHPBefore: a.Health}
+	out = HexAttackResult{HexAttackPreview: HexAttackPreview{TargetID: targetID, Distance: state.Distance, Cost: state.Cost, Mode: state.Mode, AP: ap, TargetHP: d.Health}, Damage: hit.Damage, CounterDamage: counter.Damage, NewTargetHP: finalMonsterHP, NewAttackerHP: counter.NewHealth, MonsterDied: monsterDied, AttackStyle: resolvePresentationAttackStyle(a, state.Mode), Effects: effects, Steps: steps, Drops: drops, AttackerPosition: state.Player.Position, TargetPosition: state.Monster.Position, AttackerHPBefore: state.Player.Stats.Health}
 	c.MapChanged = c.MapChanged || mapChanged
 	return out, nil
 }
@@ -661,14 +697,19 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		effectivePlayer.Defense = 0
 	}
 	hit := applyDamage(a, effectivePlayer)
-	blocked := resolveGuardianShieldBlock("player", d)
+	blocked := resolveGuardianShieldBlock("player", d,combatRoll(c))
 	if blocked {
 		hit = attackResult{NewHealth: d.Health}
 	}
 	monsterRef := CombatTargetRef{ID: monsterID, Type: CombatActorMonster}
 	playerRef := CombatTargetRef{ID: playerID, Type: CombatActorPlayer}
+	var researchCombatEffects []CombatEffect
+	if c.CombatConfig!=nil && !blocked {
+		hit,researchCombatEffects,err=incomingCombatTx(ctx,c,monsterRef,playerRef,a,d,d.Health,hit.Damage,"basic",state.Distance)
+		if err!=nil {return out,err}
+	}
 	steps := []CombatStep{{Kind: "hit", Source: &monsterRef, Target: playerRef, Damage: hit.Damage, TargetHPAfter: hit.NewHealth}}
-	effects := []CombatEffect{}
+	effects := append([]CombatEffect{},researchCombatEffects...)
 	if blocked {
 		effects = append(effects, CombatEffect{Kind: "block", Target: &playerRef, Succeeded: true})
 	}
@@ -683,7 +724,12 @@ func ApplyHexMonsterAttack(ctx context.Context, instanceID string, monsterID, pl
 		if effectiveMonster.Defense < 0 {
 			effectiveMonster.Defense = 0
 		}
-		counter = applyDamage(d, effectiveMonster)
+		counter = resolveCounterDamage(d, effectiveMonster)
+		if c.CombatConfig!=nil {
+			var extra []CombatEffect
+			counter,extra,err=incomingCombatTx(ctx,c,playerRef,monsterRef,d,a,a.Health,counter.Damage,"counter",state.Distance)
+			if err!=nil {return out,err};effects=append(effects,extra...)
+		}
 		steps = append(steps, CombatStep{Kind: "counter", Source: &playerRef, Target: monsterRef, Damage: counter.Damage, TargetHPAfter: counter.NewHealth})
 	}
 	mapChanged := false

@@ -4,6 +4,8 @@
 
 "use client";
 
+import { jewelryEntry } from "@/utils/jewelry";
+
 import React, { useEffect, useMemo, useState } from "react";
 import type { RawInventoryItem } from "../types";
 import styles from "../styles/Inventory.module.css";
@@ -232,7 +234,7 @@ const Inventory: React.FC<InventoryProps> = ({
               {item.item_type === "resource" && item.origin && (
                 <details>
                   <summary>{t("About this material")}</summary>
-                  <p>{t(item.description)}</p>
+                  <p>{t(jewelryEntry(item.resource_code || item.name)?.description || item.description)}</p>
                   <p>{t("Source")}: {t(item.origin)}</p>
                 </details>
               )}

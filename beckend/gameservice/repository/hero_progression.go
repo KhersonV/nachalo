@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"gameservice/internal/game/balance"
 	"strings"
 )
 
@@ -98,6 +99,17 @@ func scanPlayerCharacter(scan func(dest ...interface{}) error) (*PlayerCharacter
 	if err != nil {
 		return nil, err
 	}
+	// Adapt recognized old base values on read; keep custom stats and stored rows intact.
+	old := map[string][2]int{"guardian": {9, 8}, "berserker": {14, 3}, "ranger": {11, 4}, "mystic": {10, 4}}
+	if previous, ok := old[NormalizeHeroClassID(character.HeroClassID)]; ok && character.MaxHealth!=ResolveHeroClassStatsForRuleset(character.HeroClassID,balance.ExperimentalV34).MaxHealth {
+		current := ResolveHeroClassStats(character.HeroClassID)
+		if character.Attack == previous[0] {
+			character.Attack = current.Attack
+		}
+		if character.Defense == previous[1] {
+			character.Defense = current.Defense
+		}
+	}
 	return &character, nil
 }
 
@@ -160,7 +172,8 @@ func CreatePlayerCharacterTx(tx *sql.Tx, userID int, heroClassID string, source 
 		source = HeroUnlockSourceRegistration
 	}
 
-	stats := ResolveHeroClassStats(heroClassID)
+	stats,statsErr := ConfiguredHeroClassStats(heroClassID)
+	if statsErr!=nil {return nil,statsErr}
 	meta := ResolveHeroClassMeta(heroClassID)
 	maxExp := maxExperienceForLevel(1)
 

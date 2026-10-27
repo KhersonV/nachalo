@@ -239,7 +239,7 @@ func GrantSageclothDevHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	MarkUserHTTPActive(userID)
 
-	if err := repository.GrantEquipmentSetToUser(userID, "mystic", "sagecloth_set", "admin"); err != nil {
+	if err := repository.GrantEquipmentSetToUser(userID, "mystic", "", "admin"); err != nil {
 		writeEquipmentError(w, err)
 		return
 	}
@@ -418,24 +418,19 @@ func SellEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fetch previous balance to compute gold delta for response
-	var previousBalance int
-	if p, err := repository.GetPlayerByUserID(userID); err == nil && p != nil {
-		previousBalance = p.Balance
-	}
-
-	newBalance, err := repository.SellEquipmentItem(userID, req.ItemInstanceID)
+	newBalance, goldDelta, err := repository.SellEquipmentItemWithPrice(userID, req.ItemInstanceID)
 	if err != nil {
 		writeEquipmentError(w, err)
 		return
 	}
-
-	goldDelta := newBalance - previousBalance
-
-	state, err := buildEquipmentStateResponse(userID)
-	if err != nil {
-		writeEquipmentError(w, err)
-		return
+	// The sale has committed. A refresh failure must not report it as a failed sale.
+	state, stateErr := buildEquipmentStateResponse(userID)
+	if stateErr != nil {
+		log.Printf("equipment sale committed; refresh failed: %v", stateErr)
+	}
+	var stateData any
+	if state != nil {
+		stateData = state.Data
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -444,7 +439,7 @@ func SellEquipmentItemHandler(w http.ResponseWriter, r *http.Request) {
 		"message":   "Item sold",
 		"goldDelta": goldDelta,
 		"balance":   newBalance,
-		"data":      state.Data,
+		"data":      stateData,
 	})
 }
 

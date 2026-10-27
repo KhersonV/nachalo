@@ -7,10 +7,12 @@ import { API_BASE } from "@/utils/serviceUrls";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "./ui";
 import { resourceImage } from "@/utils/resourceAssets";
+import { jewelryEntry } from "@/utils/jewelry";
+import CombatItemStats from "./equipment/CombatItemStats";
 import { equipmentImage } from "@/utils/equipmentAssets";
 import styles from "@/styles/MarketplaceWindow.module.css";
 
-type Item={jewelrySet?:{name:string;bonus:{attack?:number;defense?:number;maxHealth?:number};required:number};kind:"equipment"|"resource"|"stack";stackKey?:string;stackable?:boolean;exchangeEligible?:boolean;id:number;instanceId?:string;code:string;name:string;category:string;subcategory:string;rarity:string;imageUrl:string;levelRequirement:number;classRestriction:string;quantity?:number;durability?:number;maxDurability?:number;requiredForgeLevel?:number;attributes?:Record<string,number>};
+type Item={description?:string;combatBonuses?:Record<string,number>;jewelrySet?:{name:string;bonus:{attack?:number;defense?:number;maxHealth?:number};required:number};kind:"equipment"|"resource"|"stack";stackKey?:string;stackable?:boolean;exchangeEligible?:boolean;id:number;instanceId?:string;code:string;name:string;category:string;subcategory:string;rarity:string;imageUrl:string;levelRequirement:number;classRestriction:string;quantity?:number;durability?:number;maxDurability?:number;requiredForgeLevel?:number;attributes?:Record<string,number>};
 type Auction={createdAt:string;id:number;sellerId:number;seller:string;item:Item;quantity:number;startPrice:number;buyoutPrice:number|null;highestBid:number|null;bidCount:number;status:string;expiresAt:string};
 type Order={id:number;buyerId:number;buyer:string;item:Item;quantity:number;filledQuantity:number;remainingQuantity:number;pricePerUnit:number;reservedRemaining:number;status:string;expiresAt:string};
 type Delivery={id:number;item:Item;quantity:number};
@@ -37,12 +39,14 @@ function remaining(at:string,now:number){const seconds=Math.max(0,Math.ceil((new
 function availableForOrder(order:Order,owned:Item[]){return owned.filter(item=>order.item.kind==="equipment"?item.kind==="equipment"&&item.id===order.item.id&&item.exchangeEligible:order.item.kind==="stack"?item.kind==="stack"&&item.stackKey===order.item.stackKey:item.kind==="resource"&&item.id===order.item.id)}
 function ItemView({item,quantity,duplicate}:{item:Item;quantity?:number;duplicate?:string}){
  const {language}=useGameLanguage();const displayName=uiText(language,item.name||"Предмет");
- const imageUrl=marketImage(item.kind,item.name,item.imageUrl,item.code);
+ const jewelry=jewelryEntry(item.code)||jewelryEntry(item.name);
+ const description=jewelry?.description||item.description;
+ const imageUrl=jewelry?.image||marketImage(item.kind,item.name,item.imageUrl,item.code);
  const [brokenImage,setBrokenImage]=React.useState("");
  const attributes=Object.entries(item.attributes||{}).filter(([,value])=>typeof value==="number"&&value!==0).map(([key,value])=>`${attributeLabels[key]||key} ${value>0?"+":""}${value}`);
  const pairDetail=item.jewelrySet?`${uiText(language,"Jewelry set")}: ${item.jewelrySet.name} · 2/2: ${[item.jewelrySet.bonus.attack?`ATK +${item.jewelrySet.bonus.attack}`:"",item.jewelrySet.bonus.defense?`DEF +${item.jewelrySet.bonus.defense}`:"",item.jewelrySet.bonus.maxHealth?`Max HP +${item.jewelrySet.bonus.maxHealth}`:""].filter(Boolean).join(" · ")}`:"";
  const detail=[rarityLabels[item.rarity]||item.rarity,categoryLabels[item.category]||item.category,subtypeLabels[item.subcategory]||item.subcategory,item.kind==="equipment"&&item.levelRequirement?`Для экипировки: ур. ${item.levelRequirement}`:"",item.classRestriction?`Класс: ${classLabels[item.classRestriction]||item.classRestriction}`:"",...attributes,pairDetail,item.durability!=null&&item.maxDurability!=null?`прочность ${item.durability}/${item.maxDurability}`:"",duplicate||"",item.requiredForgeLevel?`Требуется: Кузница${item.requiredForgeLevel>1?` ур. ${item.requiredForgeLevel}`:""}`:"",quantity&&quantity>1?`${quantity} шт.`:""] .filter(Boolean).join(" · ");
- return <span className={styles.item} data-rarity={item.rarity||"gray"} title={`${displayName} · ${detail}`}><span className={styles.icon}>{imageUrl&&brokenImage!==imageUrl?<img src={imageUrl} alt="" onError={()=>setBrokenImage(imageUrl)}/>:<img src="/ui-icons/backpack.png" alt=""/>}</span><span className={styles.itemText}><strong>{displayName}</strong><small>{detail}</small></span></span>
+ return <span className={styles.item} data-rarity={item.rarity||"gray"} title={`${displayName} · ${detail}`}><span className={styles.icon}>{imageUrl&&brokenImage!==imageUrl?<img src={imageUrl} alt="" onError={()=>setBrokenImage(imageUrl)}/>:<img src="/ui-icons/backpack.png" alt=""/>}</span><span className={styles.itemText}><strong>{displayName}</strong><small>{detail}</small>{description && <small>{uiText(language,description)}</small>}<CombatItemStats bonuses={item.combatBonuses} /></span></span>
 }
 function MarketItemPicker({items,value,onSelect,keyFor,search,onSearch,loading,empty,purchaseReason}:{items:Item[];value:string;onSelect:(value:string)=>void;keyFor:(item:Item)=>string;search?:string;onSearch?:(value:string)=>void;loading?:boolean;empty:string;purchaseReason?:(item:Item)=>string}){
  const {language}=useGameLanguage();

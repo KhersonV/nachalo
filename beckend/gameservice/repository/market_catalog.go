@@ -97,7 +97,7 @@ func MarketCreateOrderItem(ctx context.Context,userID int,key,kind,stackKey stri
  if _,e=tx.ExecContext(ctx,`SELECT pg_advisory_xact_lock(711001,$1)`,userID);e!=nil{return 0,e}
  if kind=="stack"{if e=marketStackEligible(ctx,tx,stackKey);e!=nil{return 0,e}}else{
   var allowed bool
-  e=tx.QueryRowContext(ctx,`SELECT tradable AND NOT stackable FROM item_templates WHERE id=$1`,templateID).Scan(&allowed)
+  e=tx.QueryRowContext(ctx,`SELECT tradable AND NOT stackable AND NOT (`+commonEquipmentSQL("")+`) FROM item_templates WHERE id=$1`,templateID).Scan(&allowed)
   if e==sql.ErrNoRows{return 0,ErrMarketInvalid};if e!=nil{return 0,e};if !allowed{return 0,ErrMarketInvalid}
  }
  if e=marketPurchaseEligible(ctx,tx,userID,kind,stackKey);e!=nil{return 0,e}

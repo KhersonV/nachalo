@@ -11,25 +11,35 @@
           "code": "oakbound_ring",
           "name": "Oakbound Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/oakbound_ring_uncommon.png",
           "bonuses": {
             "agility": 1,
             "attack": 1,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Дубовой клятвы",
+          "de": "Ring des Eichenschwurs",
+          "description": "The boughs of an ancient oak are entwined forever around an emerald. Its wild magic steels the Guardian’s resolve, granting the strength to endure the harshest trials.",
+          "descriptionRu": "Ветви древнего дуба навечно переплелись вокруг изумрудного камня. Его природная магия укрепляет решимость Стража и дарует силу, способную выдержать самые тяжёлые испытания.",
+          "descriptionDe": "Die Zweige einer uralten Eiche umschlingen auf ewig einen Smaragd. Ihre Naturmagie festigt die Entschlossenheit des Wächters und verleiht ihm die Kraft, selbst die schwersten Prüfungen zu bestehen."
         },
         {
           "code": "oakbound_amulet",
           "name": "Oakbound Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/oakbound_amulet_uncommon.png",
           "bonuses": {
             "agility": 2,
             "attack": 0,
             "defense": 3,
             "maxHealth": 10
-          }
+          },
+          "ru": "Амулет Дубовой клятвы",
+          "de": "Amulett des Eichenschwurs",
+          "description": "At the amulet’s heart rests an emerald steeped in the power of a sacred oak. Its roots shield the wearer from mortal wounds; its leaves remember the ancient guardians of the forest.",
+          "descriptionRu": "В сердце амулета заключён изумруд, напитанный силой священного дуба. Его корни оберегают владельца от смертельных ран, а листья хранят память о древних защитниках леса.",
+          "descriptionDe": "Im Herzen des Amuletts ruht ein Smaragd, erfüllt von der Kraft einer heiligen Eiche. Ihre Wurzeln bewahren den Träger vor tödlichen Wunden, ihre Blätter hüten die Erinnerung an die alten Beschützer des Waldes."
         }
       ],
       "pairBonus": {
@@ -47,25 +57,35 @@
           "code": "bastionheart_ring",
           "name": "Bastionheart Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/bastionheart_ring_rare.png",
           "bonuses": {
             "agility": 2,
             "attack": 2,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Сердца бастиона",
+          "de": "Ring des Bastionsherzens",
+          "description": "A crystal from an ancient bastion lies within this ring, a relic of walls that once held back countless enemies. Its cold blue light hardens the Guardian’s will and lends strength to every blow.",
+          "descriptionRu": "В сердце кольца заключён кристалл древнего бастиона, некогда защищавшего королевство от бесчисленных врагов. Его холодное голубое сияние укрепляет волю Стража и придаёт силу каждому удару.",
+          "descriptionDe": "In diesem Ring ruht ein Kristall aus einer uralten Bastion, die einst das Königreich vor zahllosen Feinden schützte. Sein kaltes blaues Leuchten stärkt den Willen des Wächters und verleiht jedem Hieb Kraft."
         },
         {
           "code": "bastionheart_amulet",
           "name": "Bastionheart Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/bastionheart_amulet_rare.png",
           "bonuses": {
             "agility": 3,
             "attack": 0,
             "defense": 5,
             "maxHealth": 18
-          }
+          },
+          "ru": "Амулет Сердца бастиона",
+          "de": "Amulett des Bastionsherzens",
+          "description": "Drawn from the walls of an ancient fortress, this crystal remembers the defenders who stood until the end. While its power endures, the Guardian’s heart remains unshaken.",
+          "descriptionRu": "Кристалл, извлечённый из стен древней крепости, хранит память о защитниках, стоявших до последнего. Пока он наполнен силой, сердце Стража остаётся непоколебимым.",
+          "descriptionDe": "Dieser Kristall aus den Mauern einer uralten Festung bewahrt die Erinnerung an Verteidiger, die bis zuletzt standhielten. Solange seine Kraft nicht versiegt, bleibt das Herz des Wächters unerschütterlich."
         }
       ],
       "pairBonus": {
@@ -83,25 +103,35 @@
           "code": "bloodfang_ring",
           "name": "Bloodfang Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/bloodfang_ring_uncommon.png",
           "bonuses": {
             "agility": 1,
             "attack": 3,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Кровавого клыка",
+          "de": "Ring des Blutzahns",
+          "description": "Two sharp fangs cradle a blood-red stone, ancient power pulsing in its depths. With every strike, the ring rouses its bearer’s fury, turning pain into devastating might.",
+          "descriptionRu": "Два острых клыка обрамляют кроваво-красный камень, в глубине которого пульсирует древняя сила. С каждым ударом кольцо пробуждает ярость владельца, превращая боль в разрушительную мощь.",
+          "descriptionDe": "Zwei scharfe Fangzähne umrahmen einen blutroten Stein, in dessen Tiefe uralte Macht pulsiert. Mit jedem Hieb weckt der Ring die Wut seines Trägers und verwandelt Schmerz in vernichtende Kraft."
         },
         {
           "code": "bloodfang_amulet",
           "name": "Bloodfang Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/bloodfang_amulet_uncommon.png",
           "bonuses": {
             "agility": 2,
             "attack": 0,
             "defense": 1,
             "maxHealth": 8
-          }
+          },
+          "ru": "Амулет Кровавого клыка",
+          "de": "Amulett des Blutzahns",
+          "description": "Wrought from a savage beast’s fangs and blood-soaked metal, this amulet holds the fury of warriors long dead. Its crimson crystal strengthens the Berserker’s body and awakens his battle instinct.",
+          "descriptionRu": "Созданный из клыков свирепого зверя и пропитанного кровью металла, амулет хранит ярость древних воинов. Алый кристалл укрепляет тело Берсерка и пробуждает его боевой инстинкт.",
+          "descriptionDe": "Aus den Fangzähnen einer wilden Bestie und blutgetränktem Metall gefertigt, birgt dieses Amulett die Wut uralter Krieger. Sein scharlachroter Kristall stärkt den Körper des Berserkers und weckt seinen Kampfinstinkt."
         }
       ],
       "pairBonus": {
@@ -119,25 +149,35 @@
           "code": "warborn_ring",
           "name": "Warborn Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/warborn_ring_rare.png",
           "bonuses": {
             "agility": 2,
             "attack": 5,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Рождённого войной",
+          "de": "Ring des Kriegsgeborenen",
+          "description": "The fury of warriors fallen on ancient battlefields burns within the ring’s molten heart. Fiery cracks scar its dark metal, and the crimson crystal flares with every strike.",
+          "descriptionRu": "В раскалённом сердце кольца заключена ярость воинов, павших на древних полях сражений. Его тёмный металл покрыт огненными трещинами, а алый кристалл вспыхивает при каждом ударе.",
+          "descriptionDe": "Im glühenden Herzen des Rings brennt die Wut von Kriegern, die auf uralten Schlachtfeldern fielen. Feurige Risse durchziehen sein dunkles Metall, und bei jedem Hieb lodert der scharlachrote Kristall auf."
         },
         {
           "code": "warborn_amulet",
           "name": "Warborn Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/warborn_amulet_rare.png",
           "bonuses": {
             "agility": 3,
             "attack": 0,
             "defense": 2,
             "maxHealth": 15
-          }
+          },
+          "ru": "Амулет Рождённого войной",
+          "de": "Amulett des Kriegsgeborenen",
+          "description": "Forged from the weapons of fallen warriors, this amulet was tempered in the flames of ancient battles. Every enemy blow only feeds the power imprisoned within.",
+          "descriptionRu": "Выкованный из оружия павших воинов, амулет закалён пламенем древних битв. Каждый удар врага лишь разжигает заключённую в нём силу.",
+          "descriptionDe": "Aus den Waffen gefallener Krieger geschmiedet, wurde dieses Amulett in den Flammen uralter Schlachten gehärtet. Jeder feindliche Hieb entfacht die darin gefangene Kraft nur weiter."
         }
       ],
       "pairBonus": {
@@ -155,25 +195,35 @@
           "code": "windmark_ring",
           "name": "Windmark Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/windmark_ring_uncommon.png",
           "bonuses": {
             "agility": 1,
             "attack": 2,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Знака ветра",
+          "de": "Ring des Windzeichens",
+          "description": "An emerald nestled among ancient branches holds the breath of woodland winds. Its light helps the Ranger remain calm and discern an enemy’s every movement.",
+          "descriptionRu": "В переплетении древних ветвей заключён изумруд, хранящий дыхание лесных ветров. Его сияние помогает Рейнджеру сохранять хладнокровие и замечать движения врагов.",
+          "descriptionDe": "Zwischen uralten Zweigen ruht ein Smaragd, der den Atem der Waldwinde birgt. Sein Leuchten hilft dem Waldläufer, einen kühlen Kopf zu bewahren und die Bewegungen seiner Feinde zu erkennen."
         },
         {
           "code": "windmark_amulet",
           "name": "Windmark Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/windmark_amulet_uncommon.png",
           "bonuses": {
             "agility": 2,
             "attack": 0,
             "defense": 2,
             "maxHealth": 7
-          }
+          },
+          "ru": "Амулет Знака ветра",
+          "de": "Amulett des Windzeichens",
+          "description": "Shaped from forest branches and enchanted feathers, this amulet holds the strength of the untamed wind. Its emerald crystal sharpens the Ranger’s senses and warns of danger yet to come.",
+          "descriptionRu": "Созданный из лесных ветвей и зачарованных перьев, амулет хранит силу вольного ветра. Изумрудный кристалл обостряет чувства Рейнджера и помогает предугадывать опасность.",
+          "descriptionDe": "Aus Waldzweigen und verzauberten Federn geschaffen, birgt dieses Amulett die Kraft des freien Windes. Sein Smaragdkristall schärft die Sinne des Waldläufers und lässt ihn kommende Gefahren erahnen."
         }
       ],
       "pairBonus": {
@@ -191,25 +241,35 @@
           "code": "hawkseye_ring",
           "name": "Hawkseye Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/hawkseye_ring_rare.png",
           "bonuses": {
             "agility": 2,
             "attack": 4,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Ястребиного глаза",
+          "de": "Ring des Falkenauges",
+          "description": "A sky-blue sapphire is encircled by the golden feathers of an ancient hawk. They say the stone preserves the sight of legendary hunters, keen enough to catch an enemy’s slightest movement.",
+          "descriptionRu": "Небесный сапфир окружён золотыми перьями древнего ястреба. Говорят, что камень хранит зоркость легендарных охотников, способных различить малейшее движение врага.",
+          "descriptionDe": "Ein himmelblauer Saphir ist von den goldenen Federn eines uralten Falken umgeben. Man sagt, der Stein bewahre die Sehkraft legendärer Jäger, die selbst die kleinste Bewegung eines Feindes erkannten."
         },
         {
           "code": "hawkseye_amulet",
           "name": "Hawkseye Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/hawkseye_amulet_rare.png",
           "bonuses": {
             "agility": 3,
             "attack": 0,
             "defense": 3,
             "maxHealth": 12
-          }
+          },
+          "ru": "Амулет Ястребиного глаза",
+          "de": "Amulett des Falkenauges",
+          "description": "A sky-blue sapphire shines at the amulet’s centre, framed by the feathers of a legendary hawk. The spirit of an ancient hunter guards the wearer and guides their hand at the decisive moment.",
+          "descriptionRu": "В центре амулета сияет небесный сапфир, окружённый перьями легендарного ястреба. Дух древнего охотника защищает владельца и направляет его руку в решающий момент.",
+          "descriptionDe": "Im Zentrum des Amuletts leuchtet ein himmelblauer Saphir, umrahmt von den Federn eines legendären Falken. Der Geist eines uralten Jägers schützt den Träger und führt im entscheidenden Augenblick seine Hand."
         }
       ],
       "pairBonus": {
@@ -227,25 +287,35 @@
           "code": "starwhisper_ring",
           "name": "Starwhisper Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/starwhisper_ring_uncommon.png",
           "bonuses": {
             "agility": 1,
             "attack": 2,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Шёпота звёзд",
+          "de": "Ring des Sternenflüsterns",
+          "description": "Sparks of distant constellations shimmer deep within the violet amethyst. Ancient runes channel astral energy into the Mystic’s hands, lending power to his spells.",
+          "descriptionRu": "В глубине фиолетового аметиста мерцают искры далёких созвездий. Древние руны направляют астральную энергию в руки Мистика, усиливая его заклинания.",
+          "descriptionDe": "Tief im violetten Amethyst schimmern die Funken ferner Sternbilder. Uralte Runen leiten astrale Energie in die Hände des Mystikers und verleihen seinen Zaubern Kraft."
         },
         {
           "code": "starwhisper_amulet",
           "name": "Starwhisper Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/starwhisper_amulet_uncommon.png",
           "bonuses": {
             "agility": 2,
             "attack": 0,
             "defense": 1,
             "maxHealth": 8
-          }
+          },
+          "ru": "Амулет Шёпота звёзд",
+          "de": "Amulett des Sternenflüsterns",
+          "description": "A fragment of starlight rests at the amulet’s heart, surrounded by signs of the moon and constellations. Its magic helps the Mystic foresee danger and uncover the secrets of forgotten worlds.",
+          "descriptionRu": "В центре амулета заключена частица звёздного света, окружённая символами луны и созвездий. Его магия помогает Мистику предвидеть опасность и раскрывать тайны забытых миров.",
+          "descriptionDe": "Im Herzen des Amuletts ruht ein Splitter Sternenlicht, umgeben von Zeichen des Mondes und der Sternbilder. Seine Magie hilft dem Mystiker, Gefahren vorauszusehen und die Geheimnisse vergessener Welten zu enthüllen."
         }
       ],
       "pairBonus": {
@@ -263,25 +333,35 @@
           "code": "astralveil_ring",
           "name": "Astralveil Ring",
           "slot": "ring",
-          "image": "",
+          "image": "/equipment/jewelry/rings/astralveil_ring_rare.png",
           "bonuses": {
             "agility": 2,
             "attack": 4,
             "defense": 0,
             "maxHealth": 0
-          }
+          },
+          "ru": "Кольцо Астральной вуали",
+          "de": "Ring des Astralschleiers",
+          "description": "A fragment of starlight is bound within the ring’s dark metal. A silver crescent frames a radiant astral star, awakening the power of forgotten constellations.",
+          "descriptionRu": "В тёмном металле кольца заключена частица звёздного света. Серебряный полумесяц обрамляет сияющую астральную звезду, пробуждающую силу забытых созвездий.",
+          "descriptionDe": "Ein Splitter Sternenlicht ist im dunklen Metall des Rings gebunden. Eine silberne Mondsichel umrahmt einen strahlenden Astralstern und erweckt die Macht vergessener Sternbilder."
         },
         {
           "code": "astralveil_amulet",
           "name": "Astralveil Amulet",
           "slot": "amulet",
-          "image": "",
+          "image": "/equipment/jewelry/amulets/astralveil_amulet_rare.png",
           "bonuses": {
             "agility": 3,
             "attack": 0,
             "defense": 2,
             "maxHealth": 14
-          }
+          },
+          "ru": "Амулет Астральной вуали",
+          "de": "Amulett des Astralschleiers",
+          "description": "At the amulet’s heart lies a fragment of the astral void, where a thousand distant stars still shimmer. Ancient runes guide cosmic energy, fortifying the Mystic’s body and mind.",
+          "descriptionRu": "В сердце амулета заключена частица астрального пространства, где мерцают тысячи далёких звёзд. Древние руны направляют космическую энергию, укрепляя тело и разум Мистика.",
+          "descriptionDe": "Im Herzen des Amuletts liegt ein Fragment des Astralraums, in dem tausend ferne Sterne schimmern. Uralte Runen lenken kosmische Energie und stärken Körper und Geist des Mystikers."
         }
       ],
       "pairBonus": {
@@ -295,42 +375,66 @@
       "name": "Artifact shard",
       "ru": "Осколок артефакта",
       "de": "Artefaktsplitter",
-      "price": 0
+      "price": 0,
+      "description": "A shard of a shattered artifact, still holding a trace of ancient magic. Blue light seeps through the cracks in the stone.",
+      "descriptionRu": "Осколок разрушенного артефакта, сохранивший частицу древней магии. Сквозь трещины камня пробивается голубое свечение.",
+      "descriptionDe": "Ein Splitter eines zerstörten Artefakts, der noch einen Hauch uralter Magie bewahrt. Blaues Licht dringt durch die Risse im Stein.",
+      "image": "/equipment/jewelry/materials/artifact_shard.png"
     },
     {
       "code": "enchanted_dust",
       "name": "Enchanted dust",
       "ru": "Зачарованная пыль",
       "de": "Verzauberter Staub",
-      "price": 0
+      "price": 0,
+      "description": "A shimmering powder left by the destruction of enchanted artifacts. Every grain holds a remnant of magical energy.",
+      "descriptionRu": "Мерцающий порошок, полученный при разрушении зачарованных артефактов. Каждая крупица хранит остатки магической энергии.",
+      "descriptionDe": "Ein schimmerndes Pulver, das bei der Zerstörung verzauberter Artefakte entsteht. Jedes Körnchen birgt einen Rest magischer Energie.",
+      "image": "/equipment/jewelry/materials/enchanted_dust.png"
     },
     {
       "code": "arcane_fragment",
       "name": "Arcane fragment",
       "ru": "Магический фрагмент",
       "de": "Arkanes Fragment",
-      "price": 0
+      "price": 0,
+      "description": "A rare fragment of an ancient artifact, charged with concentrated astral energy. Used to craft powerful jewelry.",
+      "descriptionRu": "Редкий осколок древнего артефакта с концентрированной астральной энергией. Используется для создания могущественных украшений.",
+      "descriptionDe": "Ein seltener Splitter eines uralten Artefakts, erfüllt von konzentrierter astraler Energie. Er wird zur Herstellung mächtiger Schmuckstücke verwendet.",
+      "image": "/equipment/jewelry/materials/arcane_fragment.png"
     },
     {
       "code": "refined_essence",
       "name": "Refined essence",
       "ru": "Очищенная эссенция",
       "de": "Geläuterte Essenz",
-      "price": 0
+      "price": 0,
+      "description": "Pure magical energy drawn from shattered artifacts and sealed in an enchanted vessel. It makes the crafting of rare jewelry possible.",
+      "descriptionRu": "Чистая магическая энергия, извлечённая из разрушенных артефактов и заключённая в зачарованный сосуд. Позволяет создавать редкие магические украшения.",
+      "descriptionDe": "Reine magische Energie, aus zerstörten Artefakten gewonnen und in einem verzauberten Gefäß gebunden. Sie ermöglicht die Herstellung seltener Schmuckstücke.",
+      "image": "/equipment/jewelry/materials/refined_essence.png"
     },
     {
       "code": "ring_blank",
       "name": "Ring blank",
       "ru": "Заготовка кольца",
       "de": "Ringrohling",
-      "price": 100
+      "price": 100,
+      "description": "A sturdy metal blank with an empty setting for a magical stone. Artisans use it to craft enchanted rings.",
+      "descriptionRu": "Прочная металлическая заготовка с пустой оправой для магического камня. Используется мастерами для изготовления зачарованных колец.",
+      "descriptionDe": "Ein stabiler Metallrohling mit einer leeren Fassung für einen magischen Stein. Handwerker fertigen daraus verzauberte Ringe.",
+      "image": "/equipment/jewelry/materials/ring_blank.png"
     },
     {
       "code": "amulet_blank",
       "name": "Amulet blank",
       "ru": "Заготовка амулета",
       "de": "Amulettrohling",
-      "price": 150
+      "price": 150,
+      "description": "A metal amulet blank with an empty crystal setting. Combined with enchanted materials, it can become a magical jewel.",
+      "descriptionRu": "Металлическая заготовка амулета с пустой оправой для кристалла. Может быть соединена с зачарованными материалами для создания магических украшений.",
+      "descriptionDe": "Ein metallener Amulettrohling mit einer leeren Kristallfassung. Mit verzauberten Materialien verbunden, kann daraus ein magisches Schmuckstück entstehen.",
+      "image": "/equipment/jewelry/materials/amulet_blank.png"
     }
   ],
   "costs": {

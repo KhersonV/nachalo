@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import CombatItemStats from "./equipment/CombatItemStats";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
 import { equipmentRarityName } from "@/utils/equipmentAssets";
@@ -13,7 +14,7 @@ import styles from "@/styles/DropGuidePage.module.css";
 
 export type EquipmentGuideSet = {
  code: string; name: string; heroClass: string; rarity: string; source: string;
- items: { code: string; templateId: number; name: string; slot: string; image: string; bonuses: EquipmentBonuses }[];
+ items: { combatBonuses?: Record<string, number>; code: string; templateId: number; name: string; slot: string; image: string; bonuses: EquipmentBonuses }[];
 };
 type DropMonster = { code: string; name: string; equipmentChance: number };
 const slotNames: Record<string, string> = { main_hand: "Main Hand", off_hand: "Off Hand", helmet: "Helmet", chest: "Chest", pants: "Pants", gloves: "Gloves", boots: "Boots" };
@@ -35,6 +36,10 @@ export default function EquipmentSetsGuide({ sets, recipes, monsters, heroClass 
   </div>
   {visible.map(set => <section key={set.code} className={styles.gatheringCategory} data-rarity={set.rarity}>
    <h3>{set.name} · {t(set.heroClass)} · {t(equipmentRarityName(set.rarity))}</h3>
+   <p>{t("Sum of item bonuses")}: {BONUS_FIELDS.filter(field => field.key !== "pocketBonus").map(field => {
+    const total = set.items.reduce((sum, item) => sum + (item.bonuses[field.key] ?? 0), 0);
+    return total ? `${t(field.label)}: +${total}` : null;
+   }).filter(Boolean).join(" · ")}. {t("These are individual item stats, not an extra full-set bonus.")}</p>
    <p>{t("Additional pockets from items")}: +{set.items.reduce((total, item) => total + (item.bonuses.pocketBonus ?? 0), 0)}. {t("Pocket bonuses apply individually; a full set is not required.")}</p>
    <p>{t(set.source === "monster" ? "Dropped by monsters" : "Crafted through professions")}</p>
    {set.source === "monster" && <p>{monsters.map(monster => `${monster.name}: ${(monster.equipmentChance * 100).toLocaleString(language, { maximumFractionDigits: 2 })}%`).join(" · ")}<br />{t("This is the equipment roll chance; each item is selected uniformly from the shared pool.")}</p>}
@@ -45,6 +50,7 @@ export default function EquipmentSetsGuide({ sets, recipes, monsters, heroClass 
      <h4>{t(item.name)}</h4><p>{t(slotNames[item.slot] || item.slot)}</p>
      <small>Template ID: {item.templateId}</small>
      <ul>{BONUS_FIELDS.filter(field => item.bonuses[field.key]).map(field => <li key={field.key}>{t(field.label)}: {field.key === "pocketBonus" ? "+" : ""}{item.bonuses[field.key]}</li>)}{Boolean(item.bonuses.maxEnergy) && <li>{t("Max Energy")}: {item.bonuses.maxEnergy}</li>}</ul>
+     <CombatItemStats bonuses={item.combatBonuses} />
      {set.source === "craft" && (recipe ? <div>
       <p>{t(recipe.profession)} · {t("Required level")}: {recipe.minLevel} ({t(professionRankName(recipe.minLevel))}) · ×{recipe.output}</p>
       <ul>{recipe.ingredients.map(ingredient => <li key={ingredient.code}><img className={styles.recipeIcon} src={ingredient.image} alt="" loading="lazy" /> {t(ingredient.name)} ×{ingredient.quantity}</li>)}</ul>

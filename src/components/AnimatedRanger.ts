@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { hexCacheHit, timeHexStage } from "@/features/hexLoading/performance";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import combatMetadata from "../data/rangerCombat.json";
@@ -19,7 +20,7 @@ const MODELS = {
 const AUTHORED_WALK_SPEED = 1.25;
 const MAX_WALK_TIME_SCALE = 2;
 const loader = new GLTFLoader();
-type ModelAsset = { users: number; promise: ReturnType<GLTFLoader["loadAsync"]> };
+type ModelAsset = { users: number; idleTimer?: ReturnType<typeof setTimeout>; promise: ReturnType<GLTFLoader["loadAsync"]> };
 const assets = new Map<RangerModel, ModelAsset>();
 
 function disposeAsset(scene: THREE.Object3D) {
@@ -44,20 +45,34 @@ function disposeAsset(scene: THREE.Object3D) {
   for (const image of images) image.close();
 }
 
-// SkeletonUtils shares mesh resources. Keep a template alive only while one or
-// more instances use it; late loads are released too when their owner unmounts.
+// Skeleton clones share geometry/materials. Dispose only after the final lease;
+// retain at most one idle template for 15 seconds across 2D/3D switches.
+function retireModel(model: RangerModel, asset: ModelAsset) {
+  if (asset.users !== 0 || assets.get(model) !== asset) return;
+  if (asset.idleTimer) clearTimeout(asset.idleTimer);
+  assets.delete(model);
+  void asset.promise.then(gltf => disposeAsset(gltf.scene), () => {});
+}
 function acquireModel(model: RangerModel) {
   let asset = assets.get(model);
   if (!asset) {
-    asset = { users: 0, promise: loader.loadAsync(MODELS[model].url) };
+    const done = timeHexStage("Ranger GLB download + parse");
+    asset = { users: 0, promise: loader.loadAsync(MODELS[model].url).then(gltf => { done(); return gltf; }) };
     assets.set(model, asset);
-  }
+  } else hexCacheHit("model");
+  if (asset.idleTimer) clearTimeout(asset.idleTimer);
   asset.users++;
   const held = asset;
+  let released = false;
   return { promise: held.promise, release: () => {
+    if (released) return;
+    released = true;
     if (--held.users !== 0) return;
-    if (assets.get(model) === held) assets.delete(model);
-    void held.promise.then(gltf => disposeAsset(gltf.scene), () => {});
+    void held.promise.then(() => {
+      if (held.users !== 0 || assets.get(model) !== held) return;
+      for (const [otherModel, other] of assets) if (other !== held && other.users === 0) retireModel(otherModel, other);
+      held.idleTimer = setTimeout(() => retireModel(model, held), 15_000);
+    }, () => retireModel(model, held));
   } };
 }
 

@@ -194,7 +194,17 @@ service with:
 EQUIPMENT_DROP_CHANCE_OVERRIDE=100
 ```
 
-The override accepts `0` to `100` and uses the default `10%` when empty.
+The override accepts `0` to `100` and uses the default `10%` when empty. A value of `100` is a testing override, not the economy default.
+
+Ordinary barrel artifacts use `BARREL_ARTIFACT_CHANCE_PERCENT=4`. The value
+accepts integers `0..30`; empty or invalid values use `4`. The upper limit
+preserves the existing 30% damage and 40% resource categories. The remaining
+probability is an empty barrel (26% by default), consumed like any other opened
+barrel. There is one category roll per opening, followed by one catalogue choice
+on success. The existing single quest artifact guarantee in the last unopened
+HEX barrel is separate and unchanged; its quest copy does not enter permanent
+Storage or artifact dismantling.
+
 
 `TOKEN` is the auth JWT from login/localStorage.
 

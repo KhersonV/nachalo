@@ -1,3 +1,5 @@
+import { jewelryEntry } from "./jewelry";
+
 const RESOURCE_ASSETS = {
   wood: "/assets/nachalo/resources/wood.webp",
   stone: "/assets/nachalo/resources/stone.webp",
@@ -15,6 +17,9 @@ export function resourceAsset(type: string | undefined | null): string | null {
 }
 
 export function resourceImage(type: string | undefined | null, image: string | undefined | null): string | null {
+  const jewelry = jewelryEntry(type);
+  if (jewelry) return jewelry.image;
+  if (/^\/(?:assets\/)?equipment\/jewelry\/(rings|amulets|materials)\/[^/]+\.png$/.test(image?.trim() ?? "")) return image!.trim();
   // Older stored stacks can retain these paths after the PNG names are fixed.
   if (image === "/professions/processed/ craft_sharpened_fangs.png") return "/professions/processed/craft_sharpened_fangs.png";
   if (image === "/professions/consumables/craft_speed_potionа.png") return "/professions/consumables/craft_speed_potion.png";

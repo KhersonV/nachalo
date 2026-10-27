@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,10 +22,15 @@ var ErrHexEnergy = errors.New("insufficient action budget")
 
 // CreateHexTestMatch uses the existing account, selected hero and equipment
 // calculations. The entire match/map/player/monster materialization is one Tx.
-func CreateHexTestMatch(ctx context.Context, userID int, seed int64) (hexmap.Snapshot, error) {
+func CreateHexTestMatch(ctx context.Context, userID int, seeds ...int64) (hexmap.Snapshot, error) {
 	var randomID [16]byte
 	if _, err := rand.Read(randomID[:]); err != nil {
 		return hexmap.Snapshot{}, err
+	}
+	// Omitted seed gets fresh entropy; an explicitly supplied zero is reproducible.
+	seed := int64(binary.LittleEndian.Uint64(randomID[:8]))
+	if len(seeds) > 0 {
+		seed = seeds[0]
 	}
 	return CreateHexMatch(ctx, HexMatchPlan{
 		InstanceID: "hex-test-" + hex.EncodeToString(randomID[:]),
@@ -179,6 +185,8 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 	player.AuraSlowUsed = budget.AuraSlowUsed
 	player.InGuardianAura = budget.InGuardianAura
 	player.MysticReflexUsed = budget.MysticReflexUsed
+	player.CombatProfile = budget.CombatProfile
+	player.MagicShield = budget.MagicShield
 	if err := tx.QueryRowContext(ctx, `SELECT sight_range FROM match_players WHERE instance_id=$1 AND user_id=$2`, instanceID, userID).Scan(&player.SightRange); err != nil {
 		return snapshot, err
 	}
@@ -232,13 +240,13 @@ func LoadHexTestMatch(ctx context.Context, instanceID string, userID int) (hexma
 		snapshot.Starts = []hexmap.Start{{UserID: userID, TeamID: 1, Position: startPositions[0]}}
 	}
 	snapshot.Actors = []hexmap.Actor{}
-	playerRows, err := tx.QueryContext(ctx, `SELECT user_id,name,group_id,position_q,position_r,health,max_health,hex_armor_break_owner,hex_armor_break_stacks,hex_mp_drain FROM match_players WHERE instance_id=$1 AND health>0 ORDER BY user_id`, instanceID)
+	playerRows, err := tx.QueryContext(ctx, `SELECT user_id,name,group_id,position_q,position_r,health,max_health,hex_armor_break_owner,hex_armor_break_stacks,hex_mp_drain,character_type,attack,defense FROM match_players WHERE instance_id=$1 AND health>0 ORDER BY user_id`, instanceID)
 	if err != nil {
 		return snapshot, err
 	}
 	for playerRows.Next() {
 		var actor hexmap.Actor
-		if err := playerRows.Scan(&actor.UserID, &actor.Name, &actor.TeamID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.ArmorBreakOwner, &actor.ArmorBreakStacks, &actor.MPDrain); err != nil {
+		if err := playerRows.Scan(&actor.UserID, &actor.Name, &actor.TeamID, &actor.Position.Q, &actor.Position.R, &actor.Health, &actor.MaxHealth, &actor.ArmorBreakOwner, &actor.ArmorBreakStacks, &actor.MPDrain, &actor.Type, &actor.Attack, &actor.Defense); err != nil {
 			playerRows.Close()
 			return snapshot, err
 		}

@@ -4,6 +4,7 @@
 
 "use client";
 
+import { scheduleHexPreload } from "@/features/hexLoading/preload";
 import UiText from "@/components/UiText";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -303,6 +304,7 @@ export async function startMatchmaking(
 }
 
 export default function ModeSelectionPage() {
+    useEffect(scheduleHexPreload, []);
     const { language } = useGameLanguage();
     const t = (source: string) => uiText(language, source);
     const [mode, setMode] = useState<GameMode>("PVE");

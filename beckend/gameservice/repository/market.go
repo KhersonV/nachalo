@@ -202,7 +202,7 @@ func marketEquipmentAvailable(ctx context.Context, tx *sql.Tx, userID int, insta
 	var character sql.NullInt64
 	var boundUser, boundCharacter sql.NullInt64
 	var soul, locked, tradable, inMatch, hasEquipment bool
-	err := tx.QueryRowContext(ctx, `SELECT ii.owner_user_id,ii.status,ii.current_character_id,ii.bound_to_user_id,ii.bound_to_character_id,ii.is_soulbound,ii.is_locked,it.tradable,ii.match_instance_id IS NOT NULL,EXISTS(SELECT 1 FROM character_equipment ce WHERE ce.item_instance_id=ii.id) FROM item_instances ii JOIN item_templates it ON it.id=ii.template_id WHERE ii.id=$1::uuid FOR UPDATE OF ii`, instance).Scan(&owner, &status, &character, &boundUser, &boundCharacter, &soul, &locked, &tradable, &inMatch, &hasEquipment)
+	err := tx.QueryRowContext(ctx, `SELECT ii.owner_user_id,ii.status,ii.current_character_id,ii.bound_to_user_id,ii.bound_to_character_id,ii.is_soulbound,ii.is_locked,(it.tradable AND NOT (`+commonEquipmentSQL("it")+`)),ii.match_instance_id IS NOT NULL,EXISTS(SELECT 1 FROM character_equipment ce WHERE ce.item_instance_id=ii.id) FROM item_instances ii JOIN item_templates it ON it.id=ii.template_id WHERE ii.id=$1::uuid FOR UPDATE OF ii`, instance).Scan(&owner, &status, &character, &boundUser, &boundCharacter, &soul, &locked, &tradable, &inMatch, &hasEquipment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrMarketInventory
 	}

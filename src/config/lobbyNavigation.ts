@@ -19,7 +19,7 @@ export const lobbyNavigationItems: readonly LobbyNavigationItem[] = [
   { id: "shop", label: "Shop", icon: "shop", href: "/shop", group: "trade", order: 10 },
   { id: "auction", label: "Auctions", icon: "auction", href: marketNavigationHref("auction"), group: "trade", order: 20 },
   { id: "exchange", label: "Exchange", icon: "exchange", href: marketNavigationHref("exchange"), group: "trade", order: 30 },
-  { id: "drop-guide", label: "Drop guide", icon: "book", href: "/drop-guide", group: "knowledge", order: 10 },
+  { id: "drop-guide", label: "Хроники NACHALO", icon: "book", href: "/drop-guide", group: "knowledge", order: 10 },
   { id: "profile", label: "Profile", icon: "profile", href: "/profile", group: "more", order: 10 },
   { id: "history", label: "Match History", icon: "history", href: "/matches", group: "more", order: 20 },
   { id: "logout", label: "Log out", icon: "logout", action: "logout", group: "more", order: 30, requiresUser: true },

@@ -1,5 +1,16 @@
 package repository
 
+import (
+	"gameservice/internal/game/balance"
+	"os"
+)
+
+func ConfiguredHeroClassStats(heroClassID string) (HeroClassStats,error) {
+	ruleset,err:=balance.ParseCombatRuleset(os.Getenv("NACHALO_COMBAT_RULESET"))
+	if err!=nil {return HeroClassStats{},err}
+	return ResolveHeroClassStatsForRuleset(heroClassID,ruleset),nil
+}
+
 // HeroClassStats holds base stats for a hero class.
 type HeroClassStats struct {
 	MaxAP        int `json:"maxAP"`
@@ -26,8 +37,25 @@ type HeroClassMeta struct {
 	Image       string
 }
 
+// Explicit ruleset projection for new snapshots; never rewrite a saved character
+// or consult the environment when reading an existing match. Legacy stays intact.
+func ResolveHeroClassStatsForRuleset(heroClassID string, ruleset balance.CombatRuleset) HeroClassStats {
+	stats := ResolveHeroClassStats(heroClassID)
+	if ruleset != balance.ExperimentalV34 { return stats }
+	index := 0
+	switch NormalizeHeroClassID(heroClassID) {
+	case "berserker": index = 1
+	case "ranger": index = 2
+	case "mystic": index = 3
+	}
+	config := balance.ExperimentalV34Config()
+	stats.Health,stats.MaxHealth = config.BaseHP[index],config.BaseHP[index]
+	stats.Attack,stats.Defense = config.BaseAttack[index],config.BaseDefense[index]
+	return stats
+}
+
 // ResolveHeroClassStats returns base stats for the given hero class id.
-// Values are copied from handlers/players.go characterTemplates to preserve balance.
+// Combat Balance 2.0 base model; handlers/players.go uses the same registration values.
 func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 	switch NormalizeHeroClassID(heroClassID) {
 	case "guardian":
@@ -38,8 +66,8 @@ func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 			MaxEnergy:   0,
 			Health:      130,
 			MaxHealth:   130,
-			Attack:      9,
-			Defense:     8,
+			Attack:      13,
+			Defense:     9,
 			Mobility:    2,
 			Agility:     5,
 			SightRange:  2,
@@ -54,8 +82,8 @@ func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 			MaxEnergy:   0,
 			Health:      100,
 			MaxHealth:   100,
-			Attack:      14,
-			Defense:     3,
+			Attack:      17,
+			Defense:     4,
 			Mobility:    3,
 			Agility:     5,
 			SightRange:  2,
@@ -70,8 +98,8 @@ func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 			MaxEnergy:   0,
 			Health:      92,
 			MaxHealth:   92,
-			Attack:      11,
-			Defense:     4,
+			Attack:      16,
+			Defense:     7,
 			Mobility:    4,
 			Agility:     5,
 			SightRange:  2,
@@ -86,8 +114,8 @@ func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 			MaxEnergy:   0,
 			Health:      95,
 			MaxHealth:   95,
-			Attack:      10,
-			Defense:     4,
+			Attack:      18,
+			Defense:     5,
 			Mobility:    3,
 			Agility:     5,
 			SightRange:  3,
@@ -102,8 +130,8 @@ func ResolveHeroClassStats(heroClassID string) HeroClassStats {
 			MaxEnergy:   0,
 			Health:      130,
 			MaxHealth:   130,
-			Attack:      9,
-			Defense:     8,
+			Attack:      13,
+			Defense:     9,
 			Mobility:    2,
 			Agility:     5,
 			SightRange:  2,

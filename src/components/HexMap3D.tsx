@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { HexTextureLoader } from "@/features/hexLoading/TextureLoader";
+import HexLoading from "@/features/hexLoading/HexLoading";
+import { timeHexStage, reportHexCache } from "@/features/hexLoading/performance";
 import { createProfessionNodeAssets } from "./hex3d/ProfessionNodes3D";
 import { axialToWorld, canonicalHexEdge, hexDistance, hexKey, hexNeighbor, type HexCoord } from "@/utils/hexGrid";
 import { AnimatedRanger, type RangerCue } from "./AnimatedRanger";
@@ -28,6 +31,7 @@ type Props = {
   busy?: boolean;
   onCellClick: (position: HexCoord) => void;
   onMonsterClick: (actor: HexActor) => void;
+  onReady?: () => void;
   onUnavailable: () => void;
   labels?: HexGameMessages;
 };
@@ -359,7 +363,7 @@ function populateWorld(rt: Runtime, snapshot: Props["snapshot"], visualMove?: He
     if (!cell || !self && cell.visibility !== "visible" && cell.visibility !== undefined) continue;
     const { x, z } = hexWorld(actor.position);
     const rangerSelf = self && snapshot.player?.characterType?.toLowerCase() === "ranger";
-    const marker = new THREE.Mesh(rt.markerGeometry, rt.materials[rangerSelf ? "invisibleHit" : self ? "self" : actor.kind === "monster" ? "monster" : "ally"]);
+    const marker = new THREE.Mesh(rt.markerGeometry, rt.materials[rangerSelf && rt.ranger?.isReady ? "invisibleHit" : self ? "self" : actor.kind === "monster" ? "monster" : "ally"]);
     marker.position.set(x, tileTop(cell) + .52, z);
     marker.userData.actor = actor;
     rt.actorHits.push(marker); rt.world.add(marker);
@@ -441,23 +445,27 @@ function populateMarks(rt: Runtime, snapshot: Props["snapshot"], selected: HexCo
   for (const indicator of indicators) {
     const cell = cellsByKey.get(hexKey(indicator.position));
     if (!cell || cell.visibility !== "visible") continue;
-    const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 64;
+    const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 80;
     const context = canvas.getContext("2d");
     if (!context) continue;
-    context.font = "bold 27px sans-serif"; context.textAlign = "center";
-    context.strokeStyle = "#08111a"; context.lineWidth = 6; context.strokeText(indicator.text, 128, 40);
+    context.font = "bold 32px sans-serif"; context.textAlign = "center";
+    context.strokeStyle = "#08111a"; context.lineWidth = 6; context.strokeText(indicator.text, 256, 48, 490);
     context.fillStyle = indicator.tone === "damage" || indicator.tone === "critical" ? "#ff8c79" : "#d7ecf1";
-    context.fillText(indicator.text, 128, 40);
+    context.fillText(indicator.text, 256, 48, 490);
     const texture = new THREE.CanvasTexture(canvas);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
     const { x, z } = hexWorld(indicator.position);
-    sprite.position.set(x, tileTop(cell) + 1.25 + indicator.lane * .3, z); sprite.scale.set(1.8, .45, 1);
+    sprite.position.set(x, tileTop(cell) + 1.25 + indicator.lane * .36, z); sprite.scale.set(2.7, .5, 1);
     sprite.userData.ownedMaterial = true; rt.marks.add(sprite);
   }
   rt.invalidate();
 }
 
-export default function HexMap3D({ snapshot, visualNotices = [], visualMove, openedBarrel, connection, selected, route, selectedTargetId, selectedTargetKind, indicators = [], busy, onCellClick, onMonsterClick, onUnavailable, labels }: Props) {
+function HexMap3D({ onReady, snapshot, visualNotices = [], visualMove, openedBarrel, connection, selected, route, selectedTargetId, selectedTargetKind, indicators = [], busy, onCellClick, onMonsterClick, onUnavailable, labels }: Props) {
+  const [loadingStage, setLoadingStage] = useState<"map" | "characters" | null>("map");
+  const [visualError, setVisualError] = useState(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<Runtime | null>(null);
   const current = useRef({ busy, onCellClick, onMonsterClick, onUnavailable });
@@ -466,6 +474,21 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
   useEffect(() => {
     const element = host.current;
     if (!element) return;
+    const finishInit = timeHexStage("3D initialization to first rendered frame");
+    let firstFrame = true;
+    let lastStage: "map" | "characters" | null = "map";
+    let pendingImages = 0;
+    let alive = true;
+    const manager = new THREE.LoadingManager();
+    const itemStart = manager.itemStart.bind(manager);
+    const itemEnd = manager.itemEnd.bind(manager);
+    manager.itemStart = url => { pendingImages++; itemStart(url); };
+    manager.itemEnd = url => { pendingImages--; itemEnd(url); };
+    let reportedVisualError = false;
+    const reportVisualError = () => {
+      if (alive && !reportedVisualError) { reportedVisualError = true; setVisualError(true); }
+    };
+    manager.onError = reportVisualError;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }); }
     catch { current.current.onUnavailable(); return; }
@@ -500,7 +523,7 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
     const standard = (color: number, options: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: .93, metalness: .03, flatShading: true, ...options });
     const basic = (color: number, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity === 1 });
     let invalidateTexture = () => {};
-    const textureLoader = new THREE.TextureLoader();
+    const textureLoader = new HexTextureLoader(manager);
     const textures = ["floor_base", "floor_cracked", "floor_moss", "floor_runes", "floor_stone", "wall_base", "stone_trim", "wall_stone"].map(name => {
       const texture = textureLoader.load(`/assets/nachalo/catacombs/${name}.webp`, () => invalidateTexture());
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -634,15 +657,28 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
         fire.light.intensity *= .65;
         fire.light.visible = lit.has(index);
       }
+      // Show the existing marker until the progressive character visual is ready.
+      for (const hit of rt.actorHits) {
+        if (hit.userData.actor?.kind === "player" && hit.userData.actor?.userId === snapshotRef.current.player?.userId && rt.ranger && hit instanceof THREE.Mesh) {
+          hit.material = rt.materials[rt.ranger.isReady ? "invisibleHit" : "self"];
+        }
+      }
       renderer.render(scene, camera);
+      if (firstFrame) { firstFrame = false; finishInit(); reportHexCache(); onReadyRef.current?.(); }
+      const stage = pendingImages > 0 ? "map" : rt.ranger && !rt.ranger.isReady && !rt.ranger.status.failed ? "characters" : null;
+      if (stage !== lastStage) { lastStage = stage; setLoadingStage(stage); }
+      if (rt.ranger?.status.failed) reportVisualError();
       if (rt.ranger || rt.fires.length || rt.barrelAnimation || rt.portalModels.size || rt.artifactModels.size) rt.frame = window.requestAnimationFrame(render);
     };
     rt.invalidate = () => { if (rt.frame === null) rt.frame = window.requestAnimationFrame(render); };
     invalidateTexture = rt.invalidate;
+    manager.onLoad = () => { if (alive) rt.invalidate(); };
     runtime.current = rt;
+    let renderedWidth = 0, renderedHeight = 0;
     const resize = () => {
       const rect = element.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
+      if (!rect.width || !rect.height || (rect.width === renderedWidth && rect.height === renderedHeight)) return;
+      renderedWidth = rect.width; renderedHeight = rect.height;
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height; camera.updateProjectionMatrix(); rt.invalidate();
     };
@@ -650,9 +686,11 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
     const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     const pick = (event: PointerEvent) => {
       if (current.current.busy) return;
+      if (event.pointerType === "touch" && document.elementFromPoint(event.clientX, event.clientY) !== renderer.domElement) return;
       const rect = renderer.domElement.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
       pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-      scene.updateMatrixWorld(true); raycaster.setFromCamera(pointer, camera);
+      scene.updateMatrixWorld(true); camera.updateMatrixWorld(true); raycaster.setFromCamera(pointer, camera);
       for (const hit of raycaster.intersectObjects([...rt.actorHits, ...rt.objectHits, ...rt.tileHits], false)) {
         const actor = hit.object.userData.actor as HexActor | undefined;
         if (actor) {
@@ -666,17 +704,57 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
         if (cell) { if (cell.visibility !== "unexplored") current.current.onCellClick(cell.position); return; }
       }
     };
-    type Drag = { x: number; y: number; focusX: number; focusZ: number; yaw: number; pitch: number; panScale: number; button: number; moved: boolean };
+    type Drag = { id: number; x: number; y: number; focusX: number; focusZ: number; yaw: number; pitch: number; panScale: number; button: number; moved: boolean };
     let drag: Drag | null = null;
+    const touches = new Map<number, { x: number; y: number }>();
+    let multiTouch = false, touchStartedAt = 0;
+    let pinch: { span: number; distance: number } | null = null;
+    const startDrag = (id: number, point: { x: number; y: number }, button: number): Drag => ({
+      id, x: point.x, y: point.y, focusX: rt.focus.x, focusZ: rt.focus.z, yaw: rt.yaw, pitch: rt.pitch,
+      panScale: 2 * rt.distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / Math.max(renderer.domElement.clientHeight, 1), button, moved: false,
+    });
+    const rebaseTouches = () => {
+      const points = [...touches.entries()];
+      pinch = null; drag = null;
+      if (points.length === 1) drag = startDrag(points[0][0], points[0][1], 0);
+      if (points.length >= 2) {
+        const a = points[0][1], b = points[1][1];
+        pinch = { span: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), distance: rt.distance };
+      }
+    };
     const down = (event: PointerEvent) => {
-      if (event.button !== 0 && event.button !== 2) return;
-      const panScale = 2 * rt.distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / Math.max(renderer.domElement.clientHeight, 1);
-      drag = { x: event.clientX, y: event.clientY, focusX: rt.focus.x, focusZ: rt.focus.z, yaw: rt.yaw, pitch: rt.pitch, panScale, button: event.button, moved: false };
+      if (event.pointerType === "touch") {
+        event.preventDefault();
+        if (!touches.size) { multiTouch = false; touchStartedAt = performance.now(); }
+        else multiTouch = true;
+        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        renderer.domElement.setPointerCapture(event.pointerId);
+        rebaseTouches();
+        return;
+      }
+      if (touches.size || (event.button !== 0 && event.button !== 2)) return;
+      drag = startDrag(event.pointerId, { x: event.clientX, y: event.clientY }, event.button);
       renderer.domElement.setPointerCapture(event.pointerId);
     };
     const move = (event: PointerEvent) => {
+      const touch = event.pointerType === "touch";
+      if (touch) {
+        if (!touches.has(event.pointerId)) return;
+        event.preventDefault();
+        touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touches.size >= 2 && pinch) {
+          multiTouch = true;
+          const [a, b] = [...touches.values()];
+          const span = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+          rt.distance = clamp(pinch.distance * pinch.span / span, 7, 80);
+          pointCamera(rt);
+          return;
+        }
+      } else if (touches.size) return;
       if (!drag) {
+        if (touch) return;
         const rect = renderer.domElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
         pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
         raycaster.setFromCamera(pointer, camera);
         const hit = raycaster.intersectObjects([...rt.objectHits, ...rt.tileHits], false)[0];
@@ -686,9 +764,11 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
         rt.invalidate();
         return;
       }
+      if (drag.id !== event.pointerId) return;
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      if (!drag.moved && Math.hypot(dx, dy) < (touch ? 8 : 6)) return;
       drag.moved = true;
+      // The original camera pan/rotation math is shared by mouse and touch.
       if (drag.button === 2) {
         rt.yaw = drag.yaw - dx * .006;
         rt.pitch = clamp(drag.pitch + dy * .004, Math.PI / 6, Math.PI * .36);
@@ -702,9 +782,22 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
       pointCamera(rt);
     };
     const up = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || touches.has(event.pointerId)) {
+        if (!touches.has(event.pointerId)) return;
+        const was = drag;
+        const tap = event.type === "pointerup" && touches.size === 1 && !multiTouch && was?.id === event.pointerId && !was.moved &&
+          Math.hypot(event.clientX - was.x, event.clientY - was.y) < 8 && performance.now() - touchStartedAt <= 500;
+        touches.delete(event.pointerId);
+        multiTouch = true;
+        rebaseTouches();
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+        if (tap) pick(event);
+        return;
+      }
+      if (drag?.id !== event.pointerId) return;
       const was = drag; drag = null;
       if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
-      if (was?.button === 0 && !was.moved && event.type === "pointerup") pick(event);
+      if (was.button === 0 && !was.moved && event.type === "pointerup") pick(event);
     };
     const wheel = (event: WheelEvent) => { event.preventDefault(); rt.distance = clamp(rt.distance * Math.exp(event.deltaY * .001), 7, 80); pointCamera(rt); };
     const contextMenu = (event: MouseEvent) => event.preventDefault();
@@ -712,13 +805,14 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
     const canvas = renderer.domElement;
     const contextLost = (event: Event) => { event.preventDefault(); current.current.onUnavailable(); };
     canvas.addEventListener("pointerdown", down); canvas.addEventListener("pointermove", move); canvas.addEventListener("pointerleave", leave);
-    canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up); canvas.addEventListener("lostpointercapture", up);
     canvas.addEventListener("wheel", wheel, { passive: false }); canvas.addEventListener("contextmenu", contextMenu); canvas.addEventListener("webglcontextlost", contextLost);
     return () => {
+      alive = false;
       rt.disposed = true;
       observer.disconnect();
       canvas.removeEventListener("pointerdown", down); canvas.removeEventListener("pointermove", move); canvas.removeEventListener("pointerleave", leave);
-      canvas.removeEventListener("pointerup", up); canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("pointerup", up); canvas.removeEventListener("pointercancel", up); canvas.removeEventListener("lostpointercapture", up);
       canvas.removeEventListener("wheel", wheel); canvas.removeEventListener("contextmenu", contextMenu); canvas.removeEventListener("webglcontextlost", contextLost);
       if (rt.frame !== null) window.cancelAnimationFrame(rt.frame);
       if (rt.barrelAnimation) rt.scene.remove(rt.barrelAnimation.barrel.group);
@@ -858,6 +952,8 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
 
   return <div className={styles.viewport} data-testid="hex-game-map-3d">
     <div ref={host} className={styles.canvas} aria-label={labels?.map ?? "3D HEX dungeon map"} />
+    {loadingStage && <HexLoading local stage={loadingStage} />}
+    {!loadingStage && visualError && <HexLoading local error="visual" onRetry={() => window.location.reload()} />}
     <div className={styles.controls} aria-label={labels?.camera ?? "Map camera"}>
       <button type="button" onClick={() => cameraAction("left")} aria-label="Rotate left">↶</button>
       <button type="button" onClick={() => cameraAction("in")} aria-label={labels?.zoomIn ?? "Zoom in"}>+</button>
@@ -867,3 +963,5 @@ export default function HexMap3D({ snapshot, visualNotices = [], visualMove, ope
     </div>
   </div>;
 }
+
+export default memo(HexMap3D);

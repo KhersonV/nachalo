@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gameservice/game"
+	"gameservice/internal/game/balance"
 	"gameservice/internal/hexgrid"
 	"gameservice/models"
 )
@@ -63,44 +64,46 @@ type Actor struct {
 	Appearance       *HeroAppearance `json:"appearance,omitempty"`
 }
 type Player struct {
-	PocketCapacity        int             `json:"pocketCapacity"`
-	PocketsUsed           int             `json:"pocketsUsed"`
-	ConsumableStatus      json.RawMessage `json:"consumableStatus,omitempty"`
-	ProfessionUnlocked    bool            `json:"professionUnlocked"`
-	ProfessionGatherCount int             `json:"professionGatherCount"`
-	ProfessionGatherLimit int             `json:"professionGatherLimit"`
-	ProfessionLevel       int             `json:"professionLevel"`
-	MysticReflexUsed      bool            `json:"mysticReflexUsed"`
-	InGuardianAura        bool            `json:"inGuardianAura"`
-	UserID                int             `json:"userId"`
-	TeamID                int             `json:"teamId"`
-	Name                  string          `json:"name"`
-	Position              hexgrid.Coord   `json:"position"`
-	AP                    int             `json:"ap"`
-	MaxAP                 int             `json:"maxAP"`
-	MP                    int             `json:"mp"`
-	MaxMP                 int             `json:"maxMP"`
-	Reactions             int             `json:"reactions"`
-	MaxReactions          int             `json:"maxReactions"`
-	PersonalTurn          int             `json:"personalTurn"`
-	WaterAvailableTurn    int             `json:"waterAvailableTurn"`
-	MPDrain               bool            `json:"mpDrain"`
-	OverloadCount         int             `json:"overloadCount"`
-	OverloadTarget        string          `json:"overloadTarget"`
-	AuraSlowUsed          bool            `json:"auraSlowUsed"`
-	SightRange            int             `json:"sightRange"`
-	Energy                int             `json:"-"`
-	MaxEnergy             int             `json:"-"`
-	Health                int             `json:"health"`
-	MaxHealth             int             `json:"maxHealth"`
-	Mobility              int             `json:"mobility"`
-	Agility               int             `json:"agility"`
-	CharacterType         string          `json:"characterType"`
-	IsRanged              bool            `json:"isRanged"`
-	AttackRange           int             `json:"attackRange"`
-	Inventory             map[string]any  `json:"inventory,omitempty"`
-	EquipmentLoot         []EquipmentLoot `json:"equipmentLoot,omitempty"`
-	Balance               int             `json:"balance"`
+	MagicShield int `json:"magicShield,omitempty"`
+	CombatProfile         balance.CombatProfile `json:"combatProfile"`
+	PocketCapacity        int                   `json:"pocketCapacity"`
+	PocketsUsed           int                   `json:"pocketsUsed"`
+	ConsumableStatus      json.RawMessage       `json:"consumableStatus,omitempty"`
+	ProfessionUnlocked    bool                  `json:"professionUnlocked"`
+	ProfessionGatherCount int                   `json:"professionGatherCount"`
+	ProfessionGatherLimit int                   `json:"professionGatherLimit"`
+	ProfessionLevel       int                   `json:"professionLevel"`
+	MysticReflexUsed      bool                  `json:"mysticReflexUsed"`
+	InGuardianAura        bool                  `json:"inGuardianAura"`
+	UserID                int                   `json:"userId"`
+	TeamID                int                   `json:"teamId"`
+	Name                  string                `json:"name"`
+	Position              hexgrid.Coord         `json:"position"`
+	AP                    int                   `json:"ap"`
+	MaxAP                 int                   `json:"maxAP"`
+	MP                    int                   `json:"mp"`
+	MaxMP                 int                   `json:"maxMP"`
+	Reactions             int                   `json:"reactions"`
+	MaxReactions          int                   `json:"maxReactions"`
+	PersonalTurn          int                   `json:"personalTurn"`
+	WaterAvailableTurn    int                   `json:"waterAvailableTurn"`
+	MPDrain               bool                  `json:"mpDrain"`
+	OverloadCount         int                   `json:"overloadCount"`
+	OverloadTarget        string                `json:"overloadTarget"`
+	AuraSlowUsed          bool                  `json:"auraSlowUsed"`
+	SightRange            int                   `json:"sightRange"`
+	Energy                int                   `json:"-"`
+	MaxEnergy             int                   `json:"-"`
+	Health                int                   `json:"health"`
+	MaxHealth             int                   `json:"maxHealth"`
+	Mobility              int                   `json:"mobility"`
+	Agility               int                   `json:"agility"`
+	CharacterType         string                `json:"characterType"`
+	IsRanged              bool                  `json:"isRanged"`
+	AttackRange           int                   `json:"attackRange"`
+	Inventory             map[string]any        `json:"inventory,omitempty"`
+	EquipmentLoot         []EquipmentLoot       `json:"equipmentLoot,omitempty"`
+	Balance               int                   `json:"balance"`
 }
 
 type EquipmentLoot struct {

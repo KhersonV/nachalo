@@ -20,6 +20,8 @@ COPY next.config.ts ./next.config.ts
 COPY tsconfig.json ./tsconfig.json
 COPY public ./public
 COPY src ./src
+# uiText reads the same public jewelry catalog that gameservice embeds.
+COPY beckend/gameservice/repository/jewelry_catalog.json ./beckend/gameservice/repository/jewelry_catalog.json
 RUN npm run build
 
 FROM node:20-alpine AS runner

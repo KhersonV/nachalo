@@ -1,12 +1,14 @@
 import type { HexCombatEffect, HexCombatIndicator, HexCombatRef, HexCombatStep, HexSnapshot } from "@/types/HexGameTypes";
+import { uiText } from "@/i18n/uiText";
+import type { GameLanguage } from "@/i18n/hexGame";
 import type { HexCoord } from "@/utils/hexGrid";
 
 const actorKey = (ref: HexCombatRef) => `${ref.type}-${ref.id}`;
 
 type AttackVisual = { steps?: HexCombatStep[]; effects?: HexCombatEffect[]; targetHP?: number; attackerHPBefore?: number; attackerPosition?: HexCoord; targetPosition?: HexCoord };
-type MoveVisual = { position: HexCoord; auraMPCost?: number; auraHits?: Array<{ position: HexCoord; damage: number }>; auraEnded?: boolean };
+type MoveVisual = { position: HexCoord; statusEffects?: Array<{ kind: string; amount?: number }>; auraMPCost?: number; auraHits?: Array<{ position: HexCoord; damage: number }>; auraEnded?: boolean };
 
-export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual, eventId: string): HexCombatIndicator[] {
+export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual, eventId: string, language: GameLanguage = "ru"): HexCombatIndicator[] {
   const positions = new Map(snapshot.actors.map(actor => [actor.id, actor.position]));
   const health = new Map(snapshot.actors.map(actor => [actor.id, actor.health ?? 0]));
   const initialHit = result.steps?.find(step => step.kind === "hit");
@@ -30,10 +32,11 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
     const before = health.get(key);
     const lost = before === undefined ? step.damage : Math.min(step.damage, Math.max(0, before));
     if (typeof step.targetHpAfter === "number") health.set(key, step.targetHpAfter);
+    else if (before !== undefined) health.set(key, Math.max(0, before - lost)); // Older receipts omitted a lethal zero HP.
     if (lost <= 0) continue;
     const critical = step.kind === "hit" && criticalTargets.has(key) && !criticalShown.has(key);
     if (critical) criticalShown.add(key);
-    add(step.target, critical ? `КРИТ! -${lost} HP` : `-${lost} HP`, critical ? "critical" : "damage");
+    add(step.target, critical ? `КРИТ! -${lost} HP` : step.kind === "counter" ? `${uiText(language, "Counter")}: −${lost} HP` : step.kind === "mysticOverload" ? `${uiText(language, "Magic")}: −${lost} HP` : `-${lost} HP`, critical ? "critical" : "damage");
     if (step.kind === "hit" && step.source) {
       const sourceKey = actorKey(step.source);
       const heal = pendingHeal.get(sourceKey);
@@ -42,9 +45,14 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
   }
   for (const effect of result.effects ?? []) {
     if (effect.succeeded === false && effect.kind !== "push") continue;
+    const researchLabels: Record<string, string> = { hatred: "Hatred", dodge: "Dodge", glance: "Glancing hit", surge: "Strong hit", armorFocus: "Armor focus", openingWard: "Opening protection", closeWard: "Melee ward", meleeWard: "Melee ward", rangedWard: "Ranged ward", arcaneWard: "Arcane buffer" };
+    if (researchLabels[effect.kind]) add(effect.target ?? effect.source, `${uiText(language, researchLabels[effect.kind])}${(effect.amount ?? 0) > 0 ? ` · ${effect.amount}` : ""}`, "status");
     if (effect.kind === "lifesteal" && (effect.amount ?? 0) > 0) add(effect.source, `+${effect.amount} HP`, "heal");
     if (effect.kind === "mpDrain") add(effect.target, "−1 MP на следующем ходу", "status");
-    if (effect.kind === "mysticOverload") add(effect.target, "Магический перегруз", "status");
+    if (effect.kind === "mysticOverload") {
+      const label = (effect.bonusDamage ?? 0) > 0 ? (effect.amount ?? 0) > 0 ? "Overload + Magic Reflex" : "Magic Reflex" : "Magic Overload";
+      add(effect.target, uiText(language, label), "status");
+    }
     if (effect.kind === "mpGain" && effect.source?.id !== snapshot.player?.userId && (effect.mpGranted ?? 0) > 0) add(effect.source, `+${effect.mpGranted! / 2} MP`, "energyGain");
     if (effect.kind === "push") {
       const destination = effect.positionAfter && { q: effect.positionAfter.x, r: effect.positionAfter.y };
@@ -59,18 +67,23 @@ export function hexAttackIndicators(snapshot: HexSnapshot, result: AttackVisual,
     if (effect.kind === "armorBreak") add(effect.target, `Пробитие брони${effect.stacks ? ` ×${effect.stacks}` : ""}`, "status");
     if (effect.kind === "armorBreakEnd") add(effect.target, "Пробитие снято", "status", effect.positionAfter && { q: effect.positionAfter.x, r: effect.positionAfter.y });
     if (effect.kind === "guardianAuraEnd") add(effect.target, "Аура снята", "status", effect.positionAfter && { q: effect.positionAfter.x, r: effect.positionAfter.y });
-    if (effect.kind === "block") add(effect.target, "Блок", "status");
+    if (effect.kind === "block") {
+      const magicPassed = (result.steps ?? []).some(step => step.kind === "mysticOverload" && (step.damage ?? 0) > 0 && effect.target && actorKey(step.target) === actorKey(effect.target));
+      add(effect.target, magicPassed ? uiText(language, "Main attack blocked") : "Блок", "status");
+    }
     if (effect.kind === "arcaneOverburn") add(effect.target, "Перегрузка", "status");
     if (effect.kind === "pureDamage" && (effect.amount ?? 0) > 0 && !(result.steps ?? []).some(step => effect.target && actorKey(step.target) === actorKey(effect.target))) add(effect.target, `-${effect.amount} HP`, "damage");
   }
   return out;
 }
 
-export function hexMoveIndicators(result: MoveVisual, eventId: string): HexCombatIndicator[] {
+export function hexMoveIndicators(result: MoveVisual, eventId: string, language: GameLanguage = "ru"): HexCombatIndicator[] {
   const out: HexCombatIndicator[] = [];
   const add = (position: HexCoord, text: string, tone: HexCombatIndicator["tone"]) => out.push({ id: `${eventId}:${out.length}`, position, text, tone, lane: out.filter(item => item.position.q === position.q && item.position.r === position.r).length });
   if ((result.auraMPCost ?? 0) > 0) add(result.position, `-${result.auraMPCost! / 2} MP · аура`, "aura");
   for (const hit of result.auraHits ?? []) if (hit.damage > 0) add(hit.position, `-${hit.damage} HP · аура`, "aura");
   if (result.auraEnded) add(result.position, "Аура снята", "status");
+  const wardLabels: Record<string, string> = { openingWard: "Opening protection", arcaneWard: "Arcane buffer", closeWard: "Melee ward", meleeWard: "Melee ward", rangedWard: "Ranged ward" };
+  for (const effect of result.statusEffects ?? []) if (wardLabels[effect.kind]) add(result.position, `${uiText(language, wardLabels[effect.kind])} · ${effect.amount ?? 0}`, "status");
   return out;
 }

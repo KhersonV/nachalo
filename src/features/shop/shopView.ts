@@ -43,7 +43,7 @@ export function getSellableEquipment(
     activeEquipped: Partial<Record<EquipmentSlot, EquipmentItem>>,
 ): EquipmentItem[] {
     return getAvailableEquipment(inventory, equippedByCharacter, activeEquipped)
-        .filter(item => typeof item.sellPrice === "number" && Number.isFinite(item.sellPrice) && item.sellPrice >= 0);
+        .filter(item => item.canSell !== false && !["gray", "grey", "common"].includes(item.rarity) && typeof item.sellPrice === "number" && Number.isFinite(item.sellPrice) && item.sellPrice >= 0);
 }
 
 export function selectionAfterSale(currentId: string | null, soldId: string): string | null {

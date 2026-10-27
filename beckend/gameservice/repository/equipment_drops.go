@@ -243,7 +243,7 @@ func ListMatchEquipmentLootForUser(userID int, matchInstanceID string) ([]MatchE
 		WHERE ii.owner_user_id = $1
 		  AND ii.match_instance_id = $2
 		  AND ii.source = 'drop'
-		  AND ii.status <> 'deleted'
+		  AND ii.status <> 'deleted' AND NOT (`+commonEquipmentSQL("it")+`)
 		ORDER BY ii.acquired_at, ii.id
 	`), userID, matchInstanceID)
 	if err != nil {

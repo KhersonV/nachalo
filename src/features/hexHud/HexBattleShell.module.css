@@ -215,3 +215,206 @@
   .dockCenter { gap: 5px; }
   .dockCenter > button { min-width: 0; font-size: 10px; padding: 4px; }
 }
+
+/* Command dock: budgets flank the exchange, with the primary action beside them. */
+.shell { --hex-dock-height: 108px; grid-template-rows: 68px minmax(0, 1fr) var(--hex-dock-height); }
+.bottom { height: var(--hex-dock-height); min-height: 0; box-sizing: border-box; grid-template-columns: minmax(110px, 1fr) minmax(0, 680px) minmax(185px, 1fr); padding: 10px 16px; gap: 18px; }
+.dockCenter { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; width: 100%; }
+.battleResources { display: grid; grid-template-columns: minmax(52px, 1fr) auto minmax(52px, 1fr); align-items: center; min-width: 0; padding: 8px; border: 1px solid #75613e; border-radius: 9px; background: linear-gradient(135deg, #1a2633, #0c1520); box-shadow: inset 0 1px #e0c17e24; }
+.actionPoints, .movementPoints { display: grid; justify-items: center; gap: 2px; position: relative; font-family: var(--ui-font, Arial, sans-serif); }
+.actionPoints > span, .movementPoints > span { color: #b4c4ce; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.actionPoints > strong, .movementPoints > strong { color: #f1cc7f; font-size: 23px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.movementPoints > strong { color: #86d5e7; }
+.actionPoints small, .movementPoints small { color: #9aabb5; font-size: 12px; font-weight: 400; }
+.bottom .exchangeButton { display: grid; gap: 3px; align-content: center; min-height: 50px; height: auto; padding: 7px 12px; border-color: #5a9caa; border-radius: 6px; color: #d9f7ff; background: #193543; font-family: var(--ui-font, Arial, sans-serif); letter-spacing: 0; }
+.bottom .exchangeButton > span:first-child { display: block; margin: 0; color: #b6ccd1; font-size: 10px; }
+.bottom .exchangeButton > strong { font-size: 13px; white-space: nowrap; }
+.bottom .exchangeButton:hover:not(:disabled) { background: #28566a; }
+.primaryActions { display: flex; align-items: center; gap: 8px; }
+.endTurnGroup { position: relative; display: grid; justify-items: end; gap: 7px; min-width: 0; }
+.endTurnGroup > small { max-width: 220px; text-align: right; font: 11px/1.3 var(--ui-font, Arial, sans-serif); }
+.exchangeReminder { color: #f0cb79; }
+.turnHint { color: #a4b3bb; }
+.budgetGain, .budgetLoss { position: absolute; bottom: -14px; font: 700 12px var(--ui-font, Arial, sans-serif); animation: budgetChange 2.4s ease-out both; }
+.budgetGain { color: #9be9b7; }
+.budgetLoss { color: #f0bc84; }
+@keyframes budgetChange { 0% { opacity: 0; transform: translateY(4px); } 10%, 78% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
+.finishPrompt { position: absolute; z-index: 80; bottom: calc(100% + 14px); right: 0; width: min(320px, calc(100vw - 24px)); padding: 14px; box-sizing: border-box; border: 1px solid #c8a15c; border-radius: 8px; color: #f3e9d5; background: #142330; box-shadow: 0 12px 32px #0009; font: 13px/1.45 var(--ui-font, Arial, sans-serif); }
+.finishPrompt p { margin: 6px 0 12px; color: #c2cdd1; }
+.bottom .finishPrompt button { width: auto; min-width: 0; height: auto; min-height: 36px; margin: 0 6px 0 0; padding: 7px 10px; font-size: 12px; }
+.bottom .finishPrompt button:first-of-type { color: #c5f3ff; border-color: #5a9caa; background: #193543; }
+.inventorySheet, .logSheet { bottom: calc(var(--hex-dock-height, 108px) + 12px) !important; }
+.feedback, .placementCancel { bottom: calc(var(--hex-dock-height, 108px) + 12px); }
+.error { bottom: calc(var(--hex-dock-height, 108px) + 50px); }
+@media (max-width: 1023px) {
+  .shell { grid-template-rows: auto minmax(0, 1fr) var(--hex-dock-height); }
+  .bottom { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 8px; }
+  .dockCenter { gap: 8px; }
+  .bottom .bagButton { min-width: 0; }
+  .bottom .endTurn { min-width: 0; }
+  .endTurnGroup > small { max-width: 150px; font-size: 10px; }
+}
+@media (max-width: 680px) {
+  .shell { --hex-dock-height: calc(148px + env(safe-area-inset-bottom)); }
+  .bottom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 80px 44px; gap: 7px; padding: 7px 8px max(8px, env(safe-area-inset-bottom)); }
+  .bottom .dockCenter { grid-column: 1 / -1; grid-row: 1; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+  .bottom .bagButton { grid-column: 1; grid-row: 2; width: 100%; height: 40px; }
+  .bottom .endTurnGroup { grid-column: 2; grid-row: 2; }
+  .bottom .endTurn { width: 100%; height: 40px; }
+  .endTurnGroup > small { display: none; }
+  .bottom .bagButton > span:first-child, .bottom .endTurn > span:first-child { display: inline; margin-right: 5px; }
+  .battleResources { padding: 7px 4px; }
+  .bottom .exchangeButton { min-height: 46px; padding: 5px 6px; }
+  .bottom .exchangeButton > strong { font-size: 11px; }
+  .primaryActions { gap: 3px; }
+  .bottom .infoButton { width: 28px; min-width: 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .budgetGain, .budgetLoss { animation: none; } }
+
+@media (max-width: 680px) {
+  .inventorySheet, .logSheet { bottom: calc(160px + env(safe-area-inset-bottom)) !important; }
+  .feedback, .placementCancel { bottom: calc(160px + env(safe-area-inset-bottom)); }
+  .error { bottom: calc(198px + env(safe-area-inset-bottom)); }
+}
+
+/* Layout-only wrappers preserve the existing desktop HUD anchors. */
+.mapSurface, .targetSheet { display: contents; }
+.mobileActionLabel { display: none; }
+.shell { height: 100vh; height: 100dvh; }
+
+/* Phones, including wide phones with a short landscape touch viewport. */
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .shell { position: fixed; inset-inline: 0; top: var(--hex-mobile-top, 0px); width: 100%; height: var(--hex-mobile-height, 100vh); height: var(--hex-mobile-height, 100dvh); --hex-dock-height: calc(116px + env(safe-area-inset-bottom, 0px)); grid-template-rows: auto auto minmax(0, 1fr) var(--hex-dock-height); overflow: hidden; overscroll-behavior: none; }
+  .top { grid-row: 1; height: auto; min-height: 46px; box-sizing: border-box; flex-wrap: nowrap; gap: 6px; padding: calc(4px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); }
+  .brand { min-width: 0; flex: none; gap: 0; }
+  .brandName { font-size: 12px; padding: 0; border: 0; letter-spacing: .08em; }
+  .brandMark, .brand > div { display: none; }
+  .turn { flex: 1; min-width: 0; max-width: none; padding: 0 4px; text-align: left; border: 0; }
+  .turn strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .turn small { display: none; }
+  .overline { font-size: 9px; letter-spacing: .06em; }
+  .timer { flex: none; min-width: 44px; width: 44px; margin: 0; }
+  .timer strong { font-size: 17px; }
+  .timer > span, .timer progress { display: none; }
+  .topTools { flex: none; gap: 5px; margin-left: 0; }
+  .connection { display: block; width: 12px; max-width: 12px; overflow: hidden; font-size: 12px; }
+  .language { font-size: 0; gap: 0; }
+  .language select { min-height: 36px; width: 44px; padding: 3px; font-size: 11px; }
+  .hudMenu { display: none; }
+  .left { position: static; grid-row: 2; grid-column: 1; display: block; width: auto; max-height: none; padding: 3px max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); overflow: visible; pointer-events: auto; z-index: auto; }
+  .right { position: static; display: contents; width: auto; max-height: none; overflow: visible; }
+  .field { grid-row: 3; min-width: 0; min-height: 0; border-top: 1px solid #8b6c3d88; }
+  .mapSurface { display: block; position: absolute; inset: 44px 0 0; min-width: 0; min-height: 0; }
+  .mapModeSwitch { top: 2px; height: 40px; box-sizing: border-box; padding: 1px; gap: 1px; z-index: 5; }
+  .mapModeSwitch button { min-width: 38px; min-height: 36px; padding: 4px; }
+  .left > :not(.mobileHero), .right > :not(.mobileQuest):not(.mobileParticipants):not(.targetSheet) { display: none; }
+  .mobileQuest[open], .mobileParticipants[open] { z-index: 70; }
+  .mobileHero { min-width: 0; }
+  .mobileHero > summary { display: flex; align-items: center; gap: 7px; min-height: 50px; padding: 4px 7px; box-sizing: border-box; border: 1px solid #9a7849; border-radius: 5px; background: linear-gradient(135deg, #1a2939, #0d1723); list-style: none; cursor: pointer; }
+  .mobileHero > summary::-webkit-details-marker, .mobileQuest > summary::-webkit-details-marker, .mobileParticipants > summary::-webkit-details-marker { display: none; }
+  .mobileHero > summary > img { width: 32px; height: 38px; flex: none; object-fit: cover; object-position: top; border: 1px solid #99733e; border-radius: 4px; }
+  .mobileHeroIdentity { display: grid; gap: 3px; flex: 1; min-width: 0; }
+  .mobileHeroIdentity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+  .mobileHeroIdentity small { color: #d4b578; font-size: 10px; }
+  .mobileVitals { display: flex; gap: clamp(6px, 2vw, 14px); flex: none; }
+  .mobileVitals > span { display: grid; gap: 3px; color: #c6c9c3; font-size: 10px; }
+  .mobileVitals strong { color: #efd092; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mobileVitals > span:first-child strong { color: #f3a6a8; }
+  .mobileVitals small { font-size: 10px; font-weight: normal; }
+  .mobileHeroInfo { flex: none; color: #d6b477; }
+  .mobileQuest, .mobileParticipants { position: absolute; z-index: 6; top: 2px; pointer-events: auto; }
+  .mobileQuest { right: max(8px, env(safe-area-inset-right, 0px)); max-width: 28%; }
+  .mobileParticipants { left: calc(max(8px, env(safe-area-inset-left, 0px)) + 64px); }
+  .mobileQuest > summary, .mobileParticipants > summary { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 40px; box-sizing: border-box; padding: 5px 7px; list-style: none; border: 1px solid #997543; border-radius: 5px; background: #172434; color: #edcc8a; cursor: pointer; font-size: 11px; }
+  .mobileQuest > summary > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mobileParticipants > summary { width: 36px; font-size: 20px; }
+  /* Right aside uses display:contents; place its launchers in the field toolbar. */
+  .mobileQuest, .mobileParticipants { position: fixed; top: calc(var(--hex-mobile-field-top, 106px) + 2px); }
+  .mobileBackdrop { display: none; }
+  .mobileHero[open] > .mobileBackdrop, .mobileQuest[open] > .mobileBackdrop, .mobileParticipants[open] > .mobileBackdrop { display: block; position: fixed; inset: 0; z-index: 60; border: 0; background: #0006; }
+  .mobileSheet { display: none; }
+  .mobileHero[open] > .mobileSheet, .mobileQuest[open] > .mobileSheet, .mobileParticipants[open] > .mobileSheet, .targetSheet { display: block; position: fixed; z-index: 61; top: calc(var(--hex-mobile-top, 0px) + max(8px, env(safe-area-inset-top, 0px))); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); bottom: auto; width: auto; max-height: calc(var(--hex-mobile-height, 100dvh) - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); box-sizing: border-box; overflow: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom; border: 1px solid #b28b51; border-radius: 7px; background: #101b29fa; box-shadow: 0 12px 34px #000b; pointer-events: auto; }
+  .mobileSheetHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: sticky; top: 0; z-index: 2; padding: 3px 8px; background: #172536; border-bottom: 1px solid #8f6e43; }
+  .mobileSheetHeader strong { min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+  .mobileSheetHeader button { flex: none; min-width: 44px; min-height: 44px; border: 0; border-radius: 4px; background: #27394d; color: #e7d2aa; font-size: 24px; }
+  .mobileSheet .card, .targetSheet .card { padding: 10px; }
+  .mobileSheet .quest small { display: block; }
+  .mobileSheet .heroMeta { display: grid; }
+  .mobileSheet .participants ul { max-height: none; }
+  .mobileSheet summary, .mobileHero > summary { touch-action: manipulation; }
+  .mobileHero > summary:focus-visible, .mobileQuest > summary:focus-visible, .mobileParticipants > summary:focus-visible { outline: 2px solid #9cd6ff; outline-offset: 2px; }
+  .targetSheet .targetHeading { position: sticky; top: 0; z-index: 1; background: #101b29; }
+  .targetSheet .iconButton { min-width: 44px; min-height: 44px; padding: 2px; }
+  .bottom { grid-row: 4; display: grid; height: auto; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(55px, 1fr) 44px; gap: 5px; padding: 5px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+  .bottom .dockCenter { grid-row: 1; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .bottom .bagButton { grid-row: 2; grid-column: 1; width: 100%; min-width: 0; min-height: 44px; height: 44px; }
+  .bottom .endTurnGroup { grid-row: 2; grid-column: 2; width: 100%; }
+  .bottom .endTurn { width: 100%; min-width: 0; min-height: 44px; height: 44px; }
+  .bottom .endTurnGroup > small { display: none; }
+  .bottom button { padding: 4px 6px; font-size: 11px; letter-spacing: 0; }
+  .bottom .bagButton > span:first-child, .bottom .endTurn > span:first-child { display: inline; margin: 0 5px 0 0; font-size: 14px; }
+  .battleResources { grid-template-columns: minmax(30px, 1fr) auto minmax(30px, 1fr); padding: 3px; gap: 2px; }
+  .actionPoints > strong, .movementPoints > strong { font-size: 18px; }
+  .actionPoints small, .movementPoints small { font-size: 10px; }
+  .bottom .exchangeButton { min-height: 44px; height: 44px; padding: 3px 5px; gap: 2px; }
+  .bottom .exchangeButton > span:first-child { font-size: 9px; margin: 0; }
+  .bottom .exchangeButton > strong { font-size: 10px; }
+  .primaryActions { position: relative; gap: 3px; padding-top: 11px; }
+  .mobileActionLabel { display: block; position: absolute; left: 0; right: 0; top: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #d8c29b; font-size: 9px; text-align: center; }
+  .bottom .infoButton { width: 36px; min-width: 36px; height: 44px; min-height: 44px; padding: 2px; }
+  .budgetGain, .budgetLoss { bottom: -8px; font-size: 10px; }
+  .bottom .finishPrompt { right: 0; bottom: calc(100% + 7px); max-height: calc(var(--hex-mobile-height, 100dvh) - 150px); overflow-y: auto; }
+  .inventorySheet, .logSheet { z-index: 90 !important; top: calc(var(--hex-mobile-top, 0px) + max(8px, env(safe-area-inset-top, 0px))) !important; bottom: auto !important; left: max(8px, env(safe-area-inset-left, 0px)) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important; width: auto !important; max-height: calc(var(--hex-mobile-height, 100dvh) - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; box-sizing: border-box; overflow: auto; overscroll-behavior: contain; touch-action: pan-y pinch-zoom; }
+  .artifactFlight { z-index: 12; top: calc(var(--hex-mobile-top, 0px) + 48px); left: 50%; width: min(300px, calc(100vw - 24px)); max-height: 25vh; overflow: hidden; padding: 7px; animation: mobileArtifactNotice 3.4s ease-in-out both; }
+  .artifactFlightHead { gap: 7px; }
+  .artifactFlightHead img { width: 28px; height: 28px; }
+  .artifactFlightHead strong { font-size: 12px; }
+  .artifactFlightHead small { font-size: 9px; }
+  .artifactFlight p { margin: 3px 0 0; font-size: 10px; }
+  .placementCancel { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 16px); font-size: 11px; }
+}
+@keyframes mobileArtifactNotice {
+  0%, 46% { opacity: 1; transform: translateX(-50%) scale(1); }
+  82% { opacity: 1; transform: translate(calc(50vw - 180px), calc(var(--hex-mobile-field-top, 106px) - var(--hex-mobile-top, 0px) - 48px)) scale(.45); }
+  100% { opacity: 0; transform: translate(calc(50vw - 180px), calc(var(--hex-mobile-field-top, 106px) - var(--hex-mobile-top, 0px) - 48px)) scale(.45); }
+}
+@media (max-width: 359px) {
+  .language { display: none; }
+  .mobileHeroIdentity { max-width: 76px; }
+  .mobileHeroInfo { display: none; }
+  .mobileVitals { gap: 6px; }
+}
+/* Landscape removes the hero row and turns its summary into a toolbar button. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .shell { --hex-dock-height: calc(68px + env(safe-area-inset-bottom, 0px)); grid-template-rows: auto 0 minmax(0, 1fr) var(--hex-dock-height); }
+  .top { min-height: 38px; padding-top: env(safe-area-inset-top, 0px); padding-bottom: 0; }
+  .left { height: 0; padding: 0; }
+  .mobileHero > summary { position: fixed; top: calc(var(--hex-mobile-field-top, 38px) + 2px); left: max(8px, env(safe-area-inset-left, 0px)); width: 56px; height: 40px; min-height: 40px; padding: 3px; gap: 3px; z-index: 6; }
+  .mobileHero > summary > img { width: 24px; height: 30px; }
+  .mobileHeroIdentity, .mobileVitals { display: none; }
+  .mobileHeroInfo { display: block; }
+  .mobileParticipants { left: calc(max(8px, env(safe-area-inset-left, 0px)) + 132px); }
+  .bottom { grid-template-columns: minmax(60px, auto) minmax(0, 1fr) minmax(84px, auto); grid-template-rows: minmax(0, 1fr); gap: 6px; padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
+  .bottom .bagButton { grid-column: 1; grid-row: 1; width: auto; max-width: 86px; font-size: 10px; }
+  .bottom .dockCenter { grid-column: 2; grid-row: 1; gap: 5px; }
+  .bottom .endTurnGroup { grid-column: 3; grid-row: 1; }
+  .bottom .endTurn { font-size: 10px; }
+  .placementCancel { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .primaryActions { padding-top: 10px; }
+  .bottom .infoButton { width: 32px; min-width: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) and (max-width: 767px), (prefers-reduced-motion: reduce) and (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .artifactFlight { animation: none; transform: translateX(-50%); }
+}
+
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .mobileSheet .card button, .mobileSheet .secondaryStats > summary { min-height: 44px; }
+  .mobileSheet .heroMeta span, .mobileSheet .vital, .mobileSheet .quest small { font-size: 12px; }
+}
+
+/* Only visible HUD controls consume touches; transparent layout boxes don't. */
+@media (max-width: 767px), (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .field, .mapSurface, .left, .right, .mobileHero, .mobileQuest, .mobileParticipants { pointer-events: none; }
+  .mapSurface > *, .mapModeSwitch, .mobileHero > summary, .mobileQuest > summary, .mobileParticipants > summary, .mobileSheet, .mobileBackdrop, .targetSheet { pointer-events: auto; }
+}

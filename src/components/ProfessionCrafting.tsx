@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import CombatItemStats from "./equipment/CombatItemStats";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGameLanguage } from "@/hooks/useGameLanguage";
 import { uiText } from "@/i18n/uiText";
@@ -9,6 +10,7 @@ import styles from "@/styles/ProfessionsPage.module.css";
 import { API_BASE } from "@/utils/serviceUrls";
 
 export type CraftRecipe = {
+ combatBonuses?: Record<string, number>;
  code: string; name: string; ru?: string; de?: string; slot?: string; heroClass?: string; rarity?: string; jewelryProgress?: number; jewelrySet?: {name: string; bonus: {attack?:number;defense?:number;maxHealth?:number}; required:number}; profession: string; minLevel: number; output: number; xp: number;
  tradable: boolean; image: string; category: string; effect: string; description: string; available: boolean; reason?: string;
  durability?: number; pocketBonus?: number; bonuses?: { attack: number; defense: number; maxHealth: number; mobility: number; agility: number };
@@ -73,6 +75,7 @@ export default function ProfessionCrafting({ characterId, profession, currentLev
    <header><CraftImage src={recipe.image} /><div><h3>{recipeName(recipe)}</h3><small>{t("Required level")}: {recipe.minLevel} ({t(professionRankName(recipe.minLevel))}) · +{currentLevel < maxLevel ? recipe.xp : 0} XP / {t("Batch")} · ×{recipe.output}</small></div></header>
    <p>{t(recipe.description)}</p><small>{t(recipe.tradable ? "Tradable" : "Not tradable.")}</small>
    {(recipe.category === "equipment" || recipe.category === "jewelry") && <p>{t(recipe.rarity === "green" ? "Uncommon" : "Rare")} · HP +{recipe.bonuses?.maxHealth} · ATK +{recipe.bonuses?.attack} · DEF +{recipe.bonuses?.defense} · MOB +{recipe.bonuses?.mobility} · Reflex +{recipe.bonuses?.agility} · {t("Durability")}: {recipe.durability}{(recipe.pocketBonus ?? 0) > 0 && <> · {t("Additional pockets")}: +{recipe.pocketBonus}</>}</p>}
+   <CombatItemStats bonuses={recipe.combatBonuses} />
    {recipe.jewelrySet && <p>{t(recipe.heroClass || "")} · {t(recipe.slot || "")} · {t("Jewelry set")}: {recipe.jewelrySet.name} · {recipe.jewelryProgress ?? 0}/2<br />2/2: {[recipe.jewelrySet.bonus.attack ? `ATK +${recipe.jewelrySet.bonus.attack}` : "", recipe.jewelrySet.bonus.defense ? `DEF +${recipe.jewelrySet.bonus.defense}` : "", recipe.jewelrySet.bonus.maxHealth ? `Max HP +${recipe.jewelrySet.bonus.maxHealth}` : ""].filter(Boolean).join(" · ")}</p>}
    <ul>{recipe.ingredients.map(ingredient => <li key={ingredient.code} data-short={ingredient.owned < ingredient.quantity}><CraftImage src={ingredient.image} /><span>{t(ingredient.name)}</span><strong>{ingredient.owned} / {ingredient.quantity}{ingredient.owned < ingredient.quantity && <> · {t("Missing")}: {ingredient.quantity - ingredient.owned}</>}</strong></li>)}</ul>
    <button type="button" disabled={!recipe.available || !!busy} onClick={() => void craft(recipe)}>{busy === recipe.code ? t("Working…") : t("Craft")}</button>
